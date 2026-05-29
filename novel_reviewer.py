@@ -510,19 +510,52 @@ def _normalize_purity_result_consistency(result: Dict[str, Any]) -> Dict[str, An
         return result
 
     status = str(result.get("virgin_status", "") or "").strip()
+    rule_status = str(result.get("rule_virgin_status", "") or "").strip()
     is_virgin = _to_bool(result.get("is_virgin", True), True)
+    rule_is_virgin = result.get("rule_is_virgin")
+    rule_is_virgin = _to_bool(rule_is_virgin, False) if rule_is_virgin is not None else None
 
     only_male_lead_markers = (
         "仅男主", "仅与男主", "只与男主", "仅和男主", "只和男主", "仅限男主"
     )
-    only_male_lead = any(m in status for m in only_male_lead_markers)
+    male_lead_loss_markers = (
+        "男主", "主角", "仅男主", "仅与男主", "只与男主", "仅和男主", "只和男主",
+        "仅限男主", "被男主", "给男主", "与男主", "和男主"
+    )
+    explicit_non_male_markers = (
+        "非男主", "其他男人", "别的男人", "其他男性", "别的男性", "他人", "第三者"
+    )
+    only_male_lead = any(m in status or m in rule_status for m in only_male_lead_markers)
     has_non_virgin_word = "非处" in status
     has_virgin_word = ("处女" in status) and (not has_non_virgin_word)
+    non_ml_partners = []
+    non_ml = result.get("non_ml_sex_partners", [])
+    if isinstance(non_ml, list):
+        for p in non_ml:
+            if isinstance(p, dict):
+                pn = str(p.get("name", "") or "").strip()
+                if pn:
+                    non_ml_partners.append(pn)
+    explicit_non_male = (
+        bool(non_ml_partners)
+        or any(m in status or m in rule_status for m in explicit_non_male_markers)
+        or rule_is_virgin is False
+    )
+    male_lead_only_loss = (
+        has_non_virgin_word
+        and any(m in status or m in rule_status for m in male_lead_loss_markers)
+        and not explicit_non_male
+    )
 
     # 语义优先级：
-    # 1) 明确“仅男主” => 处女（排他性）
-    # 2) 明确“非处”   => 非处
-    if only_male_lead:
+    # 1) 规则判定为处女且无非男主证据 => 处女（排他性）
+    # 2) 明确“仅男主/被男主破处” => 处女（仅男主）
+    # 3) 明确“非处”且非男主证据存在 => 非处
+    if rule_is_virgin is False and explicit_non_male:
+        is_virgin = False
+    elif rule_is_virgin is True and not explicit_non_male:
+        is_virgin = True
+    elif only_male_lead or male_lead_only_loss:
         is_virgin = True
     elif has_non_virgin_word:
         is_virgin = False
@@ -530,21 +563,19 @@ def _normalize_purity_result_consistency(result: Dict[str, Any]) -> Dict[str, An
     result["is_virgin"] = is_virgin
 
     if is_virgin:
-        if has_non_virgin_word:
-            result["virgin_status"] = "✅ 处女（仅男主）" if only_male_lead else "✅ 处女"
+        if "处女" in rule_status and "非处" not in rule_status:
+            result["virgin_status"] = rule_status
+        elif has_non_virgin_word:
+            result["virgin_status"] = "✅ 处女（仅男主）" if (only_male_lead or male_lead_only_loss) else "✅ 处女"
         elif only_male_lead:
             result["virgin_status"] = "✅ 处女（仅男主）"
     else:
-        if has_virgin_word or only_male_lead:
-            partners = []
-            non_ml = result.get("non_ml_sex_partners", [])
-            if isinstance(non_ml, list):
-                for p in non_ml:
-                    if isinstance(p, dict):
-                        pn = str(p.get("name", "") or "").strip()
-                        if pn:
-                            partners.append(pn)
-            result["virgin_status"] = f"❌ 非处（与非男主{','.join(partners)}有性关系）" if partners else "❌ 非处"
+        if "非处" in rule_status:
+            result["virgin_status"] = rule_status
+        elif has_non_virgin_word:
+            result["virgin_status"] = status
+        elif has_virgin_word or only_male_lead:
+            result["virgin_status"] = f"❌ 非处（与非男主{','.join(non_ml_partners)}有性关系）" if non_ml_partners else "❌ 非处"
 
     # 同步 body_status，避免展示层出现旧值
     if any(k in result for k in ("virgin_status", "contact_status", "partner_status", "body_status")):
@@ -1469,14 +1500,20 @@ PREGNANCY_ONLY_WORDS = [
     "我们都怀孕了", "怀上了孩子", "怀的孩子", "怀了孩子",
 ]
 
-# 孩子确实存在的强证据关键词
-CHILD_EXISTS_WORDS = [
+# 已出生/已存在的强证据词。与泛词“孩子/宝宝”分开，避免“怀上小宝宝”被误判为已生育。
+STRONG_CHILD_EXISTENCE_WORDS = [
     "生下", "产下", "分娩", "出生", "诞生", "降生", "生产", "生了",
-    "儿子", "女儿", "孩子", "宝宝", "婴儿", "小孩",
     "收养", "领养", "养女", "养子", "继子", "继女", "认作女儿", "认作儿子",
     "当作女儿", "当作儿子", "过继", "寄养", "托孤", "遗孤",
     "满月", "周岁", "长大", "成年", "已经X岁",
 ]
+
+# 孩子确实存在的强证据关键词
+CHILD_EXISTS_WORDS = [
+    *STRONG_CHILD_EXISTENCE_WORDS,
+    "儿子", "女儿", "孩子", "宝宝", "婴儿", "小孩",
+]
+GENERIC_CHILD_REFERENCE_WORDS = ["儿子", "女儿", "孩子", "宝宝", "婴儿", "小孩"]
 
 # 收养/非亲生关键词
 ADOPTION_WORDS = [
@@ -1485,6 +1522,44 @@ ADOPTION_WORDS = [
     "过继", "寄养", "托孤", "遗孤", "捡来的", "救下后收养",
     "不是亲生", "非亲生", "没有血缘", "毫无血缘",
 ]
+
+NEGATED_CHILD_EXISTENCE_PREFIXES = [
+    "未写明", "未出现", "未实际", "未见", "未能", "尚未", "并未",
+    "没有", "并没有", "没写", "没出现", "没能", "不曾",
+    "尚无", "无法确认", "不能确认", "仅能确认",
+]
+
+
+def _has_strong_child_existence_evidence(text: str) -> bool:
+    """识别出生/收养等强证据，同时排除“未写明出生”这类否定语境。"""
+    text = str(text or "")
+    for word in STRONG_CHILD_EXISTENCE_WORDS + ADOPTION_WORDS:
+        start = 0
+        while True:
+            idx = text.find(word, start)
+            if idx < 0:
+                break
+            prefix = text[max(0, idx - 12):idx]
+            if not any(marker in prefix for marker in NEGATED_CHILD_EXISTENCE_PREFIXES):
+                return True
+            start = idx + len(word)
+    return False
+
+
+def _has_generic_child_reference(text: str) -> bool:
+    """识别泛称子女词，同时排除“没有孩子”这类否定语境。"""
+    text = str(text or "")
+    for word in GENERIC_CHILD_REFERENCE_WORDS:
+        start = 0
+        while True:
+            idx = text.find(word, start)
+            if idx < 0:
+                break
+            prefix = text[max(0, idx - 8):idx]
+            if not any(marker in prefix for marker in NEGATED_CHILD_EXISTENCE_PREFIXES):
+                return True
+            start = idx + len(word)
+    return False
 
 # 试管/人工受孕关键词
 IVF_WORDS = [
@@ -1589,6 +1664,7 @@ def _classify_child_record_heuristic(
     
     # 如果命中劝说词且同时命中怀孕词，则归类为弱证据
     pregnancy_found = any(w in combined_text for w in PREGNANCY_ONLY_WORDS)
+    strong_child_exists_found = _has_strong_child_existence_evidence(combined_text)
     if persuasion_found and pregnancy_found:
         return ("PREGNANCY_ONLY_OR_WEAK", f"劝说/假设语气+怀孕提及：'{', '.join(persuasion_found[:3])}'")
     
@@ -1597,16 +1673,12 @@ def _classify_child_record_heuristic(
         return ("PREGNANCY_ONLY_OR_WEAK", f"疑似劝说/假设语气：'{', '.join(persuasion_found[:3])}'")
     
     # ===== 4. 仅怀孕提及检测（无孩子存在强证据） =====
-    if pregnancy_found:
-        child_exists_found = any(w in combined_text for w in CHILD_EXISTS_WORDS)
-        if not child_exists_found:
-            return ("PREGNANCY_ONLY_OR_WEAK", f"仅怀孕提及，无孩子出生/存在证据")
+    # “怀上孩子/怀上小宝宝”里的孩子/宝宝只是胎儿语境，不代表已出生或已存在的子女。
+    if child_status == "pregnant" and not strong_child_exists_found:
+        return ("PREGNANCY_ONLY_OR_WEAK", f"child_status=pregnant，无出生证据")
     
-    # 如果 child_status 是 pregnant，也归类为弱证据
-    if child_status == "pregnant":
-        child_exists_found = any(w in combined_text for w in CHILD_EXISTS_WORDS)
-        if not child_exists_found:
-            return ("PREGNANCY_ONLY_OR_WEAK", f"child_status=pregnant，无出生证据")
+    if pregnancy_found and not strong_child_exists_found:
+        return ("PREGNANCY_ONLY_OR_WEAK", f"仅怀孕提及，无孩子出生/存在证据")
     
     # ===== 5. 男主孩子快速判定 =====
     if male_lead:
@@ -1629,7 +1701,7 @@ def _classify_child_record_heuristic(
     
     # ===== 6. 强证据判定（收紧） =====
     # 只有命中明确“孩子存在/收养”词，才算强证据
-    if any(w in combined_text for w in CHILD_EXISTS_WORDS + ADOPTION_WORDS):
+    if strong_child_exists_found or _has_generic_child_reference(combined_text):
         return ("CHILD_EXISTS_STRONG", "命中孩子存在/收养关键词")
 
     # 其他情况一律按弱证据处理，避免把噪声当“已生育”
@@ -3903,6 +3975,9 @@ def judge_purity_by_facts(
         if _looks_like_parentage_as_child(name, raw_evidence):
             continue
         if _looks_like_non_child_kinship_fact(name, raw_evidence, child_name):
+            continue
+        child_category, _child_reason = _classify_child_record_heuristic(name, child, male_lead)
+        if child_category in ("NOT_A_CHILD_FACT", "PREGNANCY_ONLY_OR_WEAK", "MALE_LEAD_CHILD"):
             continue
 
         # 【核心判断】检查是否为亲生孩子
@@ -7902,7 +7977,9 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     finished = cached_finished
     finished_reason = cached_finished_reason
     completed_checkpoint_has_gap = False
-    if finished and purity_done and finish_done and cached_pushed_map is not None:
+    # `finished` 是小说是否完结的判定结果，不是审查流程是否已经跑完。
+    has_complete_checkpoint = purity_done and finish_done and cached_pushed_map is not None
+    if has_complete_checkpoint:
         novel_path = _infer_novel_path_from_scan(raw_data_path)
         novel_tail = _read_tail(novel_path) if novel_path else None
         expected_leak_issues, _ = _rebuild_leak_state_from_pushed_map(
@@ -7916,7 +7993,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         completed_checkpoint_has_gap = missing_leak_count > 0
         if completed_checkpoint_has_gap:
             logger.info(f"? ???????? {missing_leak_count} ????????????")
-    if finished and purity_done and finish_done and not completed_checkpoint_has_gap:
+    if has_complete_checkpoint and not completed_checkpoint_has_gap:
         logger.info("==================================================")
         logger.info(f"★ 发现完整断点，跳过重新审查：{checkpoint_file}")
         logger.info(f"结束原因：{finished_reason}")

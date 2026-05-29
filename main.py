@@ -163,6 +163,39 @@ def scan_novels(base_dir):
     return novel_files
 
 
+def _read_json_safely(file_path):
+    if not os.path.exists(file_path):
+        return None
+    try:
+        return json.loads(_read_file_safely(file_path))
+    except Exception as exc:
+        print(f"[WARN] 读取 JSON 失败: {file_path} ({exc})")
+        return None
+
+
+def _report_is_fresh(base_dir, book_name):
+    checkpoint_path = os.path.join(base_dir, "results", "report_checkpoint.json")
+    checkpoint_data = _read_json_safely(checkpoint_path)
+    if not isinstance(checkpoint_data, dict):
+        return False, None
+
+    jobs = checkpoint_data.get("jobs", {})
+    if not isinstance(jobs, dict):
+        return False, None
+
+    job = jobs.get(book_name)
+    if not isinstance(job, dict):
+        return False, None
+    if job.get("status") != "completed":
+        return False, None
+
+    out_file = job.get("out_file")
+    if not out_file or not os.path.exists(out_file):
+        return False, None
+
+    return True, out_file
+
+
 def print_pending_novels(novel_files):
     print("待扫描书籍：")
     for index, novel_path in enumerate(novel_files, start=1):
@@ -249,6 +282,7 @@ def run():
 
     total = len(novel_files)
     done = 0
+    skipped = 0
     failed = 0
 
     print_pending_novels(novel_files)
@@ -267,6 +301,14 @@ def run():
         print("=" * 40)
         print(f"正在处理: {os.path.basename(novel_path)}")
         print(f"NOVEL_PATH={novel_path}")
+
+        should_skip, out_file = _report_is_fresh(base_dir, book_name)
+        if should_skip:
+            skipped += 1
+            print(f"★ 检测到该书报告已正常生成，跳过后续流程：{out_file}")
+            print()
+            continue
+
         time.sleep(5)
 
         status = "ok"
@@ -315,7 +357,7 @@ def run():
 
     print("=" * 40)
     print("处理完成")
-    print(f"总计: {total} 本  成功: {done}  失败: {failed}")
+    print(f"总计: {total} 本  成功: {done}  跳过: {skipped}  失败: {failed}")
     print("=" * 40)
 
     print_token_summary(base_dir)
