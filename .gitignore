@@ -8,3 +8,5 @@ results/
 .env
 .env.*
 !.env.sample
+*.tar
+*.tar.gz

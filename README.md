@@ -146,6 +146,32 @@ docker run -d \
 http://服务器IP:8765
 ```
 
+如果不走镜像仓库，也可以在本机导出镜像包，上传到服务器后部署：
+
+```bash
+docker save -o novel-report-scanner_latest.tar novel-report-scanner:latest
+```
+
+服务器导入镜像：
+
+```bash
+docker load -i novel-report-scanner_latest.tar
+mkdir -p novels results
+```
+
+然后直接启动：
+
+```bash
+docker run -d \
+  --name novel-report-scanner \
+  --restart unless-stopped \
+  -p 8765:8765 \
+  --env-file .env \
+  -v "$PWD/novels:/app/novels" \
+  -v "$PWD/results:/app/results" \
+  novel-report-scanner:latest
+```
+
 如果使用 Compose，本地源码构建并启动：
 
 ```bash
