@@ -717,22 +717,27 @@ def _serialize_character_stats(stats_dict):
     """通用的角色数据序列化，支持 merged_stats/global_stats"""
     serialized = {}
     for name, data in stats_dict.items():
-        types_val = data.get("types", [])
-        if isinstance(types_val, set):
-            types_val = list(types_val)
-        other_names_val = data.get("other_names", [])
-        if isinstance(other_names_val, set):
-            other_names_val = list(other_names_val)
+        def _listify(value):
+            if isinstance(value, set):
+                return list(value)
+            return value or []
+
+        types_val = _listify(data.get("types", []))
+        other_names_val = _listify(data.get("other_names", []))
         serialized[name] = {
             "total_score": data.get("total_score", 0),
             "count": data.get("count", 0),
             "chunk_scores": data.get("chunk_scores", []),
             "summaries": data.get("summaries", []),
             "types": types_val,
+            "gender": _listify(data.get("gender", [])),
+            "role_types": _listify(data.get("role_types", [])),
+            "factions": _listify(data.get("factions", [])),
             "other_names": other_names_val,
             "appearances": data.get("appearances", []),
             "features": data.get("features", []),
             "relationships": data.get("relationships", []),
+            "key_events": data.get("key_events", []),
             "interactions": data.get("interactions", []),
             "emotion_signals": data.get("emotion_signals", []),
         }
@@ -803,10 +808,14 @@ def _restore_character_stats(serialized_stats):
             "chunk_scores": data.get("chunk_scores", []),
             "summaries": data.get("summaries", []),
             "types": set(data.get("types", [])),
+            "gender": set(data.get("gender", [])),
+            "role_types": set(data.get("role_types", [])),
+            "factions": set(data.get("factions", [])),
             "other_names": set(data.get("other_names", [])),
             "appearances": data.get("appearances", []),
             "features": data.get("features", []),
             "relationships": data.get("relationships", []),
+            "key_events": data.get("key_events", []),
             "interactions": data.get("interactions", []),
             "emotion_signals": data.get("emotion_signals", []),
         }
@@ -897,12 +906,7 @@ def split_text_by_length(text, chunk_size):
     return chunks
 
 
-def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retries=3):
-    """
-    分析单个文本块，识别女主角/女性重要角色，同时识别男主
-    收集更详细的特征信息用于后续别称合并
-    """
-    
+def _build_harem_character_prompt(text_chunk, chunk_index, total_chunks):
     system_prompt = """你是一个专业的小说分析师，负责识别小说中的**男主角**和**女性角色**。
 
 ## 核心任务：
@@ -967,6 +971,217 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
    - 男主对她的态度如何？
 
 请以 JSON 格式输出。"""
+    return system_prompt, user_prompt
+
+
+def _build_general_character_prompt(text_chunk, chunk_index, total_chunks):
+    system_prompt = """你是一个专业的通用小说分析师，负责识别小说片段中的核心角色、重要配角、反派、阵营关系和关键事件。
+
+## 核心任务：
+1. 识别本片段中对剧情推进、冲突、设定、阵营或人物关系有意义的角色，不限性别。
+2. 判断主角/视角核心候选；如果片段无法判断，可以输出 null。
+3. 为每个角色记录身份、阵营、关系、行为概要和关键事件，而不是只看恋爱关系。
+4. 评分依据是剧情重要性、事件参与度、关系网络位置和反复出现程度。
+
+## 评分标准：
+- 10分：主角/视角核心/绝对剧情中心
+- 8-9分：主要角色、核心反派、重要同伴、关键阵营代表
+- 6-7分：重要配角、关键事件参与者、关系网络节点
+- 4-5分：普通配角，有明确身份或事件作用
+- 1-3分：路人或一次性角色
+
+## 输出格式（JSON）：
+{
+  "primary_protagonist": {
+    "name": "主角或视角核心名字",
+    "other_names": ["别称1", "昵称2"],
+    "gender": "male/female/unknown",
+    "identity": "身份背景",
+    "faction": "所属势力/阵营，可为空",
+    "summary": "本段行为概要"
+  },
+  "characters": [
+    {
+      "name": "角色名字",
+      "other_names": ["别称1", "昵称2"],
+      "gender": "male/female/unknown",
+      "role_type": "protagonist/supporting/antagonist/deuteragonist/minor/unknown",
+      "score": 1-10,
+      "identity": "身份背景、职业、地位或叙事功能",
+      "faction": "所属势力/阵营，可为空",
+      "relationships": ["与其他角色/势力的关系"],
+      "key_events": ["本段参与的关键事件"],
+      "traits": "性格、能力、行为风格或外貌特征",
+      "summary": "本段中该角色的行为概要"
+    }
+  ]
+}
+
+只输出 JSON，不要 Markdown。片段中没有稳定可识别角色时，characters 输出 []。"""
+
+    user_prompt = f"""请分析以下小说片段（第 {chunk_index + 1}/{total_chunks} 块），按通用小说分析标准识别所有重要角色：
+
+--- 小说片段开始 ---
+{text_chunk}
+--- 小说片段结束 ---
+
+请重点记录：
+1. 主角/视角核心候选。
+2. 所有对剧情、冲突、设定、阵营或人物关系有意义的角色。
+3. 每个角色的身份、阵营、关系、关键事件和本段作用。
+
+请以 JSON 格式输出。"""
+    return system_prompt, user_prompt
+
+
+def _coerce_score(value):
+    try:
+        score = int(value)
+    except Exception:
+        score = 0
+    return max(1, min(10, score))
+
+
+def _normalize_general_character_response(data, chunk_index):
+    result = {
+        "male_protagonist": None,
+        "female_characters": [],
+        "general_characters": [],
+        "profile_mode": "general",
+    }
+    if not isinstance(data, dict):
+        return result
+
+    protagonist = data.get("primary_protagonist") or data.get("protagonist") or data.get("male_protagonist")
+    if isinstance(protagonist, dict):
+        name = str(protagonist.get("name", "") or "").strip()
+        if name:
+            result["male_protagonist"] = {
+                "name": name,
+                "other_names": protagonist.get("other_names", []) or protagonist.get("aliases", []),
+                "identity": protagonist.get("identity", ""),
+                "summary": protagonist.get("summary", ""),
+                "gender": protagonist.get("gender", "unknown"),
+                "faction": protagonist.get("faction", ""),
+                "chunk_index": chunk_index,
+            }
+
+    characters = data.get("characters") or []
+    if not isinstance(characters, list):
+        characters = []
+    for char in characters:
+        if not isinstance(char, dict):
+            continue
+        name = str(char.get("name", "") or "").strip()
+        if not name:
+            continue
+        score = _coerce_score(char.get("score", 0))
+        relationships = char.get("relationships") or []
+        if isinstance(relationships, str):
+            relationships = [relationships]
+        key_events = char.get("key_events") or []
+        if isinstance(key_events, str):
+            key_events = [key_events]
+        traits = str(char.get("traits", "") or "").strip()
+        identity = str(char.get("identity", "") or "").strip()
+        faction = str(char.get("faction", "") or "").strip()
+        role_type = str(char.get("role_type", "unknown") or "unknown").strip()
+        gender = str(char.get("gender", "unknown") or "unknown").strip()
+        summary = str(char.get("summary", "") or "").strip()
+        relationship_text = "；".join([str(x).strip() for x in relationships if str(x).strip()])
+        event_text = "；".join([str(x).strip() for x in key_events if str(x).strip()])
+        identity_parts = [x for x in [identity, f"阵营：{faction}" if faction else "", f"角色类型：{role_type}" if role_type else ""] if x]
+
+        normalized = {
+            "name": name,
+            "other_names": char.get("other_names", []) or char.get("aliases", []),
+            "score": score,
+            "appearance": traits,
+            "identity": "；".join(identity_parts),
+            "interaction_with_male_lead": event_text,
+            "relationship_type": relationship_text,
+            "emotion_signals": traits,
+            "summary": summary or event_text,
+            "is_potential_heroine": score >= 7,
+            "chunk_index": chunk_index,
+            "gender": gender,
+            "role_type": role_type,
+            "faction": faction,
+            "relationships": relationships,
+            "key_events": key_events,
+            "traits": traits,
+        }
+        result["female_characters"].append(normalized)
+        result["general_characters"].append(normalized)
+    return result
+
+
+def _normalize_harem_character_response(data, chunk_index):
+    result = {
+        "male_protagonist": None,
+        "female_characters": [],
+        "profile_mode": "harem",
+    }
+    if not isinstance(data, dict):
+        return result
+
+    male_proto = data.get('male_protagonist')
+    if male_proto and isinstance(male_proto, dict):
+        name = male_proto.get('name', '').strip()
+        if name:
+            result["male_protagonist"] = {
+                "name": name,
+                "other_names": male_proto.get('other_names', []),
+                "identity": male_proto.get('identity', ''),
+                "summary": male_proto.get('summary', ''),
+                "gender": "male",
+                "role_type": "protagonist",
+                "chunk_index": chunk_index
+            }
+
+    females = data.get('female_characters', [])
+    if isinstance(females, list):
+        for char in females:
+            if not isinstance(char, dict):
+                continue
+            name = char.get('name', '').strip()
+            if not name:
+                continue
+            score = _coerce_score(char.get('score', 0))
+            result["female_characters"].append({
+                "name": name,
+                "other_names": char.get('other_names', []),
+                "score": score,
+                "appearance": char.get('appearance', ''),
+                "identity": char.get('identity', ''),
+                "interaction_with_male_lead": char.get('interaction_with_male_lead', ''),
+                "relationship_type": char.get('relationship_type', ''),
+                "emotion_signals": char.get('emotion_signals', ''),
+                "summary": char.get('summary', ''),
+                "is_potential_heroine": char.get('is_potential_heroine', score >= 7),
+                "gender": "female",
+                "role_type": "heroine_candidate" if char.get('is_potential_heroine', score >= 7) else "supporting",
+                "chunk_index": chunk_index
+            })
+    return result
+
+
+def _normalize_character_response(data, chunk_index, profile_mode):
+    if profile_mode == "general":
+        return _normalize_general_character_response(data, chunk_index)
+    return _normalize_harem_character_response(data, chunk_index)
+
+
+def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retries=3):
+    """
+    分析单个文本块。
+    harem 模式识别男主/女主候选；general 模式识别通用核心角色并适配到旧统计结构。
+    """
+    profile_mode = "general" if _is_general_profile() else "harem"
+    if profile_mode == "general":
+        system_prompt, user_prompt = _build_general_character_prompt(text_chunk, chunk_index, total_chunks)
+    else:
+        system_prompt, user_prompt = _build_harem_character_prompt(text_chunk, chunk_index, total_chunks)
 
     for retry in range(max_retries):
         try:
@@ -1000,60 +1215,12 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
             try:
                 # 容错解析：避免“控制字符”导致 JSON 解析失败从而反复调用 API
                 data = _safe_json_loads(content)
-                
-                result = {
-                    "male_protagonist": None,
-                    "female_characters": []
-                }
-                
-                # 解析男主信息
-                if isinstance(data, dict):
-                    male_proto = data.get('male_protagonist')
-                    if male_proto and isinstance(male_proto, dict):
-                        name = male_proto.get('name', '').strip()
-                        if name:
-                            result["male_protagonist"] = {
-                                "name": name,
-                                "other_names": male_proto.get('other_names', []),
-                                "identity": male_proto.get('identity', ''),
-                                "summary": male_proto.get('summary', ''),
-                                "chunk_index": chunk_index
-                            }
-                    
-                    # 解析女性角色
-                    females = data.get('female_characters', [])
-                    if isinstance(females, list):
-                        for char in females:
-                            if not isinstance(char, dict):
-                                continue
-                            
-                            name = char.get('name', '').strip()
-                            if not name:
-                                continue
-                            
-                            score = char.get('score', 0)
-                            try:
-                                score = int(score)
-                            except:
-                                score = 0
-                            score = max(1, min(10, score))
-                            
-                            result["female_characters"].append({
-                                "name": name,
-                                "other_names": char.get('other_names', []),
-                                "score": score,
-                                "appearance": char.get('appearance', ''),
-                                "identity": char.get('identity', ''),
-                                "interaction_with_male_lead": char.get('interaction_with_male_lead', ''),
-                                "relationship_type": char.get('relationship_type', ''),
-                                "emotion_signals": char.get('emotion_signals', ''),
-                                "summary": char.get('summary', ''),
-                                "is_potential_heroine": char.get('is_potential_heroine', score >= 7),
-                                "chunk_index": chunk_index
-                            })
-                
-                male_info = f", 男主: {result['male_protagonist']['name']}" if result['male_protagonist'] else ""
-                logger.info(f"Chunk {chunk_index} 分析完成，发现 {len(result['female_characters'])} 个女性角色{male_info}")
+                result = _normalize_character_response(data, chunk_index, profile_mode)
+
+                lead_label = "主角" if profile_mode == "general" else "男主"
+                char_label = "角色" if profile_mode == "general" else "女性角色"
+                lead_info = f", {lead_label}: {result['male_protagonist']['name']}" if result['male_protagonist'] else ""
+                logger.info(f"Chunk {chunk_index} 分析完成，发现 {len(result['female_characters'])} 个{char_label}{lead_info}")
                 result["_success"] = True  # 标记为成功
                 return result
                 
@@ -3804,6 +3971,20 @@ def export_results(merged_stats, heroine_result, final_report, male_protagonist=
         other_names = list(data.get('other_names', set()))
         relationships = data.get('relationships', [])
         features = data.get('features', [])
+        key_events = data.get("key_events", [])
+        gender_values = [x for x in list(data.get("gender", set()) or []) if x and x != "unknown"]
+        role_type_values = [x for x in list(data.get("role_types", set()) or []) if x and x != "unknown"]
+        faction_values = [x for x in list(data.get("factions", set()) or []) if x]
+        gender = gender_values[0] if gender_values else "female"
+        role_type = role_type_values[0] if role_type_values else ("heroine" if name in heroine_names else "supporting")
+        if name in heroine_names and role_type in {"supporting", "heroine_candidate", "unknown"}:
+            role_type = "heroine"
+        identity_parts = []
+        appearances = data.get("appearances", [])
+        if appearances:
+            identity_parts.append(str(appearances[0]))
+        if faction_values:
+            identity_parts.append(f"阵营：{faction_values[0]}")
         
         detailed_data["all_female_characters"][name] = {
             "avg_score": avg_score,
@@ -3813,19 +3994,24 @@ def export_results(merged_stats, heroine_result, final_report, male_protagonist=
             "summaries": all_summaries,  # 保留全部（按时间排序）
             "features": features,
             "relationships": relationships,
+            "key_events": key_events,
+            "gender": gender,
+            "role_types": role_type_values,
+            "factions": faction_values,
             "interactions": all_interactions,  # 保留全部（按时间排序）
             "emotion_signals": all_emotions  # 保留全部（按时间排序）
         }
         detailed_data["characters"].append({
             "name": name,
             "aliases": other_names,
-            "gender": "female",
-            "role_type": "heroine" if name in heroine_names else "supporting",
+            "gender": gender,
+            "role_type": role_type,
             "importance": avg_score,
             "count": data["count"],
-            "identity": "",
+            "identity": "；".join(identity_parts),
+            "factions": faction_values,
             "relationships": relationships,
-            "key_events": all_summaries,
+            "key_events": key_events or all_summaries,
             "features": features,
             "interactions": all_interactions,
             "emotion_signals": all_emotions,
@@ -4059,10 +4245,14 @@ def main(novel_path=None, book_name=None, run_id=None):
                                 "chunk_scores": [],  # 存储 (chunk_index, score) 用于评分分布和趋势分析
                                 "summaries": [],  # 存储 (chunk_index, summary)
                                 "types": set(),
+                                "gender": set(),
+                                "role_types": set(),
+                                "factions": set(),
                                 "other_names": set(),
                                 "appearances": [],
                                 "features": [],
                                 "relationships": [],
+                                "key_events": [],
                                 "interactions": [],  # 与男主互动记录
                                 "emotion_signals": [],  # 感情信号记录
                             }
@@ -4102,6 +4292,24 @@ def main(novel_path=None, book_name=None, run_id=None):
                         if relationship_type and relationship_type not in global_stats[name]["relationships"]:
                             if len(global_stats[name]["relationships"]) < 10:
                                 global_stats[name]["relationships"].append(relationship_type)
+
+                        gender = (char.get("gender", "") or "").strip()
+                        if gender:
+                            global_stats[name].setdefault("gender", set()).add(gender)
+
+                        role_type = (char.get("role_type", "") or "").strip()
+                        if role_type:
+                            global_stats[name].setdefault("role_types", set()).add(role_type)
+
+                        faction = (char.get("faction", "") or "").strip()
+                        if faction:
+                            global_stats[name].setdefault("factions", set()).add(faction)
+
+                        for event in char.get("key_events", []) or []:
+                            event_text = str(event).strip()
+                            if event_text and event_text not in global_stats[name].setdefault("key_events", []):
+                                if len(global_stats[name]["key_events"]) < 20:
+                                    global_stats[name]["key_events"].append(event_text)
 
                         # 收集与男主的互动记录（带 chunk_index，全部保留）
                         interaction = (char.get("interaction_with_male_lead", "") or "").strip()

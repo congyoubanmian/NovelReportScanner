@@ -1056,6 +1056,7 @@ def _general_character_rows(detailed_data: dict, limit=20):
                 "count": int(info.get("count") or 0),
                 "role_type": info.get("role_type") or "supporting",
                 "identity": info.get("identity") or "未描述",
+                "factions": info.get("factions") or ([info.get("faction")] if info.get("faction") else []),
                 "summaries": _clean_text_items(info.get("key_events") or [], limit=3),
                 "relationships": _clean_text_items(info.get("relationships") or [], limit=3),
                 "features": _clean_text_items(info.get("features") or [], limit=3),
@@ -1077,6 +1078,7 @@ def _general_character_rows(detailed_data: dict, limit=20):
                 "count": int(info.get("count") or 0),
                 "role_type": "supporting",
                 "identity": _pick_first_str(info.get("relationships") or info.get("features") or [], "未描述"),
+                "factions": info.get("factions") or [],
                 "summaries": _clean_text_items(info.get("summaries") or [], limit=3),
                 "relationships": _clean_text_items(info.get("relationships") or [], limit=3),
                 "features": _clean_text_items(info.get("features") or [], limit=3),
@@ -1129,6 +1131,8 @@ def build_general_report(book_key: str, detailed_data: dict) -> str:
             )
             if char["aliases"]:
                 lines.append(f"别名：{', '.join([str(x) for x in char['aliases'][:8]])}")
+            if char.get("factions"):
+                lines.append(f"阵营/势力：{', '.join([str(x) for x in char['factions'][:5] if x])}")
             if char["relationships"]:
                 lines.append("关系/身份线索：")
                 for item in char["relationships"]:
