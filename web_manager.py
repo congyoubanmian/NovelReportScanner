@@ -10,6 +10,8 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 warnings.filterwarnings("ignore", category=DeprecationWarning, message="'cgi' is deprecated*")
 import cgi
+import contextlib
+import sys
 
 from analysis_profiles import infer_profile_for_novel, load_analysis_profile, normalize_profile_name
 from main import _generate_run_id, get_base_dir, load_configs, process_single_novel
@@ -22,8 +24,32 @@ STATE = {"books": {}, "tasks": []}
 CONFIG_READY = False
 
 
+class _Tee:
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, data):
+        for stream in self.streams:
+            stream.write(data)
+            stream.flush()
+
+    def flush(self):
+        for stream in self.streams:
+            stream.flush()
+
+
 def _state_path():
     return os.path.join(get_base_dir(), "results", "web_manager_state.json")
+
+
+def _task_log_dir():
+    path = os.path.join(get_base_dir(), "results", "web_logs")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _task_log_path(task_id):
+    return os.path.join(_task_log_dir(), f"{task_id}.log")
 
 
 def _novels_dir():
@@ -137,6 +163,9 @@ def _book_detail(book_id):
         tasks = [dict(t) for t in STATE["tasks"] if t.get("book_id") == book_id]
     if not book:
         return None
+    for task in tasks:
+        if task.get("log_path"):
+            task["log_file"] = _file_link(task.get("log_path"))
     book["novel_file"] = _file_link(book.get("path"))
     book["outputs"] = _find_book_outputs(book_id)
     book["tasks"] = sorted(tasks, key=lambda x: x.get("created_at", ""), reverse=True)
@@ -192,18 +221,24 @@ def _worker_loop():
                 continue
             task["status"] = "running"
             task["started_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            task["log_path"] = _task_log_path(task_id)
             book["status"] = "running"
             book["message"] = "扫描中"
             _save_state()
 
         try:
-            ok, config_error = _try_load_runtime_config("scan")
-            if not ok:
-                raise RuntimeError(config_error)
-            profile_name = task.get("profile", "auto")
-            if profile_name == "auto":
-                profile_name = infer_profile_for_novel(book["path"], book.get("name", ""))
-            result = process_single_novel(book["path"], profile_name=profile_name, run_id=_generate_run_id(), skip_fresh=True)
+            with open(task["log_path"], "a", encoding="utf-8") as log_file:
+                log_file.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] task {task_id} started\n")
+                tee_out = _Tee(sys.stdout, log_file)
+                tee_err = _Tee(sys.stderr, log_file)
+                with contextlib.redirect_stdout(tee_out), contextlib.redirect_stderr(tee_err):
+                    ok, config_error = _try_load_runtime_config("scan")
+                    if not ok:
+                        raise RuntimeError(config_error)
+                    profile_name = task.get("profile", "auto")
+                    if profile_name == "auto":
+                        profile_name = infer_profile_for_novel(book["path"], book.get("name", ""))
+                    result = process_single_novel(book["path"], profile_name=profile_name, run_id=_generate_run_id(), skip_fresh=True)
             with STATE_LOCK:
                 task["status"] = "completed" if result.get("status") in {"ok", "skipped"} else "failed"
                 task["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -213,6 +248,11 @@ def _worker_loop():
                 book["message"] = "完成" if task["status"] == "completed" else result.get("error", "失败")
                 _save_state()
         except Exception as exc:
+            try:
+                with open(task.get("log_path") or _task_log_path(task_id), "a", encoding="utf-8") as log_file:
+                    log_file.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ERROR: {exc}\n")
+            except Exception:
+                pass
             with STATE_LOCK:
                 task["status"] = "failed"
                 task["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -332,7 +372,10 @@ async function refresh() {
 async function showDetail(bookId) {
   const book = await api('/api/book?id=' + encodeURIComponent(bookId));
   const outputs = (book.outputs || []).map(f => `<li><a href="${esc(f.url)}" target="_blank">${esc(f.name)}</a></li>`).join('') || '<li>暂无输出文件</li>';
-  const tasks = (book.tasks || []).map(t => `<tr><td>${esc(t.id)}</td><td>${esc(t.profile)}</td><td>${esc(t.status)}</td><td>${esc(t.created_at || '')}</td><td>${esc(t.finished_at || t.error || '')}</td></tr>`).join('') || '<tr><td colspan="5">暂无任务</td></tr>';
+  const tasks = (book.tasks || []).map(t => {
+    const log = t.log_file ? `<a href="${esc(t.log_file.url)}" target="_blank">日志</a>` : '';
+    return `<tr><td>${esc(t.id)}</td><td>${esc(t.profile)}</td><td>${esc(t.status)}</td><td>${esc(t.created_at || '')}</td><td>${esc(t.finished_at || t.error || '')}</td><td>${log}</td></tr>`;
+  }).join('') || '<tr><td colspan="6">暂无任务</td></tr>';
   document.getElementById('detail').innerHTML = `
     <h3>${esc(book.name)}</h3>
     <p>当前分类：${esc(book.profile)}；实际扫描分类：${esc(book.active_profile || '')}；状态：${esc(book.status)}</p>
@@ -340,7 +383,7 @@ async function showDetail(bookId) {
     <h4>输出文件</h4>
     <ul>${outputs}</ul>
     <h4>任务历史</h4>
-    <table><thead><tr><th>任务</th><th>分类</th><th>状态</th><th>创建</th><th>结束/错误</th></tr></thead><tbody>${tasks}</tbody></table>
+    <table><thead><tr><th>任务</th><th>分类</th><th>状态</th><th>创建</th><th>结束/错误</th><th>日志</th></tr></thead><tbody>${tasks}</tbody></table>
   `;
 }
 refresh();

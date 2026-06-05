@@ -64,6 +64,25 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         finally:
             os.unlink(outside_path)
 
+    def test_web_manager_book_detail_adds_log_link(self):
+        task_id = "testtask"
+        log_path = web_manager._task_log_path(task_id)
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, "w", encoding="utf-8") as f:
+            f.write("log")
+        old_state = web_manager.STATE
+        try:
+            web_manager.STATE = {
+                "books": {"book": {"id": "book", "name": "book", "path": log_path, "profile": "general"}},
+                "tasks": [{"id": task_id, "book_id": "book", "log_path": log_path}],
+            }
+            detail = web_manager._book_detail("book")
+            self.assertIn("log_file", detail["tasks"][0])
+            self.assertTrue(detail["tasks"][0]["log_file"]["url"].startswith("/files?path="))
+        finally:
+            web_manager.STATE = old_state
+            os.unlink(log_path)
+
     def test_general_report_uses_story_summary_and_characters(self):
         general_summary = {
             "profile_display_name": "历史小说专长分析",
