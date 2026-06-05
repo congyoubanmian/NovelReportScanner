@@ -128,6 +128,58 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.STATE = old_state
             os.unlink(novel_path)
 
+    def test_web_manager_recovers_incomplete_tasks_and_queue_positions(self):
+        old_state = web_manager.STATE
+        old_queue_ids = set(web_manager.TASK_QUEUE_IDS)
+        try:
+            web_manager.TASK_QUEUE_IDS.clear()
+            while not web_manager.TASK_QUEUE.empty():
+                web_manager.TASK_QUEUE.get_nowait()
+                web_manager.TASK_QUEUE.task_done()
+            web_manager.STATE = {
+                "books": {
+                    "queued_book": {"id": "queued_book", "name": "queued_book", "profile": "general", "status": "queued", "task_id": "queued_task"},
+                    "running_book": {"id": "running_book", "name": "running_book", "profile": "general", "status": "running", "task_id": "running_task"},
+                },
+                "tasks": [
+                    {"id": "queued_task", "book_id": "queued_book", "status": "queued", "created_at": "2026-01-01 00:00:01"},
+                    {"id": "running_task", "book_id": "running_book", "status": "running", "created_at": "2026-01-01 00:00:02"},
+                ],
+            }
+
+            web_manager._recover_incomplete_tasks()
+            state = web_manager._public_state()
+            books = {book["id"]: book for book in state["books"]}
+            tasks = {task["id"]: task for task in state["tasks"]}
+
+            self.assertEqual(books["queued_book"]["queue_position"], 1)
+            self.assertEqual(tasks["queued_task"]["queue_position"], 1)
+            self.assertEqual(tasks["running_task"]["status"], "interrupted")
+            self.assertEqual(books["running_book"]["status"], "interrupted")
+            self.assertEqual(web_manager.TASK_QUEUE.qsize(), 1)
+
+            web_manager._recover_incomplete_tasks()
+            self.assertEqual(web_manager.TASK_QUEUE.qsize(), 1)
+        finally:
+            while not web_manager.TASK_QUEUE.empty():
+                web_manager.TASK_QUEUE.get_nowait()
+                web_manager.TASK_QUEUE.task_done()
+            web_manager.TASK_QUEUE_IDS.clear()
+            web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
+            web_manager.STATE = old_state
+
+    def test_web_manager_finds_dynamic_profile_outputs(self):
+        results_dir = os.path.join(main.get_base_dir(), "results")
+        os.makedirs(results_dir, exist_ok=True)
+        out_path = os.path.join(results_dir, "book_history_GENERAL_SUMMARY_latest.json")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write("{}")
+        try:
+            outputs = web_manager._find_book_outputs("book")
+            self.assertTrue(any(item["name"] == "book_history_GENERAL_SUMMARY_latest.json" for item in outputs))
+        finally:
+            os.unlink(out_path)
+
     def test_web_manager_book_detail_adds_log_link(self):
         task_id = "testtask"
         log_path = web_manager._task_log_path(task_id)

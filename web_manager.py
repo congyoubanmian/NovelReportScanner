@@ -16,6 +16,7 @@ import sys
 from analysis_profiles import (
     infer_profile_candidates_for_novel,
     infer_profile_for_novel,
+    list_available_profiles,
     normalize_profile_name,
     profile_options,
 )
@@ -24,6 +25,7 @@ from main import _generate_run_id, get_base_dir, load_configs, process_single_no
 
 STATE_LOCK = threading.RLock()
 TASK_QUEUE = queue.Queue()
+TASK_QUEUE_IDS = set()
 WORKER_STARTED = False
 STATE = {"books": {}, "tasks": []}
 CONFIG_READY = False
@@ -81,6 +83,7 @@ def _load_state():
                 STATE = {"books": data.get("books", {}) or {}, "tasks": data.get("tasks", []) or []}
         except Exception:
             pass
+    _recover_incomplete_tasks()
     _sync_books_from_disk()
 
 
@@ -88,6 +91,29 @@ def _save_state():
     os.makedirs(os.path.dirname(_state_path()), exist_ok=True)
     with open(_state_path(), "w", encoding="utf-8") as f:
         json.dump(STATE, f, ensure_ascii=False, indent=2)
+
+
+def _recover_incomplete_tasks():
+    with STATE_LOCK:
+        active_book_ids = set()
+        for task in STATE.get("tasks", []):
+            if task.get("status") == "running":
+                task["status"] = "interrupted"
+                task["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                task["error"] = "Web 管理端重启，运行中的任务已中断，请重新加入队列"
+                continue
+            if task.get("status") == "queued":
+                task.setdefault("message", "服务重启后恢复排队")
+                _put_task_queue(task.get("id"))
+                active_book_ids.add(task.get("book_id"))
+
+        for book_id, book in STATE.get("books", {}).items():
+            if book_id in active_book_ids:
+                book["status"] = "queued"
+                book["message"] = "排队中"
+            elif book.get("status") == "running":
+                book["status"] = "interrupted"
+                book["message"] = "Web 管理端重启，任务已中断"
 
 
 def _book_id_from_path(path):
@@ -146,9 +172,36 @@ def _sync_books_from_disk():
 
 def _public_state():
     with STATE_LOCK:
-        books = sorted(STATE["books"].values(), key=lambda x: x.get("created_at", ""), reverse=True)
-        tasks = list(STATE["tasks"])
+        books = _with_queue_positions(sorted(STATE["books"].values(), key=lambda x: x.get("created_at", ""), reverse=True))
+        tasks = _with_queue_positions(list(STATE["tasks"]))
     return {"books": books, "tasks": tasks, "config_ready": CONFIG_READY, "profiles": profile_options(include_auto=True)}
+
+
+def _put_task_queue(task_id):
+    if not task_id or task_id in TASK_QUEUE_IDS:
+        return False
+    TASK_QUEUE_IDS.add(task_id)
+    TASK_QUEUE.put(task_id)
+    return True
+
+
+def _queued_task_positions():
+    queued = [task for task in STATE.get("tasks", []) if task.get("status") == "queued"]
+    queued.sort(key=lambda x: x.get("created_at", ""))
+    return {task.get("id"): index + 1 for index, task in enumerate(queued)}
+
+
+def _with_queue_positions(items):
+    positions = _queued_task_positions()
+    out = []
+    for item in items:
+        copied = dict(item)
+        task_id = copied.get("task_id") or copied.get("id")
+        if task_id in positions and copied.get("status") == "queued":
+            copied["queue_position"] = positions[task_id]
+            copied["message"] = f"排队中（第 {positions[task_id]} 位）"
+        out.append(copied)
+    return out
 
 
 def _is_safe_public_file(path):
@@ -174,13 +227,13 @@ def _find_book_outputs(book_id):
     outputs = []
     if not os.path.isdir(results_dir):
         return outputs
+    profile_names = [profile.name for profile in list_available_profiles()]
     patterns = [
         f"{book_id}扫书报告",
         f"{book_id}通用小说报告",
         f"{book_id}_GENERAL_SUMMARY_latest.json",
-        f"{book_id}_history_GENERAL_SUMMARY_latest.json",
-        f"{book_id}_hard_sci_fi_GENERAL_SUMMARY_latest.json",
     ]
+    patterns.extend(f"{book_id}_{name}_GENERAL_SUMMARY_latest.json" for name in profile_names if name != "general")
     for root, _dirs, files in os.walk(results_dir):
         for filename in files:
             path = os.path.join(root, filename)
@@ -206,7 +259,7 @@ def _book_detail(book_id):
     book["novel_file"] = _file_link(book.get("path"))
     _refresh_book_suggestions(book)
     book["outputs"] = _find_book_outputs(book_id)
-    book["tasks"] = sorted(tasks, key=lambda x: x.get("created_at", ""), reverse=True)
+    book["tasks"] = sorted(_with_queue_positions(tasks), key=lambda x: x.get("created_at", ""), reverse=True)
     book["profiles"] = profile_options(include_auto=True)
     return book
 
@@ -234,7 +287,7 @@ def _enqueue(book_id):
         book["task_id"] = task_id
         book["message"] = "排队中"
         _save_state()
-    TASK_QUEUE.put(task_id)
+    _put_task_queue(task_id)
     return True, task_id
 
 
@@ -248,6 +301,8 @@ def _find_task(task_id):
 def _worker_loop():
     while True:
         task_id = TASK_QUEUE.get()
+        with STATE_LOCK:
+            TASK_QUEUE_IDS.discard(task_id)
         with STATE_LOCK:
             task = _find_task(task_id)
             if not task:
@@ -435,7 +490,8 @@ async function showDetail(bookId) {
   const suggestions = renderSuggestions(book);
   const tasks = (book.tasks || []).map(t => {
     const log = t.log_file ? `<a href="${esc(t.log_file.url)}" target="_blank">日志</a>` : '';
-    return `<tr><td>${esc(t.id)}</td><td>${esc(t.profile)}</td><td>${esc(t.resolved_profile || '')}</td><td>${esc(t.status)}</td><td>${esc(t.created_at || '')}</td><td>${esc(t.finished_at || t.error || '')}</td><td>${log}</td></tr>`;
+    const status = t.queue_position ? `${t.status} #${t.queue_position}` : t.status;
+    return `<tr><td>${esc(t.id)}</td><td>${esc(t.profile)}</td><td>${esc(t.resolved_profile || '')}</td><td>${esc(status)}</td><td>${esc(t.created_at || '')}</td><td>${esc(t.finished_at || t.error || '')}</td><td>${log}</td></tr>`;
   }).join('') || '<tr><td colspan="7">暂无任务</td></tr>';
   document.getElementById('detail').innerHTML = `
     <h3>${esc(book.name)}</h3>
