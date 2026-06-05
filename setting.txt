@@ -27,3 +27,6 @@ RESCAN_MAX_WINDOW=2000
 
 # 单次全局补扫 prompt 最多带多少名女主；越大覆盖人物更多，但 prompt 会更拥挤
 RESCAN_MAX_PROMPT_HEROINES=4
+
+# 通用小说分析模式下使用：最多扫描多少个正文片段；0 表示不限制
+GENERAL_SCAN_MAX_CHUNKS=80

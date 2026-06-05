@@ -177,6 +177,19 @@ def find_detailed_json(book_key: str, base_dir: str = RESULTS_DIR, detail_path: 
     return find_latest("*_detailed_*.json", base_dir)
 
 
+def find_general_summary_json(book_key: str, base_dir: str = RESULTS_DIR):
+    if not book_key:
+        return find_latest("*_GENERAL_SUMMARY_latest.json", base_dir)
+    latest_path = os.path.join(base_dir, f"{book_key}_GENERAL_SUMMARY_latest.json")
+    if os.path.exists(latest_path):
+        return latest_path
+    paths = glob.glob(os.path.join(base_dir, "**", "GENERAL_SUMMARY.json"), recursive=True)
+    paths = [p for p in paths if book_key in os.path.basename(os.path.dirname(p))]
+    if paths:
+        return max(paths, key=os.path.getmtime)
+    return None
+
+
 def load_json(path):
     if not path or not os.path.exists(path):
         return None
@@ -1088,7 +1101,35 @@ def _general_character_rows(detailed_data: dict, limit=20):
     return chars[:limit]
 
 
-def build_general_report(book_key: str, detailed_data: dict) -> str:
+def _append_general_scan_section(lines: list, general_summary: dict):
+    summary = (general_summary or {}).get("summary") or {}
+    if not summary:
+        lines.extend(["", "【剧情与主题】", "未找到通用剧情扫描结果。"])
+        return
+
+    def add_list(title, items):
+        lines.extend(["", f"【{title}】"])
+        values = _clean_text_items(items or [], limit=10, max_len=180)
+        if values:
+            for item in values:
+                lines.append(f"- {item}")
+        else:
+            lines.append("未描述")
+
+    lines.extend(["", "【作品概览】"])
+    lines.append(summary.get("story_overview") or "未描述")
+    add_list("主线剧情", summary.get("main_plot"))
+    add_list("核心冲突", summary.get("core_conflicts"))
+    add_list("世界观/设定", summary.get("worldbuilding"))
+    add_list("主题表达", summary.get("themes"))
+    add_list("伏笔与回收", summary.get("foreshadowing_and_payoff"))
+    add_list("优点", summary.get("strengths"))
+    add_list("问题与阅读门槛", summary.get("risks_or_issues"))
+    lines.extend(["", "【适合读者】", summary.get("reader_fit") or "未描述"])
+    lines.extend(["", "【总体评价】", summary.get("overall_assessment") or "未描述"])
+
+
+def build_general_report(book_key: str, detailed_data: dict, general_summary: dict = None) -> str:
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     male_obj = (detailed_data or {}).get("male_protagonist") or {}
     male_name = male_obj.get("name") or "未识别"
@@ -1101,13 +1142,16 @@ def build_general_report(book_key: str, detailed_data: dict) -> str:
         f"报告生成时间：{ts}",
         "分析模式：通用小说分析",
         "=" * 60,
+    ]
+    _append_general_scan_section(lines, general_summary)
+    lines.extend([
         "",
-        "【作品概览】",
-        "本报告使用通用小说模板生成，关注核心角色、角色关系和关键事件；不执行后宫洁度、初处、漏女或排雷判定。",
+        "【分析标准】",
+        "本报告使用通用小说模板生成，关注核心角色、剧情、冲突、设定、主题和阅读体验；不执行后宫洁度、初处、漏女或排雷判定。",
         "",
         "【核心人物】",
         f"主角/视角核心：{male_name}",
-    ]
+    ])
     if male_aliases:
         lines.append(f"别名：{', '.join([str(x) for x in male_aliases[:8]])}")
     if male_obj.get("identity"):
@@ -1247,6 +1291,10 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     log_report(f"using detailed: {detailed_path or '<not found>'}")
     log_report(f"using reviewer: {reviewer_path or '<not found>'}")
     log_report(f"book key: {book_key or '<unknown>'}")
+    general_summary_path = find_general_summary_json(book_key) if profile.report_mode == "general" else None
+    general_summary = load_json(general_summary_path) if general_summary_path else None
+    if profile.report_mode == "general":
+        log_report(f"using general summary: {general_summary_path or '<not found>'}")
 
     resolved_book_name = (book_name or book_key or "").strip()
     if not resolved_book_name:
@@ -1324,7 +1372,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     # 按 profile 选择报告模板。harem 保持旧版男主→女主→毒/雷点。
     log_report("building report content...")
     if profile.report_mode == "general":
-        report = build_general_report(book_key, detailed_data)
+        report = build_general_report(book_key, detailed_data, general_summary)
     else:
         report = build_report_v2(book_key, detailed_data, reviewer)
     log_report(f"report content built, chars={len(report)}")

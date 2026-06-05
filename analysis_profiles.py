@@ -23,6 +23,10 @@ class AnalysisProfile:
     def uses_harem_reviewer(self) -> bool:
         return "harem_reviewer" in self.enabled_stages
 
+    @property
+    def uses_general_scan(self) -> bool:
+        return "general_scan" in self.enabled_stages
+
 
 def normalize_profile_name(value: str) -> str:
     name = (value or DEFAULT_PROFILE).strip().lower()

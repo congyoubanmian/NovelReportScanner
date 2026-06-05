@@ -305,6 +305,7 @@ def run():
     import protagonist
     import novel_scan
     import novel_reviewer
+    import general_scan
     import report
 
     total = len(novel_files)
@@ -321,7 +322,8 @@ def run():
         print("  3) novel_reviewer.py - 后宫毒点二审与洁度鉴定")
         print("  4) report.py        - 生成后宫专长报告")
     else:
-        print("  2) report.py        - 生成通用小说报告")
+        print("  2) general_scan.py  - 通用剧情/主题/设定扫描")
+        print("  3) report.py        - 生成通用小说报告")
     print()
 
     for novel_path in novel_files:
@@ -368,6 +370,13 @@ def run():
                 novel_reviewer.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path)
             except Exception as e:
                 print(f"[novel_reviewer] 异常: {e}")
+                status = "fail"
+
+        if status == "ok" and profile.uses_general_scan:
+            try:
+                general_scan.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path)
+            except Exception as e:
+                print(f"[general_scan] 异常: {e}")
                 status = "fail"
 
         if status == "ok":

@@ -31,6 +31,7 @@
 ├─ protagonist.py          # 角色识别与女主候选提取
 ├─ novel_scan.py           # 分块扫描正文，提取问题点和结构化事实
 ├─ novel_reviewer.py       # 二次复核与汇总结论生成
+├─ general_scan.py         # 通用小说剧情、冲突、主题、设定扫描
 ├─ report.py               # 生成最终面向阅读的报告
 ├─ shared_utils.py         # 共享配置、API 调用封装、通用工具
 ├─ text_anchor.py          # chunk manifest 与证据定位相关逻辑
@@ -126,7 +127,7 @@ RESCAN_MAX_PROMPT_HEROINES=4
 - `harem`：默认模式，保留原有男主、女主、初处、漏女、毒点/雷点分析流程。
 - `general`：通用小说分析入口，当前会运行角色识别并生成通用小说报告，不执行初处、漏女、后宫毒点二审。
 
-当前 `general` 模式已经会在角色明细 JSON 中输出通用 `characters` 列表；角色识别阶段仍兼容旧的女性角色识别逻辑，后续可在此基础上继续替换为真正的全角色/阵营/关系图抽取 prompt。
+当前 `general` 模式会运行通用角色识别，并继续执行 `general_scan.py` 抽取剧情主线、核心冲突、世界观设定、主题表达、伏笔回收、优点和问题。角色明细 JSON 中会输出通用 `characters` 列表。
 
 对应资源位于：
 
