@@ -6,7 +6,7 @@ import time
 import uuid
 import warnings
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 warnings.filterwarnings("ignore", category=DeprecationWarning, message="'cgi' is deprecated*")
 import cgi
@@ -86,6 +86,61 @@ def _public_state():
         books = sorted(STATE["books"].values(), key=lambda x: x.get("created_at", ""), reverse=True)
         tasks = list(STATE["tasks"])
     return {"books": books, "tasks": tasks, "config_ready": CONFIG_READY}
+
+
+def _is_safe_public_file(path):
+    if not path:
+        return False
+    base = os.path.abspath(get_base_dir())
+    allowed = [
+        os.path.abspath(os.path.join(base, "results")),
+        os.path.abspath(os.path.join(base, "novels")),
+    ]
+    ap = os.path.abspath(path)
+    return any(ap == root or ap.startswith(root + os.sep) for root in allowed) and os.path.isfile(ap)
+
+
+def _file_link(path):
+    if not _is_safe_public_file(path):
+        return None
+    return {"path": path, "name": os.path.basename(path), "url": f"/files?path={quote(path)}"}
+
+
+def _find_book_outputs(book_id):
+    results_dir = os.path.join(get_base_dir(), "results")
+    outputs = []
+    if not os.path.isdir(results_dir):
+        return outputs
+    patterns = [
+        f"{book_id}扫书报告",
+        f"{book_id}通用小说报告",
+        f"{book_id}_GENERAL_SUMMARY_latest.json",
+        f"{book_id}_history_GENERAL_SUMMARY_latest.json",
+        f"{book_id}_hard_sci_fi_GENERAL_SUMMARY_latest.json",
+    ]
+    for root, _dirs, files in os.walk(results_dir):
+        for filename in files:
+            path = os.path.join(root, filename)
+            parent = os.path.basename(root)
+            if any(p in filename for p in patterns) or book_id in parent and filename in {"GENERAL_SUMMARY.json", "VERIFIED_REPORT.txt", "FULL_REPORT.txt"}:
+                link = _file_link(path)
+                if link:
+                    link["mtime"] = os.path.getmtime(path)
+                    outputs.append(link)
+    outputs.sort(key=lambda x: x.get("mtime", 0), reverse=True)
+    return outputs[:20]
+
+
+def _book_detail(book_id):
+    with STATE_LOCK:
+        book = dict(STATE["books"].get(book_id) or {})
+        tasks = [dict(t) for t in STATE["tasks"] if t.get("book_id") == book_id]
+    if not book:
+        return None
+    book["novel_file"] = _file_link(book.get("path"))
+    book["outputs"] = _find_book_outputs(book_id)
+    book["tasks"] = sorted(tasks, key=lambda x: x.get("created_at", ""), reverse=True)
+    return book
 
 
 def _enqueue(book_id):
@@ -234,6 +289,10 @@ HTML = r"""<!doctype html>
       <tbody id="books"></tbody>
     </table>
   </section>
+  <section>
+    <h2>书籍详情</h2>
+    <div id="detail" class="muted">点击书籍列表中的“详情”查看任务历史和输出文件。</div>
+  </section>
 </main>
 <script>
 const profiles = [
@@ -257,7 +316,7 @@ async function refresh() {
       <td><select data-profile="${esc(book.id)}" ${disabled}>${opts}</select></td>
       <td class="status">${esc(book.status || 'idle')}</td>
       <td class="muted">${esc(book.message || '')}</td>
-      <td><button data-scan="${esc(book.id)}" ${disabled}>加入队列</button></td>
+      <td><button data-scan="${esc(book.id)}" ${disabled}>加入队列</button> <button data-detail="${esc(book.id)}">详情</button></td>
     </tr>`;
   }).join('');
   document.querySelectorAll('[data-profile]').forEach(sel => {
@@ -266,6 +325,23 @@ async function refresh() {
   document.querySelectorAll('[data-scan]').forEach(btn => {
     btn.onclick = () => api('/api/enqueue', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({book_id: btn.dataset.scan})}).then(refresh);
   });
+  document.querySelectorAll('[data-detail]').forEach(btn => {
+    btn.onclick = () => showDetail(btn.dataset.detail);
+  });
+}
+async function showDetail(bookId) {
+  const book = await api('/api/book?id=' + encodeURIComponent(bookId));
+  const outputs = (book.outputs || []).map(f => `<li><a href="${esc(f.url)}" target="_blank">${esc(f.name)}</a></li>`).join('') || '<li>暂无输出文件</li>';
+  const tasks = (book.tasks || []).map(t => `<tr><td>${esc(t.id)}</td><td>${esc(t.profile)}</td><td>${esc(t.status)}</td><td>${esc(t.created_at || '')}</td><td>${esc(t.finished_at || t.error || '')}</td></tr>`).join('') || '<tr><td colspan="5">暂无任务</td></tr>';
+  document.getElementById('detail').innerHTML = `
+    <h3>${esc(book.name)}</h3>
+    <p>当前分类：${esc(book.profile)}；实际扫描分类：${esc(book.active_profile || '')}；状态：${esc(book.status)}</p>
+    <p>路径：${esc(book.path)}</p>
+    <h4>输出文件</h4>
+    <ul>${outputs}</ul>
+    <h4>任务历史</h4>
+    <table><thead><tr><th>任务</th><th>分类</th><th>状态</th><th>创建</th><th>结束/错误</th></tr></thead><tbody>${tasks}</tbody></table>
+  `;
 }
 refresh();
 setInterval(refresh, 3000);
@@ -302,6 +378,34 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/state":
             _sync_books_from_disk()
             self._send_json(_public_state())
+            return
+        if parsed.path == "/api/book":
+            params = parse_qs(parsed.query)
+            book_id = (params.get("id") or [""])[0]
+            detail = _book_detail(book_id)
+            if not detail:
+                self._send_json({"error": "book not found"}, 404)
+                return
+            self._send_json(detail)
+            return
+        if parsed.path == "/files":
+            params = parse_qs(parsed.query)
+            path = unquote((params.get("path") or [""])[0])
+            if not _is_safe_public_file(path):
+                self.send_error(403, "file is not allowed")
+                return
+            try:
+                with open(path, "rb") as f:
+                    body = f.read()
+            except OSError:
+                self.send_error(404)
+                return
+            content_type = "application/json; charset=utf-8" if path.lower().endswith(".json") else "text/plain; charset=utf-8"
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
             return
         self.send_error(404)
 

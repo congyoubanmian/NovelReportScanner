@@ -55,6 +55,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(web_manager._safe_filename("../坏:名字"), "坏_名字.txt")
         self.assertEqual(web_manager._safe_filename("book.txt"), "book.txt")
 
+    def test_web_manager_public_file_guard(self):
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
+            f.write("secret")
+            outside_path = f.name
+        try:
+            self.assertFalse(web_manager._is_safe_public_file(outside_path))
+        finally:
+            os.unlink(outside_path)
+
     def test_general_report_uses_story_summary_and_characters(self):
         general_summary = {
             "profile_display_name": "历史小说专长分析",

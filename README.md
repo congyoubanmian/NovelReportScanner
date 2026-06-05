@@ -97,6 +97,7 @@ Web 管理端能力：
 - 上传 `.txt` 小说到 `novels/`。
 - 为每本书选择 `auto`、`harem`、`general`、`history`、`hard_sci_fi`。
 - 单 worker 串行扫描：后台一次只扫一本书，未轮到的显示“排队中”。
+- 查看每本书详情、任务历史、最近输出报告和 summary 文件。
 - 状态持久化到 `results/web_manager_state.json`。
 
 也可以通过环境变量改监听地址：
