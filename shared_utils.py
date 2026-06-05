@@ -40,7 +40,14 @@ BASE_URL = os.environ.get("BASE_URL", "https://api.deepseek.com")
 MODEL = os.environ.get("MODEL_NAME", "deepseek-chat")
 BASE_DIR = get_base_dir()
 SCAN_RESULTS_DIR = os.environ.get("SCAN_RESULTS_DIR", os.path.join(BASE_DIR, "results"))
-RULES_FILE = os.path.join(BASE_DIR, "rules2.json")
+RULES_FILE = os.environ.get("ANALYSIS_RULES_FILE") or os.path.join(
+    BASE_DIR,
+    "profiles",
+    os.environ.get("ANALYSIS_PROFILE", "harem"),
+    "rules.json",
+)
+if not os.path.exists(RULES_FILE):
+    RULES_FILE = os.path.join(BASE_DIR, "rules2.json")
 # 并发线程数：环境值 + 4（默认 8+4=12）
 _base_workers = int(os.environ.get("MAX_WORKERS", "8"))
 MAX_WORKERS = _base_workers + 4

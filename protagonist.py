@@ -3724,12 +3724,22 @@ def generate_final_report(heroine_result, merged_stats, male_protagonist=None):
 def export_results(merged_stats, heroine_result, final_report, male_protagonist=None, filename_prefix="heroine_analysis"):
     """导出最终结果"""
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    try:
+        from analysis_profiles import load_analysis_profile
+
+        active_profile = load_analysis_profile()
+        profile_name = active_profile.name
+    except Exception:
+        profile_name = os.environ.get("ANALYSIS_PROFILE", "harem")
     
     # 详细数据 JSON
     detailed_data = {
+        "schema_version": 2,
+        "analysis_profile": profile_name,
         "analysis_time": timestamp_str,
         "male_protagonist": male_protagonist,
         "heroine_result": heroine_result,
+        "characters": [],
         "all_female_characters": {}
     }
     
@@ -3744,6 +3754,22 @@ def export_results(merged_stats, heroine_result, final_report, male_protagonist=
             return [s[1] for s in sorted_data]
         return raw_data
     
+    if male_protagonist:
+        detailed_data["characters"].append({
+            "name": male_protagonist.get("name"),
+            "aliases": list(male_protagonist.get("other_names", [])),
+            "gender": "male",
+            "role_type": "protagonist",
+            "importance": 10.0,
+            "count": male_protagonist.get("count", 0),
+            "identity": male_protagonist.get("identity", ""),
+            "relationships": [],
+            "key_events": extract_sorted_content(male_protagonist.get("summaries", [])),
+            "features": [],
+        })
+
+    heroine_names = {h.get("name") for h in heroine_result.get("heroines", []) if h.get("name")}
+
     for name, data in merged_stats.items():
         avg_score = data['total_score'] / data['count'] if data['count'] > 0 else 0
         
@@ -3751,18 +3777,35 @@ def export_results(merged_stats, heroine_result, final_report, male_protagonist=
         all_summaries = extract_sorted_content(data.get('summaries', []))
         all_interactions = extract_sorted_content(data.get('interactions', []))
         all_emotions = extract_sorted_content(data.get('emotion_signals', []))
+        other_names = list(data.get('other_names', set()))
+        relationships = data.get('relationships', [])
+        features = data.get('features', [])
         
         detailed_data["all_female_characters"][name] = {
             "avg_score": avg_score,
             "count": data['count'],
             "total_score": data['total_score'],
-            "other_names": list(data.get('other_names', set())),
+            "other_names": other_names,
             "summaries": all_summaries,  # 保留全部（按时间排序）
-            "features": data.get('features', []),
-            "relationships": data.get('relationships', []),
+            "features": features,
+            "relationships": relationships,
             "interactions": all_interactions,  # 保留全部（按时间排序）
             "emotion_signals": all_emotions  # 保留全部（按时间排序）
         }
+        detailed_data["characters"].append({
+            "name": name,
+            "aliases": other_names,
+            "gender": "female",
+            "role_type": "heroine" if name in heroine_names else "supporting",
+            "importance": avg_score,
+            "count": data["count"],
+            "identity": "",
+            "relationships": relationships,
+            "key_events": all_summaries,
+            "features": features,
+            "interactions": all_interactions,
+            "emotion_signals": all_emotions,
+        })
     
     detailed_file = f"{OUTPUT_DIR}/{filename_prefix}_detailed_{timestamp_str}.json"
     with open(detailed_file, 'w', encoding='utf-8') as f:

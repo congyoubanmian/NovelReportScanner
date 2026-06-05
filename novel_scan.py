@@ -50,7 +50,14 @@ RESCAN_PRE_FILTER_THRESHOLD = float(os.environ.get("RESCAN_PRE_FILTER_THRESHOLD"
 RESCAN_MAX_WINDOW = int(os.environ.get("RESCAN_MAX_WINDOW", "2000"))
 RESCAN_MAX_PROMPT_HEROINES = int(os.environ.get("RESCAN_MAX_PROMPT_HEROINES", "4"))
 
-RULES_FILE = os.path.join(get_base_dir(), "rules2.json")
+RULES_FILE = os.environ.get("ANALYSIS_RULES_FILE") or os.path.join(
+    get_base_dir(),
+    "profiles",
+    os.environ.get("ANALYSIS_PROFILE", "harem"),
+    "rules.json",
+)
+if not os.path.exists(RULES_FILE):
+    RULES_FILE = os.path.join(get_base_dir(), "rules2.json")
 LEARNED_KEYWORDS_DIR = os.path.join(get_base_dir(), "results", "learned_keywords")
 SEED_FILE = os.path.join(LEARNED_KEYWORDS_DIR, "seed.json")
 

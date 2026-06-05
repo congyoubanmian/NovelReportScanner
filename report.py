@@ -12,6 +12,7 @@ import logging
 from Timerror import make_chat_completion
 from shared_utils import get_base_dir, read_file_safely
 from token_tracker import create_default_tracker
+from analysis_profiles import load_analysis_profile
 
 try:
     from openai import OpenAI
@@ -1025,6 +1026,135 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
     return "\n".join([*header, "", *male_lines, *heroine_lines, *risk_lines])
 
 
+def _clean_text_items(items, limit=5, max_len=120):
+    out = []
+    for item in items or []:
+        text = str(item).strip()
+        if not text:
+            continue
+        if len(text) > max_len:
+            text = text[:max_len].rstrip() + "..."
+        out.append(text)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _general_character_rows(detailed_data: dict, limit=20):
+    chars = []
+    for info in (detailed_data or {}).get("characters") or []:
+        if not isinstance(info, dict):
+            continue
+        name = info.get("name")
+        if not name or info.get("role_type") == "protagonist":
+            continue
+        chars.append(
+            {
+                "name": name,
+                "aliases": info.get("aliases") or [],
+                "importance": float(info.get("importance") or 0),
+                "count": int(info.get("count") or 0),
+                "role_type": info.get("role_type") or "supporting",
+                "identity": info.get("identity") or "未描述",
+                "summaries": _clean_text_items(info.get("key_events") or [], limit=3),
+                "relationships": _clean_text_items(info.get("relationships") or [], limit=3),
+                "features": _clean_text_items(info.get("features") or [], limit=3),
+            }
+        )
+    if chars:
+        chars.sort(key=lambda x: (x["importance"], x["count"]), reverse=True)
+        return chars[:limit]
+
+    all_female_characters = (detailed_data or {}).get("all_female_characters") or {}
+    for name, info in all_female_characters.items():
+        if not name or not isinstance(info, dict):
+            continue
+        chars.append(
+            {
+                "name": name,
+                "aliases": info.get("other_names") or [],
+                "importance": float(info.get("avg_score") or 0),
+                "count": int(info.get("count") or 0),
+                "role_type": "supporting",
+                "identity": _pick_first_str(info.get("relationships") or info.get("features") or [], "未描述"),
+                "summaries": _clean_text_items(info.get("summaries") or [], limit=3),
+                "relationships": _clean_text_items(info.get("relationships") or [], limit=3),
+                "features": _clean_text_items(info.get("features") or [], limit=3),
+            }
+        )
+    chars.sort(key=lambda x: (x["importance"], x["count"]), reverse=True)
+    return chars[:limit]
+
+
+def build_general_report(book_key: str, detailed_data: dict) -> str:
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    male_obj = (detailed_data or {}).get("male_protagonist") or {}
+    male_name = male_obj.get("name") or "未识别"
+    male_aliases = male_obj.get("other_names") or male_obj.get("aliases") or []
+    male_summaries = _clean_text_items(male_obj.get("summaries") or [], limit=5, max_len=140)
+    characters = _general_character_rows(detailed_data)
+
+    lines = [
+        f"书名：{book_key or '未识别'}",
+        f"报告生成时间：{ts}",
+        "分析模式：通用小说分析",
+        "=" * 60,
+        "",
+        "【作品概览】",
+        "本报告使用通用小说模板生成，关注核心角色、角色关系和关键事件；不执行后宫洁度、初处、漏女或排雷判定。",
+        "",
+        "【核心人物】",
+        f"主角/视角核心：{male_name}",
+    ]
+    if male_aliases:
+        lines.append(f"别名：{', '.join([str(x) for x in male_aliases[:8]])}")
+    if male_obj.get("identity"):
+        lines.append(f"身份：{male_obj.get('identity')}")
+    if male_summaries:
+        lines.append("主要经历：")
+        for item in male_summaries:
+            lines.append(f"- {item}")
+    else:
+        lines.append("主要经历：未描述")
+
+    lines.extend(["", "【重要角色】"])
+    if characters:
+        for idx, char in enumerate(characters, 1):
+            lines.extend(
+                [
+                    "",
+                    f"{idx}. {char['name']}",
+                    f"角色类型：{char.get('role_type', 'supporting')} | 重要度：{char['importance']:.1f} | 出现次数：{char['count']}",
+                ]
+            )
+            if char["aliases"]:
+                lines.append(f"别名：{', '.join([str(x) for x in char['aliases'][:8]])}")
+            if char["relationships"]:
+                lines.append("关系/身份线索：")
+                for item in char["relationships"]:
+                    lines.append(f"- {item}")
+            if char["features"]:
+                lines.append("特征：")
+                for item in char["features"]:
+                    lines.append(f"- {item}")
+            if char["summaries"]:
+                lines.append("关键事件：")
+                for item in char["summaries"]:
+                    lines.append(f"- {item}")
+    else:
+        lines.append("未识别到足够稳定的重要角色。")
+
+    lines.extend(
+        [
+            "",
+            "【后续扩展位】",
+            "通用 profile 已预留剧情主线、冲突结构、世界观设定、主题表达、节奏评价和类型专长分析入口。",
+            "如果需要历史、硬科幻、悬疑等专项分析，可以在 profiles/ 下新增对应 profile 并接入专用扫描和报告模板。",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def polish_text(text: str, model: str = None):
     if not OpenAI:
         print("未安装 openai，跳过润色。")
@@ -1054,6 +1184,7 @@ def polish_text(text: str, model: str = None):
 def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     global _REPORT_LOGGER
     _REPORT_LOGGER = None
+    profile = load_analysis_profile(os.environ.get("ANALYSIS_PROFILE"))
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--polish", action="store_true", help="调用大模型润色输出（已默认开启）")
@@ -1071,6 +1202,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         f"args: force_regenerate={args.force_regenerate}, "
         f"skip_existing={args.skip_existing}, polish={args.polish}, no_polish={args.no_polish}"
     )
+    log_report(f"analysis profile: {profile.display_name} ({profile.name})")
 
     # 每次调用重新读取 NOVEL_PATH（支持多本小说循环）
     novel_path_env = os.environ.get("NOVEL_PATH")
@@ -1078,9 +1210,9 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     if novel_path_env:
         env_book_key = os.path.splitext(os.path.basename(novel_path_env))[0].strip()
 
-    # 查找数据文件
-    reviewer_path = find_latest("VERIFIED_SUMMARY_*.json")
-    reviewer = load_json(reviewer_path)
+    # 查找数据文件。通用模式不依赖后宫 reviewer，避免误读其他书的 VERIFIED_SUMMARY。
+    reviewer_path = None if profile.report_mode == "general" else find_latest("VERIFIED_SUMMARY_*.json")
+    reviewer = None if profile.report_mode == "general" else load_json(reviewer_path)
     
     # 先从环境变量/文件名尝试推断书名；若 reviewer 是 VERIFIED_SUMMARY_*.json，则需要进一步纠正
     book_key = env_book_key or extract_book_key_from_path(reviewer_path)
@@ -1135,7 +1267,10 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         log_report(f"cleaned {removed_legacy_keys} legacy checkpoint keys")
         save_report_checkpoint(checkpoint_data)
 
-    checkpoint_hit = jobs.get(book_key, {}) if isinstance(jobs, dict) else {}
+    report_job_key = f"{profile.name}::{book_key}" if book_key else profile.name
+    checkpoint_hit = jobs.get(report_job_key) if isinstance(jobs, dict) else None
+    if not isinstance(checkpoint_hit, dict) and profile.name == "harem":
+        checkpoint_hit = jobs.get(book_key, {}) if isinstance(jobs, dict) else {}
     if not isinstance(checkpoint_hit, dict):
         checkpoint_hit = {}
     checkpoint_status = checkpoint_hit.get("status")
@@ -1164,12 +1299,13 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         # 兼容旧命名和新命名
         title_for_file = format_book_title_for_filename(book_key)
         title_wrapped = f"《{book_key}》" if book_key else ""
+        report_suffix = "通用小说报告" if profile.report_mode == "general" else "扫书报告"
         patterns = [
             os.path.join(RESULTS_DIR, f"AGGREGATED_REPORT_{book_key_safe}_*.txt"),
             # 旧：总是外层包《》
             os.path.join(RESULTS_DIR, f"{title_wrapped}扫书报告*.txt") if title_wrapped else "",
             # 新：如果 book_key 本身已包含《》，则不再外包
-            os.path.join(RESULTS_DIR, f"{title_for_file}扫书报告*.txt") if title_for_file else "",
+            os.path.join(RESULTS_DIR, f"{title_for_file}{report_suffix}*.txt") if title_for_file else "",
         ]
         existing_reports = []
         for p in patterns:
@@ -1181,16 +1317,20 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
             log_report(f"★ 已找到该书的聚合报告，跳过生成：{existing_reports[-1]}")
             return
 
-    # 新版报告：男主→女主→毒/雷点（毒/雷点不润色）
+    # 按 profile 选择报告模板。harem 保持旧版男主→女主→毒/雷点。
     log_report("building report content...")
-    report = build_report_v2(book_key, detailed_data, reviewer)
+    if profile.report_mode == "general":
+        report = build_general_report(book_key, detailed_data)
+    else:
+        report = build_report_v2(book_key, detailed_data, reviewer)
     log_report(f"report content built, chars={len(report)}")
 
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     if book_key:
         # 新命名： <书名>扫书报告_时间戳.txt（避免《《书名》...》双层括号）
         title_for_file = format_book_title_for_filename(book_key)
-        out_file = os.path.join(RESULTS_DIR, f"{title_for_file}扫书报告_{ts}.txt")
+        suffix = "通用小说报告" if profile.report_mode == "general" else "扫书报告"
+        out_file = os.path.join(RESULTS_DIR, f"{title_for_file}{suffix}_{ts}.txt")
     else:
         out_file = os.path.join(RESULTS_DIR, f"AGGREGATED_REPORT_{ts}.txt")
     os.makedirs(os.path.dirname(out_file), exist_ok=True)
@@ -1198,8 +1338,9 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         f.write(report)
     log_report(f"report written: {out_file}")
 
-    checkpoint_data.setdefault("jobs", {})[book_key] = {
+    checkpoint_data.setdefault("jobs", {})[report_job_key] = {
         "book_key": book_key,
+        "profile": profile.name,
         "status": "completed",
         "reviewer_mtime": _safe_mtime(reviewer_path),
         "out_file": out_file,

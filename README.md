@@ -6,17 +6,18 @@
 
 # 小说扫书分析工具
 
-一个面向男性向长篇小说 `.txt` 文本的多阶段分析流水线。项目会按顺序完成角色识别、正文深度扫描、结果复核和最终报告生成，并把中间产物与可读报告统一输出到 `results/` 目录。
+一个面向长篇小说 `.txt` 文本的多阶段分析流水线。项目会按配置的分析模式完成角色识别、正文扫描、结果复核和最终报告生成，并把中间产物与可读报告统一输出到 `results/` 目录。
 
-这个仓库当前更适合已经明确知道自己要分析什么文本、并且可以提供 OpenAI 兼容接口的使用者。它不是一个通用文学分析框架，而是一个围绕“扫书、排雷、角色事实提取、最终汇总”打磨出来的实用型项目。
+默认模式仍然保留原有“男性向/后宫扫书、排雷、女主事实提取、最终汇总”能力；同时新增 `general` 通用小说分析入口，用于后续扩展剧情、主题、设定、历史、硬科幻等专项分析。
 
 ## 核心能力
 
 - 批量扫描 `novels/` 目录下的所有小说 `.txt` 文件。
-- 自动识别男主、女主候选及其别名，并输出角色中间结果。
-- 按分块方式扫描全书正文，提取雷点、郁闷点和角色相关事实。
-- 在 reviewer 阶段对扫描结果做二次复核，生成更稳定的汇总结论。
-- 自动生成最终可读的扫书报告文本。
+- 自动识别核心角色、后宫模式下的男主/女主候选及其别名，并输出角色中间结果。
+- `harem` 模式按分块方式扫描全书正文，提取雷点、郁闷点和女主相关事实。
+- `harem` 模式在 reviewer 阶段对扫描结果做二次复核，生成更稳定的洁度和毒点结论。
+- `general` 模式跳过后宫毒点二审，基于角色识别产物生成通用小说报告。
+- 自动生成最终可读的报告文本。
 - 记录阶段性中间文件、断点信息、日志和 token 使用情况。
 - Windows 下可直接通过 `main.bat` 启动，并在首次运行时自动创建 `.venv`。
 
@@ -34,6 +35,8 @@
 ├─ shared_utils.py         # 共享配置、API 调用封装、通用工具
 ├─ text_anchor.py          # chunk manifest 与证据定位相关逻辑
 ├─ token_tracker.py        # token 统计
+├─ analysis_profiles.py    # 分析 profile 加载与流程能力描述
+├─ profiles/               # 不同小说类型/分析模式的规则和模板入口
 ├─ rules2.json             # 规则库，定义雷点/郁闷点及其说明
 ├─ setting.txt             # 运行配置
 ├─ api.txt                 # API Key 列表，每行一个
@@ -96,6 +99,7 @@ sk-your-key-2
 BASE_URL=https://api.deepseek.com
 MODEL_NAME=deepseek-chat
 MAX_WORKERS=6
+ANALYSIS_PROFILE=harem
 RPM_LIMIT=10
 TPM_LIMIT=100000
 DIM_BOOST_MAX_PER_CHUNK=3
@@ -112,7 +116,29 @@ RESCAN_MAX_PROMPT_HEROINES=4
 - `BASE_URL`：OpenAI 兼容接口地址。
 - `MODEL_NAME`：调用的模型名称。
 - `MAX_WORKERS`：并发规模基线。
+- `ANALYSIS_PROFILE`：分析模式。`harem` 为默认后宫/男性向排雷模式；`general` 为通用小说分析入口。
 - `RPM_LIMIT` / `TPM_LIMIT`：限流相关配置。
+
+### 分析模式
+
+项目现在通过 `ANALYSIS_PROFILE` 区分不同分析模式：
+
+- `harem`：默认模式，保留原有男主、女主、初处、漏女、毒点/雷点分析流程。
+- `general`：通用小说分析入口，当前会运行角色识别并生成通用小说报告，不执行初处、漏女、后宫毒点二审。
+
+对应资源位于：
+
+```text
+profiles/
+├─ harem/
+│  ├─ profile.json
+│  └─ rules.json
+└─ general/
+   ├─ profile.json
+   └─ rules.json
+```
+
+旧的 `rules2.json` 仍然保留，用于兼容历史路径；新的后宫规则主路径是 `profiles/harem/rules.json`。
 
 其余几个 `RESCAN_*`、`DIM_BOOST_*`、`MAX_MIDDLE_SUMMARY_CALLS` 主要用于扫描阶段的补扫和增强策略，属于进阶调优项。
 

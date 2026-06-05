@@ -1,5 +1,7 @@
 BASE_URL=https://api.siliconflow.cn/v1
 MODEL_NAME=deepseek-ai/DeepSeek-V3.2
+# 分析模式：harem=后宫/男性向排雷（默认，保留初处/漏女/毒点流程）；general=通用小说分析
+ANALYSIS_PROFILE=harem
 MAX_WORKERS=3
 RPM_LIMIT=10
 TPM_LIMIT=100000
@@ -25,4 +27,3 @@ RESCAN_MAX_WINDOW=2000
 
 # 单次全局补扫 prompt 最多带多少名女主；越大覆盖人物更多，但 prompt 会更拥挤
 RESCAN_MAX_PROMPT_HEROINES=4
-

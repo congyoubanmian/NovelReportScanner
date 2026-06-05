@@ -1,0 +1,11 @@
+{
+  "name": "general",
+  "display_name": "通用小说分析",
+  "description": "面向非后宫小说的通用分析入口，当前复用角色识别产物生成核心角色报告，后续可扩展剧情、主题、设定、结构和类型专长分析。",
+  "enabled_stages": [
+    "character_analysis",
+    "general_report"
+  ],
+  "rules_file": "rules.json",
+  "report_mode": "general"
+}

@@ -1,0 +1,13 @@
+{
+  "name": "harem",
+  "display_name": "后宫/男性向排雷分析",
+  "description": "保留当前男主、女主、初处、漏女、毒点/雷点体系，作为后宫类小说的专长分析 profile。",
+  "enabled_stages": [
+    "character_analysis",
+    "harem_scan",
+    "harem_reviewer",
+    "harem_report"
+  ],
+  "rules_file": "rules.json",
+  "report_mode": "harem"
+}

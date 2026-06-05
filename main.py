@@ -14,6 +14,7 @@ import uuid
 _DEFAULT_ENV_SETTINGS = {
     "BASE_URL": "https://api.deepseek.com",
     "MODEL_NAME": "deepseek-chat",
+    "ANALYSIS_PROFILE": "harem",
     "MAX_WORKERS": "6",
     "DIM_BOOST_MAX_PER_CHUNK": "3",
     "RESCAN_ROUNDS": "3",
@@ -23,7 +24,7 @@ _DEFAULT_ENV_SETTINGS = {
     "RESCAN_MAX_WINDOW": "2000",
     "RESCAN_MAX_PROMPT_HEROINES": "4",
 }
-_PASSTHROUGH_SETTING_KEYS = {"BASE_URL", "MODEL_NAME", "MAX_WORKERS", "RPM_LIMIT", "TPM_LIMIT"}
+_PASSTHROUGH_SETTING_KEYS = {"BASE_URL", "MODEL_NAME", "ANALYSIS_PROFILE", "MAX_WORKERS", "RPM_LIMIT", "TPM_LIMIT"}
 _VALIDATED_NON_NEGATIVE_INT_KEYS = {
     "DIM_BOOST_MAX_PER_CHUNK": _DEFAULT_ENV_SETTINGS["DIM_BOOST_MAX_PER_CHUNK"],
     "RESCAN_ROUNDS": _DEFAULT_ENV_SETTINGS["RESCAN_ROUNDS"],
@@ -121,11 +122,26 @@ def load_configs(base_dir):
     os.environ["API_KEY_POOL"] = ",".join(keys)
     os.environ["API_KEY"] = keys[0]
 
+    try:
+        from analysis_profiles import load_analysis_profile
+
+        profile = load_analysis_profile(os.environ.get("ANALYSIS_PROFILE"))
+        os.environ["ANALYSIS_PROFILE"] = profile.name
+        os.environ["ANALYSIS_RULES_FILE"] = profile.rules_file
+    except Exception as exc:
+        profile = None
+        print(f"[WARN] 加载分析 profile 失败，继续使用默认配置: {exc}")
+
     print(
         f"配置已加载：BASE_URL={os.environ['BASE_URL']}  "
         f"MODEL_NAME={os.environ['MODEL_NAME']}  "
         f"MAX_WORKERS={os.environ['MAX_WORKERS']}"
     )
+    if profile is not None:
+        print(
+            f"分析模式：{profile.display_name} ({profile.name})  "
+            f"规则文件={profile.rules_file}"
+        )
     print(
         f"扫描调优配置：DIM_BOOST_MAX_PER_CHUNK={os.environ['DIM_BOOST_MAX_PER_CHUNK']}  "
         f"RESCAN_ROUNDS={os.environ['RESCAN_ROUNDS']}  "
@@ -173,7 +189,11 @@ def _read_json_safely(file_path):
         return None
 
 
-def _report_is_fresh(base_dir, book_name):
+def _report_job_key(book_name, profile_name):
+    return f"{profile_name}::{book_name}" if profile_name else book_name
+
+
+def _report_is_fresh(base_dir, book_name, profile_name=None):
     checkpoint_path = os.path.join(base_dir, "results", "report_checkpoint.json")
     checkpoint_data = _read_json_safely(checkpoint_path)
     if not isinstance(checkpoint_data, dict):
@@ -183,7 +203,9 @@ def _report_is_fresh(base_dir, book_name):
     if not isinstance(jobs, dict):
         return False, None
 
-    job = jobs.get(book_name)
+    job = jobs.get(_report_job_key(book_name, profile_name))
+    if not isinstance(job, dict) and (profile_name in (None, "harem")):
+        job = jobs.get(book_name)
     if not isinstance(job, dict):
         return False, None
     if job.get("status") != "completed":
@@ -273,6 +295,11 @@ def run():
     print()
 
     load_configs(base_dir)
+    from analysis_profiles import load_analysis_profile
+
+    profile = load_analysis_profile(os.environ.get("ANALYSIS_PROFILE"))
+    os.environ["ANALYSIS_PROFILE"] = profile.name
+    os.environ["ANALYSIS_RULES_FILE"] = profile.rules_file
     novel_files = scan_novels(base_dir)
 
     import protagonist
@@ -287,11 +314,14 @@ def run():
 
     print_pending_novels(novel_files)
 
-    print(f"扫描 novels 目录下所有 txt，共 {total} 本，依次运行：")
-    print("  1) protagonist.py   - 主角识别")
-    print("  2) novel_scan.py    - 深度扫描")
-    print("  3) novel_reviewer.py - 毒点二审")
-    print("  4) report.py        - 生成报告")
+    print(f"扫描 novels 目录下所有 txt，共 {total} 本，分析模式：{profile.display_name} ({profile.name})")
+    print("  1) protagonist.py   - 角色识别")
+    if profile.uses_harem_reviewer:
+        print("  2) novel_scan.py    - 后宫/排雷深度扫描")
+        print("  3) novel_reviewer.py - 后宫毒点二审与洁度鉴定")
+        print("  4) report.py        - 生成后宫专长报告")
+    else:
+        print("  2) report.py        - 生成通用小说报告")
     print()
 
     for novel_path in novel_files:
@@ -302,7 +332,7 @@ def run():
         print(f"正在处理: {os.path.basename(novel_path)}")
         print(f"NOVEL_PATH={novel_path}")
 
-        should_skip, out_file = _report_is_fresh(base_dir, book_name)
+        should_skip, out_file = _report_is_fresh(base_dir, book_name, profile.name)
         if should_skip:
             skipped += 1
             print(f"★ 检测到该书报告已正常生成，跳过后续流程：{out_file}")
@@ -326,14 +356,14 @@ def run():
         if status == "ok":
             detail_path = _get_working_detail_path(protagonist, book_name)
 
-        if status == "ok":
+        if status == "ok" and profile.uses_harem_reviewer:
             try:
                 novel_scan.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path)
             except Exception as e:
                 print(f"[novel_scan] 异常: {e}")
                 status = "fail"
 
-        if status == "ok":
+        if status == "ok" and profile.uses_harem_reviewer:
             try:
                 novel_reviewer.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path)
             except Exception as e:
