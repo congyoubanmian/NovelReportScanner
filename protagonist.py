@@ -47,11 +47,34 @@ OUTPUT_DIR = None
 logger = logging.getLogger(__name__)
 
 
+def _get_active_profile():
+    try:
+        from analysis_profiles import load_analysis_profile
+
+        return load_analysis_profile(os.environ.get("ANALYSIS_PROFILE"))
+    except Exception:
+        return None
+
+
+def _is_general_profile():
+    profile = _get_active_profile()
+    return bool(profile and profile.name == "general")
+
+
+def _role_stage_label():
+    return "通用角色识别" if _is_general_profile() else "男主/女主识别"
+
+
 def find_latest_checkpoint_dir(prefix: str):
     safe_prefix = glob.escape(prefix)
     results_dir = os.path.join(get_base_dir(), "results")
-    pattern = os.path.join(results_dir, f"{safe_prefix}_heroine_*", "latest_checkpoint.json")
-    candidates = glob.glob(pattern)
+    patterns = [
+        os.path.join(results_dir, f"{safe_prefix}_characters_*", "latest_checkpoint.json"),
+        os.path.join(results_dir, f"{safe_prefix}_heroine_*", "latest_checkpoint.json"),
+    ]
+    candidates = []
+    for pattern in patterns:
+        candidates.extend(glob.glob(pattern))
     if not candidates:
         return None
     latest = max(candidates, key=os.path.getmtime)
@@ -3634,10 +3657,11 @@ def generate_final_report(heroine_result, merged_stats, male_protagonist=None):
     
     heroines = heroine_result.get('heroines', [])
     analysis = heroine_result.get('analysis', '')
+    general_profile = _is_general_profile()
     
     report_lines = [
         "=" * 70,
-        "小说主角分析报告",
+        "小说通用角色分析报告" if general_profile else "小说主角分析报告",
         f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         "=" * 70,
     ]
@@ -3646,7 +3670,7 @@ def generate_final_report(heroine_result, merged_stats, male_protagonist=None):
     if male_protagonist:
         report_lines.extend([
             "",
-            "【男主角】",
+            "【主角/视角核心】" if general_profile else "【男主角】",
             "-" * 70,
             f"  姓名：{male_protagonist.get('name', '未知')}",
             f"  别称：{', '.join(male_protagonist.get('other_names', [])) or '无'}",
@@ -3662,11 +3686,11 @@ def generate_final_report(heroine_result, merged_stats, male_protagonist=None):
     report_lines.extend([
         "",
         "=" * 70,
-        "【女主体系分析】",
+        "【重要女性角色分析】" if general_profile else "【女主体系分析】",
         analysis,
         "",
         "-" * 70,
-        f"【共识别出 {len(heroines)} 位女主角】",
+        f"【共识别出 {len(heroines)} 位重点女性角色】" if general_profile else f"【共识别出 {len(heroines)} 位女主角】",
         "-" * 70,
     ])
     
@@ -3685,7 +3709,7 @@ def generate_final_report(heroine_result, merged_stats, male_protagonist=None):
         
         report_lines.extend([
             "",
-            f"【第{rank}女主】{name}",
+            f"【第{rank}重要女性角色】{name}" if general_profile else f"【第{rank}女主】{name}",
             f"  别称：{', '.join(aliases) if aliases else '无'}",
             f"  重要性评分：{avg_score:.1f}/10",
             f"  出场频次：{count} 次",
@@ -3886,7 +3910,8 @@ def main(novel_path=None, book_name=None, run_id=None):
         print(f"★ 发现断点，将在此目录续跑: {OUTPUT_DIR}")
     else:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-        OUTPUT_DIR = os.path.join(results_base, f"{clean_filename}_heroine_{timestamp}")
+        dir_kind = "characters" if _is_general_profile() else "heroine"
+        OUTPUT_DIR = os.path.join(results_base, f"{clean_filename}_{dir_kind}_{timestamp}")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     # 重新配置 logger（支持多次调用不残留旧 handler）
@@ -3903,7 +3928,7 @@ def main(novel_path=None, book_name=None, run_id=None):
 
     try:
         print("=" * 70)
-        print(f"小说女主角识别工具（专注版 - {MAX_WORKERS}线程并行）")
+        print(f"小说{_role_stage_label()}工具（{MAX_WORKERS}线程并行）")
         print("=" * 70)
         
         # 1. 验证配置
@@ -3961,7 +3986,7 @@ def main(novel_path=None, book_name=None, run_id=None):
         print(f"★ 阶段标记: 扫描={'是' if progress_flags.get('scanned') else '否'} | 男主识别={'是' if progress_flags.get('male_identified') else '否'} | 别称合并={'是' if progress_flags.get('alias_merged') else '否'} | 女主识别={'是' if progress_flags.get('heroines_identified') else '否'} | 报告生成={'是' if progress_flags.get('report_generated') else '否'}")
         if progress_flags.get("report_generated") and progress_flags.get("report_files"):
             print(f"★ 上次报告文件: {progress_flags.get('report_files')}")
-        print("\n【阶段一】扫描全书，识别男主和女性角色...")
+        print(f"\n【阶段一】扫描全书，执行{_role_stage_label()}...")
         print("=" * 70)
 
         if not progress_flags.get("scanned") and chunks_to_process:
