@@ -123,11 +123,17 @@ def load_configs(base_dir):
     os.environ["API_KEY"] = keys[0]
 
     try:
-        from analysis_profiles import load_analysis_profile
+        from analysis_profiles import AUTO_PROFILE, load_analysis_profile, normalize_profile_name
 
-        profile = load_analysis_profile(os.environ.get("ANALYSIS_PROFILE"))
-        os.environ["ANALYSIS_PROFILE"] = profile.name
-        os.environ["ANALYSIS_RULES_FILE"] = profile.rules_file
+        requested_profile = normalize_profile_name(os.environ.get("ANALYSIS_PROFILE"))
+        if requested_profile == AUTO_PROFILE:
+            profile = None
+            os.environ["ANALYSIS_PROFILE"] = AUTO_PROFILE
+            os.environ.pop("ANALYSIS_RULES_FILE", None)
+        else:
+            profile = load_analysis_profile(requested_profile)
+            os.environ["ANALYSIS_PROFILE"] = profile.name
+            os.environ["ANALYSIS_RULES_FILE"] = profile.rules_file
     except Exception as exc:
         profile = None
         print(f"[WARN] 加载分析 profile 失败，继续使用默认配置: {exc}")
@@ -142,6 +148,8 @@ def load_configs(base_dir):
             f"分析模式：{profile.display_name} ({profile.name})  "
             f"规则文件={profile.rules_file}"
         )
+    else:
+        print("分析模式：自动识别 (auto)，将按每本小说选择 profile")
     print(
         f"扫描调优配置：DIM_BOOST_MAX_PER_CHUNK={os.environ['DIM_BOOST_MAX_PER_CHUNK']}  "
         f"RESCAN_ROUNDS={os.environ['RESCAN_ROUNDS']}  "
@@ -284,6 +292,95 @@ def print_token_summary(base_dir, token_usage_path=None):
     print(f"  total:  {total['total']}")
 
 
+def process_single_novel(novel_path, profile_name=None, run_id=None, skip_fresh=True):
+    from analysis_profiles import AUTO_PROFILE, infer_profile_for_novel, load_analysis_profile, normalize_profile_name
+
+    import protagonist
+    import novel_scan
+    import novel_reviewer
+    import general_scan
+    import report
+
+    base_dir = get_base_dir()
+    run_id = run_id or os.environ.get("TOKEN_RUN_ID") or _generate_run_id()
+    os.environ["TOKEN_RUN_ID"] = run_id
+    os.environ["NOVEL_PATH"] = novel_path
+    book_name = os.path.splitext(os.path.basename(novel_path))[0]
+
+    requested = normalize_profile_name(profile_name or os.environ.get("ANALYSIS_PROFILE"))
+    if requested == AUTO_PROFILE:
+        requested = infer_profile_for_novel(novel_path, book_name)
+    active_profile = load_analysis_profile(requested)
+    os.environ["ANALYSIS_PROFILE"] = active_profile.name
+    os.environ["ANALYSIS_RULES_FILE"] = active_profile.rules_file
+
+    print("=" * 40)
+    print(f"正在处理: {os.path.basename(novel_path)}")
+    print(f"NOVEL_PATH={novel_path}")
+    print(f"分析模式: {active_profile.display_name} ({active_profile.name})")
+
+    if skip_fresh:
+        should_skip, out_file = _report_is_fresh(base_dir, book_name, active_profile.name)
+        if should_skip:
+            print(f"★ 检测到该书报告已正常生成，跳过后续流程：{out_file}")
+            return {"status": "skipped", "book_name": book_name, "profile": active_profile.name, "out_file": out_file}
+
+    status = "ok"
+    error = ""
+
+    try:
+        ret = protagonist.main(novel_path=novel_path, book_name=book_name, run_id=run_id)
+        if ret is not None and ret != 0:
+            status = "fail"
+            error = "protagonist returned non-zero"
+    except Exception as e:
+        print(f"[protagonist] 异常: {e}")
+        status = "fail"
+        error = f"protagonist: {e}"
+
+    detail_path = None
+    if status == "ok":
+        detail_path = _get_working_detail_path(protagonist, book_name)
+
+    if status == "ok" and active_profile.uses_harem_reviewer:
+        try:
+            novel_scan.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path)
+        except Exception as e:
+            print(f"[novel_scan] 异常: {e}")
+            status = "fail"
+            error = f"novel_scan: {e}"
+
+    if status == "ok" and active_profile.uses_harem_reviewer:
+        try:
+            novel_reviewer.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path)
+        except Exception as e:
+            print(f"[novel_reviewer] 异常: {e}")
+            status = "fail"
+            error = f"novel_reviewer: {e}"
+
+    if status == "ok" and active_profile.uses_general_scan:
+        try:
+            general_scan.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path)
+        except Exception as e:
+            print(f"[general_scan] 异常: {e}")
+            status = "fail"
+            error = f"general_scan: {e}"
+
+    if status == "ok":
+        try:
+            report.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path)
+        except Exception as e:
+            print(f"[report] 异常: {e}")
+            status = "fail"
+            error = f"report: {e}"
+
+    if status == "ok":
+        print(f"成功: {os.path.basename(novel_path)}")
+    else:
+        print(f"失败: {os.path.basename(novel_path)}")
+    return {"status": status, "book_name": book_name, "profile": active_profile.name, "error": error}
+
+
 def run():
     base_dir = get_base_dir()
     run_id = _generate_run_id()
@@ -295,18 +392,14 @@ def run():
     print()
 
     load_configs(base_dir)
-    from analysis_profiles import load_analysis_profile
+    from analysis_profiles import AUTO_PROFILE, infer_profile_for_novel, load_analysis_profile, normalize_profile_name
 
-    profile = load_analysis_profile(os.environ.get("ANALYSIS_PROFILE"))
-    os.environ["ANALYSIS_PROFILE"] = profile.name
-    os.environ["ANALYSIS_RULES_FILE"] = profile.rules_file
+    requested_profile_name = normalize_profile_name(os.environ.get("ANALYSIS_PROFILE"))
+    profile = load_analysis_profile("harem" if requested_profile_name == AUTO_PROFILE else requested_profile_name)
+    if requested_profile_name != AUTO_PROFILE:
+        os.environ["ANALYSIS_PROFILE"] = profile.name
+        os.environ["ANALYSIS_RULES_FILE"] = profile.rules_file
     novel_files = scan_novels(base_dir)
-
-    import protagonist
-    import novel_scan
-    import novel_reviewer
-    import general_scan
-    import report
 
     total = len(novel_files)
     done = 0
@@ -315,9 +408,15 @@ def run():
 
     print_pending_novels(novel_files)
 
-    print(f"扫描 novels 目录下所有 txt，共 {total} 本，分析模式：{profile.display_name} ({profile.name})")
+    if requested_profile_name == AUTO_PROFILE:
+        print(f"扫描 novels 目录下所有 txt，共 {total} 本，分析模式：自动识别 (auto)")
+    else:
+        print(f"扫描 novels 目录下所有 txt，共 {total} 本，分析模式：{profile.display_name} ({profile.name})")
     print("  1) protagonist.py   - 角色识别")
-    if profile.uses_harem_reviewer:
+    if requested_profile_name == AUTO_PROFILE:
+        print("  2) 自动选择 harem/general/history/hard_sci_fi 后执行对应扫描")
+        print("  3) report.py        - 生成对应报告")
+    elif profile.uses_harem_reviewer:
         print("  2) novel_scan.py    - 后宫/排雷深度扫描")
         print("  3) novel_reviewer.py - 后宫毒点二审与洁度鉴定")
         print("  4) report.py        - 生成后宫专长报告")
@@ -327,70 +426,14 @@ def run():
     print()
 
     for novel_path in novel_files:
-        os.environ["NOVEL_PATH"] = novel_path
         book_name = os.path.splitext(os.path.basename(novel_path))[0]
-
-        print("=" * 40)
-        print(f"正在处理: {os.path.basename(novel_path)}")
-        print(f"NOVEL_PATH={novel_path}")
-
-        should_skip, out_file = _report_is_fresh(base_dir, book_name, profile.name)
-        if should_skip:
-            skipped += 1
-            print(f"★ 检测到该书报告已正常生成，跳过后续流程：{out_file}")
-            print()
-            continue
-
         time.sleep(5)
-
-        status = "ok"
-
-        if status == "ok":
-            try:
-                ret = protagonist.main(novel_path=novel_path, book_name=book_name, run_id=run_id)
-                if ret is not None and ret != 0:
-                    status = "fail"
-            except Exception as e:
-                print(f"[protagonist] 异常: {e}")
-                status = "fail"
-
-        detail_path = None
-        if status == "ok":
-            detail_path = _get_working_detail_path(protagonist, book_name)
-
-        if status == "ok" and profile.uses_harem_reviewer:
-            try:
-                novel_scan.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path)
-            except Exception as e:
-                print(f"[novel_scan] 异常: {e}")
-                status = "fail"
-
-        if status == "ok" and profile.uses_harem_reviewer:
-            try:
-                novel_reviewer.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path)
-            except Exception as e:
-                print(f"[novel_reviewer] 异常: {e}")
-                status = "fail"
-
-        if status == "ok" and profile.uses_general_scan:
-            try:
-                general_scan.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path)
-            except Exception as e:
-                print(f"[general_scan] 异常: {e}")
-                status = "fail"
-
-        if status == "ok":
-            try:
-                report.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path)
-            except Exception as e:
-                print(f"[report] 异常: {e}")
-                status = "fail"
-
-        if status == "ok":
-            print(f"成功: {os.path.basename(novel_path)}")
+        result = process_single_novel(novel_path, profile_name=requested_profile_name, run_id=run_id, skip_fresh=True)
+        if result.get("status") == "skipped":
+            skipped += 1
+        elif result.get("status") == "ok":
             done += 1
         else:
-            print(f"失败: {os.path.basename(novel_path)}")
             failed += 1
         print()
 

@@ -1,6 +1,6 @@
 BASE_URL=https://api.siliconflow.cn/v1
 MODEL_NAME=deepseek-ai/DeepSeek-V3.2
-# 分析模式：harem=后宫/男性向排雷；general=通用；history=历史小说；hard_sci_fi=硬科幻
+# 分析模式：auto=按每本书自动识别；harem=后宫/男性向排雷；general=通用；history=历史小说；hard_sci_fi=硬科幻
 ANALYSIS_PROFILE=harem
 MAX_WORKERS=3
 RPM_LIMIT=10

@@ -5,6 +5,7 @@ import unittest
 import analysis_profiles
 import general_scan
 import report
+import web_manager
 
 
 class ProfileAndGeneralReportTests(unittest.TestCase):
@@ -29,6 +30,30 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(hard_sci_fi.name, "hard_sci_fi")
         self.assertTrue(hard_sci_fi.uses_general_scan)
         self.assertIn("science_consistency", hard_sci_fi.summary_fields)
+
+        self.assertEqual(analysis_profiles.resolve_profile_name("自动"), "auto")
+
+    def test_auto_profile_inference(self):
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("大明权臣", "皇帝与朝廷在庙堂上争论边军粮饷。"),
+            "history",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("星际远征", "星舰启动曲率引擎，人工智能计算虫洞航道。"),
+            "hard_sci_fi",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("仙路后宫", "男主与道侣双修，红颜和未婚妻都卷入宗门风波。"),
+            "harem",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("小镇旧事", "他回到故乡，重新面对童年的朋友。"),
+            "general",
+        )
+
+    def test_web_manager_safe_filename(self):
+        self.assertEqual(web_manager._safe_filename("../坏:名字"), "坏_名字.txt")
+        self.assertEqual(web_manager._safe_filename("book.txt"), "book.txt")
 
     def test_general_report_uses_story_summary_and_characters(self):
         general_summary = {

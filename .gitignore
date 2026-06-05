@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.venv/
+results/
+!results/learned_keywords/
+!results/learned_keywords/seed.json
+!results/learned_keywords/learned_*.json

@@ -32,6 +32,7 @@
 ├─ novel_scan.py           # 分块扫描正文，提取问题点和结构化事实
 ├─ novel_reviewer.py       # 二次复核与汇总结论生成
 ├─ general_scan.py         # 通用小说剧情、冲突、主题、设定扫描
+├─ web_manager.py          # 本地 Web 管理端：上传、分类、排队、单本扫描
 ├─ report.py               # 生成最终面向阅读的报告
 ├─ shared_utils.py         # 共享配置、API 调用封装、通用工具
 ├─ text_anchor.py          # chunk manifest 与证据定位相关逻辑
@@ -77,6 +78,35 @@ pip install openai tqdm httpx
 python main.py
 ```
 
+### 方式三：本地 Web 管理端
+
+如果你需要管理多本书、上传后手动调整分类，可以启动本地 Web 管理端：
+
+```powershell
+python web_manager.py
+```
+
+默认访问：
+
+```text
+http://127.0.0.1:8765
+```
+
+Web 管理端能力：
+
+- 上传 `.txt` 小说到 `novels/`。
+- 为每本书选择 `auto`、`harem`、`general`、`history`、`hard_sci_fi`。
+- 单 worker 串行扫描：后台一次只扫一本书，未轮到的显示“排队中”。
+- 状态持久化到 `results/web_manager_state.json`。
+
+也可以通过环境变量改监听地址：
+
+```powershell
+set WEB_HOST=0.0.0.0
+set WEB_PORT=8765
+python web_manager.py
+```
+
 ## 配置说明
 
 ### `api.txt`
@@ -117,7 +147,7 @@ RESCAN_MAX_PROMPT_HEROINES=4
 - `BASE_URL`：OpenAI 兼容接口地址。
 - `MODEL_NAME`：调用的模型名称。
 - `MAX_WORKERS`：并发规模基线。
-- `ANALYSIS_PROFILE`：分析模式。`harem` 为默认后宫/男性向排雷模式；`general`、`history`、`hard_sci_fi` 为通用和类型专长入口。
+- `ANALYSIS_PROFILE`：分析模式。`harem` 为默认后宫/男性向排雷模式；`auto` 可按每本书自动识别；`general`、`history`、`hard_sci_fi` 为通用和类型专长入口。
 - `RPM_LIMIT` / `TPM_LIMIT`：限流相关配置。
 
 ### 分析模式
@@ -125,6 +155,7 @@ RESCAN_MAX_PROMPT_HEROINES=4
 项目现在通过 `ANALYSIS_PROFILE` 区分不同分析模式：
 
 - `harem`：默认模式，保留原有男主、女主、初处、漏女、毒点/雷点分析流程。
+- `auto`：自动识别模式，会根据书名和正文前段启发式选择 `harem`、`history`、`hard_sci_fi` 或 `general`。
 - `general`：通用小说分析入口，会运行角色识别、剧情/冲突/主题/设定扫描并生成通用小说报告，不执行初处、漏女、后宫毒点二审。
 - `history`：历史小说专长分析，在通用流程上额外关注时代制度、战争权谋、派系逻辑、人物立场和历史氛围。
 - `hard_sci_fi`：硬科幻专长分析，在通用流程上额外关注科学假设、技术链、工程约束、因果推演和设定自洽。
