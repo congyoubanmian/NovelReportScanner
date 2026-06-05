@@ -1,0 +1,30 @@
+services:
+  novel-report-scanner:
+    image: ${NOVEL_REPORT_SCANNER_IMAGE:-novel-report-scanner:latest}
+    container_name: novel-report-scanner
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8765}:8765"
+    environment:
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: 8765
+      BASE_URL: ${BASE_URL:-https://api.deepseek.com}
+      MODEL_NAME: ${MODEL_NAME:-deepseek-chat}
+      API_KEY: ${API_KEY:-}
+      API_KEY_POOL: ${API_KEY_POOL:-}
+      ANALYSIS_PROFILE: ${ANALYSIS_PROFILE:-harem}
+      MAX_WORKERS: ${MAX_WORKERS:-2}
+      RPM_LIMIT: ${RPM_LIMIT:-100}
+      TPM_LIMIT: ${TPM_LIMIT:-10000000}
+      RATE_LIMIT_SCOPE: ${RATE_LIMIT_SCOPE:-global}
+      DIM_BOOST_MAX_PER_CHUNK: ${DIM_BOOST_MAX_PER_CHUNK:-3}
+      RESCAN_ROUNDS: ${RESCAN_ROUNDS:-3}
+      MAX_MIDDLE_SUMMARY_CALLS: ${MAX_MIDDLE_SUMMARY_CALLS:-10}
+      RESCAN_MAX_HITS: ${RESCAN_MAX_HITS:-4}
+      RESCAN_PRE_FILTER_THRESHOLD: ${RESCAN_PRE_FILTER_THRESHOLD:-1.0}
+      RESCAN_MAX_WINDOW: ${RESCAN_MAX_WINDOW:-2000}
+      RESCAN_MAX_PROMPT_HEROINES: ${RESCAN_MAX_PROMPT_HEROINES:-4}
+      GENERAL_SCAN_MAX_CHUNKS: ${GENERAL_SCAN_MAX_CHUNKS:-80}
+    volumes:
+      - ./novels:/app/novels
+      - ./results:/app/results

@@ -1,0 +1,6 @@
+services:
+  novel-report-scanner:
+    build:
+      context: .
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}

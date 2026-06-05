@@ -45,13 +45,18 @@ Web 端适合管理多本书：先上传 `.txt`，根据自动建议调整分类
 - `general` 模式跳过后宫毒点二审，基于角色识别产物生成通用小说报告。
 - 自动生成最终可读的报告文本。
 - 记录阶段性中间文件、断点信息、日志和 token 使用情况。
-- Windows 下可直接通过 `main.bat` 启动，并在首次运行时自动创建 `.venv`。
+- Windows 下可直接通过 `win一键运行脚本.bat` 启动，并在首次运行时自动创建 `.venv`。
+- 支持 Docker 镜像部署，容器默认启动 Web 管理端，后续可以直接拉镜像运行并通过浏览器管理。
 
 ## 项目结构
 
 ```text
 .
-├─ main.bat                # Windows 启动入口，负责调用 bootstrap_venv.py
+├─ win一键运行脚本.bat     # Windows 启动入口，负责调用 bootstrap_venv.py
+├─ Dockerfile              # Docker 镜像构建文件，默认启动 Web 管理端
+├─ docker-compose.yml      # 拉镜像部署用 Compose 文件
+├─ docker-compose.build.yml # 本地源码构建用 Compose 覆盖文件
+├─ requirements.txt        # 容器和手动安装依赖清单
 ├─ bootstrap_venv.py       # 创建 .venv、安装基础依赖、启动 main.py
 ├─ main.py                 # 主流程入口，批量扫描 novels/ 并串联四个阶段
 ├─ protagonist.py          # 角色识别与女主候选提取
@@ -84,9 +89,9 @@ Web 端适合管理多本书：先上传 `.txt`，根据自动建议调整分类
 2. 把待分析的小说 `.txt` 放进 `novels/` 目录。
 3. 在项目根目录创建 `api.txt`，每行写一个可用的 API Key。
 4. 按需修改 `setting.txt`。
-5. 双击运行 `main.bat`。
+5. 双击运行 `win一键运行脚本.bat`。
 
-`main.bat` 会优先使用本地 `.venv\Scripts\python.exe`。如果 `.venv` 还不存在，它会调用 `bootstrap_venv.py` 自动完成以下动作：
+`win一键运行脚本.bat` 会优先使用本地 `.venv\Scripts\python.exe`。如果 `.venv` 还不存在，它会调用 `bootstrap_venv.py` 自动完成以下动作：
 
 - 检查 Python 版本是否至少为 3.10
 - 创建本地 `.venv`
@@ -104,7 +109,81 @@ pip install openai tqdm httpx
 python main.py
 ```
 
-### 方式三：本地 Web 管理端
+### 方式三：Docker Web 管理端
+
+Docker 镜像默认启动 Web 管理端，监听容器内 `8765` 端口。小说文本、扫描结果和 Web 状态都建议挂载到宿主机目录，避免容器重建后丢失。
+
+本地源码构建镜像：
+
+```bash
+docker build -t novel-report-scanner:latest .
+```
+
+如果构建机器访问 PyPI 较慢，可以临时指定镜像源：
+
+```bash
+docker build \
+  --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+  -t novel-report-scanner:latest .
+```
+
+直接运行镜像：
+
+```bash
+docker run -d \
+  --name novel-report-scanner \
+  --restart unless-stopped \
+  -p 8765:8765 \
+  --env-file .env \
+  -v "$PWD/novels:/app/novels" \
+  -v "$PWD/results:/app/results" \
+  novel-report-scanner:latest
+```
+
+访问：
+
+```text
+http://服务器IP:8765
+```
+
+如果使用 Compose，本地源码构建并启动：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+Compose 构建同样可以先设置 `PIP_INDEX_URL` 来切换 pip 源。
+
+推送到 GitHub `main` 分支或 `v*` 版本 tag 后，GitHub Actions 会自动构建并推送镜像到 GHCR。服务器只需要准备 `.env`、`novels/`、`results/` 和 `docker-compose.yml`。例如：
+
+```bash
+export NOVEL_REPORT_SCANNER_IMAGE=ghcr.io/congyoubanmian/novel-report-scanner:main
+docker compose pull
+docker compose up -d
+```
+
+没有 Compose 的环境也可以直接拉镜像运行：
+
+```bash
+docker pull ghcr.io/congyoubanmian/novel-report-scanner:main
+docker run -d \
+  --name novel-report-scanner \
+  --restart unless-stopped \
+  -p 8765:8765 \
+  --env-file .env \
+  -v "$PWD/novels:/app/novels" \
+  -v "$PWD/results:/app/results" \
+  ghcr.io/congyoubanmian/novel-report-scanner:main
+```
+
+生产部署注意事项：
+
+- `.env` 保存真实 API Key 和模型配置，不要打进镜像，也不要提交到仓库。
+- `novels/` 用于放上传或预置的 `.txt` 小说，`results/` 用于保存报告、任务日志和 Web 管理状态。
+- 容器内 Web 服务默认绑定 `0.0.0.0:8765`，宿主机端口可通过 `-p 宿主机端口:8765` 或 Compose 里的 `WEB_PORT` 调整。
+- 镜像健康检查使用 `/healthz`，只证明 Web 管理端进程可访问；是否能真正扫描取决于 `.env` / API Key 是否配置正确。
+
+### 方式四：本地 Web 管理端
 
 如果你需要管理多本书、上传后手动调整分类，可以启动本地 Web 管理端：
 

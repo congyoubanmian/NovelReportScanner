@@ -536,6 +536,9 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if parsed.path == "/healthz":
+            self._send_json({"ok": True, "config_ready": CONFIG_READY})
+            return
         if parsed.path == "/api/state":
             _sync_books_from_disk()
             self._send_json(_public_state())
