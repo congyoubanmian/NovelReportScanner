@@ -30,6 +30,53 @@ class AnalysisProfile:
         return "general_scan" in self.enabled_stages
 
 
+@dataclass(frozen=True)
+class ProfileInference:
+    name: str
+    display_name: str
+    score: int
+    confidence: float
+    matched_keywords: List[str]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "display_name": self.display_name,
+            "score": self.score,
+            "confidence": round(self.confidence, 3),
+            "matched_keywords": self.matched_keywords,
+        }
+
+
+_PROFILE_ORDER = {
+    "harem": 10,
+    "general": 20,
+    "history": 30,
+    "hard_sci_fi": 40,
+}
+
+
+_BUILTIN_INFERENCE_KEYWORDS = {
+    "history": [
+        ("皇帝", 3), ("朝廷", 3), ("宰相", 3), ("官职", 2), ("科举", 3),
+        ("藩镇", 3), ("诸侯", 3), ("边军", 2), ("骑兵", 2), ("史书", 2),
+        ("大明", 4), ("大唐", 4), ("大宋", 4), ("三国", 4), ("汉末", 4),
+        ("王朝", 2), ("郡县", 2), ("爵位", 2), ("礼法", 2), ("庙堂", 2),
+    ],
+    "hard_sci_fi": [
+        ("飞船", 4), ("星舰", 4), ("星际", 4), ("光速", 3), ("曲率", 4),
+        ("量子", 3), ("人工智能", 3), ("ai", 2), ("机器人", 2), ("轨道", 2),
+        ("殖民星", 4), ("太空", 3), ("宇宙", 2), ("引擎", 2), ("基因编辑", 3),
+        ("纳米", 3), ("黑洞", 3), ("虫洞", 4), ("戴森", 4), ("文明等级", 3),
+    ],
+    "harem": [
+        ("后宫", 5), ("女主", 2), ("男主", 2), ("双修", 3), ("炉鼎", 3),
+        ("侍妾", 3), ("纳妾", 4), ("道侣", 2), ("红颜", 2), ("暧昧", 2),
+        ("推倒", 4), ("处女", 3), ("初夜", 3), ("未婚妻", 2), ("师姐", 1),
+    ],
+}
+
+
 def normalize_profile_name(value: str) -> str:
     name = (value or DEFAULT_PROFILE).strip().lower()
     aliases = {
@@ -116,49 +163,145 @@ def load_analysis_profile(profile_name: str = None) -> AnalysisProfile:
     )
 
 
-def _score_keywords(text: str, keywords: List[Tuple[str, int]]) -> int:
+def list_available_profiles() -> List[AnalysisProfile]:
+    profiles_root = os.path.join(get_base_dir(), "profiles")
+    if not os.path.isdir(profiles_root):
+        return [load_analysis_profile(DEFAULT_PROFILE)]
+
+    profiles = []
+    for name in os.listdir(profiles_root):
+        profile_name = normalize_profile_name(name)
+        if profile_name == AUTO_PROFILE or not _profile_exists(profile_name):
+            continue
+        try:
+            profiles.append(load_analysis_profile(profile_name))
+        except Exception as exc:
+            print(f"[WARN] 跳过无效 profile={profile_name!r}: {exc}")
+
+    profiles.sort(key=lambda p: (_PROFILE_ORDER.get(p.name, 1000), p.name))
+    return profiles
+
+
+def profile_options(include_auto: bool = True) -> List[Dict[str, Any]]:
+    options = []
+    if include_auto:
+        options.append({
+            "name": AUTO_PROFILE,
+            "display_name": "自动识别",
+            "description": "按书名和正文前段自动建议分析类型；扫描前仍可手动调整。",
+            "report_mode": "auto",
+        })
+    for profile in list_available_profiles():
+        options.append({
+            "name": profile.name,
+            "display_name": profile.display_name,
+            "description": profile.description,
+            "report_mode": profile.report_mode,
+        })
+    return options
+
+
+def _keywords_from_manifest(profile_name: str) -> List[Tuple[str, int]]:
+    manifest = _load_profile_manifest(profile_name)
+    raw_keywords = manifest.get("inference_keywords")
+    keywords = []
+    if isinstance(raw_keywords, list):
+        for item in raw_keywords:
+            if isinstance(item, str):
+                keywords.append((item, 1))
+            elif isinstance(item, dict):
+                word = str(item.get("word") or item.get("keyword") or "").strip()
+                if not word:
+                    continue
+                try:
+                    weight = int(item.get("weight", 1))
+                except (TypeError, ValueError):
+                    weight = 1
+                keywords.append((word, max(1, weight)))
+            elif isinstance(item, (list, tuple)) and item:
+                word = str(item[0]).strip()
+                if not word:
+                    continue
+                try:
+                    weight = int(item[1]) if len(item) > 1 else 1
+                except (TypeError, ValueError):
+                    weight = 1
+                keywords.append((word, max(1, weight)))
+    return keywords or list(_BUILTIN_INFERENCE_KEYWORDS.get(profile_name, []))
+
+
+def _score_keyword_matches(text: str, keywords: List[Tuple[str, int]]) -> Tuple[int, List[str]]:
     score = 0
+    matches = []
     for word, weight in keywords:
-        if word and word in text:
+        needle = str(word or "").lower()
+        if needle and needle in text:
             score += weight
-    return score
+            matches.append(word)
+    return score, matches
+
+
+def infer_profile_candidates_for_text(title: str, text: str, min_score: int = 1) -> List[Dict[str, Any]]:
+    blob = f"{title}\n{text[:20000]}".lower()
+    raw = []
+    for profile in list_available_profiles():
+        if profile.name == "general":
+            continue
+        score, matches = _score_keyword_matches(blob, _keywords_from_manifest(profile.name))
+        if score >= min_score:
+            raw.append((profile, score, matches))
+
+    total_score = sum(score for _profile, score, _matches in raw)
+    candidates = [
+        ProfileInference(
+            name=profile.name,
+            display_name=profile.display_name,
+            score=score,
+            confidence=(score / total_score) if total_score else 0.0,
+            matched_keywords=matches[:12],
+        ).to_dict()
+        for profile, score, matches in raw
+    ]
+    candidates.sort(key=lambda item: (-item["score"], _PROFILE_ORDER.get(item["name"], 1000), item["name"]))
+
+    if not candidates:
+        general = load_analysis_profile("general")
+        return [ProfileInference(general.name, general.display_name, 0, 1.0, []).to_dict()]
+    return candidates
+
+
+def infer_profile_candidates_for_novel(novel_path: str, book_name: str = "", min_score: int = 1) -> List[Dict[str, Any]]:
+    try:
+        text = _read_text_prefix_safely(novel_path, char_limit=20000)
+    except Exception:
+        text = ""
+    title = book_name or os.path.splitext(os.path.basename(novel_path))[0]
+    return infer_profile_candidates_for_text(title, text, min_score=min_score)
+
+
+def _read_text_prefix_safely(path: str, char_limit: int = 20000) -> str:
+    byte_limit = max(char_limit * 4, 4096)
+    with open(path, "rb") as f:
+        raw = f.read(byte_limit)
+    for encoding in ("utf-8", "gb18030"):
+        try:
+            return raw.decode(encoding)[:char_limit]
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="ignore")[:char_limit]
 
 
 def infer_profile_for_text(title: str, text: str) -> str:
-    blob = f"{title}\n{text[:20000]}".lower()
-    history_score = _score_keywords(blob, [
-        ("皇帝", 3), ("朝廷", 3), ("宰相", 3), ("官职", 2), ("科举", 3),
-        ("藩镇", 3), ("诸侯", 3), ("边军", 2), ("骑兵", 2), ("史书", 2),
-        ("大明", 4), ("大唐", 4), ("大宋", 4), ("三国", 4), ("汉末", 4),
-        ("王朝", 2), ("郡县", 2), ("爵位", 2), ("礼法", 2), ("庙堂", 2),
-    ])
-    sci_fi_score = _score_keywords(blob, [
-        ("飞船", 4), ("星舰", 4), ("星际", 4), ("光速", 3), ("曲率", 4),
-        ("量子", 3), ("人工智能", 3), ("ai", 2), ("机器人", 2), ("轨道", 2),
-        ("殖民星", 4), ("太空", 3), ("宇宙", 2), ("引擎", 2), ("基因编辑", 3),
-        ("纳米", 3), ("黑洞", 3), ("虫洞", 4), ("戴森", 4), ("文明等级", 3),
-    ])
-    harem_score = _score_keywords(blob, [
-        ("后宫", 5), ("女主", 2), ("男主", 2), ("双修", 3), ("炉鼎", 3),
-        ("侍妾", 3), ("纳妾", 4), ("道侣", 2), ("红颜", 2), ("暧昧", 2),
-        ("推倒", 4), ("处女", 3), ("初夜", 3), ("未婚妻", 2), ("师姐", 1),
-    ])
-
-    scores = {
-        "history": history_score,
-        "hard_sci_fi": sci_fi_score,
-        "harem": harem_score,
-    }
-    best_name, best_score = max(scores.items(), key=lambda item: item[1])
-    if best_score >= 6:
-        return best_name
+    candidates = infer_profile_candidates_for_text(title, text, min_score=1)
+    best = candidates[0] if candidates else {"name": "general", "score": 0}
+    if best["name"] != "general" and best["score"] >= 6:
+        return best["name"]
     return "general"
 
 
 def infer_profile_for_novel(novel_path: str, book_name: str = "") -> str:
-    try:
-        text = read_file_safely(novel_path)
-    except Exception:
-        text = ""
-    title = book_name or os.path.splitext(os.path.basename(novel_path))[0]
-    return infer_profile_for_text(title, text)
+    candidates = infer_profile_candidates_for_novel(novel_path, book_name, min_score=1)
+    best = candidates[0] if candidates else {"name": "general", "score": 0}
+    if best["name"] != "general" and best["score"] >= 6:
+        return best["name"]
+    return "general"

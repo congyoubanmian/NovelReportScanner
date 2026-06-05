@@ -95,9 +95,10 @@ http://127.0.0.1:8765
 Web 管理端能力：
 
 - 上传 `.txt` 小说到 `novels/`。
-- 为每本书选择 `auto`、`harem`、`general`、`history`、`hard_sci_fi`。
+- 为每本书选择 `auto`、`harem`、`general`、`history`、`hard_sci_fi` 等分析模式；下拉选项会从 `profiles/` 自动发现。
+- 上传或同步书籍后显示自动分类建议。一本书如果同时像历史小说和后宫小说，会同时展示候选 profile、分数和命中关键词，用户可以在开始扫描前手动调整。
 - 单 worker 串行扫描：后台一次只扫一本书，未轮到的显示“排队中”。
-- 查看每本书详情、任务历史、最近输出报告和 summary 文件。
+- 查看每本书详情、分类建议、任务历史、任务日志、最近输出报告和 summary 文件。
 - 状态持久化到 `results/web_manager_state.json`。
 
 也可以通过环境变量改监听地址：
@@ -134,6 +135,7 @@ MAX_WORKERS=6
 ANALYSIS_PROFILE=harem
 RPM_LIMIT=10
 TPM_LIMIT=100000
+RATE_LIMIT_SCOPE=global
 DIM_BOOST_MAX_PER_CHUNK=3
 RESCAN_ROUNDS=3
 MAX_MIDDLE_SUMMARY_CALLS=10
@@ -149,7 +151,8 @@ RESCAN_MAX_PROMPT_HEROINES=4
 - `MODEL_NAME`：调用的模型名称。
 - `MAX_WORKERS`：并发规模基线。
 - `ANALYSIS_PROFILE`：分析模式。`harem` 为默认后宫/男性向排雷模式；`auto` 可按每本书自动识别；`general`、`history`、`hard_sci_fi` 为通用和类型专长入口。
-- `RPM_LIMIT` / `TPM_LIMIT`：限流相关配置。
+- `RPM_LIMIT` / `TPM_LIMIT`：程序本地预限流配置，用来在请求发出前控制最近 60 秒内的请求数和预估 token 数。
+- `RATE_LIMIT_SCOPE`：本地限流作用域。`global` 表示当前进程内所有线程和 key 共用一个限流桶；`per_key` 表示每个 key 单独计数。默认推荐 `global`，因为很多 OpenAI 兼容供应商会按账号或出口 IP 限速，多个 key 不一定能绕开同一个 RPM/TPM 限制。
 
 ### 分析模式
 
@@ -161,7 +164,19 @@ RESCAN_MAX_PROMPT_HEROINES=4
 - `history`：历史小说专长分析，在通用流程上额外关注时代制度、战争权谋、派系逻辑、人物立场和历史氛围。
 - `hard_sci_fi`：硬科幻专长分析，在通用流程上额外关注科学假设、技术链、工程约束、因果推演和设定自洽。
 
-当前 `general` 模式会运行通用角色识别，并继续执行 `general_scan.py` 抽取剧情主线、核心冲突、世界观设定、主题表达、伏笔回收、优点和问题。角色明细 JSON 中会输出通用 `characters` 列表。
+当前所有 `report_mode=general` 的 profile 都会运行通用角色识别，并继续执行 `general_scan.py` 抽取剧情主线、核心冲突、世界观设定、主题表达、伏笔回收、优点和问题。角色明细 JSON 中会输出通用 `characters` 列表；后宫类 `harem` 才继续使用男主/女主、初处、漏女和毒点/雷点专长流程。
+
+`auto` 不是强制唯一分类。代码会先给出候选建议，Web 管理端会展示多个候选；例如“开头是历史背景，同时又是后宫结构”的书，可以在 Web 页面里从建议中手动选择 `history` 或 `harem` 后再加入队列。命令行批量模式仍会按分数最高且达到阈值的 profile 自动执行。
+
+新增 profile 时通常只需要在 `profiles/<name>/profile.json` 中声明 `display_name`、`enabled_stages`、`report_mode`、`scan_focus`、`summary_fields`。如果想让 `auto` 识别这个新类型，可以额外添加 `inference_keywords`：
+
+```json
+[
+  {"word": "关键词", "weight": 3},
+  ["另一个关键词", 2],
+  "普通关键词"
+]
+```
 
 对应资源位于：
 
@@ -196,6 +211,8 @@ profiles/
 - 如果把这些增强项开得更激进，扫描效果通常会上升，但 token 使用量也会显著增加。
 - 作者建议：如果你使用的不是廉价 token，尽量不要盲目调高这些参数，优先保持默认值或保守值。
 - 其中最容易明显拉高 token 消耗的，通常是 `DIM_BOOST_MAX_PER_CHUNK`、`MAX_MIDDLE_SUMMARY_CALLS`、`RESCAN_MAX_HITS`、`RESCAN_MAX_WINDOW` 和 `RESCAN_MAX_PROMPT_HEROINES`。
+
+运行日志里的 `限流等待：... reason=rpm, scope=global` 是本程序的本地预限流日志，不是 API 服务端返回的报错。`reason=rpm` 代表最近 60 秒请求数达到 `RPM_LIMIT`；`scope=global` 代表所有线程和所有 key 共用这个计数桶。如果确认供应商对每个 key 独立限速，可以把 `RATE_LIMIT_SCOPE=per_key`，但在共享账号/IP 限速的服务上这样做更容易触发服务端 429/403 或长时间挂起。
 
 各参数作用如下：
 

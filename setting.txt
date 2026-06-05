@@ -5,6 +5,8 @@ ANALYSIS_PROFILE=harem
 MAX_WORKERS=3
 RPM_LIMIT=10
 TPM_LIMIT=100000
+# 本地限流作用域：global=所有线程/key共用一个桶；per_key=每个key单独计数
+RATE_LIMIT_SCOPE=global
 # 每个片段最多做多少次“维度补抽”；越大越积极补抽，但额外调用也可能更多，最大为5，数值为0-5
 DIM_BOOST_MAX_PER_CHUNK=1
 

@@ -13,7 +13,12 @@ import cgi
 import contextlib
 import sys
 
-from analysis_profiles import infer_profile_for_novel, load_analysis_profile, normalize_profile_name
+from analysis_profiles import (
+    infer_profile_candidates_for_novel,
+    infer_profile_for_novel,
+    normalize_profile_name,
+    profile_options,
+)
 from main import _generate_run_id, get_base_dir, load_configs, process_single_novel
 
 
@@ -89,6 +94,37 @@ def _book_id_from_path(path):
     return os.path.splitext(os.path.basename(path))[0]
 
 
+def _profile_suggestions(path, book_name):
+    try:
+        return infer_profile_candidates_for_novel(path, book_name, min_score=1)[:4]
+    except Exception as exc:
+        return [{"name": "general", "display_name": "通用小说分析", "score": 0, "confidence": 1.0, "matched_keywords": [], "error": str(exc)}]
+
+
+def _valid_profile_names():
+    return {item["name"] for item in profile_options(include_auto=True)}
+
+
+def _normalize_web_profile(value):
+    profile_name = normalize_profile_name(value or "auto")
+    if profile_name not in _valid_profile_names():
+        return None
+    return profile_name
+
+
+def _refresh_book_suggestions(book):
+    if not book or not book.get("path") or not os.path.exists(book.get("path")):
+        return
+    if book.get("status") in {"queued", "running"}:
+        return
+    stat = os.stat(book["path"])
+    signature = f"{stat.st_mtime}:{stat.st_size}"
+    if book.get("suggestion_signature") == signature and book.get("profile_suggestions"):
+        return
+    book["profile_suggestions"] = _profile_suggestions(book["path"], book.get("name", ""))
+    book["suggestion_signature"] = signature
+
+
 def _sync_books_from_disk():
     with STATE_LOCK:
         for root, _dirs, files in os.walk(_novels_dir()):
@@ -104,6 +140,7 @@ def _sync_books_from_disk():
                 entry.setdefault("profile", "auto")
                 entry.setdefault("status", "idle")
                 entry.setdefault("created_at", time.strftime("%Y-%m-%d %H:%M:%S"))
+                _refresh_book_suggestions(entry)
         _save_state()
 
 
@@ -111,7 +148,7 @@ def _public_state():
     with STATE_LOCK:
         books = sorted(STATE["books"].values(), key=lambda x: x.get("created_at", ""), reverse=True)
         tasks = list(STATE["tasks"])
-    return {"books": books, "tasks": tasks, "config_ready": CONFIG_READY}
+    return {"books": books, "tasks": tasks, "config_ready": CONFIG_READY, "profiles": profile_options(include_auto=True)}
 
 
 def _is_safe_public_file(path):
@@ -167,8 +204,10 @@ def _book_detail(book_id):
         if task.get("log_path"):
             task["log_file"] = _file_link(task.get("log_path"))
     book["novel_file"] = _file_link(book.get("path"))
+    _refresh_book_suggestions(book)
     book["outputs"] = _find_book_outputs(book_id)
     book["tasks"] = sorted(tasks, key=lambda x: x.get("created_at", ""), reverse=True)
+    book["profiles"] = profile_options(include_auto=True)
     return book
 
 
@@ -179,12 +218,14 @@ def _enqueue(book_id):
             return False, "book not found"
         if book.get("status") in {"queued", "running"}:
             return False, "book already queued or running"
+        _refresh_book_suggestions(book)
         task_id = uuid.uuid4().hex[:12]
         profile_name = normalize_profile_name(book.get("profile", "auto"))
         task = {
             "id": task_id,
             "book_id": book_id,
             "profile": profile_name,
+            "profile_suggestions": book.get("profile_suggestions", []),
             "status": "queued",
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         }
@@ -237,7 +278,10 @@ def _worker_loop():
                         raise RuntimeError(config_error)
                     profile_name = task.get("profile", "auto")
                     if profile_name == "auto":
+                        suggestions = infer_profile_candidates_for_novel(book["path"], book.get("name", ""), min_score=1)
+                        task["profile_suggestions"] = suggestions
                         profile_name = infer_profile_for_novel(book["path"], book.get("name", ""))
+                        task["resolved_profile"] = profile_name
                     result = process_single_novel(book["path"], profile_name=profile_name, run_id=_generate_run_id(), skip_fresh=True)
             with STATE_LOCK:
                 task["status"] = "completed" if result.get("status") in {"ok", "skipped"} else "failed"
@@ -245,6 +289,7 @@ def _worker_loop():
                 task["result"] = result
                 book["status"] = task["status"]
                 book["active_profile"] = result.get("profile", profile_name)
+                book["profile_suggestions"] = task.get("profile_suggestions", book.get("profile_suggestions", []))
                 book["message"] = "完成" if task["status"] == "completed" else result.get("error", "失败")
                 _save_state()
         except Exception as exc:
@@ -276,7 +321,7 @@ def _start_worker_once():
 def _try_load_runtime_config(interactive_context: str = "web"):
     global CONFIG_READY
     try:
-        load_configs(get_base_dir())
+        load_configs(get_base_dir(), interactive=False)
         CONFIG_READY = True
         return True, ""
     except BaseException as exc:
@@ -312,12 +357,8 @@ HTML = r"""<!doctype html>
     <h2>上传小说</h2>
     <form action="/upload" method="post" enctype="multipart/form-data">
       <input type="file" name="file" accept=".txt" required>
-      <select name="profile">
+      <select id="uploadProfile" name="profile">
         <option value="auto">自动识别</option>
-        <option value="harem">后宫/男性向</option>
-        <option value="general">通用</option>
-        <option value="history">历史</option>
-        <option value="hard_sci_fi">硬科幻</option>
       </select>
       <button type="submit">上传</button>
     </form>
@@ -325,7 +366,7 @@ HTML = r"""<!doctype html>
   <section>
     <h2>书籍列表</h2>
     <table>
-      <thead><tr><th>书名</th><th>分类</th><th>状态</th><th>消息</th><th>操作</th></tr></thead>
+      <thead><tr><th>书名</th><th>分类</th><th>自动建议</th><th>状态</th><th>消息</th><th>操作</th></tr></thead>
       <tbody id="books"></tbody>
     </table>
   </section>
@@ -335,25 +376,44 @@ HTML = r"""<!doctype html>
   </section>
 </main>
 <script>
-const profiles = [
-  ["auto", "自动识别"], ["harem", "后宫/男性向"], ["general", "通用"], ["history", "历史"], ["hard_sci_fi", "硬科幻"]
-];
+let profiles = [{name: 'auto', display_name: '自动识别'}];
 async function api(path, options) {
   const res = await fetch(path, options);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function renderProfileOptions(selected) {
+  return profiles.map(p => `<option value="${esc(p.name)}" ${selected === p.name ? 'selected' : ''}>${esc(p.display_name || p.name)}</option>`).join('');
+}
+function renderSuggestions(book) {
+  const suggestions = book.profile_suggestions || [];
+  if (!suggestions.length) return '<span class="muted">暂无</span>';
+  return suggestions.map(s => {
+    const words = (s.matched_keywords || []).slice(0, 5).join('、');
+    const suffix = words ? `：${esc(words)}` : '';
+    return `<span title="${esc(words)}">${esc(s.display_name || s.name)}(${esc(s.score)})${suffix}</span>`;
+  }).join('<br>');
+}
+function syncUploadProfileOptions() {
+  const select = document.getElementById('uploadProfile');
+  const current = select.value || 'auto';
+  select.innerHTML = renderProfileOptions(current);
+  if (![...select.options].some(o => o.value === current)) select.value = 'auto';
+}
 async function refresh() {
   const data = await api('/api/state');
+  profiles = data.profiles || profiles;
+  syncUploadProfileOptions();
   document.getElementById('configWarning').style.display = data.config_ready ? 'none' : 'block';
   const tbody = document.getElementById('books');
   tbody.innerHTML = data.books.map(book => {
-    const opts = profiles.map(([v, label]) => `<option value="${v}" ${book.profile === v ? 'selected' : ''}>${label}</option>`).join('');
+    const opts = renderProfileOptions(book.profile);
     const disabled = book.status === 'queued' || book.status === 'running' ? 'disabled' : '';
     return `<tr>
       <td>${esc(book.name)}</td>
       <td><select data-profile="${esc(book.id)}" ${disabled}>${opts}</select></td>
+      <td class="muted">${renderSuggestions(book)}</td>
       <td class="status">${esc(book.status || 'idle')}</td>
       <td class="muted">${esc(book.message || '')}</td>
       <td><button data-scan="${esc(book.id)}" ${disabled}>加入队列</button> <button data-detail="${esc(book.id)}">详情</button></td>
@@ -372,18 +432,20 @@ async function refresh() {
 async function showDetail(bookId) {
   const book = await api('/api/book?id=' + encodeURIComponent(bookId));
   const outputs = (book.outputs || []).map(f => `<li><a href="${esc(f.url)}" target="_blank">${esc(f.name)}</a></li>`).join('') || '<li>暂无输出文件</li>';
+  const suggestions = renderSuggestions(book);
   const tasks = (book.tasks || []).map(t => {
     const log = t.log_file ? `<a href="${esc(t.log_file.url)}" target="_blank">日志</a>` : '';
-    return `<tr><td>${esc(t.id)}</td><td>${esc(t.profile)}</td><td>${esc(t.status)}</td><td>${esc(t.created_at || '')}</td><td>${esc(t.finished_at || t.error || '')}</td><td>${log}</td></tr>`;
-  }).join('') || '<tr><td colspan="6">暂无任务</td></tr>';
+    return `<tr><td>${esc(t.id)}</td><td>${esc(t.profile)}</td><td>${esc(t.resolved_profile || '')}</td><td>${esc(t.status)}</td><td>${esc(t.created_at || '')}</td><td>${esc(t.finished_at || t.error || '')}</td><td>${log}</td></tr>`;
+  }).join('') || '<tr><td colspan="7">暂无任务</td></tr>';
   document.getElementById('detail').innerHTML = `
     <h3>${esc(book.name)}</h3>
     <p>当前分类：${esc(book.profile)}；实际扫描分类：${esc(book.active_profile || '')}；状态：${esc(book.status)}</p>
+    <p>自动建议：${suggestions}</p>
     <p>路径：${esc(book.path)}</p>
     <h4>输出文件</h4>
     <ul>${outputs}</ul>
     <h4>任务历史</h4>
-    <table><thead><tr><th>任务</th><th>分类</th><th>状态</th><th>创建</th><th>结束/错误</th><th>日志</th></tr></thead><tbody>${tasks}</tbody></table>
+    <table><thead><tr><th>任务</th><th>分类</th><th>实际分类</th><th>状态</th><th>创建</th><th>结束/错误</th><th>日志</th></tr></thead><tbody>${tasks}</tbody></table>
   `;
 }
 refresh();
@@ -465,7 +527,11 @@ class Handler(BaseHTTPRequestHandler):
                 if book.get("status") in {"queued", "running"}:
                     self._send_json({"error": "book is queued or running"}, 409)
                     return
-                book["profile"] = normalize_profile_name(payload.get("profile", "auto"))
+                profile_name = _normalize_web_profile(payload.get("profile", "auto"))
+                if not profile_name:
+                    self._send_json({"error": "invalid profile"}, 400)
+                    return
+                book["profile"] = profile_name
                 book["message"] = "分类已更新"
                 _save_state()
             self._send_json({"ok": True})
@@ -486,14 +552,17 @@ class Handler(BaseHTTPRequestHandler):
             path = os.path.join(_novels_dir(), filename)
             with open(path, "wb") as f:
                 f.write(file_item.file.read())
-            profile = normalize_profile_name(form.getfirst("profile", "auto"))
+            profile = _normalize_web_profile(form.getfirst("profile", "auto")) or "auto"
             book_id = _book_id_from_path(path)
+            suggestions = _profile_suggestions(path, book_id)
             with STATE_LOCK:
                 STATE["books"][book_id] = {
                     "id": book_id,
                     "name": book_id,
                     "path": path,
                     "profile": profile,
+                    "profile_suggestions": suggestions,
+                    "suggestion_signature": f"{os.path.getmtime(path)}:{os.path.getsize(path)}",
                     "status": "idle",
                     "message": "已上传",
                     "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),

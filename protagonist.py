@@ -58,7 +58,7 @@ def _get_active_profile():
 
 def _is_general_profile():
     profile = _get_active_profile()
-    return bool(profile and profile.name == "general")
+    return bool(profile and profile.report_mode == "general")
 
 
 def _role_stage_label():

@@ -4,6 +4,7 @@ import unittest
 
 import analysis_profiles
 import general_scan
+import main
 import report
 import web_manager
 
@@ -33,6 +34,16 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertEqual(analysis_profiles.resolve_profile_name("自动"), "auto")
 
+    def test_profile_options_are_discovered(self):
+        options = analysis_profiles.profile_options(include_auto=True)
+        names = [item["name"] for item in options]
+
+        self.assertEqual(names[0], "auto")
+        self.assertIn("harem", names)
+        self.assertIn("general", names)
+        self.assertIn("history", names)
+        self.assertIn("hard_sci_fi", names)
+
     def test_auto_profile_inference(self):
         self.assertEqual(
             analysis_profiles.infer_profile_for_text("大明权臣", "皇帝与朝廷在庙堂上争论边军粮饷。"),
@@ -51,6 +62,40 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "general",
         )
 
+    def test_auto_profile_candidates_keep_mixed_genres(self):
+        candidates = analysis_profiles.infer_profile_candidates_for_text(
+            "大明后宫",
+            "皇帝与朝廷在庙堂上争论边军粮饷，男主和道侣、红颜都卷入纳妾风波。",
+        )
+        names = [item["name"] for item in candidates]
+
+        self.assertIn("history", names)
+        self.assertIn("harem", names)
+        self.assertGreater(candidates[0]["score"], 0)
+        self.assertTrue(candidates[0]["matched_keywords"])
+
+    def test_specialty_profiles_use_general_character_mode(self):
+        old_profile = os.environ.get("ANALYSIS_PROFILE")
+        try:
+            os.environ["ANALYSIS_PROFILE"] = "history"
+            self.assertTrue(web_manager._normalize_web_profile("历史"))
+            import protagonist
+
+            self.assertTrue(protagonist._is_general_profile())
+        finally:
+            if old_profile is None:
+                os.environ.pop("ANALYSIS_PROFILE", None)
+            else:
+                os.environ["ANALYSIS_PROFILE"] = old_profile
+
+    def test_load_configs_non_interactive_does_not_wait_for_input(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "api.txt"), "w", encoding="utf-8") as f:
+                f.write("")
+
+            with self.assertRaises(SystemExit):
+                main.load_configs(tmp, interactive=False)
+
     def test_web_manager_safe_filename(self):
         self.assertEqual(web_manager._safe_filename("../坏:名字"), "坏_名字.txt")
         self.assertEqual(web_manager._safe_filename("book.txt"), "book.txt")
@@ -63,6 +108,25 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertFalse(web_manager._is_safe_public_file(outside_path))
         finally:
             os.unlink(outside_path)
+
+    def test_web_manager_public_state_includes_profiles_and_suggestions(self):
+        old_state = web_manager.STATE
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as f:
+            f.write("皇帝与朝廷争论，男主和红颜卷入后宫风波。")
+            novel_path = f.name
+        try:
+            web_manager.STATE = {
+                "books": {"book": {"id": "book", "name": "book", "path": novel_path, "profile": "auto", "status": "idle"}},
+                "tasks": [],
+            }
+            web_manager._refresh_book_suggestions(web_manager.STATE["books"]["book"])
+            state = web_manager._public_state()
+            self.assertIn("profiles", state)
+            self.assertTrue(any(item["name"] == "history" for item in state["books"][0]["profile_suggestions"]))
+            self.assertTrue(any(item["name"] == "harem" for item in state["books"][0]["profile_suggestions"]))
+        finally:
+            web_manager.STATE = old_state
+            os.unlink(novel_path)
 
     def test_web_manager_book_detail_adds_log_link(self):
         task_id = "testtask"

@@ -16,6 +16,7 @@ _DEFAULT_ENV_SETTINGS = {
     "MODEL_NAME": "deepseek-chat",
     "ANALYSIS_PROFILE": "harem",
     "MAX_WORKERS": "6",
+    "RATE_LIMIT_SCOPE": "global",
     "DIM_BOOST_MAX_PER_CHUNK": "3",
     "RESCAN_ROUNDS": "3",
     "MAX_MIDDLE_SUMMARY_CALLS": "10",
@@ -24,7 +25,7 @@ _DEFAULT_ENV_SETTINGS = {
     "RESCAN_MAX_WINDOW": "2000",
     "RESCAN_MAX_PROMPT_HEROINES": "4",
 }
-_PASSTHROUGH_SETTING_KEYS = {"BASE_URL", "MODEL_NAME", "ANALYSIS_PROFILE", "MAX_WORKERS", "RPM_LIMIT", "TPM_LIMIT"}
+_PASSTHROUGH_SETTING_KEYS = {"BASE_URL", "MODEL_NAME", "ANALYSIS_PROFILE", "MAX_WORKERS", "RPM_LIMIT", "TPM_LIMIT", "RATE_LIMIT_SCOPE"}
 _VALIDATED_NON_NEGATIVE_INT_KEYS = {
     "DIM_BOOST_MAX_PER_CHUNK": _DEFAULT_ENV_SETTINGS["DIM_BOOST_MAX_PER_CHUNK"],
     "RESCAN_ROUNDS": _DEFAULT_ENV_SETTINGS["RESCAN_ROUNDS"],
@@ -81,7 +82,14 @@ def _set_non_negative_float_env(key, raw_value, default_value):
     os.environ[key] = str(parsed)
 
 
-def load_configs(base_dir):
+def _exit_config_error(message, interactive=True):
+    print(message)
+    if interactive:
+        input("按回车键退出...")
+    sys.exit(1)
+
+
+def load_configs(base_dir, interactive=True):
     """
     读取 setting.txt 和 api.txt，注入到 os.environ。
     对应 bat 中的 setting.txt 解析和 API_KEY_POOL 构建逻辑。
@@ -108,16 +116,12 @@ def load_configs(base_dir):
 
     api_file = os.path.join(base_dir, "api.txt")
     if not os.path.exists(api_file):
-        print(f"[ERROR] 未找到 {api_file}，请创建并写入可用的 API Key（每行一条）。")
-        input("按回车键退出...")
-        sys.exit(1)
+        _exit_config_error(f"[ERROR] 未找到 {api_file}，请创建并写入可用的 API Key（每行一条）。", interactive=interactive)
 
     text = _read_file_safely(api_file)
     keys = [k.strip() for k in text.splitlines() if k.strip()]
     if not keys:
-        print(f"[ERROR] {api_file} 中未读取到任何 key")
-        input("按回车键退出...")
-        sys.exit(1)
+        _exit_config_error(f"[ERROR] {api_file} 中未读取到任何 key", interactive=interactive)
 
     os.environ["API_KEY_POOL"] = ",".join(keys)
     os.environ["API_KEY"] = keys[0]
@@ -160,6 +164,11 @@ def load_configs(base_dir):
         f"RESCAN_PRE_FILTER_THRESHOLD={os.environ['RESCAN_PRE_FILTER_THRESHOLD']}  "
         f"RESCAN_MAX_WINDOW={os.environ['RESCAN_MAX_WINDOW']}  "
         f"RESCAN_MAX_PROMPT_HEROINES={os.environ['RESCAN_MAX_PROMPT_HEROINES']}"
+    )
+    print(
+        f"本地限流：RPM_LIMIT={os.environ.get('RPM_LIMIT', '')}  "
+        f"TPM_LIMIT={os.environ.get('TPM_LIMIT', '')}  "
+        f"RATE_LIMIT_SCOPE={os.environ.get('RATE_LIMIT_SCOPE', 'global')}"
     )
     print(f"API Key 数量: {len(keys)}")
     print()
