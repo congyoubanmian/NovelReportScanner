@@ -117,7 +117,7 @@ RESCAN_MAX_PROMPT_HEROINES=4
 - `BASE_URL`：OpenAI 兼容接口地址。
 - `MODEL_NAME`：调用的模型名称。
 - `MAX_WORKERS`：并发规模基线。
-- `ANALYSIS_PROFILE`：分析模式。`harem` 为默认后宫/男性向排雷模式；`general` 为通用小说分析入口。
+- `ANALYSIS_PROFILE`：分析模式。`harem` 为默认后宫/男性向排雷模式；`general`、`history`、`hard_sci_fi` 为通用和类型专长入口。
 - `RPM_LIMIT` / `TPM_LIMIT`：限流相关配置。
 
 ### 分析模式
@@ -125,7 +125,9 @@ RESCAN_MAX_PROMPT_HEROINES=4
 项目现在通过 `ANALYSIS_PROFILE` 区分不同分析模式：
 
 - `harem`：默认模式，保留原有男主、女主、初处、漏女、毒点/雷点分析流程。
-- `general`：通用小说分析入口，当前会运行角色识别并生成通用小说报告，不执行初处、漏女、后宫毒点二审。
+- `general`：通用小说分析入口，会运行角色识别、剧情/冲突/主题/设定扫描并生成通用小说报告，不执行初处、漏女、后宫毒点二审。
+- `history`：历史小说专长分析，在通用流程上额外关注时代制度、战争权谋、派系逻辑、人物立场和历史氛围。
+- `hard_sci_fi`：硬科幻专长分析，在通用流程上额外关注科学假设、技术链、工程约束、因果推演和设定自洽。
 
 当前 `general` 模式会运行通用角色识别，并继续执行 `general_scan.py` 抽取剧情主线、核心冲突、世界观设定、主题表达、伏笔回收、优点和问题。角色明细 JSON 中会输出通用 `characters` 列表。
 
@@ -136,7 +138,13 @@ profiles/
 ├─ harem/
 │  ├─ profile.json
 │  └─ rules.json
-└─ general/
+├─ general/
+│  ├─ profile.json
+│  └─ rules.json
+├─ history/
+│  ├─ profile.json
+│  └─ rules.json
+└─ hard_sci_fi/
    ├─ profile.json
    └─ rules.json
 ```

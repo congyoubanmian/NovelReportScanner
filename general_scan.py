@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 
 from tqdm import tqdm
 
+from analysis_profiles import load_analysis_profile
 from shared_utils import MODEL, chat_completion, get_base_dir, init_token_tracker, read_file_safely, record_usage
 from shared_utils import _safe_json_loads_maybe
 from text_anchor import build_chunk_manifest, save_chunk_manifest
@@ -19,8 +20,10 @@ def _read_novel(path: str) -> str:
     return read_file_safely(path)
 
 
-def _latest_summary_path(results_dir: str, clean_name: str) -> str:
-    return os.path.join(results_dir, f"{clean_name}_GENERAL_SUMMARY_latest.json")
+def _latest_summary_path(results_dir: str, clean_name: str, profile_name: str = "general") -> str:
+    if profile_name == "general":
+        return os.path.join(results_dir, f"{clean_name}_GENERAL_SUMMARY_latest.json")
+    return os.path.join(results_dir, f"{clean_name}_{profile_name}_GENERAL_SUMMARY_latest.json")
 
 
 def _read_json(path: str):
@@ -40,10 +43,14 @@ def _novel_mtime(path: str):
         return None
 
 
-def _is_fresh_summary(data: Dict[str, Any], novel_file: str) -> bool:
+def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str = "general") -> bool:
     if not isinstance(data, dict):
         return False
-    if data.get("schema_version") != 1 or data.get("analysis_profile") != "general":
+    if data.get("schema_version") != 1:
+        return False
+    if data.get("analysis_profile") not in {"general", profile_name}:
+        return False
+    if data.get("specialty_profile", data.get("analysis_profile", "general")) != profile_name:
         return False
     if os.path.abspath(data.get("novel_path", "")) != os.path.abspath(novel_file):
         return False
@@ -92,8 +99,21 @@ def _call_json(messages, max_tokens=3000) -> Dict[str, Any]:
     return data
 
 
-def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int) -> Dict[str, Any]:
-    system_prompt = """你是通用小说分析助手。请从片段中抽取对整本小说分析有用的信息。
+def _focus_text(profile) -> str:
+    focus = profile.scan_focus or [
+        "剧情主线与关键事件",
+        "核心冲突与人物目标",
+        "世界观、时代背景或制度设定",
+        "主题表达与情绪基调",
+        "伏笔、悬念与回收",
+        "节奏、逻辑、人物动机、优点和阅读门槛",
+    ]
+    return "\n".join(f"- {item}" for item in focus)
+
+
+def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None) -> Dict[str, Any]:
+    profile = profile or load_analysis_profile("general")
+    system_prompt = f"""你是{profile.display_name}助手。请从片段中抽取对整本小说分析有用的信息。
 
 关注范围：
 - plot_events: 推动主线或支线的关键事件
@@ -102,6 +122,9 @@ def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int) -> Dict[st
 - themes: 反复出现的主题、价值观、情绪母题
 - foreshadowing: 伏笔、悬念、未解决问题
 - quality_notes: 节奏、逻辑、人物动机、爽点、虐点、亮点或明显问题
+
+本 profile 的专项关注：
+{_focus_text(profile)}
 
 要求：
 1. 只根据片段内容输出，不要凭空补全。
@@ -156,7 +179,8 @@ def _merge_items(chunk_results: List[Dict[str, Any]], key: str, limit: int = 80)
     return out
 
 
-def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile=None) -> Dict[str, Any]:
+    profile = profile or load_analysis_profile("general")
     material = {
         "chunk_summaries": [
             {"chunk_index": x.get("chunk_index"), "summary": x.get("one_sentence_summary")}
@@ -170,7 +194,20 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]]) -> Dict
         "foreshadowing": _merge_items(chunk_results, "foreshadowing"),
         "quality_notes": _merge_items(chunk_results, "quality_notes"),
     }
-    system_prompt = """你是通用小说总评分析师。请基于分块抽取结果，形成整本书的通用分析结论。
+    specialty_fields = [x for x in profile.summary_fields if x not in {
+        "main_plot",
+        "core_conflicts",
+        "worldbuilding",
+        "themes",
+        "foreshadowing_and_payoff",
+        "strengths",
+        "risks_or_issues",
+    }]
+    specialty_json_hint = ""
+    if specialty_fields:
+        specialty_json_hint = "\n".join(f'  "{field}": ["{field} 专项分析要点"],' for field in specialty_fields)
+
+    system_prompt = f"""你是{profile.display_name}总评分析师。请基于分块抽取结果，形成整本书的分析结论。
 
 输出必须是 JSON 对象。不要使用后宫、初处、漏女、排雷等专用标准。"""
     user_prompt = f"""书名：{book_name}
@@ -186,6 +223,7 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]]) -> Dict
   "worldbuilding": ["世界观/设定要点"],
   "themes": ["主题表达"],
   "foreshadowing_and_payoff": ["伏笔、悬念、回收情况"],
+{specialty_json_hint}
   "strengths": ["作品优点"],
   "risks_or_issues": ["可能的问题或阅读门槛"],
   "reader_fit": "适合什么读者",
@@ -198,7 +236,7 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]]) -> Dict
         ],
         max_tokens=4000,
     )
-    return {
+    summary = {
         "story_overview": str(data.get("story_overview", "") or "").strip(),
         "main_plot": _safe_list(data.get("main_plot"), limit=20),
         "core_conflicts": _safe_list(data.get("core_conflicts"), limit=20),
@@ -210,6 +248,9 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]]) -> Dict
         "reader_fit": str(data.get("reader_fit", "") or "").strip(),
         "overall_assessment": str(data.get("overall_assessment", "") or "").strip(),
     }
+    for field in specialty_fields:
+        summary[field] = _safe_list(data.get(field), limit=20)
+    return summary
 
 
 def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
@@ -218,17 +259,18 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         os.environ["NOVEL_PATH"] = novel_path
     novel_file = novel_path or os.environ.get("NOVEL_PATH", os.path.join(base, "novels", "default.txt"))
     clean_name = (book_name or os.path.splitext(os.path.basename(novel_file))[0]).strip()
+    profile = load_analysis_profile(os.environ.get("ANALYSIS_PROFILE", "general"))
     init_token_tracker(clean_name, run_id=run_id, out_path=os.path.join(base, "results", "token_usage.json"))
 
     results_dir = os.path.join(base, "results")
-    latest_file = _latest_summary_path(results_dir, clean_name)
+    latest_file = _latest_summary_path(results_dir, clean_name, profile.name)
     latest_data = _read_json(latest_file)
-    if _is_fresh_summary(latest_data, novel_file):
+    if _is_fresh_summary(latest_data, novel_file, profile.name):
         print(f"★ 通用扫描已是最新，复用: {latest_file}")
         return 0
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    output_dir = os.path.join(results_dir, f"{clean_name}_general_{timestamp}")
+    output_dir = os.path.join(results_dir, f"{clean_name}_{profile.name}_{timestamp}")
     os.makedirs(output_dir, exist_ok=True)
 
     text = _read_novel(novel_file)
@@ -238,19 +280,23 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     if MAX_CHUNKS > 0:
         chunks = chunks[:MAX_CHUNKS]
 
-    print(f"★ 通用扫描：{clean_name}，共 {len(chunks)} 个片段")
+    print(f"★ {profile.display_name}：{clean_name}，共 {len(chunks)} 个片段")
     chunk_results = []
     failed = []
     for idx, chunk in enumerate(tqdm(chunks, desc="通用扫描")):
         try:
-            chunk_results.append(_scan_chunk(chunk, idx, len(chunks)))
+            chunk_results.append(_scan_chunk(chunk, idx, len(chunks), profile=profile))
         except Exception as exc:
             failed.append({"chunk_index": idx, "error": str(exc)})
 
-    summary = _summarize_book(clean_name, chunk_results) if chunk_results else {}
+    summary = _summarize_book(clean_name, chunk_results, profile=profile) if chunk_results else {}
     out = {
         "schema_version": 1,
         "analysis_profile": "general",
+        "specialty_profile": profile.name,
+        "profile_display_name": profile.display_name,
+        "scan_focus": profile.scan_focus,
+        "summary_fields": profile.summary_fields,
         "book_name": clean_name,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "novel_path": novel_file,

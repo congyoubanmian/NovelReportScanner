@@ -8,5 +8,22 @@
     "general_report"
   ],
   "rules_file": "rules.json",
-  "report_mode": "general"
+  "report_mode": "general",
+  "scan_focus": [
+    "剧情主线与关键事件",
+    "核心冲突与人物目标",
+    "世界观、时代背景或制度设定",
+    "主题表达与情绪基调",
+    "伏笔、悬念与回收",
+    "节奏、逻辑、人物动机、优点和阅读门槛"
+  ],
+  "summary_fields": [
+    "main_plot",
+    "core_conflicts",
+    "worldbuilding",
+    "themes",
+    "foreshadowing_and_payoff",
+    "strengths",
+    "risks_or_issues"
+  ]
 }

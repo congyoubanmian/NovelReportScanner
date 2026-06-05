@@ -11,6 +11,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
     def test_profile_aliases_and_stages(self):
         harem = analysis_profiles.load_analysis_profile("后宫")
         general = analysis_profiles.load_analysis_profile("通用")
+        history = analysis_profiles.load_analysis_profile("历史")
+        hard_sci_fi = analysis_profiles.load_analysis_profile("硬科幻")
 
         self.assertEqual(harem.name, "harem")
         self.assertTrue(harem.uses_harem_reviewer)
@@ -20,11 +22,22 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(general.uses_harem_reviewer)
         self.assertTrue(general.uses_general_scan)
 
+        self.assertEqual(history.name, "history")
+        self.assertTrue(history.uses_general_scan)
+        self.assertIn("historical_logic", history.summary_fields)
+
+        self.assertEqual(hard_sci_fi.name, "hard_sci_fi")
+        self.assertTrue(hard_sci_fi.uses_general_scan)
+        self.assertIn("science_consistency", hard_sci_fi.summary_fields)
+
     def test_general_report_uses_story_summary_and_characters(self):
         general_summary = {
+            "profile_display_name": "历史小说专长分析",
+            "summary_fields": ["main_plot", "historical_logic"],
             "summary": {
                 "story_overview": "主角追查旧案，牵出沈家与巡查司的冲突。",
                 "main_plot": ["主角追查旧案"],
+                "historical_logic": ["官制与地方治理形成冲突"],
                 "core_conflicts": ["巡查司与沈家对立"],
                 "worldbuilding": ["架空王朝"],
                 "themes": ["真相与代价"],
@@ -52,6 +65,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         text = report.build_general_report("测试书", detailed, general_summary)
 
         self.assertIn("主线剧情", text)
+        self.assertIn("历史小说专长分析", text)
+        self.assertIn("官制与地方治理形成冲突", text)
         self.assertIn("真相与代价", text)
         self.assertIn("沈砚", text)
         self.assertIn("阵营/势力：沈家", text)
@@ -64,6 +79,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             data = {
                 "schema_version": 1,
                 "analysis_profile": "general",
+                "specialty_profile": "history",
                 "novel_path": novel_path,
                 "novel_mtime": os.path.getmtime(novel_path),
                 "chunk_size": general_scan.CHUNK_SIZE,
@@ -72,9 +88,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }
-            self.assertTrue(general_scan._is_fresh_summary(data, novel_path))
+            self.assertTrue(general_scan._is_fresh_summary(data, novel_path, "history"))
+            self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "general"))
             data["max_chunks"] = general_scan.MAX_CHUNKS + 1
-            self.assertFalse(general_scan._is_fresh_summary(data, novel_path))
+            self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "history"))
         finally:
             os.unlink(novel_path)
 

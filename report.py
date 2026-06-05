@@ -177,9 +177,13 @@ def find_detailed_json(book_key: str, base_dir: str = RESULTS_DIR, detail_path: 
     return find_latest("*_detailed_*.json", base_dir)
 
 
-def find_general_summary_json(book_key: str, base_dir: str = RESULTS_DIR):
+def find_general_summary_json(book_key: str, base_dir: str = RESULTS_DIR, profile_name: str = "general"):
     if not book_key:
         return find_latest("*_GENERAL_SUMMARY_latest.json", base_dir)
+    if profile_name and profile_name != "general":
+        latest_path = os.path.join(base_dir, f"{book_key}_{profile_name}_GENERAL_SUMMARY_latest.json")
+        if os.path.exists(latest_path):
+            return latest_path
     latest_path = os.path.join(base_dir, f"{book_key}_GENERAL_SUMMARY_latest.json")
     if os.path.exists(latest_path):
         return latest_path
@@ -1123,6 +1127,20 @@ def _append_general_scan_section(lines: list, general_summary: dict):
     add_list("世界观/设定", summary.get("worldbuilding"))
     add_list("主题表达", summary.get("themes"))
     add_list("伏笔与回收", summary.get("foreshadowing_and_payoff"))
+    specialty_fields = [
+        x for x in (general_summary or {}).get("summary_fields", [])
+        if x not in {
+            "main_plot",
+            "core_conflicts",
+            "worldbuilding",
+            "themes",
+            "foreshadowing_and_payoff",
+            "strengths",
+            "risks_or_issues",
+        }
+    ]
+    for field in specialty_fields:
+        add_list(field, summary.get(field))
     add_list("优点", summary.get("strengths"))
     add_list("问题与阅读门槛", summary.get("risks_or_issues"))
     lines.extend(["", "【适合读者】", summary.get("reader_fit") or "未描述"])
@@ -1140,7 +1158,7 @@ def build_general_report(book_key: str, detailed_data: dict, general_summary: di
     lines = [
         f"书名：{book_key or '未识别'}",
         f"报告生成时间：{ts}",
-        "分析模式：通用小说分析",
+        f"分析模式：{(general_summary or {}).get('profile_display_name') or '通用小说分析'}",
         "=" * 60,
     ]
     _append_general_scan_section(lines, general_summary)
@@ -1291,7 +1309,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     log_report(f"using detailed: {detailed_path or '<not found>'}")
     log_report(f"using reviewer: {reviewer_path or '<not found>'}")
     log_report(f"book key: {book_key or '<unknown>'}")
-    general_summary_path = find_general_summary_json(book_key) if profile.report_mode == "general" else None
+    general_summary_path = find_general_summary_json(book_key, profile_name=profile.name) if profile.report_mode == "general" else None
     general_summary = load_json(general_summary_path) if general_summary_path else None
     if profile.report_mode == "general":
         log_report(f"using general summary: {general_summary_path or '<not found>'}")
