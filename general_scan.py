@@ -19,6 +19,44 @@ def _read_novel(path: str) -> str:
     return read_file_safely(path)
 
 
+def _latest_summary_path(results_dir: str, clean_name: str) -> str:
+    return os.path.join(results_dir, f"{clean_name}_GENERAL_SUMMARY_latest.json")
+
+
+def _read_json(path: str):
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _novel_mtime(path: str):
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return None
+
+
+def _is_fresh_summary(data: Dict[str, Any], novel_file: str) -> bool:
+    if not isinstance(data, dict):
+        return False
+    if data.get("schema_version") != 1 or data.get("analysis_profile") != "general":
+        return False
+    if os.path.abspath(data.get("novel_path", "")) != os.path.abspath(novel_file):
+        return False
+    if data.get("chunk_size") != CHUNK_SIZE or data.get("chunk_overlap") != CHUNK_OVERLAP:
+        return False
+    if data.get("max_chunks") != MAX_CHUNKS:
+        return False
+    current_mtime = _novel_mtime(novel_file)
+    if current_mtime is None or data.get("novel_mtime") != current_mtime:
+        return False
+    return bool((data.get("summary") or {}).get("story_overview") or data.get("chunk_results"))
+
+
 def _safe_list(value: Any, limit: int = 20) -> List[str]:
     if value is None:
         return []
@@ -183,6 +221,12 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     init_token_tracker(clean_name, run_id=run_id, out_path=os.path.join(base, "results", "token_usage.json"))
 
     results_dir = os.path.join(base, "results")
+    latest_file = _latest_summary_path(results_dir, clean_name)
+    latest_data = _read_json(latest_file)
+    if _is_fresh_summary(latest_data, novel_file):
+        print(f"★ 通用扫描已是最新，复用: {latest_file}")
+        return 0
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     output_dir = os.path.join(results_dir, f"{clean_name}_general_{timestamp}")
     os.makedirs(output_dir, exist_ok=True)
@@ -210,7 +254,11 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         "book_name": clean_name,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "novel_path": novel_file,
+        "novel_mtime": _novel_mtime(novel_file),
         "detail_path": detail_path,
+        "chunk_size": CHUNK_SIZE,
+        "chunk_overlap": CHUNK_OVERLAP,
+        "max_chunks": MAX_CHUNKS,
         "chunk_count": len(chunks),
         "failed_chunks": failed,
         "chunk_results": chunk_results,
@@ -219,7 +267,6 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     out_file = os.path.join(output_dir, "GENERAL_SUMMARY.json")
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
-    latest_file = os.path.join(results_dir, f"{clean_name}_GENERAL_SUMMARY_latest.json")
     with open(latest_file, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
     print(f"★ 通用扫描结果: {out_file}")
