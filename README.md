@@ -178,7 +178,7 @@ docker run -d \
 docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
-Compose 构建同样可以先设置 `PIP_INDEX_URL` 来切换 pip 源。
+Compose 构建同样可以先设置 `PIP_INDEX_URL` 来切换 pip 源。推送到 `main` 后可以在 Actions 页面查看自动镜像构建结果。
 
 推送到 GitHub `main` 分支或 `v*` 版本 tag 后，GitHub Actions 会自动构建并推送镜像到 GHCR。服务器只需要准备 `.env`、`novels/`、`results/` 和 `docker-compose.yml`。例如：
 
