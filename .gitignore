@@ -5,3 +5,6 @@ results/
 !results/learned_keywords/
 !results/learned_keywords/seed.json
 !results/learned_keywords/learned_*.json
+.env
+.env.*
+!.env.sample

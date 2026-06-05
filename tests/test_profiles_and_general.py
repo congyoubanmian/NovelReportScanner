@@ -96,6 +96,30 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 main.load_configs(tmp, interactive=False)
 
+    def test_load_configs_reads_dotenv_before_setting_file(self):
+        keys = ["API_KEY", "API_KEY_POOL", "BASE_URL", "MODEL_NAME", "MAX_WORKERS"]
+        old_env = {key: os.environ.get(key) for key in keys}
+        try:
+            for key in keys:
+                os.environ.pop(key, None)
+            with tempfile.TemporaryDirectory() as tmp:
+                with open(os.path.join(tmp, ".env"), "w", encoding="utf-8") as f:
+                    f.write("API_KEY=sk-dotenv\nBASE_URL=https://dotenv.example/v1\nMODEL_NAME=dotenv-model\nMAX_WORKERS=2\n")
+                with open(os.path.join(tmp, "setting.txt"), "w", encoding="utf-8") as f:
+                    f.write("BASE_URL=https://setting.example/v1\nMODEL_NAME=setting-model\nMAX_WORKERS=9\n")
+
+                main.load_configs(tmp, interactive=False)
+                self.assertEqual(os.environ["API_KEY"], "sk-dotenv")
+                self.assertEqual(os.environ["BASE_URL"], "https://dotenv.example/v1")
+                self.assertEqual(os.environ["MODEL_NAME"], "dotenv-model")
+                self.assertEqual(os.environ["MAX_WORKERS"], "2")
+        finally:
+            for key, value in old_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
     def test_web_manager_safe_filename(self):
         self.assertEqual(web_manager._safe_filename("../坏:名字"), "坏_名字.txt")
         self.assertEqual(web_manager._safe_filename("book.txt"), "book.txt")

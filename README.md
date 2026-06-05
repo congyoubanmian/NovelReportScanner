@@ -10,6 +10,32 @@
 
 默认模式仍然保留原有“男性向/后宫扫书、排雷、女主事实提取、最终汇总”能力；同时新增 `general` 通用小说分析入口，用于后续扩展剧情、主题、设定、历史、硬科幻等专项分析。
 
+项目地址：<https://github.com/congyoubanmian/NovelReportScanner>
+
+## 近期更新
+
+- 新增本地 Web 管理端：支持上传小说、管理书籍列表、调整每本书分析分类、查看书籍详情、任务历史、任务日志和输出文件。
+- Web 端采用单 worker 串行扫描：后台一次只扫一本书，未轮到的任务显示排队中和队列位置。
+- 新增 profile 化分析模式：`harem` 保留后宫/男性向专长分析，`general`、`history`、`hard_sci_fi` 走通用小说/类型专长分析。
+- 自动分类会给出多个候选建议：例如一本书同时有历史背景和后宫结构时，可以在 Web 页面手动选择更合适的 profile。
+- 新增 `.env` 本地配置支持：真实 API Key、模型地址、限流参数可写入本地 `.env`，仓库只保留 `.env.sample` 模板。
+
+## Web 端
+
+启动：
+
+```powershell
+python web_manager.py
+```
+
+默认访问：
+
+```text
+http://127.0.0.1:8765
+```
+
+Web 端适合管理多本书：先上传 `.txt`，根据自动建议调整分类，再加入队列扫描。服务重启后，尚未开始的 queued 任务会恢复排队；已经 running 的任务会标记为 `interrupted`，需要手动重新加入队列。
+
 ## 核心能力
 
 - 批量扫描 `novels/` 目录下的所有小说 `.txt` 文件。
@@ -112,18 +138,24 @@ python web_manager.py
 
 ## 配置说明
 
-### `api.txt`
+### `.env` / `api.txt`
 
-项目会读取根目录下的 `api.txt`，每行一个 key，并自动组装成 `API_KEY_POOL`。
+推荐把本机运行配置写在 `.env` 中。仓库只保留 `.env.sample` 模板，真实 `.env` 已在 `.gitignore` 中忽略，不会被提交。
 
-示例：
-
-```text
-sk-your-key-1
-sk-your-key-2
+```ini
+BASE_URL=https://your-openai-compatible-endpoint/v1
+MODEL_NAME=your-model-name
+MAX_WORKERS=2
+RPM_LIMIT=100
+TPM_LIMIT=10000000
+RATE_LIMIT_SCOPE=global
+API_KEY=sk-your-key
+# API_KEY_POOL=sk-key-1,sk-key-2
 ```
 
-请只在本地保存真实 key，不要把真实 `api.txt` 提交到公开仓库。
+配置加载优先级是：进程环境变量 / `.env` > `setting.txt` > 默认值。API Key 优先读取 `API_KEY_POOL` 或 `API_KEY`；如果没有设置，才会回退读取根目录 `api.txt`。
+
+请只在本地保存真实 key，不要把 `.env` 或真实 `api.txt` 提交到公开仓库。
 
 ### `setting.txt`
 

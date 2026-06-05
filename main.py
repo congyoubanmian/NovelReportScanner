@@ -89,11 +89,37 @@ def _exit_config_error(message, interactive=True):
     sys.exit(1)
 
 
+def _parse_env_line(line):
+    line = line.strip()
+    if not line or line.startswith("#") or "=" not in line:
+        return None, None
+    key, _, value = line.partition("=")
+    key = key.strip()
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"\"", "'"}:
+        value = value[1:-1]
+    return key, value
+
+
+def _load_dotenv(base_dir):
+    env_file = os.path.join(base_dir, ".env")
+    if not os.path.exists(env_file):
+        return
+    text = _read_file_safely(env_file)
+    for line in text.splitlines():
+        key, value = _parse_env_line(line)
+        if not key:
+            continue
+        os.environ.setdefault(key, value)
+
+
 def load_configs(base_dir, interactive=True):
     """
     读取 setting.txt 和 api.txt，注入到 os.environ。
     对应 bat 中的 setting.txt 解析和 API_KEY_POOL 构建逻辑。
     """
+    _load_dotenv(base_dir)
+
     for key, default_value in _DEFAULT_ENV_SETTINGS.items():
         os.environ.setdefault(key, default_value)
 
@@ -107,6 +133,8 @@ def load_configs(base_dir, interactive=True):
             key, _, value = line.partition("=")
             key = key.strip().upper()
             value = value.strip()
+            if key in os.environ:
+                continue
             if key in _PASSTHROUGH_SETTING_KEYS:
                 os.environ[key] = value
             elif key in _VALIDATED_NON_NEGATIVE_INT_KEYS:
@@ -114,14 +142,21 @@ def load_configs(base_dir, interactive=True):
             elif key in _VALIDATED_NON_NEGATIVE_FLOAT_KEYS:
                 _set_non_negative_float_env(key, value, _VALIDATED_NON_NEGATIVE_FLOAT_KEYS[key])
 
-    api_file = os.path.join(base_dir, "api.txt")
-    if not os.path.exists(api_file):
-        _exit_config_error(f"[ERROR] 未找到 {api_file}，请创建并写入可用的 API Key（每行一条）。", interactive=interactive)
+    env_key_pool = os.environ.get("API_KEY_POOL", "").strip()
+    env_key = os.environ.get("API_KEY", "").strip()
+    keys = [k.strip() for k in env_key_pool.split(",") if k.strip()]
+    if not keys and env_key:
+        keys = [env_key]
 
-    text = _read_file_safely(api_file)
-    keys = [k.strip() for k in text.splitlines() if k.strip()]
+    api_file = os.path.join(base_dir, "api.txt")
     if not keys:
-        _exit_config_error(f"[ERROR] {api_file} 中未读取到任何 key", interactive=interactive)
+        if not os.path.exists(api_file):
+            _exit_config_error(f"[ERROR] 未找到 {api_file}，请创建并写入可用的 API Key（每行一条）。", interactive=interactive)
+
+        text = _read_file_safely(api_file)
+        keys = [k.strip() for k in text.splitlines() if k.strip()]
+    if not keys:
+        _exit_config_error(f"[ERROR] 未读取到任何 API Key：请设置 API_KEY/API_KEY_POOL，或在 {api_file} 中写入 key", interactive=interactive)
 
     os.environ["API_KEY_POOL"] = ",".join(keys)
     os.environ["API_KEY"] = keys[0]
