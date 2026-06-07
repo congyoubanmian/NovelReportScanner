@@ -1,4 +1,5 @@
 import json
+import io
 import os
 import tempfile
 import unittest
@@ -1414,6 +1415,40 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertFalse(web_manager._is_safe_public_file(outside_path))
         finally:
             os.unlink(outside_path)
+
+    def test_web_manager_handler_adds_cors_headers(self):
+        class FakeHandler(web_manager.Handler):
+            def __init__(self):
+                self.headers_sent = []
+                self.responses = []
+                self.request_version = "HTTP/1.1"
+                self.wfile = io.BytesIO()
+                self._headers_buffer = []
+
+            def send_header(self, key, value):
+                self.headers_sent.append((key, value))
+
+            def send_response(self, code, message=None):
+                self.responses.append((code, message))
+
+        old_origin = os.environ.get("WEB_CORS_ALLOW_ORIGIN")
+        try:
+            os.environ["WEB_CORS_ALLOW_ORIGIN"] = "https://example.test"
+            handler = FakeHandler()
+            web_manager.Handler.end_headers(handler)
+            self.assertIn(("Access-Control-Allow-Origin", "https://example.test"), handler.headers_sent)
+            self.assertIn(("Access-Control-Allow-Methods", "GET, POST, OPTIONS"), handler.headers_sent)
+            self.assertIn(("Access-Control-Allow-Headers", "Content-Type"), handler.headers_sent)
+
+            options_handler = FakeHandler()
+            web_manager.Handler.do_OPTIONS(options_handler)
+            self.assertEqual(options_handler.responses[0][0], 204)
+            self.assertIn(("Access-Control-Allow-Origin", "https://example.test"), options_handler.headers_sent)
+        finally:
+            if old_origin is None:
+                os.environ.pop("WEB_CORS_ALLOW_ORIGIN", None)
+            else:
+                os.environ["WEB_CORS_ALLOW_ORIGIN"] = old_origin
 
     def test_web_manager_public_state_includes_profiles_and_suggestions(self):
         old_state = web_manager.STATE

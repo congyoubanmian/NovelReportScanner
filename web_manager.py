@@ -557,6 +557,12 @@ def _try_load_runtime_config(interactive_context: str = "web"):
 
 
 class Handler(BaseHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header("Access-Control-Allow-Origin", os.environ.get("WEB_CORS_ALLOW_ORIGIN", "*"))
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        super().end_headers()
+
     def _send_json(self, data, status=200):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -601,6 +607,10 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
         return True
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.end_headers()
 
     def do_GET(self):
         parsed = urlparse(self.path)
