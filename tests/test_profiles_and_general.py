@@ -3621,11 +3621,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "key_events": "结局未交代归宿。",
             },
         )
+        promise_only = report._summarize_leak_three_layers(
+            {},
+            {
+                "relationship_with_protagonist": "普通任务伙伴。",
+                "key_events": "男主承诺帮忙寻药，并承诺守口如瓶。",
+            },
+        )
 
         self.assertIn("情感深度=未明", clean)
         self.assertIn("结论=证据不足", clean)
         self.assertIn("情感深度=有", risky)
         self.assertIn("结论=需关注", risky)
+        self.assertIn("情感深度=未明", promise_only)
+        self.assertIn("结论=证据不足", promise_only)
 
     def test_harem_report_adds_heroine_context_to_issue_lines(self):
         old_openai = report.OpenAI

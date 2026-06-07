@@ -1394,7 +1394,7 @@ def _summarize_leak_three_layers(purity_info: dict, profile: dict) -> str:
 
     has_emotional_depth = _contains_positive_signal_text(
         profile_text,
-        ["暧昧", "喜欢", "爱", "动心", "倾心", "表白", "告白", "吃醋", "承诺", "救赎", "道侣", "恋人", "未婚妻"],
+        ["暧昧", "喜欢", "爱", "动心", "倾心", "表白", "告白", "吃醋", "道侣", "恋人", "未婚妻"],
     )
     pushed = purity_info.get("pushed_by_male_lead")
     leak = purity_info.get("is_leak_heroine")
