@@ -161,6 +161,18 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertEqual(analysis_profiles.resolve_profile_name("自动"), "auto")
 
+    def test_general_profile_fallback_keeps_general_scan_stage(self):
+        old_loader = analysis_profiles._load_profile_manifest
+        try:
+            analysis_profiles._load_profile_manifest = lambda profile_name: {}
+            general = analysis_profiles.load_analysis_profile("general")
+        finally:
+            analysis_profiles._load_profile_manifest = old_loader
+
+        self.assertEqual(general.name, "general")
+        self.assertTrue(general.uses_general_scan)
+        self.assertIn("general_scan", general.enabled_stages)
+
     def test_profile_options_are_discovered(self):
         options = analysis_profiles.profile_options(include_auto=True)
         names = [item["name"] for item in options]

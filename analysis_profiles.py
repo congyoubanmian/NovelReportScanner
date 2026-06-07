@@ -211,7 +211,7 @@ def load_analysis_profile(profile_name: str = None) -> AnalysisProfile:
     if not isinstance(enabled_stages, list):
         enabled_stages = ["character_analysis", "harem_scan", "harem_reviewer", "harem_report"]
         if name == "general":
-            enabled_stages = ["character_analysis", "general_report"]
+            enabled_stages = ["character_analysis", "general_scan", "general_report"]
 
     rules_file = manifest.get("rules_file") or default_rules
     if not os.path.isabs(rules_file):
