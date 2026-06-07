@@ -4575,6 +4575,36 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("送女必须有男主主动或默许构成", strong_passive_issue["definition_review_hint"])
         self.assertIn("缺少男主主体", strong_passive_issue["definition_review_hint"])
 
+        third_party_send_issue = report._annotate_issue_for_report(
+            {"type": "送女", "content": "反派计划把强女送给路人男，男主未参与。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(third_party_send_issue["heroine_position_context"], "强女=强准女主")
+        self.assertIn("第三方送人", third_party_send_issue["definition_review_hint"])
+        self.assertIn("缺少男主主体", third_party_send_issue["definition_review_hint"])
+
+        family_send_issue = report._annotate_issue_for_report(
+            {"type": "送女", "content": "家族把强女安排给路人男联姻，男主没有参与。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(family_send_issue["heroine_position_context"], "强女=强准女主")
+        self.assertIn("第三方送人", family_send_issue["definition_review_hint"])
+        self.assertIn("缺少男主主体", family_send_issue["definition_review_hint"])
+
         active_send_issue = report._annotate_issue_for_report(
             {"type": "送女", "content": "男主主动安排强女嫁给路人男，强女被安排嫁给路人男。"},
             [

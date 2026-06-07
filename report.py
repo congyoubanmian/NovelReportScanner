@@ -1514,7 +1514,19 @@ def _strict_send_girl_agency_review_hint(issue: dict, text: str) -> str:
         "家族逼婚", "家族安排", "父母安排", "师门安排", "皇帝赐婚", "贵族联姻",
         "政治联姻", "普通政治联姻", "背景婚配", "婚配安排",
     )
-    if not any(marker in text for marker in passive_or_third_party_markers):
+    third_party_sender_markers = (
+        "反派计划", "反派打算", "反派要把", "配角计划", "配角打算", "家族把", "家族安排",
+        "父母把", "师门把", "皇帝把", "皇帝赐婚", "贵族把",
+    )
+    male_lead_absent_markers = (
+        "男主未参与", "男主没有参与", "男主未主动参与", "男主没有主动参与",
+        "主角未参与", "主角没有参与", "主角未主动参与", "主角没有主动参与",
+        "男主不知情", "主角不知情",
+    )
+    has_passive_arrangement = any(marker in text for marker in passive_or_third_party_markers)
+    has_third_party_sender = any(marker in text for marker in third_party_sender_markers)
+    has_male_lead_absent = any(marker in text for marker in male_lead_absent_markers)
+    if not has_passive_arrangement and not (has_third_party_sender and has_male_lead_absent):
         return ""
     male_lead_agency_phrases = (
         "男主主动", "男主默许", "男主认可", "男主同意", "男主促成", "男主撮合", "男主安排",
@@ -1524,7 +1536,7 @@ def _strict_send_girl_agency_review_hint(issue: dict, text: str) -> str:
     )
     if any(phrase in text for phrase in male_lead_agency_phrases):
         return ""
-    return "送女必须有男主主动或默许构成；当前证据更像被动安排/第三方逼婚/政治联姻，需复核是否缺少男主主体。"
+    return "送女必须有男主主动或默许构成；当前证据更像被动安排/第三方送人/逼婚/政治联姻，需复核是否缺少男主主体。"
 
 
 def _strict_ntr_victim_only_review_hint(issue: dict, text: str) -> str:
