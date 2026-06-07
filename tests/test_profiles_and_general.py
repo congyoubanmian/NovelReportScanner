@@ -904,8 +904,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                             "detail": "王公子强行抱住甲女。",
                             "evidence": "王公子强行抱住甲女。",
                         }
-                    ],
-                    "partner_relations": [],
+                    ]
                 },
             }
         ]
