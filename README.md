@@ -193,6 +193,13 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 
 Compose 构建同样可以先设置 `PIP_INDEX_URL` 来切换 pip 源。`PUID` / `PGID` 也可以写入 `.env`，用于让容器内进程用宿主机用户身份写入 `novels/` 和 `results/`。推送到 `main` 后可以在 Actions 页面查看自动镜像构建结果。
 
+Compose 默认限制容器内存为 `2G`，预留 `512M`。如果一次扫描的小说很长、并发或上下文窗口较大，可以在 `.env` 中调整：
+
+```ini
+CONTAINER_MEMORY_LIMIT=4g
+CONTAINER_MEMORY_RESERVATION=1g
+```
+
 推送到 GitHub `main` 分支或 `v*` 版本 tag 后，GitHub Actions 会自动构建并推送镜像到 GHCR。服务器只需要准备 `.env`、`novels/`、`results/` 和 `docker-compose.yml`。例如：
 
 ```bash
@@ -224,6 +231,7 @@ docker run -d \
 - `novels/` 用于放上传或预置的 `.txt` 小说，`results/` 用于保存报告、任务日志和 Web 管理状态。
 - 如果容器无法上传小说或写报告，优先检查宿主机 `novels/`、`results/` 的属主是否匹配 `PUID` / `PGID`。
 - 容器内 Web 服务默认绑定 `0.0.0.0:8765`，宿主机端口可通过 `-p 宿主机端口:8765` 或 Compose 里的 `WEB_PORT` 调整。
+- 容器内存限制可通过 `CONTAINER_MEMORY_LIMIT` 和 `CONTAINER_MEMORY_RESERVATION` 调整；超长小说或多分类扫描建议适当调高。
 - 镜像健康检查使用 `/healthz`，只证明 Web 管理端进程可访问；是否能真正扫描取决于 `.env` / API Key 是否配置正确。
 
 ### 方式四：本地 Web 管理端
