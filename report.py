@@ -196,9 +196,14 @@ def summary_field_values(summary: dict, field: str):
     if not isinstance(summary, dict):
         return []
     values = []
+    canonical = SUMMARY_FIELD_ALIASES.get(field, field)
     candidate_fields = [field]
+    if canonical not in candidate_fields:
+        candidate_fields.append(canonical)
     candidate_fields.extend(
-        alias for alias, canonical in SUMMARY_FIELD_ALIASES.items() if canonical == field
+        alias
+        for alias, target in SUMMARY_FIELD_ALIASES.items()
+        if target == canonical and alias not in candidate_fields
     )
     for candidate in candidate_fields:
         value = summary.get(candidate)

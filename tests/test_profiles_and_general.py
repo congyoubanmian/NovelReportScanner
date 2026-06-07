@@ -4395,6 +4395,51 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(mystery_summary["clue_fairness"], ["旧字段：关键线索提前出现"])
         self.assertEqual(mystery_summary["logic_chain_integrity"], ["旧字段：推理链条闭合"])
 
+    def test_general_scan_summary_alias_candidates_are_bidirectional(self):
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(_messages, max_tokens=3000):
+                return {
+                    "story_overview": "旧字段请求测试。",
+                    "main_plot": ["主线"],
+                    "core_conflicts": ["冲突"],
+                    "worldbuilding": ["设定"],
+                    "themes": ["主题"],
+                    "foreshadowing_and_payoff": ["伏笔"],
+                    "tech_feasibility": ["标准字段技术内容"],
+                    "technology_feasibility": ["同义旧字段技术内容"],
+                    "strengths": ["优点"],
+                    "risks_or_issues": ["问题"],
+                    "reader_fit": "读者",
+                    "overall_assessment": "评价",
+                }
+
+            general_scan._call_json = fake_call_json
+            profile = analysis_profiles.AnalysisProfile(
+                name="alias_test",
+                display_name="别名测试",
+                description="",
+                enabled_stages=["general_scan"],
+                rules_file="",
+                report_mode="general",
+                scan_focus=[],
+                summary_fields=["main_plot", "tech_plausibility"],
+                harem_plus={},
+                cross_profile_rules={},
+            )
+            summary = general_scan._summarize_book(
+                "别名测试",
+                [{"one_sentence_summary": "测试。"}],
+                profile=profile,
+            )
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertEqual(
+            summary["tech_plausibility"],
+            ["标准字段技术内容", "同义旧字段技术内容"],
+        )
+
     def test_general_report_reads_summary_field_alias_values(self):
         self.assertEqual(report.summary_field_label("power_system"), "异能/金手指体系")
         self.assertEqual(report.summary_field_label("humanity_and_morality"), "人性与道德困境")
@@ -4451,6 +4496,28 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("旧字段案件结构内容", specialty_text)
         self.assertIn("【恋爱喜剧平衡】", specialty_text)
         self.assertIn("旧字段恋爱支线内容", specialty_text)
+
+        legacy_field_text = report.build_general_report(
+            "旧请求字段别名测试",
+            {"male_protagonist": {"name": "男主"}, "all_female_characters": {}},
+            {
+                "profile_display_name": "旧请求字段分析",
+                "summary_fields": ["tech_plausibility"],
+                "summary": {
+                    "story_overview": "旧请求字段概览",
+                    "tech_feasibility": ["标准字段技术内容"],
+                    "technology_feasibility": ["同义旧字段技术内容"],
+                    "strengths": [],
+                    "risks_or_issues": [],
+                    "reader_fit": "读者",
+                    "overall_assessment": "评价",
+                },
+            },
+        )
+
+        self.assertIn("【技术可行性】", legacy_field_text)
+        self.assertIn("标准字段技术内容", legacy_field_text)
+        self.assertIn("同义旧字段技术内容", legacy_field_text)
 
     def test_general_scan_field_labels_cover_profile_summary_fields(self):
         common = {

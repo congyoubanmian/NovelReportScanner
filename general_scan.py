@@ -28,12 +28,19 @@ def _summary_field_candidates(field: str) -> List[str]:
     try:
         from report import SUMMARY_FIELD_ALIASES
 
+        canonical = SUMMARY_FIELD_ALIASES.get(field, field)
+        candidates = [field]
+        if canonical not in candidates:
+            candidates.append(canonical)
         aliases = [
             alias
-            for alias, canonical in SUMMARY_FIELD_ALIASES.items()
-            if canonical == field
+            for alias, target in SUMMARY_FIELD_ALIASES.items()
+            if target == canonical
         ]
-        return [field] + aliases
+        for alias in aliases:
+            if alias not in candidates:
+                candidates.append(alias)
+        return candidates
     except Exception:
         return [field]
 
