@@ -489,6 +489,24 @@ def _enqueue(book_id):
     return True, task_id
 
 
+def _enqueue_many(book_ids):
+    requested = []
+    for book_id in book_ids or []:
+        if not book_id or book_id in requested:
+            continue
+        requested.append(book_id)
+
+    queued = []
+    skipped = []
+    for book_id in requested:
+        ok, result = _enqueue(book_id)
+        if ok:
+            queued.append({"book_id": book_id, "task_id": result})
+        else:
+            skipped.append({"book_id": book_id, "reason": result})
+    return {"queued": queued, "skipped": skipped}
+
+
 def _find_task(task_id):
     for task in STATE["tasks"]:
         if task.get("id") == task_id:
@@ -732,6 +750,16 @@ class Handler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
             ok, result = _enqueue(payload.get("book_id"))
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
+            return
+        if parsed.path == "/api/enqueue-batch":
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+            book_ids = payload.get("book_ids")
+            if not isinstance(book_ids, list):
+                self._send_json({"error": "book_ids must be a list"}, 400)
+                return
+            result = _enqueue_many(book_ids)
+            self._send_json({"ok": bool(result["queued"]), "result": result}, 200)
             return
         if parsed.path == "/upload":
             try:

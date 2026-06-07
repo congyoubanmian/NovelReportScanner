@@ -1,9 +1,10 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import StatusTag from './StatusTag.vue'
 
 const props = defineProps({ books: Array, profiles: Array })
-const emit = defineEmits(['scan', 'detail', 'profileChange'])
+const emit = defineEmits(['scan', 'batchScan', 'detail', 'profileChange'])
+const selectedIds = ref([])
 
 const manualProfiles = computed(() => (props.profiles || []).filter(p => p.name !== 'auto'))
 
@@ -55,15 +56,57 @@ const displayBooks = computed(() => (props.books || []).map(book => ({
   ...book,
   suggestions: renderSuggestions(book) || []
 })))
+
+const selectableBooks = computed(() => displayBooks.value.filter(book => !isBusy(book)))
+const selectableIds = computed(() => selectableBooks.value.map(book => book.id))
+const selectedReadyIds = computed(() => selectedIds.value.filter(id => selectableIds.value.includes(id)))
+const allReadySelected = computed(() => selectableIds.value.length > 0 && selectedReadyIds.value.length === selectableIds.value.length)
+
+watch(() => props.books, () => {
+  selectedIds.value = selectedReadyIds.value
+}, { deep: true })
+
+function toggleBookSelection(book, checked) {
+  if (isBusy(book)) return
+  selectedIds.value = checked
+    ? Array.from(new Set([...selectedIds.value, book.id]))
+    : selectedIds.value.filter(id => id !== book.id)
+}
+
+function toggleAllReady(checked) {
+  selectedIds.value = checked ? selectableIds.value : []
+}
+
+function emitBatchScan() {
+  const ids = selectedReadyIds.value
+  if (!ids.length) return
+  emit('batchScan', ids)
+  selectedIds.value = []
+}
 </script>
 
 <template>
   <div class="card">
-    <div class="card-title"><span class="icon">📖</span> 书籍列表</div>
+    <div class="card-title book-list-title">
+      <span><span class="icon">📖</span> 书籍列表</span>
+      <button
+        class="btn btn-sm"
+        :disabled="!selectedReadyIds.length"
+        @click="emitBatchScan"
+      >批量加入队列<span v-if="selectedReadyIds.length">({{ selectedReadyIds.length }})</span></button>
+    </div>
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
+            <th class="select-col">
+              <input
+                type="checkbox"
+                :checked="allReadySelected"
+                :disabled="!selectableIds.length"
+                @change="toggleAllReady($event.target.checked)"
+              />
+            </th>
             <th>书名</th>
             <th>分类</th>
             <th>自动建议</th>
@@ -74,7 +117,7 @@ const displayBooks = computed(() => (props.books || []).map(book => ({
         </thead>
         <tbody>
           <tr v-if="!books.length">
-            <td colspan="6" class="empty-cell">
+            <td colspan="7" class="empty-cell">
               <div class="empty-state-small">
                 <div class="icon">📂</div>
                 <p>暂无书籍，请先上传小说</p>
@@ -82,6 +125,14 @@ const displayBooks = computed(() => (props.books || []).map(book => ({
             </td>
           </tr>
           <tr v-for="book in displayBooks" :key="book.id">
+            <td class="select-col">
+              <input
+                type="checkbox"
+                :checked="selectedReadyIds.includes(book.id)"
+                :disabled="isBusy(book)"
+                @change="toggleBookSelection(book, $event.target.checked)"
+              />
+            </td>
             <td class="col-name">{{ book.name }}</td>
             <td>
               <div class="profile-picker">
@@ -143,5 +194,23 @@ const displayBooks = computed(() => (props.books || []).map(book => ({
 </template>
 
 <style scoped>
-/* Component-specific styles only */
+.book-list-title {
+  justify-content: space-between;
+  gap: 12px;
+}
+.book-list-title > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.select-col {
+  width: 42px;
+  text-align: center;
+}
+.select-col input {
+  cursor: pointer;
+}
+.select-col input:disabled {
+  cursor: not-allowed;
+}
 </style>

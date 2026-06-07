@@ -1600,6 +1600,38 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
             web_manager.STATE = old_state
 
+    def test_web_manager_enqueue_many_dedupes_and_reports_skips(self):
+        old_state = web_manager.STATE
+        old_queue_ids = set(web_manager.TASK_QUEUE_IDS)
+        try:
+            web_manager.TASK_QUEUE_IDS.clear()
+            while not web_manager.TASK_QUEUE.empty():
+                web_manager.TASK_QUEUE.get_nowait()
+                web_manager.TASK_QUEUE.task_done()
+            web_manager.STATE = {
+                "books": {
+                    "ready": {"id": "ready", "name": "ready", "path": "/tmp/ready.txt", "profile": "general", "status": "idle"},
+                    "busy": {"id": "busy", "name": "busy", "path": "/tmp/busy.txt", "profile": "general", "status": "queued"},
+                },
+                "tasks": [],
+            }
+
+            result = web_manager._enqueue_many(["ready", "ready", "busy", "missing", ""])
+
+            self.assertEqual([item["book_id"] for item in result["queued"]], ["ready"])
+            self.assertEqual(web_manager.STATE["books"]["ready"]["status"], "queued")
+            self.assertEqual(web_manager.TASK_QUEUE.qsize(), 1)
+            skipped = {item["book_id"]: item["reason"] for item in result["skipped"]}
+            self.assertEqual(skipped["busy"], "book already queued or running")
+            self.assertEqual(skipped["missing"], "book not found")
+        finally:
+            while not web_manager.TASK_QUEUE.empty():
+                web_manager.TASK_QUEUE.get_nowait()
+                web_manager.TASK_QUEUE.task_done()
+            web_manager.TASK_QUEUE_IDS.clear()
+            web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
+            web_manager.STATE = old_state
+
     def test_web_manager_finds_dynamic_profile_outputs(self):
         results_dir = os.path.join(main.get_base_dir(), "results")
         os.makedirs(results_dir, exist_ok=True)

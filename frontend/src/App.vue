@@ -6,7 +6,7 @@ import BookDetail from './components/BookDetail.vue'
 import { useToast } from './composables/useToast.js'
 import { useTheme } from './composables/useTheme.js'
 import { usePolling } from './composables/usePolling.js'
-import { getState, getBookDetail, setProfile, enqueueBook } from './api.js'
+import { getState, getBookDetail, setProfile, enqueueBook, enqueueBooks } from './api.js'
 
 const { toast, success: toastSuccess, error: toastError } = useToast()
 const { theme, toggle: toggleTheme } = useTheme()
@@ -70,6 +70,22 @@ async function handleScan(bookId) {
   }
 }
 
+async function handleBatchScan(bookIds) {
+  try {
+    const response = await enqueueBooks(bookIds)
+    const queued = response.result?.queued?.length || 0
+    const skipped = response.result?.skipped?.length || 0
+    if (queued) {
+      toastSuccess(skipped ? `已加入 ${queued} 本，跳过 ${skipped} 本` : `已加入 ${queued} 本`)
+    } else {
+      toastError(skipped ? `没有可加入的书籍，跳过 ${skipped} 本` : '没有可加入的书籍')
+    }
+    await refresh()
+  } catch (e) {
+    toastError('批量加入失败: ' + e.message)
+  }
+}
+
 async function handleProfileChange(bookId, profile) {
   try {
     await setProfile(bookId, profile)
@@ -126,6 +142,7 @@ usePolling(refresh, 3000)
       :books="books"
       :profiles="profiles"
       @scan="handleScan"
+      @batchScan="handleBatchScan"
       @detail="loadDetail"
       @profileChange="handleProfileChange"
     />
