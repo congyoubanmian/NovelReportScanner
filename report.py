@@ -1372,8 +1372,14 @@ def _has_low_presence_or_tooling_signal(text: str) -> bool:
     text = str(text or "")
     if not text:
         return False
-    tooling_words = ("工具", "召唤", "捧哏", "背景", "说明", "偶尔", "客串", "神隐")
+    tooling_words = ("工具", "召唤", "捧哏", "背景", "说明", "客串", "神隐")
     if _contains_any_text(text, tooling_words):
+        return True
+    low_frequency_patterns = (
+        "偶尔出场", "偶尔登场", "偶尔出现", "偶尔露面", "偶尔客串", "偶尔同场",
+        "偶尔在场", "偶尔参与", "偶尔帮忙", "偶尔协助",
+    )
+    if any(pattern in text for pattern in low_frequency_patterns):
         return True
     low_presence_patterns = (
         "低存在感", "存在感低", "存在感很低", "存在感较低", "存在感偏低", "存在感不高",

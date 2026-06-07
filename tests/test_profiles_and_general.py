@@ -4049,6 +4049,33 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertIn("低存在感/工具人线索", nearly_absent)
 
+        occasional_romance = report._heroine_position_level(
+            {"importance_rank": 3},
+            {
+                "identity": "主线女配",
+                "relationship_with_protagonist": "与男主长期暧昧，偶尔吃醋并亲密互动。",
+                "features": "参与主线",
+                "key_events": "多次同行并偶尔表白心意。",
+            },
+            {"count": 8, "summaries": ["偶尔吃醋，但感情线持续推进。"]},
+            {},
+        )
+        self.assertNotIn("低存在感/工具人线索", occasional_romance)
+        self.assertIn("感情/亲密推进", occasional_romance)
+
+        occasional_cameo = report._heroine_position_level(
+            {"importance_rank": 7},
+            {
+                "identity": "客串角色",
+                "relationship_with_protagonist": "偶尔出场帮忙，没有恋爱线。",
+                "features": "偶尔客串",
+                "key_events": "偶尔协助男主处理支线。",
+            },
+            {"count": 2, "summaries": ["偶尔出场。"]},
+            {},
+        )
+        self.assertIn("低存在感/工具人线索", occasional_cameo)
+
     def test_report_does_not_promote_functional_character_without_romance_signal(self):
         level = report._heroine_position_level(
             {"importance_rank": 2},
