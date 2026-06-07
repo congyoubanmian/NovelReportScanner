@@ -3473,6 +3473,31 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("定义复核提示：按锁定定义，送女/绿帽必须锚定目标女主或强准女主", text)
         self.assertIn("未命中已识别女主名或别名", text)
 
+    def test_report_annotates_issue_context_fields(self):
+        contexts = [
+            {
+                "name": "弱女",
+                "aliases": ["弱女"],
+                "label": "弱准女主",
+                "level": "弱准女主：有单独互动",
+            }
+        ]
+        weak_issue, missing_issue, normal_issue = report._annotate_issues_for_report(
+            [
+                {"type": "送女", "content": "弱女被安排嫁给路人男。"},
+                {"type": "绿帽", "content": "漂亮女子与路人男有传闻。"},
+                {"type": "亵女", "content": "弱女被路人调戏。"},
+            ],
+            contexts,
+        )
+
+        self.assertEqual(weak_issue["heroine_position_context"], "弱女=弱准女主")
+        self.assertIn("当前定位偏弱", weak_issue["definition_review_hint"])
+        self.assertNotIn("heroine_position_context", missing_issue)
+        self.assertIn("未命中已识别女主名或别名", missing_issue["definition_review_hint"])
+        self.assertEqual(normal_issue["heroine_position_context"], "弱女=弱准女主")
+        self.assertNotIn("definition_review_hint", normal_issue)
+
     def test_reviewer_derives_past_life_cleanliness(self):
         risky = novel_reviewer._derive_past_life_cleanliness(
             {

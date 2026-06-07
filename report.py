@@ -1190,13 +1190,28 @@ def _issue_definition_review_hint(issue: dict, heroine_contexts: list) -> str:
     return f"按锁定定义，送女/绿帽仅适用于目标女主或强准女主；{','.join(weak_names[:3])} 当前定位偏弱，建议复核是否误判。"
 
 
+def _annotate_issue_for_report(issue: dict, heroine_contexts: list) -> dict:
+    annotated = dict(issue or {})
+    context = _match_issue_heroine_context(annotated, heroine_contexts)
+    review_hint = _issue_definition_review_hint(annotated, heroine_contexts)
+    if context:
+        annotated["heroine_position_context"] = context
+    if review_hint:
+        annotated["definition_review_hint"] = review_hint
+    return annotated
+
+
+def _annotate_issues_for_report(issues: list, heroine_contexts: list) -> list:
+    return [_annotate_issue_for_report(issue, heroine_contexts) for issue in (issues or [])]
+
+
 def _append_issue_lines(risk_lines: list, issues: list, heroine_contexts: list) -> None:
-    for i, p in enumerate(issues, 1):
+    for i, p in enumerate(_annotate_issues_for_report(issues, heroine_contexts), 1):
         risk_lines.append(f"{i}. [{p.get('type','')}] @chunk {p.get('chunk_index')}")
-        context = _match_issue_heroine_context(p, heroine_contexts)
+        context = p.get("heroine_position_context")
         if context:
             risk_lines.append(f"   女主定位上下文：{context}")
-        review_hint = _issue_definition_review_hint(p, heroine_contexts)
+        review_hint = p.get("definition_review_hint")
         if review_hint:
             risk_lines.append(f"   定义复核提示：{review_hint}")
         risk_lines.append(f"   原文：{p.get('content','')}")
