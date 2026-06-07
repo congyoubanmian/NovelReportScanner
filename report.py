@@ -2171,17 +2171,36 @@ def _male_past_romance_effective_risk_text(text: str) -> str:
 
 
 def _male_past_romance_blob_is_nonfactual_or_negated(text: str) -> bool:
-    nonfactual_words = ("传言", "传闻", "据说", "听说", "流言", "谣言", "误传", "谣传", "猜测", "疑似", "梦见", "梦到", "梦境")
-    resolved_words = ("证实是误会", "证实不成立", "后来证实", "澄清", "不属实", "并非事实", "假的", "假消息")
+    nonfactual_words = (
+        "传言", "传闻", "据说", "听说", "流言", "谣言", "误传", "谣传", "猜测", "疑似",
+        "梦见", "梦到", "梦境", "误认为", "被误认", "误认成", "误会成",
+    )
+    resolved_words = (
+        "证实是误会", "证实不成立", "后来证实", "澄清", "不属实", "并非事实", "不是事实",
+        "并非真的", "不是真的", "假的", "假消息",
+    )
     negated_patterns = (
         "没有恋爱经历", "没有感情经历", "没有前女友", "没有前妻", "没有前任",
+        "没有老婆", "没有妻子", "没有女友", "没有爱人", "没有恋人",
         "没谈过恋爱", "从未恋爱", "未恋爱", "无恋爱经历", "无感情经历",
-        "没有结婚", "未结婚", "未婚", "没有婚史", "无婚史",
+        "没有结婚", "未结婚", "未婚", "没有婚史", "无婚史", "无感情",
+    )
+    nickname_or_joke_patterns = (
+        "只是称呼", "只是个称呼", "只是外号", "只是绰号", "只是玩笑", "开玩笑",
+        "玩笑称呼", "调侃称呼", "口头称呼",
+    )
+    nominal_relation_patterns = (
+        "只是政治婚约", "仅是政治婚约", "只是名义婚约", "仅是名义婚约",
+        "有名无实", "名义夫妻", "名义婚约",
     )
     strong_factual_anchors = ("确实", "明确", "实锤", "证据显示", "事实是", "实际发生", "真的发生", "已确认", "确认了")
     if any(word in text for word in resolved_words):
         return True
     if any(pattern in text for pattern in negated_patterns):
+        return True
+    if any(pattern in text for pattern in nickname_or_joke_patterns):
+        return True
+    if any(pattern in text for pattern in nominal_relation_patterns):
         return True
     if any(word in text for word in nonfactual_words):
         return not any(anchor in text for anchor in strong_factual_anchors)
