@@ -5430,6 +5430,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "chunk_results": [],
             }
             self.assertTrue(general_scan._is_fresh_summary(data, novel_path, "history"))
+            data["summary"] = {"book_overview": "ok"}
+            self.assertTrue(general_scan._is_fresh_summary(data, novel_path, "history"))
             self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "general"))
             data["max_chunks"] = general_scan.MAX_CHUNKS + 1
             self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "history"))

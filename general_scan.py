@@ -112,7 +112,7 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
     current_mtime = _novel_mtime(novel_file)
     if current_mtime is None or data.get("novel_mtime") != current_mtime:
         return False
-    return bool((data.get("summary") or {}).get("story_overview") or data.get("chunk_results"))
+    return bool(_summary_field_text(data.get("summary") or {}, "story_overview") or data.get("chunk_results"))
 
 
 def _safe_list(value: Any, limit: int = 20) -> List[str]:
