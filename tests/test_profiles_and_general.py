@@ -3299,6 +3299,81 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("女主定位上下文：甲女=目标女主", text)
         self.assertEqual(text.count("女主定位上下文"), 1)
 
+    def test_harem_report_flags_strict_issue_context_for_weak_heroine(self):
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        try:
+            report.OpenAI = None
+            report.API_KEY_POOL = []
+            text = report.build_report_v2(
+                "测试后宫",
+                {
+                    "male_protagonist": {"name": "男主"},
+                    "heroine_result": {
+                        "heroines": [
+                            {
+                                "name": "弱女",
+                                "importance_rank": 9,
+                                "summary": "受男主保护，有一次单独互动。",
+                            },
+                            {
+                                "name": "正女",
+                                "importance_rank": 1,
+                                "relationship_type": "道侣",
+                            },
+                        ]
+                    },
+                    "all_female_characters": {
+                        "弱女": {
+                            "count": 2,
+                            "profile_for_report": {
+                                "identity": "支线角色",
+                                "relationship_with_protagonist": "受男主保护并有单独互动",
+                                "features": "配角",
+                                "key_events": "协助男主一次",
+                            },
+                        },
+                        "正女": {
+                            "count": 8,
+                            "profile_for_report": {
+                                "identity": "主线女主",
+                                "relationship_with_protagonist": "男主道侣",
+                                "features": "长期陪伴男主",
+                                "key_events": "确认关系",
+                            },
+                        },
+                    },
+                },
+                {
+                    "heroines_purity": [
+                        {"name": "弱女"},
+                        {"name": "正女", "pushed_by_male_lead": True},
+                    ],
+                    "lei_points": [
+                        {
+                            "type": "送女",
+                            "chunk_index": 8,
+                            "content": "弱女被安排嫁给路人男。",
+                            "review_comment": "送女风险。",
+                        },
+                        {
+                            "type": "绿帽",
+                            "chunk_index": 18,
+                            "content": "正女与非男主男性出现明确关系危机。",
+                            "review_comment": "绿帽风险。",
+                        },
+                    ],
+                },
+            )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+
+        self.assertIn("女主定位上下文：弱女=弱准女主", text)
+        self.assertIn("定义复核提示：按锁定定义，送女/绿帽仅适用于目标女主或强准女主；弱女 当前定位偏弱，建议复核是否误判。", text)
+        self.assertIn("女主定位上下文：正女=目标女主", text)
+        self.assertEqual(text.count("定义复核提示"), 1)
+
     def test_reviewer_derives_past_life_cleanliness(self):
         risky = novel_reviewer._derive_past_life_cleanliness(
             {

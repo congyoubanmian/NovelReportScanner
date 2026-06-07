@@ -1133,15 +1133,15 @@ def _build_heroine_position_contexts(
     return contexts
 
 
-def _match_issue_heroine_context(issue: dict, heroine_contexts: list) -> str:
+def _matched_issue_heroine_contexts(issue: dict, heroine_contexts: list) -> list:
     if not issue or not heroine_contexts:
-        return ""
+        return []
     haystack = " ".join(
         str(issue.get(field) or "")
         for field in ["content", "review_comment", "type", "reason", "evidence", "category"]
     )
     if not haystack:
-        return ""
+        return []
 
     matches = []
     for ctx in heroine_contexts:
@@ -1153,7 +1153,7 @@ def _match_issue_heroine_context(issue: dict, heroine_contexts: list) -> str:
         matches.append((len(best_alias), ctx))
 
     if not matches:
-        return ""
+        return []
     matches.sort(key=lambda item: (-item[0], item[1].get("name", "")))
     unique = []
     seen = set()
@@ -1165,7 +1165,29 @@ def _match_issue_heroine_context(issue: dict, heroine_contexts: list) -> str:
         unique.append(ctx)
         if len(unique) >= 3:
             break
+    return unique
+
+
+def _match_issue_heroine_context(issue: dict, heroine_contexts: list) -> str:
+    unique = _matched_issue_heroine_contexts(issue, heroine_contexts)
     return "；".join(f"{ctx.get('name')}={ctx.get('label')}" for ctx in unique if ctx.get("name"))
+
+
+def _issue_definition_review_hint(issue: dict, heroine_contexts: list) -> str:
+    issue_type = str((issue or {}).get("type") or "")
+    if not any(word in issue_type for word in ("送女", "绿帽")):
+        return ""
+    matched = _matched_issue_heroine_contexts(issue, heroine_contexts)
+    if not matched:
+        return ""
+    weak_names = [
+        ctx.get("name")
+        for ctx in matched
+        if ctx.get("name") and ctx.get("label") not in ("目标女主", "强准女主")
+    ]
+    if not weak_names:
+        return ""
+    return f"按锁定定义，送女/绿帽仅适用于目标女主或强准女主；{','.join(weak_names[:3])} 当前定位偏弱，建议复核是否误判。"
 
 
 def _append_issue_lines(risk_lines: list, issues: list, heroine_contexts: list) -> None:
@@ -1174,6 +1196,9 @@ def _append_issue_lines(risk_lines: list, issues: list, heroine_contexts: list) 
         context = _match_issue_heroine_context(p, heroine_contexts)
         if context:
             risk_lines.append(f"   女主定位上下文：{context}")
+        review_hint = _issue_definition_review_hint(p, heroine_contexts)
+        if review_hint:
+            risk_lines.append(f"   定义复核提示：{review_hint}")
         risk_lines.append(f"   原文：{p.get('content','')}")
         if p.get("review_comment"):
             risk_lines.append(f"   裁决：{p.get('review_comment')}")
