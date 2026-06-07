@@ -962,6 +962,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "farming_management",
         )
         self.assertEqual(
+            analysis_profiles.infer_profile_for_text("凡人开店", "凡人在城镇经营餐厅，联合商会和银行扩张供应链，推动标准化产业升级。"),
+            "farming_management",
+        )
+        self.assertEqual(
             analysis_profiles.infer_profile_for_text("转生勇者", "主角转生异世界，加入冒险者公会，在地下城挑战魔王。"),
             "isekai_lightnovel",
         )
@@ -1130,10 +1134,23 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(sports_keywords.get("围棋"), 5)
         self.assertEqual(sports_keywords.get("绝杀"), 4)
         self.assertEqual(sports_keywords.get("训练"), 3)
+
+        farming_keywords = dict(analysis_profiles._keywords_from_manifest("farming_management"))
+        self.assertEqual(farming_keywords.get("餐厅"), 4)
+        self.assertEqual(farming_keywords.get("城墙"), 3)
+        self.assertEqual(farming_keywords.get("囤积"), 3)
+        self.assertEqual(farming_keywords.get("税收"), 2)
         self.assertEqual(
             analysis_profiles.infer_profile_for_text(
                 "亏成首富从游戏开始",
                 "主角经营公司，打造产品和工厂，围绕产业链、供应链、利润与用户口碑扩张。",
+            ),
+            "farming_management",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
+                "边城基建",
+                "主角囤积粮食修建城墙，靠产量提升和税收管理人口，逐步恢复民生。",
             ),
             "farming_management",
         )

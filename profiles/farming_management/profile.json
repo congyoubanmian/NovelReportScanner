@@ -45,7 +45,7 @@
     {"word": "商铺", "weight": 3},
     {"word": "贸易", "weight": 3},
     {"word": "粮食", "weight": 3},
-    {"word": "税收", "weight": 3},
+    {"word": "税收", "weight": 2},
     {"word": "人口", "weight": 4},
     {"word": "城镇", "weight": 3},
     {"word": "科技树", "weight": 4},
@@ -57,15 +57,21 @@
     {"word": "洞府", "weight": 4},
     {"word": "宗门建设", "weight": 5},
     {"word": "修仙种田", "weight": 5},
+    {"word": "凡人", "weight": 3},
     {"word": "民生", "weight": 4},
     {"word": "产量", "weight": 3},
+    {"word": "产量提升", "weight": 3},
     {"word": "修路", "weight": 4},
     {"word": "建桥", "weight": 4},
     {"word": "港口", "weight": 4},
+    {"word": "城墙", "weight": 3},
     {"word": "商会", "weight": 4},
+    {"word": "餐厅", "weight": 4},
     {"word": "工厂", "weight": 4},
+    {"word": "银行", "weight": 3},
     {"word": "供应链", "weight": 3},
     {"word": "标准化", "weight": 3},
-    {"word": "产业升级", "weight": 4}
+    {"word": "产业升级", "weight": 4},
+    {"word": "囤积", "weight": 3}
   ]
 }
