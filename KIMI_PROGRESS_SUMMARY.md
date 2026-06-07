@@ -102,6 +102,7 @@
 - 前端增加 ESLint/Prettier 配置与 `lint`、`format:check` 脚本，建立零 warning 静态检查和统一格式基线。
 - GitHub Actions 增加 CI 工作流，覆盖后端 unittest、前端 audit/lint/format/build；Docker 发布工作流继续负责 GHCR 和 Docker Hub 镜像推送。
 - Web 扫描完成后会把报告和 summary 输出写入书籍 `output_index`，详情页优先读取持久索引，减少重复遍历 `results/`。
+- Web 覆盖上传同名书籍时会隔离旧任务、旧输出和旧 token 用量，避免新书详情混入旧书历史结果。
 - Web 页面支持编辑 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`GENERAL_SCAN_MAX_CHUNKS`、`HAREM_PLUS_GENERAL_SCAN` 等非敏感运行配置；修改只在当前服务进程生效，不写回本地配置文件，也不展示或修改 API Key。
 - Docker 最终运行镜像不再 `COPY . .`，只复制 Python 源码、`profiles/`、`rules2.json` 和前端构建产物，避免把测试、前端源码、文档和本地杂项带入运行层。
 - Docker/Compose 容器启动时默认要求 `API_KEY` 或 `API_KEY_POOL` 至少存在一个，避免缺少 Key 时 Web 进程正常启动但扫描任务延迟失败；确需只启动 Web UI 时可用 `NOVEL_REPORT_SCANNER_REQUIRE_API_KEY=0` 跳过。

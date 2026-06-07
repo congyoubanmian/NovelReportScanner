@@ -724,7 +724,11 @@ def _safe_token_int(value):
         return 0
 
 
-def _book_token_usage(book_id, max_runs=5):
+def _time_value(value):
+    return str(value or "").replace("T", " ").strip()
+
+
+def _book_token_usage(book_id, max_runs=5, since=None):
     path = os.path.join(get_base_dir(), "results", "token_usage.json")
     data = _read_json_file(path)
     if not isinstance(data, dict):
@@ -754,13 +758,33 @@ def _book_token_usage(book_id, max_runs=5):
                 "script_count": script_count,
             })
 
+    if since:
+        since_key = _time_value(since)
+        runs = [
+            run
+            for run in runs
+            if _time_value(run.get("updated_at") or run.get("started_at")) >= since_key
+        ]
+        if not runs:
+            return None
+
     runs.sort(key=lambda item: item.get("updated_at") or item.get("started_at") or "", reverse=True)
+    if since:
+        total_input = sum(run["input"] for run in runs)
+        total_output = sum(run["output"] for run in runs)
+        total_tokens = sum(run["total"] for run in runs)
+        updated_at = runs[0].get("updated_at") or runs[0].get("started_at") or ""
+    else:
+        total_input = _safe_token_int(book_entry.get("book_total_input"))
+        total_output = _safe_token_int(book_entry.get("book_total_output"))
+        total_tokens = _safe_token_int(book_entry.get("book_total_tokens"))
+        updated_at = book_entry.get("updated_at", "")
     return {
         "book_name": book_entry.get("book_name") or book_id,
-        "input": _safe_token_int(book_entry.get("book_total_input")),
-        "output": _safe_token_int(book_entry.get("book_total_output")),
-        "total": _safe_token_int(book_entry.get("book_total_tokens")),
-        "updated_at": book_entry.get("updated_at", ""),
+        "input": total_input,
+        "output": total_output,
+        "total": total_tokens,
+        "updated_at": updated_at,
         "runs": runs[:max_runs],
         "run_count": len(runs),
     }
@@ -772,13 +796,25 @@ def _book_detail(book_id):
         tasks = [dict(t) for t in STATE["tasks"] if t.get("book_id") == book_id]
     if not book:
         return None
+    history_reset_at = book.get("history_reset_at")
+    if history_reset_at:
+        reset_key = _time_value(history_reset_at)
+        tasks = [task for task in tasks if _time_value(task.get("created_at")) >= reset_key]
     for task in tasks:
         if task.get("log_path"):
             task["log_file"] = _file_link(task.get("log_path"))
     book["novel_file"] = _file_link(book.get("path"))
     _refresh_book_suggestions(book)
-    book["outputs"] = _find_book_outputs(book_id)
-    book["token_usage"] = _book_token_usage(book_id)
+    outputs = _find_book_outputs(book_id)
+    outputs_reset_after = book.get("outputs_reset_after")
+    if outputs_reset_after is not None:
+        try:
+            reset_mtime = float(outputs_reset_after)
+            outputs = [item for item in outputs if float(item.get("mtime") or 0) >= reset_mtime]
+        except (TypeError, ValueError):
+            pass
+    book["outputs"] = outputs
+    book["token_usage"] = _book_token_usage(book_id, since=history_reset_at)
     book["tasks"] = sorted(_with_queue_positions(tasks), key=lambda x: x.get("created_at", ""), reverse=True)
     book["profiles"] = profile_options(include_auto=True)
     return book
@@ -1430,7 +1466,18 @@ class Handler(BaseHTTPRequestHandler):
             profile = _normalize_web_profile(profile_values if len(profile_values) > 1 else profile_values[0]) or "auto"
             _invalidate_book_outputs(book_id)
             suggestions = _profile_suggestions(path, book_id)
+            uploaded_at = time.strftime("%Y-%m-%d %H:%M:%S")
+            outputs_reset_after = None
+            if overwrite:
+                try:
+                    outputs_reset_after = os.path.getmtime(path)
+                except OSError:
+                    outputs_reset_after = time.time()
             with STATE_LOCK:
+                if overwrite and book_id in STATE["books"]:
+                    for task in STATE.get("tasks", []):
+                        if task.get("book_id") == book_id:
+                            task["book_replaced"] = True
                 STATE["books"][book_id] = {
                     "id": book_id,
                     "name": book_id,
@@ -1440,8 +1487,11 @@ class Handler(BaseHTTPRequestHandler):
                     "suggestion_signature": f"{os.path.getmtime(path)}:{os.path.getsize(path)}",
                     "status": "idle",
                     "message": f"已上传（{uploaded_size} 字节）",
-                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "created_at": uploaded_at,
                 }
+                if overwrite:
+                    STATE["books"][book_id]["history_reset_at"] = uploaded_at
+                    STATE["books"][book_id]["outputs_reset_after"] = outputs_reset_after
                 _save_state()
             self._send_json({"ok": True, "book_id": book_id})
             return

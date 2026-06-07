@@ -2537,6 +2537,92 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.STATE = old_state
             web_manager.get_base_dir = old_base_dir
 
+    def test_web_manager_book_detail_filters_replaced_book_history(self):
+        old_state = web_manager.STATE
+        old_base_dir = web_manager.get_base_dir
+        old_cache = dict(web_manager.OUTPUTS_CACHE)
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                results_dir = os.path.join(tmp, "results")
+                novels_dir = os.path.join(tmp, "novels")
+                os.makedirs(results_dir, exist_ok=True)
+                os.makedirs(novels_dir, exist_ok=True)
+                novel_path = os.path.join(novels_dir, "book.txt")
+                old_report = os.path.join(results_dir, "book_old_report.txt")
+                new_report = os.path.join(results_dir, "book_new_report.txt")
+                for path, content in ((novel_path, "新正文"), (old_report, "old"), (new_report, "new")):
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write(content)
+                os.utime(old_report, (1000, 1000))
+                os.utime(new_report, (3000, 3000))
+                token_path = os.path.join(results_dir, "token_usage.json")
+                with open(token_path, "w", encoding="utf-8") as f:
+                    json.dump({
+                        "books": {
+                            "book": {
+                                "book_name": "book",
+                                "book_total_input": 300,
+                                "book_total_output": 120,
+                                "book_total_tokens": 420,
+                                "runs": {
+                                    "old": {
+                                        "run_id": "old",
+                                        "run_total_input": 100,
+                                        "run_total_output": 40,
+                                        "run_total_tokens": 140,
+                                        "updated_at": "2026-01-01T00:00:00",
+                                        "scripts": {"scan": {"total": 140}},
+                                    },
+                                    "new": {
+                                        "run_id": "new",
+                                        "run_total_input": 200,
+                                        "run_total_output": 80,
+                                        "run_total_tokens": 280,
+                                        "updated_at": "2026-01-01T00:10:00",
+                                        "scripts": {"scan": {"total": 280}},
+                                    },
+                                },
+                            }
+                        }
+                    }, f, ensure_ascii=False)
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.STATE = {
+                    "books": {
+                        "book": {
+                            "id": "book",
+                            "name": "book",
+                            "path": novel_path,
+                            "profile": "general",
+                            "status": "idle",
+                            "output_index": [
+                                {"path": old_report, "kind": "final_report"},
+                                {"path": new_report, "kind": "final_report"},
+                            ],
+                            "history_reset_at": "2026-01-01 00:05:00",
+                            "outputs_reset_after": 2000,
+                        }
+                    },
+                    "tasks": [
+                        {"id": "old-task", "book_id": "book", "status": "completed", "created_at": "2026-01-01 00:00:00"},
+                        {"id": "new-task", "book_id": "book", "status": "completed", "created_at": "2026-01-01 00:10:00"},
+                    ],
+                }
+                web_manager.OUTPUTS_CACHE.clear()
+
+                detail = web_manager._book_detail("book")
+
+                self.assertEqual([task["id"] for task in detail["tasks"]], ["new-task"])
+                self.assertEqual([item["name"] for item in detail["outputs"]], ["book_new_report.txt"])
+                self.assertEqual(detail["token_usage"]["input"], 200)
+                self.assertEqual(detail["token_usage"]["output"], 80)
+                self.assertEqual(detail["token_usage"]["total"], 280)
+                self.assertEqual([run["run_id"] for run in detail["token_usage"]["runs"]], ["new"])
+        finally:
+            web_manager.STATE = old_state
+            web_manager.get_base_dir = old_base_dir
+            web_manager.OUTPUTS_CACHE.clear()
+            web_manager.OUTPUTS_CACHE.update(old_cache)
+
     def test_general_report_uses_story_summary_and_characters(self):
         general_summary = {
             "profile_display_name": "历史小说专长分析",
