@@ -4417,6 +4417,35 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(active_send_issue["heroine_position_context"], "强女=强准女主")
         self.assertNotIn("definition_review_hint", active_send_issue)
 
+        victim_only_ntr_issue = report._annotate_issue_for_report(
+            {"type": "绿帽", "content": "强女被反派绑走调戏，但没有性关系也没有情感背叛。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(victim_only_ntr_issue["heroine_position_context"], "强女=强准女主")
+        self.assertIn("绿帽必须有明确暧昧/恋爱/性关系或实质情感背叛", victim_only_ntr_issue["definition_review_hint"])
+        self.assertIn("应复核是否应降为亵女/虐女/NTR擦边", victim_only_ntr_issue["definition_review_hint"])
+
+        factual_ntr_issue = report._annotate_issue_for_report(
+            {"type": "绿帽", "content": "强女与路人男发生性关系并背叛男主。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(factual_ntr_issue["heroine_position_context"], "强女=强准女主")
+        self.assertNotIn("definition_review_hint", factual_ntr_issue)
+
         edge_issue = report._annotate_issue_for_report(
             {"type": "绿帽擦边", "content": "弱女差点被反派绑走。"},
             contexts,

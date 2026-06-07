@@ -1486,6 +1486,9 @@ def _strict_issue_evidence_review_hint(issue: dict) -> str:
     send_girl_hint = _strict_send_girl_agency_review_hint(issue, text)
     if send_girl_hint:
         hints.append(send_girl_hint)
+    ntr_victim_hint = _strict_ntr_victim_only_review_hint(issue, text)
+    if ntr_victim_hint:
+        hints.append(ntr_victim_hint)
     nonfactual_markers = (
         "传闻", "传言", "流言", "谣言", "据说", "听说", "口嗨", "意淫", "误会", "误传",
         "梦境", "梦见", "梦到", "幻境", "弱暗示", "疑似", "嫌疑", "待复核", "待确认",
@@ -1516,6 +1519,33 @@ def _strict_send_girl_agency_review_hint(issue: dict, text: str) -> str:
     if any(phrase in text for phrase in male_lead_agency_phrases):
         return ""
     return "送女必须有男主主动或默许构成；当前证据更像被动安排/第三方逼婚/政治联姻，需复核是否缺少男主主体。"
+
+
+def _strict_ntr_victim_only_review_hint(issue: dict, text: str) -> str:
+    issue_type = str((issue or {}).get("type") or "")
+    upper_type = issue_type.upper()
+    if "绿帽" not in issue_type and "NTR" not in upper_type and "牛头人" not in issue_type:
+        return ""
+    victim_or_threat_markers = (
+        "被强迫", "被胁迫", "被囚禁", "被调戏", "被窥视", "被绑走", "被绑架", "被下药",
+        "被骚扰", "被侵犯未遂", "强奸未遂", "企图侵犯", "企图强奸", "差点被侵犯", "险些被侵犯",
+        "绑走调戏", "囚禁调戏", "言语调戏",
+    )
+    if not any(marker in text for marker in victim_or_threat_markers):
+        return ""
+    relationship_fact_markers = (
+        "明确性关系", "发生性关系", "同房", "圆房", "失身", "破身", "怀孕", "生下",
+        "主动暧昧", "主动恋爱", "主观情感背叛", "情感背叛", "背叛男主", "爱上", "喜欢上",
+    )
+    negated_relationship_markers = (
+        "没有性关系", "未发生性关系", "没有发生关系", "没有同房", "未同房", "没有圆房", "未圆房",
+        "没有情感背叛", "无情感背叛", "没有主观背叛", "未背叛男主", "没有背叛男主",
+    )
+    has_relationship_fact = any(marker in text for marker in relationship_fact_markers)
+    has_negated_relationship = any(marker in text for marker in negated_relationship_markers)
+    if has_relationship_fact and not has_negated_relationship:
+        return ""
+    return "绿帽必须有明确暧昧/恋爱/性关系或实质情感背叛；当前证据更像强迫、调戏、绑走或未遂受害，应复核是否应降为亵女/虐女/NTR擦边。"
 
 
 def _annotate_issue_for_report(issue: dict, heroine_contexts: list) -> dict:
