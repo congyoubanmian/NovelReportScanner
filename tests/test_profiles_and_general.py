@@ -3309,6 +3309,57 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("结局交代=❌", text)
         self.assertIn("结论=疑似漏女", text)
 
+    def test_harem_romance_overview_flags_no_romance_progression(self):
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        try:
+            report.OpenAI = None
+            report.API_KEY_POOL = []
+            overview = report._summarize_harem_romance_overview(
+                {
+                    "all_female_characters": {
+                        "凯蒂": {
+                            "count": 6,
+                            "summaries": ["探案时负责捧哏和物理输出。"],
+                        },
+                        "艾琳": {
+                            "count": 1,
+                            "summaries": ["主要帮男主做召唤物，存在感很低。"],
+                        },
+                        "安妮": {
+                            "count": 2,
+                            "summaries": ["偶尔在案件中客串。"],
+                        },
+                    }
+                },
+                {
+                    "yumen_points": [
+                        {
+                            "type": "感情戏缺失/预期落差",
+                            "content": "大量篇幅推进案件和设定，女角色只承担捧哏、召唤、客串功能。",
+                        },
+                        {
+                            "type": "工具人女主",
+                            "content": "女角色缺少独立情感弧线。",
+                        },
+                    ]
+                },
+                [
+                    {"name": "凯蒂", "importance_rank": 1},
+                    {"name": "艾琳", "importance_rank": 2},
+                    {"name": "安妮", "importance_rank": 3},
+                ],
+                {},
+            )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+
+        self.assertIn("极低", overview["romance_density"])
+        self.assertIn("未见明确恋爱推进", overview["romance_progression"])
+        self.assertIn("明显感情戏缺失风险", overview["romance_expectation_gap"])
+        self.assertIn("工具人女主", overview["female_tooling_risk"])
+
     def test_report_classifies_heroine_position_level(self):
         target = report._heroine_position_level(
             {"importance_rank": 1},

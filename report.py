@@ -1614,6 +1614,8 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
     all_female_characters = (detailed_data or {}).get("all_female_characters") or {}
     heroine_material = []
     intimacy_words = ("亲吻", "拥抱", "牵手", "同床", "双修", "成亲", "表白", "吃醋", "暧昧", "喜欢", "爱慕", "私通", "推倒")
+    romance_gap_words = ("感情戏缺失", "预期落差", "进度条诈骗", "恋爱推进停滞", "感情描写缺失")
+    tooling_words = ("工具人女主", "工具人", "捧哏", "召唤物", "背景说明", "客串", "神隐")
     presence_low = 0
     intimacy_hits = 0
     for h in heroines or []:
@@ -1642,6 +1644,18 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
             presence_low += 1
         heroine_material.append({"name": name, "count": count, "material": blob[:900]})
 
+    issue_blob = "；".join(
+        str((item or {}).get(field) or "")
+        for item in [
+            *((reviewer or {}).get("lei_points") or []),
+            *((reviewer or {}).get("yumen_points") or []),
+        ]
+        if isinstance(item, dict)
+        for field in ("type", "content", "review_comment", "reason")
+    )
+    has_romance_gap_issue = any(word in issue_blob for word in romance_gap_words)
+    has_tooling_issue = any(word in issue_blob for word in tooling_words)
+
     male_blob = "；".join(
         str(x)
         for x in [
@@ -1651,12 +1665,38 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
         ]
         if x
     )
+    heroine_count = len(heroines or [])
+    if heroine_count and intimacy_hits == 0:
+        romance_density = "极低：识别到女角色但未见明确恋爱/暧昧/亲密推进材料。"
+        romance_progression = "未见明确恋爱推进，疑似长期停留在工具、案件、战斗或背景功能。"
+        expectation_gap = "若作品标题、标签或读者期待包含后宫/恋爱，本报告材料显示存在明显感情戏缺失风险。"
+    elif has_romance_gap_issue:
+        romance_density = "偏低：二审已命中感情戏缺失/预期落差类郁闷点。"
+        romance_progression = "存在感情线推进不足风险，需结合郁闷点条目复核。"
+        expectation_gap = "已出现感情戏缺失或预期落差线索。"
+    elif heroine_count and intimacy_hits <= max(1, heroine_count // 4):
+        romance_density = "偏低"
+        romance_progression = "存在少量亲密/暧昧推进，但覆盖女角色比例偏低。"
+        expectation_gap = "若读者期待高密度恋爱互动，需要关注实际感情戏占比。"
+    else:
+        romance_density = "中等或以上"
+        romance_progression = "存在部分亲密/暧昧推进，需结合具体女主条目查看。"
+        expectation_gap = "未见明显感情密度预期落差，但仍需结合具体女主条目查看。"
+
+    tooling_threshold = max(2, heroine_count // 2)
+    if has_tooling_issue:
+        tooling_risk = "已命中工具人女主/女角色工具化线索，需重点复核角色塑造。"
+    elif heroine_count and presence_low >= tooling_threshold:
+        tooling_risk = "女角色可能偏工具人"
+    else:
+        tooling_risk = "未见明显大面积工具人风险"
+
     fallback = {
-        "romance_density": "偏低" if heroines and intimacy_hits <= max(1, len(heroines) // 4) else "中等或以上",
-        "female_presence": f"共识别 {len(heroines or [])} 位女主/准女主，低存在感条目约 {presence_low} 位。",
-        "romance_progression": "未见足够材料判断" if not intimacy_hits else "存在部分亲密/暧昧推进，需结合具体女主条目查看。",
-        "female_tooling_risk": "女角色可能偏工具人" if presence_low >= max(2, len(heroines or []) // 2) else "未见明显大面积工具人风险",
-        "romance_expectation_gap": "若读者期待高密度恋爱互动，需要关注实际感情戏占比。",
+        "romance_density": romance_density,
+        "female_presence": f"共识别 {heroine_count} 位女主/准女主，低存在感条目约 {presence_low} 位。",
+        "romance_progression": romance_progression,
+        "female_tooling_risk": tooling_risk,
+        "romance_expectation_gap": expectation_gap,
         "male_past_romance_risk": "未见明确男主前史情感雷点。",
     }
     past_words = ("前妻", "前女友", "前世老婆", "老婆", "妻子", "卷走", "卷光", "跑路", "离婚", "绝症")
