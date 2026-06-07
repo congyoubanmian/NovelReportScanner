@@ -1003,6 +1003,21 @@ def _has_positive_heroine_position_signal(text: str) -> bool:
     )
 
 
+_GENERIC_HEROINE_ANCHOR_NAMES = {
+    "女主", "女主角", "女角色", "女子", "少女", "女人", "女性", "漂亮女子", "漂亮女人",
+    "姑娘", "小姐", "夫人", "太太", "公主", "王妃", "皇后", "贵妃", "妃子", "圣女",
+    "修女", "女仆", "侍女", "丫鬟", "丫环", "小女孩", "女孩", "萝莉",
+}
+
+
+def _is_generic_heroine_anchor_name(name: str) -> bool:
+    text = str(name or "").strip()
+    if not text:
+        return True
+    normalized = _heroine_name_key(text)
+    return text in _GENERIC_HEROINE_ANCHOR_NAMES or normalized in _GENERIC_HEROINE_ANCHOR_NAMES
+
+
 def _summarize_heroine_effectiveness(heroine_meta: dict, profile: dict, evidence: dict = None) -> str:
     heroine_meta = heroine_meta or {}
     profile = profile or {}
@@ -1172,6 +1187,8 @@ def _build_heroine_position_contexts(
         for candidate in names:
             candidate = str(candidate or "").strip()
             if len(candidate) < 2:
+                continue
+            if _is_generic_heroine_anchor_name(candidate):
                 continue
             key = (name, candidate)
             if key in seen:

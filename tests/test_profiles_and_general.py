@@ -3653,6 +3653,47 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(edge_issue["heroine_position_context"], "弱女=弱准女主")
         self.assertNotIn("definition_review_hint", edge_issue)
 
+    def test_report_ignores_generic_heroine_anchor_names_for_strict_issues(self):
+        generic_contexts = report._build_heroine_position_contexts(
+            [{"name": "公主", "importance_rank": 1}],
+            {
+                "公主": {
+                    "count": 8,
+                    "profile_for_report": {
+                        "identity": "王室成员",
+                        "relationship_with_protagonist": "未描述",
+                        "features": "偶尔出场",
+                        "key_events": "被传联姻",
+                    },
+                }
+            },
+            {
+                "公主": {
+                    "identity": "王室成员",
+                    "relationship_with_protagonist": "未描述",
+                    "features": "偶尔出场",
+                    "key_events": "被传联姻",
+                }
+            },
+            {},
+        )
+        self.assertEqual(generic_contexts, [])
+
+        issue = report._annotate_issue_for_report(
+            {"type": "绿帽", "content": "有人传言公主和路人男暧昧。"},
+            generic_contexts,
+        )
+        self.assertNotIn("heroine_position_context", issue)
+        self.assertIn("未命中已识别女主名或别名", issue["definition_review_hint"])
+
+        named_contexts = report._build_heroine_position_contexts(
+            [{"name": "琪雅", "aliases": ["公主"], "importance_rank": 1}],
+            {"琪雅": {"count": 6, "profile_for_report": {"identity": "主线女主"}}},
+            {"琪雅": {"identity": "主线女主"}},
+            {},
+        )
+        self.assertEqual(named_contexts[0]["aliases"], ["琪雅"])
+
     def test_reviewer_derives_past_life_cleanliness(self):
         risky = novel_reviewer._derive_past_life_cleanliness(
             {
