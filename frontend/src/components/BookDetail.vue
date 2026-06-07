@@ -6,6 +6,7 @@ import { getTextFile } from '../api.js'
 const props = defineProps({ book: Object, profiles: Array })
 
 const outputs = computed(() => props.book?.outputs || [])
+const tokenUsage = computed(() => props.book?.token_usage || null)
 const tasks = computed(() => {
   const list = props.book?.tasks || []
   return list.map(t => ({
@@ -49,6 +50,11 @@ function resolvedProfilesText(task) {
   const profiles = task.resolved_profiles || []
   if (profiles.length) return formatProfileValue(profiles)
   return formatProfileValue(task.resolved_profile)
+}
+
+function formatNumber(value) {
+  const num = Number(value || 0)
+  return Number.isFinite(num) ? num.toLocaleString() : '0'
 }
 
 const preview = ref({
@@ -135,6 +141,47 @@ watch(() => props.book?.id, () => {
           <span v-for="(s, i) in suggestions" :key="i" class="chip" :title="s.words">
             {{ s.name }} <span class="score">{{ s.score }}</span>
           </span>
+        </div>
+      </div>
+
+      <div class="section" v-if="tokenUsage">
+        <div class="section-title">📊 Token 用量</div>
+        <div class="usage-summary">
+          <div class="usage-item">
+            <span class="usage-label">输入</span>
+            <strong>{{ formatNumber(tokenUsage.input) }}</strong>
+          </div>
+          <div class="usage-item">
+            <span class="usage-label">输出</span>
+            <strong>{{ formatNumber(tokenUsage.output) }}</strong>
+          </div>
+          <div class="usage-item">
+            <span class="usage-label">总量</span>
+            <strong>{{ formatNumber(tokenUsage.total) }}</strong>
+          </div>
+          <div class="usage-item">
+            <span class="usage-label">运行次数</span>
+            <strong>{{ formatNumber(tokenUsage.run_count) }}</strong>
+          </div>
+        </div>
+        <div class="table-wrap usage-runs" v-if="tokenUsage.runs?.length">
+          <table>
+            <thead>
+              <tr>
+                <th>运行ID</th><th>输入</th><th>输出</th><th>总量</th><th>脚本数</th><th>更新时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="run in tokenUsage.runs" :key="run.run_id">
+                <td class="mono">{{ run.run_id }}</td>
+                <td>{{ formatNumber(run.input) }}</td>
+                <td>{{ formatNumber(run.output) }}</td>
+                <td>{{ formatNumber(run.total) }}</td>
+                <td>{{ formatNumber(run.script_count) }}</td>
+                <td class="mono nowrap">{{ run.updated_at || run.started_at || '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -236,6 +283,37 @@ watch(() => props.book?.id, () => {
   border-color: var(--primary);
   color: var(--primary);
   background: var(--primary-light);
+}
+
+.usage-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.usage-item {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xs);
+  padding: 10px 12px;
+  background: var(--bg-hover);
+}
+.usage-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.usage-item strong {
+  color: var(--text-heading);
+  font-size: 1rem;
+}
+.usage-runs table {
+  font-size: 0.82rem;
+}
+@media (max-width: 768px) {
+  .usage-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* Preview panel */

@@ -454,6 +454,55 @@ def _find_book_outputs(book_id):
     return outputs
 
 
+def _safe_token_int(value):
+    try:
+        return int(value or 0)
+    except Exception:
+        return 0
+
+
+def _book_token_usage(book_id, max_runs=5):
+    path = os.path.join(get_base_dir(), "results", "token_usage.json")
+    data = _read_json_file(path)
+    if not isinstance(data, dict):
+        return None
+    books = data.get("books")
+    if not isinstance(books, dict):
+        return None
+    book_entry = books.get(book_id)
+    if not isinstance(book_entry, dict):
+        return None
+
+    runs = []
+    run_entries = book_entry.get("runs", {})
+    if isinstance(run_entries, dict):
+        for run_id, run in run_entries.items():
+            if not isinstance(run, dict):
+                continue
+            scripts = run.get("scripts", {})
+            script_count = len(scripts) if isinstance(scripts, dict) else 0
+            runs.append({
+                "run_id": run.get("run_id") or run_id,
+                "input": _safe_token_int(run.get("run_total_input")),
+                "output": _safe_token_int(run.get("run_total_output")),
+                "total": _safe_token_int(run.get("run_total_tokens")),
+                "started_at": run.get("started_at", ""),
+                "updated_at": run.get("updated_at", ""),
+                "script_count": script_count,
+            })
+
+    runs.sort(key=lambda item: item.get("updated_at") or item.get("started_at") or "", reverse=True)
+    return {
+        "book_name": book_entry.get("book_name") or book_id,
+        "input": _safe_token_int(book_entry.get("book_total_input")),
+        "output": _safe_token_int(book_entry.get("book_total_output")),
+        "total": _safe_token_int(book_entry.get("book_total_tokens")),
+        "updated_at": book_entry.get("updated_at", ""),
+        "runs": runs[:max_runs],
+        "run_count": len(runs),
+    }
+
+
 def _book_detail(book_id):
     with STATE_LOCK:
         book = dict(STATE["books"].get(book_id) or {})
@@ -466,6 +515,7 @@ def _book_detail(book_id):
     book["novel_file"] = _file_link(book.get("path"))
     _refresh_book_suggestions(book)
     book["outputs"] = _find_book_outputs(book_id)
+    book["token_usage"] = _book_token_usage(book_id)
     book["tasks"] = sorted(_with_queue_positions(tasks), key=lambda x: x.get("created_at", ""), reverse=True)
     book["profiles"] = profile_options(include_auto=True)
     return book

@@ -1891,6 +1891,71 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.STATE = old_state
             os.unlink(log_path)
 
+    def test_web_manager_book_detail_includes_token_usage_summary(self):
+        old_state = web_manager.STATE
+        old_base_dir = web_manager.get_base_dir
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                results_dir = os.path.join(tmp, "results")
+                novels_dir = os.path.join(tmp, "novels")
+                os.makedirs(results_dir, exist_ok=True)
+                os.makedirs(novels_dir, exist_ok=True)
+                novel_path = os.path.join(novels_dir, "book.txt")
+                with open(novel_path, "w", encoding="utf-8") as f:
+                    f.write("正文")
+                token_path = os.path.join(results_dir, "token_usage.json")
+                with open(token_path, "w", encoding="utf-8") as f:
+                    json.dump({
+                        "schema_version": 3,
+                        "books": {
+                            "book": {
+                                "book_name": "book",
+                                "book_total_input": 100,
+                                "book_total_output": 40,
+                                "book_total_tokens": 140,
+                                "updated_at": "2026-01-01T00:02:00",
+                                "runs": {
+                                    "run1": {
+                                        "run_id": "run1",
+                                        "run_total_input": 30,
+                                        "run_total_output": 10,
+                                        "run_total_tokens": 40,
+                                        "started_at": "2026-01-01T00:00:00",
+                                        "updated_at": "2026-01-01T00:01:00",
+                                        "scripts": {"protagonist": {"total": 40}},
+                                    },
+                                    "run2": {
+                                        "run_id": "run2",
+                                        "run_total_input": 70,
+                                        "run_total_output": 30,
+                                        "run_total_tokens": 100,
+                                        "started_at": "2026-01-01T00:01:00",
+                                        "updated_at": "2026-01-01T00:02:00",
+                                        "scripts": {"scan": {"total": 60}, "report": {"total": 40}},
+                                    },
+                                },
+                            }
+                        },
+                    }, f, ensure_ascii=False)
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.STATE = {
+                    "books": {"book": {"id": "book", "name": "book", "path": novel_path, "profile": "general", "status": "idle"}},
+                    "tasks": [],
+                }
+
+                detail = web_manager._book_detail("book")
+
+                usage = detail["token_usage"]
+                self.assertEqual(usage["input"], 100)
+                self.assertEqual(usage["output"], 40)
+                self.assertEqual(usage["total"], 140)
+                self.assertEqual(usage["run_count"], 2)
+                self.assertEqual([run["run_id"] for run in usage["runs"]], ["run2", "run1"])
+                self.assertEqual(usage["runs"][0]["script_count"], 2)
+        finally:
+            web_manager.STATE = old_state
+            web_manager.get_base_dir = old_base_dir
+
     def test_general_report_uses_story_summary_and_characters(self):
         general_summary = {
             "profile_display_name": "历史小说专长分析",
