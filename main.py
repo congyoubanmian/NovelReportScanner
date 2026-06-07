@@ -9,6 +9,7 @@ import os
 import sys
 import time
 import uuid
+from dataclasses import replace
 
 
 _DEFAULT_ENV_SETTINGS = {
@@ -349,15 +350,34 @@ def _select_harem_plus_general_profile(novel_path, book_name, profile):
     return load_analysis_profile(selected_name)
 
 
+def _with_harem_plus_secondary_focus(general_profile, harem_profile):
+    cfg = getattr(harem_profile, "harem_plus", {}) or {}
+    overrides = cfg.get("secondary_focus_overrides")
+    if not isinstance(overrides, dict):
+        return general_profile
+    extra_focus = overrides.get(getattr(general_profile, "name", ""))
+    if not isinstance(extra_focus, list):
+        return general_profile
+    extra_focus = [str(item).strip() for item in extra_focus if str(item).strip()]
+    if not extra_focus:
+        return general_profile
+    base_focus = list(getattr(general_profile, "scan_focus", []) or [])
+    merged_focus = list(dict.fromkeys(base_focus + extra_focus))
+    return replace(general_profile, scan_focus=merged_focus)
+
+
 def _run_harem_plus_general_scan(general_scan_module, novel_path, book_name, run_id, detail_path, profile):
-    general_profile = _select_harem_plus_general_profile(novel_path, book_name, profile)
+    general_profile = _with_harem_plus_secondary_focus(
+        _select_harem_plus_general_profile(novel_path, book_name, profile),
+        profile,
+    )
     old_profile = os.environ.get("ANALYSIS_PROFILE")
     old_rules = os.environ.get("ANALYSIS_RULES_FILE")
     try:
         os.environ["ANALYSIS_PROFILE"] = general_profile.name
         os.environ["ANALYSIS_RULES_FILE"] = general_profile.rules_file
         print(f"[harem+] 额外运行通用剧情扫描: {general_profile.display_name} ({general_profile.name})")
-        return general_scan_module.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path)
+        return general_scan_module.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path, profile_override=general_profile)
     finally:
         if old_profile is None:
             os.environ.pop("ANALYSIS_PROFILE", None)

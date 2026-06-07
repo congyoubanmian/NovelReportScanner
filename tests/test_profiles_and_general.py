@@ -1038,7 +1038,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         class FakeGeneralScan:
             @staticmethod
-            def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
+            def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile_override=None):
                 calls.append({
                     "profile": os.environ.get("ANALYSIS_PROFILE"),
                     "rules": os.environ.get("ANALYSIS_RULES_FILE"),
@@ -1084,12 +1084,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         class FakeGeneralScan:
             @staticmethod
-            def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
+            def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile_override=None):
                 calls.append({
                     "profile": os.environ.get("ANALYSIS_PROFILE"),
                     "rules": os.environ.get("ANALYSIS_RULES_FILE"),
                     "novel_path": novel_path,
                     "book_name": book_name,
+                    "focus": list(getattr(profile_override, "scan_focus", []) or []),
                 })
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1115,6 +1116,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(selected.name, "xianxia_fantasy")
         self.assertEqual(calls[0]["profile"], "xianxia_fantasy")
         self.assertIn("profiles/xianxia_fantasy", calls[0]["rules"])
+        self.assertTrue(any("双修功法" in item for item in calls[0]["focus"]))
+        self.assertTrue(any("宗门规矩" in item for item in calls[0]["focus"]))
 
     def test_requested_profiles_accepts_manual_multi_select(self):
         self.assertEqual(main._normalize_requested_profiles(["历史", "科幻"]), ["history", "hard_sci_fi"])

@@ -323,13 +323,13 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
     return summary
 
 
-def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
+def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile_override=None):
     base = get_base_dir()
     if novel_path:
         os.environ["NOVEL_PATH"] = novel_path
     novel_file = novel_path or os.environ.get("NOVEL_PATH", os.path.join(base, "novels", "default.txt"))
     clean_name = (book_name or os.path.splitext(os.path.basename(novel_file))[0]).strip()
-    profile = load_analysis_profile(os.environ.get("ANALYSIS_PROFILE", "general"))
+    profile = profile_override or load_analysis_profile(os.environ.get("ANALYSIS_PROFILE", "general"))
     init_token_tracker(clean_name, run_id=run_id, out_path=os.path.join(base, "results", "token_usage.json"))
 
     results_dir = os.path.join(base, "results")
