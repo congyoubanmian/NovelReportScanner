@@ -817,17 +817,31 @@ def _past_life_blob_is_negated_or_nonfactual(blob: str) -> bool:
         return False
     if _past_life_blob_has_explicit_factual_risk(text):
         return False
-    nonfactual_words = ("传言", "传闻", "据说", "听说", "流言", "谣言", "误会", "误传", "谣传", "猜测", "怀疑", "疑似")
-    resolved_words = ("证实是误会", "证实不成立", "后来证实", "澄清", "不属实", "并非事实", "假的", "假消息")
+    nonfactual_words = (
+        "传言", "传闻", "据说", "听说", "流言", "谣言", "误会", "误传", "谣传", "猜测", "怀疑", "疑似",
+        "误认为", "被误认", "误认成", "误称", "被误称",
+    )
+    resolved_words = (
+        "证实是误会", "证实不成立", "后来证实", "澄清", "不属实", "并非事实", "不是事实", "并无事实",
+        "假的", "假消息",
+    )
     negated_patterns = (
         "没有婚恋", "没有喜欢过", "没有爱过", "没有动心", "没有嫁",
+        "没有丈夫", "没有前夫", "没有男友", "没有恋人", "没有未婚夫",
+        "无丈夫", "无前夫", "无男友", "无恋人", "无未婚夫", "无感情",
         "未嫁", "未曾嫁", "从未嫁", "未婚", "没有成婚", "没有结婚", "未结婚",
         "没有同房", "未同房", "没有圆房", "未圆房", "没有发生关系", "无性关系",
         "未发生性关系", "没有孩子", "未生子", "未怀孕",
     )
+    nominal_patterns = (
+        "只是政治婚约", "仅是政治婚约", "只是名义婚约", "仅是名义婚约", "只是婚约安排",
+        "只是称呼", "只是玩笑", "玩笑称呼", "有名无实", "名义夫妻", "名义上的夫妻",
+    )
     if any(word in text for word in resolved_words):
         return True
     if any(word in text for word in negated_patterns):
+        return True
+    if any(pattern in text for pattern in nominal_patterns):
         return True
     return any(word in text for word in nonfactual_words) and not any(word in text for word in ("确认", "实锤", "明确", "证据"))
 
@@ -847,17 +861,31 @@ def _past_life_effective_risk_text(text: str) -> str:
 
 
 def _past_life_clause_is_nonfactual_or_negated(text: str) -> bool:
-    nonfactual_words = ("传言", "传闻", "据说", "听说", "流言", "谣言", "误会", "误传", "谣传", "猜测", "怀疑", "疑似")
-    resolved_words = ("证实是误会", "证实不成立", "后来证实", "澄清", "不属实", "并非事实", "假的", "假消息")
+    nonfactual_words = (
+        "传言", "传闻", "据说", "听说", "流言", "谣言", "误会", "误传", "谣传", "猜测", "怀疑", "疑似",
+        "误认为", "被误认", "误认成", "误称", "被误称",
+    )
+    resolved_words = (
+        "证实是误会", "证实不成立", "后来证实", "澄清", "不属实", "并非事实", "不是事实", "并无事实",
+        "假的", "假消息",
+    )
     negated_patterns = (
         "没有婚恋", "没有喜欢过", "没有爱过", "没有动心", "没有嫁",
+        "没有丈夫", "没有前夫", "没有男友", "没有恋人", "没有未婚夫",
+        "无丈夫", "无前夫", "无男友", "无恋人", "无未婚夫", "无感情",
         "未嫁", "未曾嫁", "从未嫁", "未婚", "没有成婚", "没有结婚", "未结婚",
         "没有同房", "未同房", "没有圆房", "未圆房", "没有发生关系", "无性关系",
         "未发生性关系", "没有孩子", "未生子", "未怀孕",
     )
+    nominal_patterns = (
+        "只是政治婚约", "仅是政治婚约", "只是名义婚约", "仅是名义婚约", "只是婚约安排",
+        "只是称呼", "只是玩笑", "玩笑称呼", "有名无实", "名义夫妻", "名义上的夫妻",
+    )
     if any(word in text for word in resolved_words):
         return True
     if any(pattern in text for pattern in negated_patterns):
+        return True
+    if any(pattern in text for pattern in nominal_patterns):
         return True
     if any(word in text for word in nonfactual_words):
         return not _past_life_blob_has_explicit_factual_risk(text)
@@ -881,8 +909,14 @@ def _past_life_blob_has_explicit_factual_risk(text: str) -> bool:
     )
     negated_risk_phrases = (
         "没有喜欢过", "没有爱过", "没有动心", "未嫁", "未曾嫁", "从未嫁", "没有嫁",
+        "没有丈夫", "没有前夫", "没有男友", "没有恋人", "没有未婚夫",
+        "无丈夫", "无前夫", "无男友", "无恋人", "无未婚夫",
         "没有同房", "未同房", "没有圆房", "未圆房", "没有发生关系", "未发生性关系",
         "没有孩子", "未生子", "未怀孕",
+    )
+    nominal_risk_phrases = (
+        "只是政治婚约", "仅是政治婚约", "只是名义婚约", "仅是名义婚约", "只是婚约安排",
+        "只是称呼", "只是玩笑", "玩笑称呼", "有名无实", "名义夫妻", "名义上的夫妻",
     )
     if any(phrase in text for phrase in negated_risk_phrases):
         protected_text = text
@@ -890,6 +924,8 @@ def _past_life_blob_has_explicit_factual_risk(text: str) -> bool:
             protected_text = protected_text.replace(phrase, "")
     else:
         protected_text = text
+    for phrase in nominal_risk_phrases:
+        protected_text = protected_text.replace(phrase, "")
     has_risk = any(marker in protected_text for marker in risk_markers)
     if not has_risk:
         return False

@@ -4515,6 +4515,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         alleged = novel_reviewer._derive_past_life_cleanliness({}, "据说原故事线她喜欢过别人，但文本没有证据，属于读者猜测。")
         negated_love = novel_reviewer._derive_past_life_cleanliness({}, "前世她没有喜欢过别的男人。")
         negated_marriage = novel_reviewer._derive_past_life_cleanliness({}, "原故事线里她未嫁给任何人，也没有同房。")
+        negated_partner = novel_reviewer._derive_past_life_cleanliness({}, "前世她没有丈夫也没有男友。")
+        mistaken_partner = novel_reviewer._derive_past_life_cleanliness({}, "原故事线里她被误认为嫁给路人，但后来澄清不是事实。")
+        nominal_engagement = novel_reviewer._derive_past_life_cleanliness({}, "前世她与路人只是政治婚约，未嫁也无感情。")
+        joke_title = novel_reviewer._derive_past_life_cleanliness({}, "前世夫君这个称呼只是同伴玩笑。")
         real_romance = novel_reviewer._derive_past_life_cleanliness({}, "上一世她喜欢过别的男人。")
 
         self.assertTrue(rumor["past_life_clean"])
@@ -4525,6 +4529,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(alleged["past_life_severity"], "clean")
         self.assertTrue(negated_love["past_life_clean"])
         self.assertTrue(negated_marriage["past_life_clean"])
+        self.assertTrue(negated_partner["past_life_clean"])
+        self.assertEqual(negated_partner["past_life_severity"], "clean")
+        self.assertTrue(mistaken_partner["past_life_clean"])
+        self.assertEqual(mistaken_partner["past_life_severity"], "clean")
+        self.assertTrue(nominal_engagement["past_life_clean"])
+        self.assertEqual(nominal_engagement["past_life_severity"], "clean")
+        self.assertTrue(joke_title["past_life_clean"])
+        self.assertEqual(joke_title["past_life_severity"], "clean")
         self.assertEqual(real_romance["past_life_severity"], "romantic")
 
     def test_reviewer_keeps_explicit_past_life_risk_in_mixed_nonfactual_context(self):
