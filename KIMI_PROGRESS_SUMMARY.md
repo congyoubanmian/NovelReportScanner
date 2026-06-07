@@ -99,6 +99,7 @@
 - 增加 `WEB_ACCESS_TOKEN` 可选访问令牌；默认不启用，设置后 API、文件预览/下载、上传和 SSE 状态流都需要携带 token，配置摘要只暴露是否启用，不回显令牌。
 - Docker 相关流程已支持 GHCR 和 DockerHub 自动构建推送；本地 `docker-compose.yaml` 可改用远程镜像。
 - 补充 `.env.sample`、`setting.txt.sample` 和 README 配置说明，真实 `.env`、`setting.txt`、`api.txt` 保持本地忽略。
+- `.gitignore` 已覆盖本地小说目录、运行结果、真实配置、日志和镜像 tar，并保留 `results/learned_keywords/seed.json` 作为可追踪种子模板，降低真实小说和运行时快照误提交风险。
 - 前端增加 ESLint/Prettier 配置与 `lint`、`format:check` 脚本，建立零 warning 静态检查和统一格式基线。
 - GitHub Actions 增加 CI 工作流，覆盖后端 unittest、前端 audit/lint/format/build；Docker 发布工作流继续负责 GHCR 和 Docker Hub 镜像推送。
 - Web 扫描完成后会把报告和 summary 输出写入书籍 `output_index`，详情页优先读取持久索引，减少重复遍历 `results/`。

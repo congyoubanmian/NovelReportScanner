@@ -53,6 +53,28 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertNotIn("frontend/src", dockerignore_lines)
         self.assertNotIn("COPY . .", dockerfile_text)
 
+    def test_gitignore_blocks_runtime_inputs_and_keeps_templates(self):
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        gitignore_path = os.path.join(base_dir, ".gitignore")
+        with open(gitignore_path, "r", encoding="utf-8") as f:
+            gitignore_lines = [
+                line.strip()
+                for line in f
+                if line.strip() and not line.strip().startswith("#")
+            ]
+
+        self.assertIn("novels/", gitignore_lines)
+        self.assertIn("results/", gitignore_lines)
+        self.assertIn("!results/learned_keywords/", gitignore_lines)
+        self.assertIn("!results/learned_keywords/seed.json", gitignore_lines)
+        self.assertIn(".env", gitignore_lines)
+        self.assertIn(".env.*", gitignore_lines)
+        self.assertIn("!.env.sample", gitignore_lines)
+        self.assertIn("api.txt", gitignore_lines)
+        self.assertIn("setting.txt", gitignore_lines)
+        self.assertIn("*.tar", gitignore_lines)
+        self.assertIn("*.log", gitignore_lines)
+
     def test_profile_aliases_and_stages(self):
         harem = analysis_profiles.load_analysis_profile("后宫")
         general = analysis_profiles.load_analysis_profile("通用")

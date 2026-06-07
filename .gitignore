@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 .venv/
+novels/
 results/
 !results/learned_keywords/
 !results/learned_keywords/seed.json
