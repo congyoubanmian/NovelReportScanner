@@ -3,6 +3,7 @@ services:
     image: ${NOVEL_REPORT_SCANNER_IMAGE:-novel-report-scanner:latest}
     container_name: novel-report-scanner
     restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
     ports:
       - "${WEB_PORT:-8765}:8765"
     environment:

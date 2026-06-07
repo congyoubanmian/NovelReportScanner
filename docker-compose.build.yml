@@ -4,3 +4,5 @@ services:
       context: .
       args:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+        APP_UID: ${PUID:-1000}
+        APP_GID: ${PGID:-1000}

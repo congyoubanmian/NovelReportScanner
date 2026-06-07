@@ -21,6 +21,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 ARG PIP_INDEX_URL=https://pypi.org/simple
+ARG APP_UID=1000
+ARG APP_GID=1000
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --timeout 120 --retries 5 -i "$PIP_INDEX_URL" -r requirements.txt
@@ -31,7 +33,12 @@ COPY . .
 # Copy frontend build artifacts from stage 1
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-RUN mkdir -p /app/novels /app/results
+RUN groupadd --gid "$APP_GID" appuser \
+    && useradd --uid "$APP_UID" --gid "$APP_GID" --create-home --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/novels /app/results \
+    && chown -R appuser:appuser /app
+
+USER appuser
 
 EXPOSE 8765
 

@@ -113,6 +113,15 @@ python main.py
 
 Docker 镜像默认启动 Web 管理端，监听容器内 `8765` 端口。小说文本、扫描结果和 Web 状态都建议挂载到宿主机目录，避免容器重建后丢失。
 
+容器默认不再以 root 身份运行，默认使用 `1000:1000`。首次部署前建议先创建宿主机挂载目录，并让运行容器的 UID / GID 拥有读写权限：
+
+```bash
+export PUID="${PUID:-1000}"
+export PGID="${PGID:-1000}"
+mkdir -p novels results
+chown -R "$PUID:$PGID" novels results
+```
+
 本地源码构建镜像：
 
 ```bash
@@ -133,6 +142,7 @@ docker build \
 docker run -d \
   --name novel-report-scanner \
   --restart unless-stopped \
+  --user "${PUID:-1000}:${PGID:-1000}" \
   -p 8765:8765 \
   --env-file .env \
   -v "$PWD/novels:/app/novels" \
@@ -165,6 +175,7 @@ mkdir -p novels results
 docker run -d \
   --name novel-report-scanner \
   --restart unless-stopped \
+  --user "${PUID:-1000}:${PGID:-1000}" \
   -p 8765:8765 \
   --env-file .env \
   -v "$PWD/novels:/app/novels" \
@@ -175,15 +186,19 @@ docker run -d \
 如果使用 Compose，本地源码构建并启动：
 
 ```bash
+export PUID="${PUID:-1000}"
+export PGID="${PGID:-1000}"
 docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
-Compose 构建同样可以先设置 `PIP_INDEX_URL` 来切换 pip 源。推送到 `main` 后可以在 Actions 页面查看自动镜像构建结果。
+Compose 构建同样可以先设置 `PIP_INDEX_URL` 来切换 pip 源。`PUID` / `PGID` 也可以写入 `.env`，用于让容器内进程用宿主机用户身份写入 `novels/` 和 `results/`。推送到 `main` 后可以在 Actions 页面查看自动镜像构建结果。
 
 推送到 GitHub `main` 分支或 `v*` 版本 tag 后，GitHub Actions 会自动构建并推送镜像到 GHCR。服务器只需要准备 `.env`、`novels/`、`results/` 和 `docker-compose.yml`。例如：
 
 ```bash
 export NOVEL_REPORT_SCANNER_IMAGE=ghcr.io/congyoubanmian/novel-report-scanner:main
+export PUID="${PUID:-1000}"
+export PGID="${PGID:-1000}"
 docker compose pull
 docker compose up -d
 ```
@@ -195,6 +210,7 @@ docker pull ghcr.io/congyoubanmian/novel-report-scanner:main
 docker run -d \
   --name novel-report-scanner \
   --restart unless-stopped \
+  --user "${PUID:-1000}:${PGID:-1000}" \
   -p 8765:8765 \
   --env-file .env \
   -v "$PWD/novels:/app/novels" \
@@ -206,6 +222,7 @@ docker run -d \
 
 - `.env` 保存真实 API Key 和模型配置，不要打进镜像，也不要提交到仓库。
 - `novels/` 用于放上传或预置的 `.txt` 小说，`results/` 用于保存报告、任务日志和 Web 管理状态。
+- 如果容器无法上传小说或写报告，优先检查宿主机 `novels/`、`results/` 的属主是否匹配 `PUID` / `PGID`。
 - 容器内 Web 服务默认绑定 `0.0.0.0:8765`，宿主机端口可通过 `-p 宿主机端口:8765` 或 Compose 里的 `WEB_PORT` 调整。
 - 镜像健康检查使用 `/healthz`，只证明 Web 管理端进程可访问；是否能真正扫描取决于 `.env` / API Key 是否配置正确。
 
