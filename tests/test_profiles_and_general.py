@@ -12,6 +12,7 @@ import main
 import novel_scan
 import novel_reviewer
 import report
+import toxic_reviewer
 import web_manager
 
 
@@ -702,6 +703,45 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("男主主动或默许", prompt)
         self.assertIn("对象是目标女主或强准女主", prompt)
         self.assertIn("反派计划把女性送人但男主没有主动参与", prompt)
+
+    def test_toxic_reviewer_prompt_locks_strict_harem_definitions(self):
+        system_prompt, user_prompt = toxic_reviewer.build_review_prompts(
+            {
+                "category": "雷点（严重毒点）",
+                "type": "绿帽",
+                "content": "反派口嗨要把甲女抢走。",
+                "reason": "疑似绿帽",
+            },
+            "绿帽定义",
+            "男主",
+            ["甲女", "乙女"],
+        )
+        joined = system_prompt + "\n" + user_prompt
+
+        self.assertIn("已知女主/准女主名单：甲女、乙女", joined)
+        self.assertIn("送女/绿帽锁定定义", joined)
+        self.assertIn("高于占有欲泛化判断", joined)
+        self.assertIn("对象是目标女主或强准女主", joined)
+        self.assertIn("反派口嗨", joined)
+        self.assertIn("男主睡女主亲友", joined)
+        self.assertIn("反派计划把女性送人但男主未主动参与", joined)
+        self.assertIn("不能仅因为“占有欲读者不适”就判 valid=true", joined)
+        self.assertIn("缺少任一必要构成时必须判 invalid", joined)
+
+    def test_toxic_reviewer_prompt_keeps_general_issue_review_short(self):
+        system_prompt, _ = toxic_reviewer.build_review_prompts(
+            {
+                "category": "郁闷点",
+                "type": "亵女",
+                "content": "路人言语调戏甲女。",
+            },
+            "亵女定义",
+            "男主",
+            ["甲女"],
+        )
+
+        self.assertIn("一般郁闷点/亵女类指控", system_prompt)
+        self.assertNotIn("送女/绿帽锁定定义", system_prompt)
 
     def test_physical_contact_postprocess_without_partner_relations(self):
         facts = [

@@ -10,6 +10,9 @@ from tqdm import tqdm
 from shared_utils import MODEL, RULES_FILE, _safe_json_loads_maybe, chat_completion, logger, record_usage, read_file_safely
 
 
+STRICT_HAREM_ISSUE_TYPES = ("绿帽", "送女")
+
+
 def load_rules_dict(rules_file: str = RULES_FILE) -> Dict[str, str]:
     if not os.path.exists(rules_file):
         return {}
@@ -21,20 +24,38 @@ def load_rules_dict(rules_file: str = RULES_FILE) -> Dict[str, str]:
     return rules_map
 
 
-def review_issue(issue: Dict[str, Any], rule_description: str, male_lead: str, female_leads: List[str]) -> Dict[str, Any]:
+def _strict_harem_review_rules(issue_type: str) -> str:
+    if not any(word in str(issue_type or "") for word in STRICT_HAREM_ISSUE_TYPES):
+        return ""
+    return """
+5. **送女/绿帽锁定定义（高于占有欲泛化判断）**：
+   - 如果指控罪名是【绿帽】，必须同时满足：男主视角；对象是目标女主或强准女主；关系发生在男主关系成立后；存在非男主男性；有明确暧昧、恋爱、性关系或实质情感背叛事实。
+   - 绿帽排除项：路人/背景女性/敌方家眷/单纯漂亮女配；反派口嗨、旁人意淫、传闻、未来计划、误会、梦境、幻境、弱暗示；男主睡女主亲友；配角把女性献给男主；女主被男主收入后宫。
+   - 女主被非男主男性强迫、胁迫、囚禁、调戏、窥视等，若没有明确性关系或女主主观情感背叛，不可裁成绿帽，应说明更适合亵女/虐女/NTR擦边/背景伤害。
+   - 如果指控罪名是【送女】，必须同时满足：男主主动或默许；对象是目标女主或强准女主；接收方是非男主男性；有明确送出、让渡、撮合、成婚、同房或安排关系事实。
+   - 送女排除项：配角、反派、家族、皇帝、父母、师门把女性献给男主或安排给男主；男主救下或接收女性；反派计划把女性送人但男主未主动参与；普通政治联姻、背景婚配、非目标女性被安排婚姻；女主自己走失、被抓、正常分手、被反派绑走或被家族逼婚。
+   - 对【绿帽/送女】，不能仅因为“占有欲读者不适”就判 valid=true；缺少上述必要构成时应判 valid=false，并在 review_comment 写明缺少哪一项。
+"""
+
+
+def build_review_prompts(
+    issue: Dict[str, Any],
+    rule_description: str,
+    male_lead: str,
+    female_leads: List[str],
+) -> tuple[str, str]:
     category = issue.get("category", "未知")
     issue_type = issue.get("type", "未知")
     content = issue.get("content", "")
     original_reason = issue.get("reason", "")
+    female_lead_text = "、".join(str(x) for x in (female_leads or []) if str(x).strip()) or "未提供"
+    strict_rules = _strict_harem_review_rules(issue_type)
 
-    if not content:
-        return {"valid": False, "review_comment": "证据缺失"}
-
-    # --- 修改重点开始 ---
     system_prompt = f"""你是一个极端占有欲读者视角的二审法官。你的判定标准非常敏感：只要情节可能让这种读者感到不适，就视为“郁闷点/雷点”。
 
 案件档案：
 👨‍🦰 男主：【{male_lead}】 (拥有豁免权)
+已知女主/准女主名单：{female_lead_text}
 
 【核心法则（请严格执行）】：
 
@@ -55,22 +76,34 @@ def review_issue(issue: Dict[str, Any], rule_description: str, male_lead: str, f
    - **注意**：不需要造成实质性肉体伤害，只要让女主感到**反感、被迫、不适**，即符合“亵女”或“郁闷点”定义。
 
 4. **定义复核**：
-   - 仅需判定是否让占有欲极强的读者不适，无需严格构造施害人；若有施害人按上条处理。
-"""
-    # --- 修改重点结束 ---
+   - 一般郁闷点/亵女类指控：仅需判定是否让占有欲极强的读者不适；若有施害人按上条处理。
+   - 严格关系雷点必须优先服从对应定义，不能把泛化不适直接升级成绿帽或送女。
+{strict_rules}"""
 
     user_prompt = f"""
+    【指控分类】：{category}
     【指控罪名】：{issue_type}
     【法律定义】：{rule_description}
     【证据原文】：{content}
     【初审理由】：{original_reason}
-    
+
     请裁决：
     1. 即便没有明确施害人，此情节是否会让“占有欲极强”的读者感到不适？为何？
     2. 若存在施害人且不是 {male_lead}，说明其行为是否构成骚扰/亵女/让人不适。
-    
-    输出 JSON: {{"valid": true/false, "review_comment": "简短裁决理由（体现不适点或施害人）"}}
+    3. 若指控罪名是绿帽或送女，请逐项核对锁定定义；缺少任一必要构成时必须判 invalid，并说明缺少项。
+
+    输出 JSON: {{"valid": true/false, "review_comment": "简短裁决理由（体现不适点、施害人或严格定义缺项）"}}
     """
+    return system_prompt, user_prompt
+
+
+def review_issue(issue: Dict[str, Any], rule_description: str, male_lead: str, female_leads: List[str]) -> Dict[str, Any]:
+    content = issue.get("content", "")
+
+    if not content:
+        return {"valid": False, "review_comment": "证据缺失"}
+
+    system_prompt, user_prompt = build_review_prompts(issue, rule_description, male_lead, female_leads)
 
     try:
         last_err = None
