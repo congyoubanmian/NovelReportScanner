@@ -2299,6 +2299,43 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("境界体系清晰", result["specialty_notes"])
         self.assertTrue(any("修炼体系与战力" in prompt for prompt in prompts))
 
+    def test_general_scan_summary_prompt_uses_field_labels(self):
+        profile = analysis_profiles.load_analysis_profile("urban_power")
+        prompts = []
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(messages, max_tokens=3000):
+                prompt = "\n".join(item.get("content", "") for item in messages)
+                prompts.append(prompt)
+                return {
+                    "story_overview": "都市系统爽文。",
+                    "main_plot": ["主角获得系统"],
+                    "core_conflicts": ["豪门压迫"],
+                    "worldbuilding": ["现代都市"],
+                    "themes": ["逆袭"],
+                    "foreshadowing_and_payoff": ["身份伏笔回收"],
+                    "golden_finger_system": ["系统奖励稳定"],
+                    "relationships": ["暧昧线服务主线"],
+                    "villain_quality": ["反派层级清晰"],
+                    "strengths": ["爽点明确"],
+                    "risks_or_issues": ["打脸重复"],
+                    "reader_fit": "适合都市爽文读者",
+                    "overall_assessment": "完成度尚可",
+                }
+
+            general_scan._call_json = fake_call_json
+            summary = general_scan._summarize_book(
+                "都市测试",
+                [{"one_sentence_summary": "主角获得系统。", "specialty_notes": ["系统任务稳定"]}],
+                profile=profile,
+            )
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertIn("系统奖励稳定", summary["golden_finger_system"])
+        self.assertTrue(any('"golden_finger_system": ["异能/金手指体系专项分析要点"]' in prompt for prompt in prompts))
+        self.assertTrue(any('"relationships": ["关系线专项分析要点"]' in prompt for prompt in prompts))
+
     def test_general_scan_fresh_summary(self):
         with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
             f.write("test")
