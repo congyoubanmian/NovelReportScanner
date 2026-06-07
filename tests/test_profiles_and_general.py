@@ -3827,11 +3827,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(report._contains_positive_signal_text("她是男主恋人，双方确认关系。", ["恋人"]))
         self.assertFalse(report._contains_positive_signal_text("她只是未婚妻设定里的奖励角色，没有正文感情。", ["未婚妻"]))
         self.assertFalse(report._contains_positive_signal_text("她讨论未婚妻模板和退婚套路。", ["未婚妻"]))
+        self.assertFalse(report._contains_positive_signal_text("她并非男主未婚妻，只是政治谣言。", ["未婚妻"]))
         self.assertTrue(report._contains_positive_signal_text("她是男主未婚妻，双方感情稳定。", ["未婚妻"]))
         self.assertFalse(report._contains_positive_signal_text("她尚未成为男主妻子。", ["妻子"]))
         self.assertFalse(report._contains_positive_signal_text("她负责整理亲密接触史和接触等级说明。", ["亲密"]))
         self.assertFalse(report._contains_positive_signal_text("游戏里有亲密度系统，她只是讲解规则。", ["亲密"]))
         self.assertTrue(report._contains_positive_signal_text("她与男主亲密互动并逐渐动心。", ["亲密"]))
+        self.assertFalse(report._contains_positive_signal_text("她未同房，只是住在同一院落。", ["同房"]))
 
         level = report._heroine_position_level(
             {},
@@ -3840,6 +3842,19 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             {},
         )
         self.assertNotIn("感情/亲密推进", level)
+
+        denied_relationship_level = report._heroine_position_level(
+            {"importance_rank": 2},
+            {
+                "identity": "政治联姻传闻对象",
+                "relationship_with_protagonist": "并非男主未婚妻，只是外界误传。",
+                "key_events": "与男主未同房，未确认关系。",
+            },
+            {"count": 8},
+            {},
+        )
+        self.assertFalse(denied_relationship_level.startswith("强准女主"), denied_relationship_level)
+        self.assertIn("缺少感情/后宫定位证据", denied_relationship_level)
 
     def test_leak_three_layers_ignores_non_romantic_love_words(self):
         clean = report._summarize_leak_three_layers(
