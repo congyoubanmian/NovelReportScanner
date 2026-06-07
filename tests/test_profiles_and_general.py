@@ -3557,6 +3557,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(low_evidence.startswith("低证据女角色"))
         self.assertIn("低存在感/工具人线索", low_evidence)
 
+        ex_wife_vibe = report._heroine_position_level(
+            {"importance_rank": 2},
+            {
+                "identity": "探案搭档",
+                "relationship_with_protagonist": "跟随男主办案，偶尔摆出前妻感造型",
+                "features": "功能性助手",
+                "key_events": "多次参与案件，但没有恋爱或后宫关系确认",
+            },
+            {"count": 8, "summaries": ["负责提供线索和说明背景"]},
+            {},
+        )
+        self.assertFalse(ex_wife_vibe.startswith("目标女主"), ex_wife_vibe)
+        self.assertIn("缺少感情/后宫定位证据", ex_wife_vibe)
+
     def test_report_does_not_promote_functional_character_without_romance_signal(self):
         level = report._heroine_position_level(
             {"importance_rank": 2},

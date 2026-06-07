@@ -1113,7 +1113,7 @@ def _heroine_position_level(heroine_meta: dict, profile: dict, evidence: dict = 
     if purity_info.get("is_leak_heroine") is True or purity_info.get("leak_emotional_depth") is True:
         score += 3
         signals.append("漏女/情感深度证据")
-    strong_relationship_position_words = ["妻", "道侣", "恋人", "爱人", "后宫", "未婚妻", "伴侣", "情侣", "女朋友", "老婆"]
+    strong_relationship_position_words = ["妻子", "正妻", "妻室", "夫妻", "夫妇", "道侣", "恋人", "爱人", "后宫", "未婚妻", "伴侣", "情侣", "女朋友", "老婆"]
     romance_signal_words = ["喜欢", "爱慕", "表白", "暧昧", "吃醋", "双修", "同房", "亲密", "推倒", "收女", "动心", "倾心"]
     if _contains_positive_signal_text(text, strong_relationship_position_words) or _has_positive_heroine_position_signal(text):
         score += 2
@@ -1148,7 +1148,7 @@ def _heroine_position_level(heroine_meta: dict, profile: dict, evidence: dict = 
 
     has_confirmed_target = (
         purity_info.get("pushed_by_male_lead") is True
-        or _contains_positive_signal_text(text, ["妻", "道侣", "恋人", "爱人", "后宫", "未婚妻", "伴侣", "情侣", "女朋友", "老婆"])
+        or _contains_positive_signal_text(text, ["妻子", "正妻", "妻室", "夫妻", "夫妇", "道侣", "恋人", "爱人", "后宫", "未婚妻", "伴侣", "情侣", "女朋友", "老婆"])
     )
     has_candidate_relationship_signal = (
         has_confirmed_target
