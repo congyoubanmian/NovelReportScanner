@@ -694,6 +694,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("power_relations", prompt)
         self.assertIn("political_marriages", prompt)
         self.assertIn("victim_records", prompt)
+        self.assertIn("绿帽（NTR）判定【锁定定义】", prompt)
+        self.assertIn("仅限男主视角、仅限目标女主或强准女主", prompt)
+        self.assertIn("反派口嗨", prompt)
+        self.assertIn("男主睡了女主的亲戚/闺蜜", prompt)
+        self.assertIn("送女】判定【锁定定义】", prompt)
+        self.assertIn("男主主动或默许", prompt)
+        self.assertIn("对象是目标女主或强准女主", prompt)
+        self.assertIn("反派计划把女性送人但男主没有主动参与", prompt)
 
     def test_physical_contact_postprocess_without_partner_relations(self):
         facts = [
