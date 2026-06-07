@@ -3601,9 +3601,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(report._contains_positive_signal_text("她明确喜欢男主，并主动表白。", ["喜欢"]))
         self.assertFalse(report._contains_positive_signal_text("她问男主喜不喜欢这件衣服。", ["喜欢"]))
         self.assertFalse(report._contains_positive_signal_text("男主询问她最喜欢什么。", ["喜欢"]))
+        self.assertFalse(report._contains_positive_signal_text("读者喜欢她的吐槽和搞笑桥段。", ["喜欢"]))
+        self.assertFalse(report._contains_positive_signal_text("她喜欢破案，经常协助男主调查。", ["喜欢"]))
         self.assertTrue(report._contains_positive_signal_text("她喜欢男主，并珍惜他送的簪子。", ["喜欢"]))
         self.assertFalse(report._contains_positive_signal_text("她性格活泼可爱，是搞笑担当。", ["爱"]))
         self.assertFalse(report._contains_positive_signal_text("她爱吃点心，经常提供笑料。", ["爱"]))
+        self.assertFalse(report._contains_positive_signal_text("读者喜爱她的吐槽和搞笑桥段。", ["爱"]))
+        self.assertFalse(report._contains_positive_signal_text("她热爱推理，主要作用是提供线索。", ["爱"]))
         self.assertFalse(report._contains_positive_signal_text("三小只包括爱丽丝、小人鱼和公主。", ["爱"]))
         self.assertFalse(report._contains_positive_signal_text("角色名叫爱琳，主要是女仆助手。", ["爱"]))
         self.assertTrue(report._contains_positive_signal_text("她爱男主，并主动告白。", ["爱"]))
@@ -3654,6 +3658,18 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertIn("情感深度=未明", named_only)
         self.assertIn("结论=证据不足", named_only)
+
+    def test_leak_three_layers_ignores_reader_preference_and_hobbies(self):
+        reader_or_hobby = report._summarize_leak_three_layers(
+            {},
+            {
+                "relationship_with_protagonist": "读者喜欢她的吐槽，但她只是探案助手。",
+                "key_events": "她喜欢破案也热爱推理，主要作用是提供线索。",
+            },
+        )
+
+        self.assertIn("情感深度=未明", reader_or_hobby)
+        self.assertIn("结论=证据不足", reader_or_hobby)
 
     def test_leak_three_layers_requires_specific_concubine_terms(self):
         generic = report._summarize_leak_three_layers(

@@ -1001,8 +1001,12 @@ def _contains_positive_signal_text(value, keywords) -> bool:
         "谈不上喜欢", "谈不上爱", "称不上喜欢", "称不上爱", "讨厌", "厌恶",
     )
     roleplay_hints = ("假装成", "假扮成", "伪装成", "冒充", "扮作", "装作")
-    non_romantic_like_followers = ("什么", "哪", "吃", "喝", "看", "用", "这", "那", "某", "衣", "裙", "书", "菜", "颜色", "东西", "物件")
-    non_romantic_love_prefixes = ("可", "讨人喜")
+    non_romantic_like_prefixes = ("读者", "粉丝", "书友")
+    non_romantic_like_followers = (
+        "什么", "哪", "吃", "喝", "看", "用", "这", "那", "某", "衣", "裙", "书", "菜", "颜色", "东西", "物件",
+        "破案", "探案", "推理", "研究", "调查", "冒险", "战斗", "修炼", "种田", "赚钱", "吐槽", "搞笑",
+    )
+    non_romantic_love_prefixes = ("可", "讨人喜", "喜", "热")
     non_romantic_love_followers = (
         "吃", "喝", "看", "用", "好", "好者", "好是", "心", "护", "惜", "美", "漂亮", "玩", "闹",
         "丽", "莉", "琳", "莲", "莎", "丝", "薇", "娜", "妮", "德", "尔", "伦", "蜜", "丽丝", "丽莎",
@@ -1019,6 +1023,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
             next_text = text[index + len(word):index + len(word) + 4]
             non_romantic_like = word == "喜欢" and (
                 text[max(0, index - 2):index] == "喜不"
+                or any(text[max(0, index - len(hint)):index] == hint for hint in non_romantic_like_prefixes)
                 or any(next_text.startswith(hint) for hint in non_romantic_like_followers)
             )
             non_romantic_love = word == "爱" and (
