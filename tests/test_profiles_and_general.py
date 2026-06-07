@@ -115,6 +115,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("san_mechanics", cosmic_horror.summary_fields)
         self.assertIn("rule_based_horror", cosmic_horror.summary_fields)
         self.assertTrue(any("知晓本身即是危险" in item for item in cosmic_horror.scan_focus))
+        self.assertTrue(any("'知晓的代价'" in item for item in cosmic_horror.scan_focus))
         self.assertTrue(any("组织是否也是污染来源" in item for item in cosmic_horror.scan_focus))
 
         self.assertEqual(sports_competition.name, "sports_competition")
@@ -1116,6 +1117,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(horror_keywords.get("收容物"), 5)
         self.assertEqual(horror_keywords.get("认知崩溃"), 5)
         self.assertEqual(horror_keywords.get("理智"), 5)
+        self.assertEqual(horror_keywords.get("魔药"), 4)
 
         apocalypse_keywords = dict(analysis_profiles._keywords_from_manifest("apocalypse_survival"))
         self.assertEqual(apocalypse_keywords.get("废土"), 5)
