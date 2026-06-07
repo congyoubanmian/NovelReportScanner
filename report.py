@@ -997,6 +997,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
     negative_hints = (
         "没有", "没", "无", "未见", "尚未", "并未", "不曾", "不存在", "缺少", "缺乏",
         "无明确", "没有明确", "未确认", "未发生", "未产生", "未建立", "未收入",
+        "未与", "未和", "未跟",
         "不喜欢", "不爱", "并不喜欢", "并不爱", "不是喜欢", "不是爱",
         "谈不上喜欢", "谈不上爱", "称不上喜欢", "称不上爱", "讨厌", "厌恶",
     )
@@ -1014,6 +1015,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
     )
     non_romantic_emotion_contexts = ("读者", "书友", "粉丝", "作者", "剧情", "副本", "设定", "文笔", "设计", "说明")
     nonfactual_romance_contexts = ("传言", "传闻", "流言", "谣言", "误会", "误传", "炒作", "营销", "澄清", "伪装")
+    system_or_setting_followers = ("功法", "理论", "设定", "制度", "体系", "流派", "知识", "丫鬟", "女仆", "安排")
     tight_roleplay_words = {"喜欢", "爱", "动心", "倾心", "表白", "告白", "暧昧"}
     for word in keywords:
         start = 0
@@ -1043,6 +1045,9 @@ def _contains_positive_signal_text(value, keywords) -> bool:
                 hint in text[max(0, index - 10):index + len(word) + 12]
                 for hint in nonfactual_romance_contexts
             )
+            system_or_setting_relation = word in ("双修", "同房") and any(
+                next_text.startswith(hint) for hint in system_or_setting_followers
+            )
             roleplay_blocked = (
                 any(hint in tight_roleplay_window for hint in roleplay_hints)
                 if word in tight_roleplay_words
@@ -1056,6 +1061,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
                 and not non_romantic_love
                 and not non_romantic_emotion
                 and not nonfactual_romance
+                and not system_or_setting_relation
             ):
                 return True
             start = index + len(word)

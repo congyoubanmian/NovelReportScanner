@@ -3626,6 +3626,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(report._contains_positive_signal_text("她念出告白台词，只是在排练舞台剧。", ["告白"]))
         self.assertTrue(report._contains_positive_signal_text("她向男主表白，并明确喜欢他。", ["表白"]))
         self.assertTrue(report._contains_positive_signal_text("她主动告白男主。", ["告白"]))
+        self.assertFalse(report._contains_positive_signal_text("她负责讲解双修功法理论，没有和男主实际修炼。", ["双修"]))
+        self.assertFalse(report._contains_positive_signal_text("她只是管理同房丫鬟制度，未与男主同房。", ["同房"]))
+        self.assertTrue(report._contains_positive_signal_text("她与男主双修并确认关系。", ["双修"]))
+        self.assertTrue(report._contains_positive_signal_text("她和男主同房后成为道侣。", ["同房"]))
         self.assertTrue(report._contains_positive_signal_text("她是男主未婚妻，双方感情稳定。", ["未婚妻"]))
         self.assertFalse(report._contains_positive_signal_text("她尚未成为男主妻子。", ["妻子"]))
 
@@ -3719,6 +3723,26 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertIn("情感深度=未明", roleplay)
         self.assertIn("结论=证据不足", roleplay)
+
+    def test_leak_three_layers_ignores_cultivation_or_household_terms(self):
+        generic = report._summarize_leak_three_layers(
+            {},
+            {
+                "relationship_with_protagonist": "她负责讲解双修功法理论，没有和男主实际修炼。",
+                "key_events": "她只是管理同房丫鬟制度，未与男主同房。",
+            },
+        )
+        confirmed = report._summarize_leak_three_layers(
+            {},
+            {
+                "relationship_with_protagonist": "她与男主双修并确认关系。",
+                "key_events": "她和男主同房后成为道侣。",
+            },
+        )
+
+        self.assertIn("关系确认=未明", generic)
+        self.assertIn("结局交代=未明", generic)
+        self.assertIn("关系确认=有", confirmed)
 
     def test_leak_three_layers_requires_specific_concubine_terms(self):
         generic = report._summarize_leak_three_layers(
