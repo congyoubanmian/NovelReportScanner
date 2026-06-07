@@ -1,9 +1,10 @@
 const API_BASE = ''
 const REQUEST_TIMEOUT_MS = 15000
+const UPLOAD_TIMEOUT_MS = 120000
 
-async function api(path, options = {}) {
+async function _api(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       ...options,
@@ -16,7 +17,7 @@ async function api(path, options = {}) {
     return res.json()
   } catch (e) {
     if (e.name === 'AbortError') {
-      throw new Error('请求超时')
+      throw new Error(timeoutMs >= UPLOAD_TIMEOUT_MS ? '上传超时，请检查网络或减小文件大小' : '请求超时')
     }
     throw e
   } finally {
@@ -25,15 +26,15 @@ async function api(path, options = {}) {
 }
 
 export function getState() {
-  return api('/api/state')
+  return _api('/api/state')
 }
 
 export function getBookDetail(bookId) {
-  return api(`/api/book?id=${encodeURIComponent(bookId)}`)
+  return _api(`/api/book?id=${encodeURIComponent(bookId)}`)
 }
 
 export function setProfile(bookId, profile) {
-  return api('/api/profile', {
+  return _api('/api/profile', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ book_id: bookId, profile })
@@ -41,7 +42,7 @@ export function setProfile(bookId, profile) {
 }
 
 export function enqueueBook(bookId) {
-  return api('/api/enqueue', {
+  return _api('/api/enqueue', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ book_id: bookId })
@@ -49,8 +50,8 @@ export function enqueueBook(bookId) {
 }
 
 export function uploadBook(formData) {
-  return api('/upload', {
+  return _api('/upload', {
     method: 'POST',
     body: formData
-  })
+  }, UPLOAD_TIMEOUT_MS)
 }
