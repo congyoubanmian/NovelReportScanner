@@ -3788,6 +3788,26 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("结论=需关注", dream_or_setting)
         self.assertIn("结局交代=有", accounted)
 
+    def test_leak_three_layers_ignores_non_ending_action_terms(self):
+        action_terms = report._summarize_leak_three_layers(
+            {},
+            {
+                "relationship_with_protagonist": "与男主暧昧并喜欢男主。",
+                "key_events": "她留下线索后离开，跟随案件线索调查，还负责同行评审报告。",
+            },
+        )
+        accounted = report._summarize_leak_three_layers(
+            {},
+            {
+                "relationship_with_protagonist": "与男主暧昧并喜欢男主。",
+                "key_events": "番外多年后她留在男主身边，与他相伴余生。",
+            },
+        )
+
+        self.assertIn("结局交代=未明", action_terms)
+        self.assertIn("结论=需关注", action_terms)
+        self.assertIn("结局交代=有", accounted)
+
     def test_leak_three_layers_requires_specific_concubine_terms(self):
         generic = report._summarize_leak_three_layers(
             {},
