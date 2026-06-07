@@ -322,16 +322,26 @@ def _harem_plus_general_scan_enabled(profile):
 
 
 def _select_harem_plus_general_profile(novel_path, book_name, profile):
+    profiles = _select_harem_plus_general_profiles(novel_path, book_name, profile)
+    return profiles[0]
+
+
+def _select_harem_plus_general_profiles(novel_path, book_name, profile):
     from analysis_profiles import infer_profile_candidates_for_novel, load_analysis_profile
 
     cfg = getattr(profile, "harem_plus", {}) or {}
     fallback_name = str(cfg.get("general_profile") or "general")
-    selected_name = fallback_name
+    selected_names = []
     if bool(cfg.get("auto_secondary_profile", False)):
         try:
             min_score = int(cfg.get("secondary_min_score", 6))
         except (TypeError, ValueError):
             min_score = 6
+        try:
+            max_profiles = int(cfg.get("secondary_max_profiles", 2))
+        except (TypeError, ValueError):
+            max_profiles = 2
+        max_profiles = max(1, min(max_profiles, 3))
         excluded = cfg.get("secondary_exclude_profiles")
         if not isinstance(excluded, list):
             excluded = ["harem", "general"]
@@ -348,9 +358,12 @@ def _select_harem_plus_general_profile(novel_path, book_name, profile):
             except (TypeError, ValueError):
                 score = 0
             if name and name not in excluded and score >= min_score:
-                selected_name = name
-                break
-    return load_analysis_profile(selected_name)
+                selected_names.append(name)
+                if len(selected_names) >= max_profiles:
+                    break
+    if not selected_names:
+        selected_names = [fallback_name]
+    return [load_analysis_profile(name) for name in selected_names]
 
 
 def _with_harem_plus_secondary_focus(general_profile, harem_profile):
@@ -370,17 +383,17 @@ def _with_harem_plus_secondary_focus(general_profile, harem_profile):
 
 
 def _run_harem_plus_general_scan(general_scan_module, novel_path, book_name, run_id, detail_path, profile):
-    general_profile = _with_harem_plus_secondary_focus(
-        _select_harem_plus_general_profile(novel_path, book_name, profile),
-        profile,
-    )
     old_profile = os.environ.get("ANALYSIS_PROFILE")
     old_rules = os.environ.get("ANALYSIS_RULES_FILE")
     try:
-        os.environ["ANALYSIS_PROFILE"] = general_profile.name
-        os.environ["ANALYSIS_RULES_FILE"] = general_profile.rules_file
-        print(f"[harem+] 额外运行通用剧情扫描: {general_profile.display_name} ({general_profile.name})")
-        return general_scan_module.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path, profile_override=general_profile)
+        results = []
+        for general_profile in _select_harem_plus_general_profiles(novel_path, book_name, profile):
+            general_profile = _with_harem_plus_secondary_focus(general_profile, profile)
+            os.environ["ANALYSIS_PROFILE"] = general_profile.name
+            os.environ["ANALYSIS_RULES_FILE"] = general_profile.rules_file
+            print(f"[harem+] 额外运行通用剧情扫描: {general_profile.display_name} ({general_profile.name})")
+            results.append(general_scan_module.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path, profile_override=general_profile))
+        return results[-1] if results else None
     finally:
         if old_profile is None:
             os.environ.pop("ANALYSIS_PROFILE", None)

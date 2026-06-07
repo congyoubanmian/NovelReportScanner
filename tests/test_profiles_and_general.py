@@ -1926,6 +1926,54 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(any("双修功法" in item for item in calls[0]["focus"]))
         self.assertTrue(any("宗门规矩" in item for item in calls[0]["focus"]))
 
+    def test_harem_plus_auto_runs_multiple_secondary_profiles(self):
+        harem = analysis_profiles.load_analysis_profile("harem")
+        old_profile = os.environ.get("ANALYSIS_PROFILE")
+        old_rules = os.environ.get("ANALYSIS_RULES_FILE")
+        calls = []
+
+        class FakeGeneralScan:
+            @staticmethod
+            def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile_override=None):
+                calls.append({
+                    "profile": os.environ.get("ANALYSIS_PROFILE"),
+                    "rules": os.environ.get("ANALYSIS_RULES_FILE"),
+                    "novel_path": novel_path,
+                    "book_name": book_name,
+                    "focus": list(getattr(profile_override, "scan_focus", []) or []),
+                })
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            novel_path = os.path.join(tmpdir, "蒸汽后宫侦探.txt")
+            with open(novel_path, "w", encoding="utf-8") as f:
+                f.write(
+                    "男主和红颜卷入后宫关系，蒸汽时代的教会帝国里，"
+                    "炼金矩阵和差分机推动神秘复苏案件，侦探调查谋杀案并推理真凶。"
+                )
+
+            try:
+                os.environ["ANALYSIS_PROFILE"] = "harem"
+                os.environ["ANALYSIS_RULES_FILE"] = harem.rules_file
+                selected = main._select_harem_plus_general_profiles(novel_path, "蒸汽后宫侦探", harem)
+                main._run_harem_plus_general_scan(FakeGeneralScan, novel_path, "蒸汽后宫侦探", "run", "/tmp/detail.json", harem)
+            finally:
+                if old_profile is None:
+                    os.environ.pop("ANALYSIS_PROFILE", None)
+                else:
+                    os.environ["ANALYSIS_PROFILE"] = old_profile
+                if old_rules is None:
+                    os.environ.pop("ANALYSIS_RULES_FILE", None)
+                else:
+                    os.environ["ANALYSIS_RULES_FILE"] = old_rules
+
+        selected_names = [profile.name for profile in selected]
+        called_names = [call["profile"] for call in calls]
+        self.assertIn("steampunk_fantasy", selected_names)
+        self.assertIn("mystery_detective", selected_names)
+        self.assertEqual(called_names[:2], selected_names[:2])
+        self.assertTrue(any("神秘复苏" in item for item in calls[0]["focus"]))
+        self.assertTrue(any("单个案件是否推动人物关系" in item or "外挂硬解" in item for item in calls[1]["focus"]))
+
     def test_harem_plus_secondary_focus_covers_isekai_and_steampunk(self):
         harem = analysis_profiles.load_analysis_profile("harem")
         overrides = harem.harem_plus.get("secondary_focus_overrides", {})
