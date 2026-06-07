@@ -2,6 +2,7 @@ import json
 import io
 import os
 import tempfile
+import time
 import unittest
 
 import analysis_profiles
@@ -1468,6 +1469,96 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         finally:
             web_manager.STATE = old_state
             os.unlink(novel_path)
+
+    def test_web_manager_sync_refreshes_suggestions_outside_state_lock(self):
+        class TrackingLock:
+            def __init__(self):
+                self.depth = 0
+
+            def __enter__(self):
+                self.depth += 1
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                self.depth -= 1
+
+        old_state = web_manager.STATE
+        old_lock = web_manager.STATE_LOCK
+        old_base_dir = web_manager.get_base_dir
+        old_profile_suggestions = web_manager._profile_suggestions
+        old_last_sync = web_manager.LAST_BOOK_SYNC_AT
+        old_ttl = web_manager.SYNC_BOOKS_TTL_SECONDS
+        lock = TrackingLock()
+        calls = []
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                os.makedirs(os.path.join(tmp, "novels"), exist_ok=True)
+                os.makedirs(os.path.join(tmp, "results"), exist_ok=True)
+                novel_path = os.path.join(tmp, "novels", "book.txt")
+                with open(novel_path, "w", encoding="utf-8") as f:
+                    f.write("末世幸存者搜集物资。")
+
+                def fake_profile_suggestions(path, book_name):
+                    calls.append((path, book_name, lock.depth))
+                    return [{"name": "apocalypse_survival"}]
+
+                web_manager.STATE = {"books": {}, "tasks": []}
+                web_manager.STATE_LOCK = lock
+                web_manager.get_base_dir = lambda: tmp
+                web_manager._profile_suggestions = fake_profile_suggestions
+                web_manager.LAST_BOOK_SYNC_AT = 0.0
+                web_manager.SYNC_BOOKS_TTL_SECONDS = 0.0
+
+                web_manager._sync_books_from_disk()
+
+                self.assertEqual(calls, [(novel_path, "book", 0)])
+                self.assertEqual(web_manager.STATE["books"]["book"]["profile_suggestions"], [{"name": "apocalypse_survival"}])
+                self.assertEqual(lock.depth, 0)
+        finally:
+            web_manager.STATE = old_state
+            web_manager.STATE_LOCK = old_lock
+            web_manager.get_base_dir = old_base_dir
+            web_manager._profile_suggestions = old_profile_suggestions
+            web_manager.LAST_BOOK_SYNC_AT = old_last_sync
+            web_manager.SYNC_BOOKS_TTL_SECONDS = old_ttl
+
+    def test_web_manager_sync_skips_stale_suggestions_after_file_change(self):
+        old_state = web_manager.STATE
+        old_base_dir = web_manager.get_base_dir
+        old_profile_suggestions = web_manager._profile_suggestions
+        old_last_sync = web_manager.LAST_BOOK_SYNC_AT
+        old_ttl = web_manager.SYNC_BOOKS_TTL_SECONDS
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                os.makedirs(os.path.join(tmp, "novels"), exist_ok=True)
+                os.makedirs(os.path.join(tmp, "results"), exist_ok=True)
+                novel_path = os.path.join(tmp, "novels", "book.txt")
+                with open(novel_path, "w", encoding="utf-8") as f:
+                    f.write("第一版")
+
+                def fake_profile_suggestions(_path, _book_name):
+                    time.sleep(0.01)
+                    with open(novel_path, "a", encoding="utf-8") as f:
+                        f.write("第二版")
+                    return [{"name": "stale"}]
+
+                web_manager.STATE = {"books": {}, "tasks": []}
+                web_manager.get_base_dir = lambda: tmp
+                web_manager._profile_suggestions = fake_profile_suggestions
+                web_manager.LAST_BOOK_SYNC_AT = 0.0
+                web_manager.SYNC_BOOKS_TTL_SECONDS = 0.0
+
+                web_manager._sync_books_from_disk()
+
+                book = web_manager.STATE["books"]["book"]
+                self.assertNotIn("profile_suggestions", book)
+                self.assertNotIn("suggestion_signature", book)
+        finally:
+            web_manager.STATE = old_state
+            web_manager.get_base_dir = old_base_dir
+            web_manager._profile_suggestions = old_profile_suggestions
+            web_manager.LAST_BOOK_SYNC_AT = old_last_sync
+            web_manager.SYNC_BOOKS_TTL_SECONDS = old_ttl
 
     def test_web_manager_recovers_incomplete_tasks_and_queue_positions(self):
         old_state = web_manager.STATE

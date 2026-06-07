@@ -221,12 +221,16 @@ def _refresh_book_suggestions(book):
         return
     if book.get("status") in {"queued", "running"}:
         return
-    stat = os.stat(book["path"])
-    signature = f"{stat.st_mtime}:{stat.st_size}"
+    signature = _book_suggestion_signature(book["path"])
     if book.get("suggestion_signature") == signature and book.get("profile_suggestions"):
         return
     book["profile_suggestions"] = _profile_suggestions(book["path"], book.get("name", ""))
     book["suggestion_signature"] = signature
+
+
+def _book_suggestion_signature(path):
+    stat = os.stat(path)
+    return f"{stat.st_mtime}:{stat.st_size}"
 
 
 def _sync_books_from_disk():
@@ -241,6 +245,7 @@ def _sync_books_from_disk():
                 continue
             path = os.path.join(root, filename)
             discovered.append((path, _book_id_from_path(path)))
+    refresh_jobs = []
     with STATE_LOCK:
         for path, book_id in discovered:
             entry = STATE["books"].setdefault(book_id, {})
@@ -250,7 +255,31 @@ def _sync_books_from_disk():
             entry.setdefault("profile", "auto")
             entry.setdefault("status", "idle")
             entry.setdefault("created_at", time.strftime("%Y-%m-%d %H:%M:%S"))
-            _refresh_book_suggestions(entry)
+            if entry.get("status") not in {"queued", "running"}:
+                try:
+                    signature = _book_suggestion_signature(path)
+                except OSError:
+                    continue
+                if entry.get("suggestion_signature") != signature or not entry.get("profile_suggestions"):
+                    refresh_jobs.append((book_id, path, entry.get("name", ""), signature))
+        _save_state()
+
+    refreshed = []
+    for book_id, path, book_name, signature in refresh_jobs:
+        refreshed.append((book_id, signature, _profile_suggestions(path, book_name)))
+
+    with STATE_LOCK:
+        for book_id, signature, suggestions in refreshed:
+            entry = STATE["books"].get(book_id)
+            if not entry or entry.get("status") in {"queued", "running"}:
+                continue
+            try:
+                if _book_suggestion_signature(entry.get("path")) != signature:
+                    continue
+            except (OSError, TypeError):
+                continue
+            entry["profile_suggestions"] = suggestions
+            entry["suggestion_signature"] = signature
         _save_state()
         LAST_BOOK_SYNC_AT = now
 
