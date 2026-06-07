@@ -587,6 +587,72 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(info["leak_ending_accounted"])
         self.assertIn("喜欢", info["leak_emotional_depth_reason"])
 
+    def test_rebuild_leak_state_requires_emotional_depth(self):
+        data = {
+            "heroine_result": {
+                "heroines": [
+                    {
+                        "name": "乙女",
+                        "summaries": ["偶尔出场，负责送情报和解释背景，结局未交代。"],
+                    }
+                ]
+            }
+        }
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+            char_path = f.name
+        try:
+            issues, leak_map = novel_reviewer._rebuild_leak_state_from_pushed_map(
+                female_leads=["乙女"],
+                char_file_path=char_path,
+                novel_tail="尾声里只有男主离开江湖。",
+                finished=True,
+                pushed_map={"乙女": (False, "未见推倒或同房证据")},
+            )
+        finally:
+            os.unlink(char_path)
+
+        self.assertEqual(issues, [])
+        info = leak_map["乙女"]
+        self.assertFalse(info["is_leak_heroine"])
+        self.assertFalse(info["leak_emotional_depth"])
+        self.assertFalse(info["leak_relationship_confirmed"])
+        self.assertFalse(info["leak_ending_accounted"])
+        self.assertIn("未达到漏女判定门槛", info["leak_reason"])
+
+    def test_rebuild_leak_state_keeps_unknown_relationship_unjudged(self):
+        data = {
+            "heroine_result": {
+                "heroines": [
+                    {
+                        "name": "丙女",
+                        "summaries": ["与男主长期暧昧并喜欢男主，但结局未交代归宿。"],
+                    }
+                ]
+            }
+        }
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+            char_path = f.name
+        try:
+            issues, leak_map = novel_reviewer._rebuild_leak_state_from_pushed_map(
+                female_leads=["丙女"],
+                char_file_path=char_path,
+                novel_tail="尾声里只有男主离开江湖。",
+                finished=True,
+                pushed_map={"丙女": (None, "API失败，未能确认是否推倒")},
+            )
+        finally:
+            os.unlink(char_path)
+
+        self.assertEqual(issues, [])
+        info = leak_map["丙女"]
+        self.assertFalse(info["is_leak_heroine"])
+        self.assertTrue(info["leak_emotional_depth"])
+        self.assertIsNone(info["leak_relationship_confirmed"])
+        self.assertFalse(info["leak_ending_accounted"])
+        self.assertIn("关系确认未知", info["leak_reason"])
+
     def test_auto_profile_inference(self):
         self.assertEqual(
             analysis_profiles.infer_profile_for_text("大明权臣", "皇帝与朝廷在庙堂上争论边军粮饷。"),

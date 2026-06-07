@@ -398,15 +398,24 @@ def _rebuild_leak_state_from_pushed_map(
 
     for name in female_leads:
         pushed, pushed_reason = pushed_map.get(name, (None, "未判定"))
-        pushed_ok = pushed is True
+        if pushed is True:
+            relationship_confirmed: Optional[bool] = True
+        elif pushed is False:
+            relationship_confirmed = False
+        else:
+            relationship_confirmed = None
+        pushed_ok = relationship_confirmed is True
         hinfo = heroine_map.get(name, {"name": name})
         has_emotional_depth, emotional_depth_reason = _heroine_has_emotional_depth_for_leak(hinfo)
         aliases = hinfo.get("aliases", []) if isinstance(hinfo.get("aliases", []), list) else []
         tail_ok = _name_in_tail(novel_tail or "", name, aliases)
-        is_leak = (not pushed_ok) and (not tail_ok)
+        is_leak = has_emotional_depth and (relationship_confirmed is False) and (not tail_ok)
 
         if is_leak:
-            leak_reason = f"推倒判定：{pushed_reason}；尾声检索：未命中姓名或别名"
+            leak_reason = (
+                f"情感深度：{emotional_depth_reason}；"
+                f"推倒判定：{pushed_reason}；尾声检索：未命中姓名或别名"
+            )
             issues.append({
                 "category": "郁闷点",
                 "type": "漏女",
@@ -415,8 +424,12 @@ def _rebuild_leak_state_from_pushed_map(
                 "review_comment": f"{name} 未被男主明确推倒，且尾声未交代结局，判为漏女。",
                 "chunk_index": -1,
             })
+        elif not has_emotional_depth:
+            leak_reason = f"情感深度：{emotional_depth_reason}；未达到漏女判定门槛"
         elif pushed_ok:
             leak_reason = f"推倒判定：{pushed_reason}；已被男主明确推倒，不算漏女"
+        elif relationship_confirmed is None:
+            leak_reason = f"推倒判定：{pushed_reason}；关系确认未知，暂不判漏女"
         else:
             leak_reason = f"推倒判定：{pushed_reason}；尾声检索：命中姓名或别名"
 
@@ -425,7 +438,7 @@ def _rebuild_leak_state_from_pushed_map(
             "leak_reason": leak_reason,
             "leak_emotional_depth": has_emotional_depth,
             "leak_emotional_depth_reason": emotional_depth_reason,
-            "leak_relationship_confirmed": pushed_ok,
+            "leak_relationship_confirmed": relationship_confirmed,
             "leak_relationship_reason": f"推倒判定：{pushed_reason}",
             "leak_ending_accounted": tail_ok,
             "leak_ending_reason": "尾声检索：命中姓名或别名" if tail_ok else "尾声检索：未命中姓名或别名",
@@ -443,8 +456,8 @@ def detect_leak_heroines(
     finished: Optional[bool]
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Tuple[Optional[bool], str]]]:
     """
-    先逐女主判定是否被男主推倒，再结合尾声登场情况生成“漏女”郁闷点。
-    规则：仅当“未被推倒”且“尾声未出现”同时满足时，才认定漏女。
+    先逐女主判定是否被男主推倒，再结合情感深度与尾声登场情况生成“漏女”郁闷点。
+    规则：仅当“有情感深度”“明确未被推倒”“尾声未出现”三层同时满足时，才认定漏女。
     返回 (issues, pushed_results_map)
     """
     heroine_map = _build_heroine_map(char_file_path)
