@@ -1400,7 +1400,7 @@ def _summarize_leak_three_layers(purity_info: dict, profile: dict) -> str:
     leak = purity_info.get("is_leak_heroine")
     has_relationship_confirmed = bool(pushed) or _contains_any_text(
         profile_text,
-        ["推倒", "同房", "双修", "成婚", "纳妾", "妾", "道侣", "恋人", "确认关系", "收入后宫"],
+        ["推倒", "同房", "双修", "成婚", "纳妾", "妾室", "小妾", "为妾", "收妾", "通房", "侧室", "道侣", "恋人", "确认关系", "收入后宫"],
     )
     has_ending_note = _contains_any_text(
         profile_text,

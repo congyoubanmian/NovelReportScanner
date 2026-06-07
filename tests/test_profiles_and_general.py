@@ -3636,6 +3636,26 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("情感深度=未明", promise_only)
         self.assertIn("结论=证据不足", promise_only)
 
+    def test_leak_three_layers_requires_specific_concubine_terms(self):
+        generic = report._summarize_leak_three_layers(
+            {},
+            {
+                "relationship_with_protagonist": "双方只是讨论侍妾制度，她自称妾身开玩笑。",
+                "key_events": "与男主暧昧并爱男主，结局未交代归宿。",
+            },
+        )
+        confirmed = report._summarize_leak_three_layers(
+            {},
+            {
+                "relationship_with_protagonist": "男主纳妾收入后宫，她成为通房。",
+                "key_events": "结局留在男主身边。",
+            },
+        )
+
+        self.assertIn("关系确认=未明", generic)
+        self.assertIn("结论=需关注", generic)
+        self.assertIn("关系确认=有", confirmed)
+
     def test_harem_report_adds_heroine_context_to_issue_lines(self):
         old_openai = report.OpenAI
         old_api_key_pool = report.API_KEY_POOL
