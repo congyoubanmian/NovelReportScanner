@@ -1384,17 +1384,37 @@ def _issue_definition_review_hint(issue: dict, heroine_contexts: list) -> str:
     issue_type = str((issue or {}).get("type") or "")
     if not is_strict_harem_issue_type(issue_type):
         return ""
+    evidence_hint = _strict_issue_evidence_review_hint(issue)
     matched = _matched_issue_heroine_contexts(issue, heroine_contexts)
     if not matched:
-        return "按锁定定义，送女/绿帽必须锚定目标女主或强准女主；当前条目未命中已识别女主名或别名，建议复核对象是否成立。"
+        base = "按锁定定义，送女/绿帽必须锚定目标女主或强准女主；当前条目未命中已识别女主名或别名，建议复核对象是否成立。"
+        return f"{base}；{evidence_hint}" if evidence_hint else base
     weak_names = [
         ctx.get("name")
         for ctx in matched
         if ctx.get("name") and ctx.get("label") not in ("目标女主", "强准女主")
     ]
     if not weak_names:
+        return evidence_hint
+    base = f"按锁定定义，送女/绿帽仅适用于目标女主或强准女主；{','.join(weak_names[:3])} 当前定位偏弱，建议复核是否误判。"
+    return f"{base}；{evidence_hint}" if evidence_hint else base
+
+
+def _strict_issue_evidence_review_hint(issue: dict) -> str:
+    text = " ".join(
+        str((issue or {}).get(field) or "")
+        for field in ("content", "review_comment", "reason", "evidence")
+    )
+    if not text:
         return ""
-    return f"按锁定定义，送女/绿帽仅适用于目标女主或强准女主；{','.join(weak_names[:3])} 当前定位偏弱，建议复核是否误判。"
+    nonfactual_markers = (
+        "传闻", "传言", "流言", "谣言", "据说", "听说", "口嗨", "意淫", "误会", "误传",
+        "梦境", "梦见", "梦到", "幻境", "弱暗示", "疑似", "嫌疑", "待复核", "待确认",
+        "未来计划", "计划中", "打算", "扬言", "威胁", "未遂", "差点", "险些", "未发生",
+    )
+    if not any(marker in text for marker in nonfactual_markers):
+        return ""
+    return "证据含传闻/口嗨/误会/未遂/未来计划等非事实或弱证据标记，严格关系雷点需复核事实性。"
 
 
 def _annotate_issue_for_report(issue: dict, heroine_contexts: list) -> dict:

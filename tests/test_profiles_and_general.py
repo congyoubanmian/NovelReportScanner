@@ -4070,7 +4070,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         {
                             "type": "送女",
                             "chunk_index": 8,
-                            "content": "弱女被安排嫁给路人男。",
+                            "content": "传闻弱女被安排嫁给路人男。",
                             "review_comment": "送女风险。",
                         },
                         {
@@ -4088,8 +4088,59 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertIn("女主定位上下文：弱女=弱准女主", text)
         self.assertIn("定义复核提示：按锁定定义，送女/绿帽仅适用于目标女主或强准女主；弱女 当前定位偏弱，建议复核是否误判。", text)
+        self.assertIn("证据含传闻/口嗨/误会/未遂/未来计划等非事实或弱证据标记", text)
         self.assertIn("女主定位上下文：正女=目标女主", text)
         self.assertEqual(text.count("定义复核提示"), 1)
+
+    def test_harem_report_flags_strict_issue_with_nonfactual_evidence(self):
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        try:
+            report.OpenAI = None
+            report.API_KEY_POOL = []
+            text = report.build_report_v2(
+                "测试后宫",
+                {
+                    "male_protagonist": {"name": "男主"},
+                    "heroine_result": {
+                        "heroines": [
+                            {
+                                "name": "正女",
+                                "importance_rank": 1,
+                                "relationship_type": "道侣",
+                            },
+                        ]
+                    },
+                    "all_female_characters": {
+                        "正女": {
+                            "count": 8,
+                            "profile_for_report": {
+                                "identity": "主线女主",
+                                "relationship_with_protagonist": "男主道侣",
+                                "features": "长期陪伴男主",
+                                "key_events": "确认关系",
+                            },
+                        },
+                    },
+                },
+                {
+                    "heroines_purity": [{"name": "正女", "pushed_by_male_lead": True}],
+                    "lei_points": [
+                        {
+                            "type": "绿帽",
+                            "chunk_index": 18,
+                            "content": "反派口嗨扬言要抢走正女，但未发生实际关系。",
+                            "review_comment": "绿帽风险。",
+                        },
+                    ],
+                },
+            )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+
+        self.assertIn("女主定位上下文：正女=目标女主", text)
+        self.assertIn("定义复核提示：证据含传闻/口嗨/误会/未遂/未来计划等非事实或弱证据标记", text)
 
     def test_harem_report_flags_strict_issue_without_heroine_anchor(self):
         old_openai = report.OpenAI
