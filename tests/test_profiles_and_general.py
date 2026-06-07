@@ -1,6 +1,7 @@
 import json
 import io
 import os
+import re
 import tempfile
 import time
 import unittest
@@ -15,6 +16,25 @@ import web_manager
 
 
 class ProfileAndGeneralReportTests(unittest.TestCase):
+    def test_compose_variables_are_documented_in_env_sample(self):
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        compose_path = os.path.join(base_dir, "docker-compose.yml")
+        env_sample_path = os.path.join(base_dir, ".env.sample")
+        with open(compose_path, "r", encoding="utf-8") as f:
+            compose_text = f.read()
+        with open(env_sample_path, "r", encoding="utf-8") as f:
+            env_sample_text = f.read()
+
+        compose_vars = set(re.findall(r"\$\{([A-Z0-9_]+)(?::-[^}]*)?\}", compose_text))
+        env_sample_vars = set()
+        for line in env_sample_text.splitlines():
+            match = re.match(r"\s*#?\s*([A-Z0-9_]+)=", line)
+            if match:
+                env_sample_vars.add(match.group(1))
+
+        self.assertTrue(compose_vars)
+        self.assertEqual(set(), compose_vars - env_sample_vars)
+
     def test_profile_aliases_and_stages(self):
         harem = analysis_profiles.load_analysis_profile("后宫")
         general = analysis_profiles.load_analysis_profile("通用")
