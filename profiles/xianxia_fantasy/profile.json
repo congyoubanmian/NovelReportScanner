@@ -1,0 +1,55 @@
+{
+  "name": "xianxia_fantasy",
+  "display_name": "仙侠/玄幻专长分析",
+  "description": "在通用小说分析基础上，重点检查修炼体系、战力层级、宗门势力、法宝功法、世界观扩张和升级爽点是否自洽。",
+  "enabled_stages": [
+    "character_analysis",
+    "general_scan",
+    "general_report"
+  ],
+  "rules_file": "rules.json",
+  "report_mode": "general",
+  "scan_focus": [
+    "境界、修炼体系、功法、灵根、血脉和战力层级是否稳定",
+    "宗门、家族、王朝、仙界/魔界等势力结构和资源分配逻辑",
+    "法宝、丹药、阵法、秘境、传承、机缘与代价是否自洽",
+    "主角升级节奏、爽点密度、越级战斗和外挂感是否可接受",
+    "世界观扩张、地图切换、飞升/转生/轮回等设定是否持续影响剧情",
+    "常见硬伤：战力崩坏、境界通胀、反派降智、机缘堆砌、设定遗忘"
+  ],
+  "summary_fields": [
+    "main_plot",
+    "core_conflicts",
+    "worldbuilding",
+    "cultivation_system",
+    "power_scaling",
+    "faction_structure",
+    "upgrade_pacing",
+    "strengths",
+    "risks_or_issues"
+  ],
+  "inference_keywords": [
+    {"word": "修仙", "weight": 5},
+    {"word": "仙侠", "weight": 5},
+    {"word": "玄幻", "weight": 5},
+    {"word": "宗门", "weight": 3},
+    {"word": "灵根", "weight": 4},
+    {"word": "金丹", "weight": 4},
+    {"word": "元婴", "weight": 4},
+    {"word": "化神", "weight": 3},
+    {"word": "飞升", "weight": 4},
+    {"word": "渡劫", "weight": 4},
+    {"word": "法宝", "weight": 3},
+    {"word": "丹药", "weight": 3},
+    {"word": "阵法", "weight": 3},
+    {"word": "秘境", "weight": 3},
+    {"word": "传承", "weight": 2},
+    {"word": "灵气", "weight": 3},
+    {"word": "剑修", "weight": 4},
+    {"word": "魔修", "weight": 3},
+    {"word": "妖族", "weight": 3},
+    {"word": "仙尊", "weight": 3},
+    {"word": "大帝", "weight": 3},
+    {"word": "神通", "weight": 3}
+  ]
+}

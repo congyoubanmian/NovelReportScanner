@@ -83,6 +83,29 @@ def _safe_list(value: Any, limit: int = 20) -> List[str]:
     return out
 
 
+def _profile_rules_text(profile) -> str:
+    rules_file = getattr(profile, "rules_file", "") or ""
+    data = _read_json(rules_file)
+    if not isinstance(data, dict):
+        return "（无专项规则）"
+    lines = []
+    for category in data.get("categories", []) or []:
+        if not isinstance(category, dict):
+            continue
+        name = str(category.get("name") or "").strip()
+        description = str(category.get("description") or "").strip()
+        if name:
+            lines.append(f"【{name}】{description}")
+        for point in category.get("points", []) or []:
+            if not isinstance(point, dict):
+                continue
+            point_name = str(point.get("name") or "").strip()
+            point_desc = str(point.get("description") or "").strip()
+            if point_name:
+                lines.append(f"- {point_name}: {point_desc}")
+    return "\n".join(lines) if lines else "（无专项规则）"
+
+
 def _call_json(messages, max_tokens=3000) -> Dict[str, Any]:
     response = chat_completion(
         model=MODEL,
@@ -113,6 +136,7 @@ def _focus_text(profile) -> str:
 
 def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None) -> Dict[str, Any]:
     profile = profile or load_analysis_profile("general")
+    rules_text = _profile_rules_text(profile)
     system_prompt = f"""你是{profile.display_name}助手。请从片段中抽取对整本小说分析有用的信息。
 
 关注范围：
@@ -126,10 +150,14 @@ def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=No
 本 profile 的专项关注：
 {_focus_text(profile)}
 
+本 profile 的专项规则：
+{rules_text}
+
 要求：
 1. 只根据片段内容输出，不要凭空补全。
 2. 每条尽量短，保留可复核的具体信息。
-3. 输出 JSON 对象，不要 Markdown。"""
+3. specialty_notes 必须围绕专项规则记录命中点、疑点或亮点；若片段没有专项内容，输出空数组。
+4. 输出 JSON 对象，不要 Markdown。"""
     user_prompt = f"""片段 {chunk_index + 1}/{total_chunks}：
 
 --- 开始 ---
@@ -144,6 +172,7 @@ def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=No
   "themes": ["..."],
   "foreshadowing": ["..."],
   "quality_notes": ["..."],
+  "specialty_notes": ["专项规则相关要点"],
   "one_sentence_summary": "本片段一句话概要"
 }}"""
     data = _call_json(
@@ -161,6 +190,7 @@ def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=No
         "themes": _safe_list(data.get("themes")),
         "foreshadowing": _safe_list(data.get("foreshadowing")),
         "quality_notes": _safe_list(data.get("quality_notes")),
+        "specialty_notes": _safe_list(data.get("specialty_notes")),
         "one_sentence_summary": str(data.get("one_sentence_summary", "") or "").strip(),
     }
 
@@ -193,6 +223,7 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         "themes": _merge_items(chunk_results, "themes"),
         "foreshadowing": _merge_items(chunk_results, "foreshadowing"),
         "quality_notes": _merge_items(chunk_results, "quality_notes"),
+        "specialty_notes": _merge_items(chunk_results, "specialty_notes"),
     }
     specialty_fields = [x for x in profile.summary_fields if x not in {
         "main_plot",
@@ -206,8 +237,12 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
     specialty_json_hint = ""
     if specialty_fields:
         specialty_json_hint = "\n".join(f'  "{field}": ["{field} 专项分析要点"],' for field in specialty_fields)
+    rules_text = _profile_rules_text(profile)
 
     system_prompt = f"""你是{profile.display_name}总评分析师。请基于分块抽取结果，形成整本书的分析结论。
+
+本 profile 的专项规则：
+{rules_text}
 
 输出必须是 JSON 对象。不要使用后宫、初处、漏女、排雷等专用标准。"""
     user_prompt = f"""书名：{book_name}

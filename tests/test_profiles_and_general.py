@@ -16,6 +16,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         general = analysis_profiles.load_analysis_profile("通用")
         history = analysis_profiles.load_analysis_profile("历史")
         hard_sci_fi = analysis_profiles.load_analysis_profile("硬科幻")
+        xianxia_fantasy = analysis_profiles.load_analysis_profile("仙侠")
 
         self.assertEqual(harem.name, "harem")
         self.assertTrue(harem.uses_harem_reviewer)
@@ -33,6 +34,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(hard_sci_fi.uses_general_scan)
         self.assertIn("science_consistency", hard_sci_fi.summary_fields)
 
+        self.assertEqual(xianxia_fantasy.name, "xianxia_fantasy")
+        self.assertTrue(xianxia_fantasy.uses_general_scan)
+        self.assertIn("cultivation_system", xianxia_fantasy.summary_fields)
+
         self.assertEqual(analysis_profiles.resolve_profile_name("自动"), "auto")
 
     def test_profile_options_are_discovered(self):
@@ -44,6 +49,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("general", names)
         self.assertIn("history", names)
         self.assertIn("hard_sci_fi", names)
+        self.assertIn("xianxia_fantasy", names)
 
     def test_auto_profile_inference(self):
         self.assertEqual(
@@ -57,6 +63,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(
             analysis_profiles.infer_profile_for_text("仙路后宫", "男主与道侣双修，红颜和未婚妻都卷入宗门风波。"),
             "harem",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("剑修飞升", "宗门弟子修炼金丹元婴，进入秘境夺取法宝传承。"),
+            "xianxia_fantasy",
         )
         self.assertEqual(
             analysis_profiles.infer_profile_for_text("小镇旧事", "他回到故乡，重新面对童年的朋友。"),
@@ -283,10 +293,37 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertIn("主线剧情", text)
         self.assertIn("历史小说专长分析", text)
+        self.assertIn("历史制度与时代逻辑", text)
         self.assertIn("官制与地方治理形成冲突", text)
         self.assertIn("真相与代价", text)
         self.assertIn("沈砚", text)
         self.assertIn("阵营/势力：沈家", text)
+
+    def test_general_scan_uses_profile_rules_and_specialty_notes(self):
+        profile = analysis_profiles.load_analysis_profile("xianxia_fantasy")
+        prompts = []
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(messages, max_tokens=3000):
+                prompts.append("\n".join(item.get("content", "") for item in messages))
+                return {
+                    "plot_events": ["主角入宗门"],
+                    "conflicts": ["宗门资源争夺"],
+                    "worldbuilding": ["金丹元婴境界"],
+                    "themes": ["逆袭"],
+                    "foreshadowing": ["秘境传承"],
+                    "quality_notes": ["升级节奏快"],
+                    "specialty_notes": ["境界体系清晰"],
+                    "one_sentence_summary": "主角开始修炼。",
+                }
+
+            general_scan._call_json = fake_call_json
+            result = general_scan._scan_chunk("宗门弟子修炼金丹元婴。", 0, 1, profile=profile)
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertIn("境界体系清晰", result["specialty_notes"])
+        self.assertTrue(any("修炼体系与战力" in prompt for prompt in prompts))
 
     def test_general_scan_fresh_summary(self):
         with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:

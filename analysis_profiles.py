@@ -53,6 +53,7 @@ _PROFILE_ORDER = {
     "general": 20,
     "history": 30,
     "hard_sci_fi": 40,
+    "xianxia_fantasy": 50,
 }
 
 
@@ -93,6 +94,10 @@ def normalize_profile_name(value: str) -> str:
         "硬核": "hard_sci_fi",
         "硬科幻": "hard_sci_fi",
         "科幻": "hard_sci_fi",
+        "仙侠": "xianxia_fantasy",
+        "玄幻": "xianxia_fantasy",
+        "修仙": "xianxia_fantasy",
+        "仙侠玄幻": "xianxia_fantasy",
     }
     return aliases.get(name, name)
 

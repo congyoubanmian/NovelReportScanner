@@ -1111,6 +1111,18 @@ def _append_general_scan_section(lines: list, general_summary: dict):
         lines.extend(["", "【剧情与主题】", "未找到通用剧情扫描结果。"])
         return
 
+    field_titles = {
+        "historical_logic": "历史制度与时代逻辑",
+        "power_structure": "权力结构与派系",
+        "scientific_assumptions": "科学假设",
+        "technology_chain": "技术链与工程约束",
+        "science_consistency": "科学设定自洽性",
+        "cultivation_system": "修炼体系",
+        "power_scaling": "战力层级",
+        "faction_structure": "势力结构",
+        "upgrade_pacing": "升级节奏",
+    }
+
     def add_list(title, items):
         lines.extend(["", f"【{title}】"])
         values = _clean_text_items(items or [], limit=10, max_len=180)
@@ -1140,7 +1152,7 @@ def _append_general_scan_section(lines: list, general_summary: dict):
         }
     ]
     for field in specialty_fields:
-        add_list(field, summary.get(field))
+        add_list(field_titles.get(field, field), summary.get(field))
     add_list("优点", summary.get("strengths"))
     add_list("问题与阅读门槛", summary.get("risks_or_issues"))
     lines.extend(["", "【适合读者】", summary.get("reader_fit") or "未描述"])
