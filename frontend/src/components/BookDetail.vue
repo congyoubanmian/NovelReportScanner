@@ -28,6 +28,12 @@ const activeProfilesText = computed(() => {
   return props.book?.active_profile || '—'
 })
 
+const profileText = computed(() => {
+  const value = props.book?.profile
+  if (Array.isArray(value)) return value.join('、')
+  return value || '—'
+})
+
 function resolvedProfilesText(task) {
   const profiles = task.resolved_profiles || []
   if (profiles.length) return profiles.join('、')
@@ -101,7 +107,7 @@ watch(() => props.book?.id, () => {
       </div>
 
       <div class="detail-meta">
-        <span><span class="label">当前分类:</span> {{ book.profile }}</span>
+        <span><span class="label">当前分类:</span> {{ profileText }}</span>
         <span><span class="label">实际扫描:</span> {{ activeProfilesText }}</span>
         <span>
           <span class="label">路径:</span>

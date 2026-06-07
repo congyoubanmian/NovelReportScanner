@@ -9,6 +9,7 @@ from shared_utils import get_base_dir, read_file_safely
 DEFAULT_PROFILE = "harem"
 AUTO_PROFILE = "auto"
 AUTO_PROFILE_MIN_SCORE = 6
+AUTO_PROFILE_MAX_PROFILES = 3
 
 
 @dataclass(frozen=True)
@@ -388,7 +389,7 @@ def infer_profiles_for_text(title: str, text: str, min_score: int = AUTO_PROFILE
         for item in infer_profile_candidates_for_text(title, text, min_score=1)
         if item.get("name") != "general" and int(item.get("score") or 0) >= min_score
     ]
-    return names or ["general"]
+    return names[:AUTO_PROFILE_MAX_PROFILES] or ["general"]
 
 
 def infer_profiles_for_novel(novel_path: str, book_name: str = "", min_score: int = AUTO_PROFILE_MIN_SCORE) -> List[str]:

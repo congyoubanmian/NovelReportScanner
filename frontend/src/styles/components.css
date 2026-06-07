@@ -147,6 +147,43 @@ tbody tr:last-child td {
   color: var(--primary);
 }
 
+.profile-picker {
+  display: grid;
+  gap: 6px;
+  min-width: 220px;
+  max-width: 360px;
+}
+.profile-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 88px;
+  overflow: auto;
+  padding: 2px;
+}
+.profile-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.profile-option input {
+  width: 13px;
+  height: 13px;
+  accent-color: var(--primary);
+}
+.profile-option:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
 /* File list */
 .file-list {
   list-style: none;

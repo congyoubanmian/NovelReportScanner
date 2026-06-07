@@ -635,7 +635,7 @@ def build_purity_map(reviewer: dict) -> dict:
         name = item.get("name")
         if not name:
             continue
-        m[name] = {
+        data = {
             "is_virgin": item.get("is_virgin"),
             "is_spirit_clean": item.get("is_spirit_clean"),
             "no_partner": item.get("no_partner"),
@@ -673,6 +673,10 @@ def build_purity_map(reviewer: dict) -> dict:
             "leak_reason": item.get("leak_reason", ""),
             "summary": item.get("summary", ""),
         }
+        m[name] = data
+        key = _heroine_name_key(name)
+        if key and key not in m:
+            m[key] = data
     return m
 
 
@@ -776,6 +780,173 @@ def _match_female_evidence(name: str, aliases: list, all_female_characters: dict
             if k and (name in k or k in name):
                 return v
     return None
+
+
+_TITLE_WORDS = [
+    "太后", "皇后", "皇帝", "女帝", "公主", "长公主", "郡主", "王妃", "贵妃", "妃子",
+    "圣女", "仙子", "师父", "师傅", "师尊", "师姐", "师妹", "师叔", "师娘",
+    "小姐", "大小姐", "夫人", "娘娘", "楼主", "宫主", "宗主", "剑主", "阁主",
+    "掌门", "女侠", "姑娘", "姨娘", "姑母", "太妃",
+]
+
+
+def _heroine_name_key(name: str) -> str:
+    text = str(name or "").strip()
+    text = re.sub(r"[（(].*?[）)]", "", text)
+    text = re.sub(r"[\s·・,，。:：；;、'\"“”‘’\-_—]", "", text)
+    changed = True
+    while changed and text:
+        changed = False
+        for word in sorted(_TITLE_WORDS, key=len, reverse=True):
+            if text.startswith(word) and len(text) > len(word):
+                text = text[len(word):]
+                changed = True
+            if text.endswith(word) and len(text) > len(word):
+                text = text[:-len(word)]
+                changed = True
+    return text
+
+
+def _heroine_candidate_duplicate_groups(heroines: list, all_female_characters: dict) -> list:
+    groups = []
+    used = set()
+    items = []
+    for index, h in enumerate(heroines or []):
+        name = str((h or {}).get("name") or "").strip()
+        if not name:
+            continue
+        aliases = [str(x).strip() for x in ((h or {}).get("aliases") or (h or {}).get("other_names") or []) if str(x).strip()]
+        evid = _match_female_evidence(name, aliases, all_female_characters) or {}
+        evid_aliases = [str(x).strip() for x in (evid.get("other_names") or []) if str(x).strip()]
+        keys = {_heroine_name_key(name), name}
+        keys.update(_heroine_name_key(x) for x in aliases + evid_aliases)
+        keys = {x for x in keys if x and len(x) >= 2}
+        items.append({"index": index, "name": name, "keys": keys, "aliases": aliases + evid_aliases, "meta": h, "evidence": evid})
+
+    for item in items:
+        if item["index"] in used:
+            continue
+        group = [item]
+        for other in items:
+            if other["index"] == item["index"] or other["index"] in used:
+                continue
+            shared = item["keys"] & other["keys"]
+            contains = any(a in b or b in a for a in item["keys"] for b in other["keys"] if len(a) >= 2 and len(b) >= 2)
+            if shared or contains:
+                group.append(other)
+        if len(group) > 1:
+            for x in group:
+                used.add(x["index"])
+            groups.append(group)
+    return groups
+
+
+def _fallback_same_heroine_group(group: list) -> dict:
+    names = [item["name"] for item in group]
+    keys = [_heroine_name_key(name) for name in names]
+    non_empty = [x for x in keys if x]
+    same = bool(non_empty and len(set(non_empty)) == 1)
+    canonical = max(names, key=lambda n: (len(_heroine_name_key(n)), "（" in n or "(" in n, len(n), n)) if names else ""
+    return {"same_person": same, "canonical_name": canonical, "aliases": names, "reason": "称谓归一后相同"}
+
+
+def _llm_judge_heroine_duplicate_group(group: list) -> dict:
+    fallback = _fallback_same_heroine_group(group)
+    if not OpenAI or not API_KEY_POOL:
+        return fallback
+    payload = []
+    for item in group:
+        meta = item.get("meta") or {}
+        evid = item.get("evidence") or {}
+        payload.append({
+            "name": item.get("name"),
+            "normalized_name": _heroine_name_key(item.get("name")),
+            "aliases": list(dict.fromkeys(item.get("aliases") or []))[:20],
+            "relationship_type": meta.get("relationship_type", ""),
+            "character_traits": meta.get("character_traits", ""),
+            "summary": meta.get("summary", ""),
+            "identity": _pick_first_str(evid.get("identities") or evid.get("features") or [], ""),
+            "relationships": (evid.get("relationships") or [])[:8],
+            "summaries": (evid.get("summaries") or [])[:8],
+        })
+    system_prompt = """你是小说角色同一性判断助手。请判断给出的女主条目是否指向同一个真实角色。
+
+判断标准：
+1. 称谓前后缀、括号身份、尊号变化通常可能是同一人，例如“角色名（身份）”与“身份角色名”。
+2. 但亲属关系、身份、姓名核心不同、同时存在为不同角色时，不要合并。
+3. 宁可保守，不确定就 same_person=false。
+
+只输出 JSON 对象，不要 Markdown。"""
+    user_prompt = json.dumps({
+        "candidates": payload,
+        "output_schema": {
+            "same_person": "boolean",
+            "canonical_name": "用于报告展示的规范名",
+            "aliases": ["应合并的名字"],
+            "reason": "简短理由"
+        }
+    }, ensure_ascii=False, indent=2)
+    try:
+        resp = chat_completion(
+            model=MODEL,
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+            temperature=0.0,
+            max_tokens=900,
+            response_format={"type": "json_object"},
+        )
+        record_usage(resp)
+        data = json.loads(resp.choices[0].message.content or "{}")
+        if not isinstance(data, dict):
+            return fallback
+        return {
+            "same_person": bool(data.get("same_person")),
+            "canonical_name": str(data.get("canonical_name") or fallback["canonical_name"]).strip(),
+            "aliases": [str(x).strip() for x in data.get("aliases", []) if str(x).strip()] or fallback["aliases"],
+            "reason": str(data.get("reason") or "").strip(),
+        }
+    except Exception as exc:
+        log_report(f"女主重复合并 LLM 判断失败，使用保守兜底: {exc}")
+        return fallback
+
+
+def dedupe_heroines_for_report(heroines: list, all_female_characters: dict) -> list:
+    if not heroines:
+        return []
+    deduped = list(heroines)
+    remove_names = set()
+    rename = {}
+    for group in _heroine_candidate_duplicate_groups(deduped, all_female_characters):
+        decision = _llm_judge_heroine_duplicate_group(group)
+        if not decision.get("same_person"):
+            continue
+        group_names = [item["name"] for item in group]
+        canonical = decision.get("canonical_name") or group_names[0]
+        keep = None
+        for item in group:
+            if item["name"] == canonical:
+                keep = item["name"]
+                break
+        if keep is None:
+            keep = max(group_names, key=lambda n: (len(_heroine_name_key(n)), "（" in n or "(" in n, len(n), n))
+            rename[keep] = canonical
+        for name in group_names:
+            if name != keep:
+                remove_names.add(name)
+    out = []
+    seen = set()
+    for h in deduped:
+        name = str((h or {}).get("name") or "").strip()
+        if not name or name in remove_names:
+            continue
+        item = dict(h)
+        if name in rename:
+            item["name"] = rename[name]
+        final_name = item.get("name")
+        if final_name in seen:
+            continue
+        seen.add(final_name)
+        out.append(item)
+    return out
 
 
 def _normalize_profile_for_report(profile_for_report: dict) -> dict:
@@ -910,6 +1081,7 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
         except Exception:
             return 9999
     heroines = sorted(heroines, key=_rank_key)
+    heroines = dedupe_heroines_for_report(heroines, all_female_characters)
 
     heroine_lines = ["", "【女主】"]
 
@@ -943,7 +1115,7 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
     for h in heroines:
         name = h.get("name") or "未知"
         prof = _normalize_profile_for_report(profile_cache.get(name, {}))
-        p = purity_map.get(name, None)
+        p = purity_map.get(name) or purity_map.get(_heroine_name_key(name))
         # 初摸：无非男主接触 => ✅
         virgin = _bool_mark(p.get("is_virgin")) if p else "❓"
         spirit = _bool_mark(p.get("is_spirit_clean")) if p else "❓"

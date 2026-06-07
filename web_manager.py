@@ -193,10 +193,27 @@ def _valid_profile_names():
 
 
 def _normalize_web_profile(value):
+    if isinstance(value, list):
+        profiles = []
+        for item in value:
+            profile_name = _normalize_web_profile(item)
+            if not profile_name:
+                continue
+            if profile_name == "auto":
+                return ["auto"]
+            if profile_name not in profiles:
+                profiles.append(profile_name)
+        return profiles or None
     profile_name = normalize_profile_name(value or "auto")
     if profile_name not in _valid_profile_names():
         return None
     return profile_name
+
+
+def _profile_display_value(value):
+    if isinstance(value, list):
+        return "、".join(value)
+    return value or "auto"
 
 
 def _refresh_book_suggestions(book):
@@ -417,7 +434,7 @@ def _enqueue(book_id):
             return False, "book already queued or running"
         _refresh_book_suggestions(book)
         task_id = uuid.uuid4().hex[:12]
-        profile_name = normalize_profile_name(book.get("profile", "auto"))
+        profile_name = _normalize_web_profile(book.get("profile", "auto")) or "auto"
         task = {
             "id": task_id,
             "book_id": book_id,
@@ -482,14 +499,21 @@ def _worker_loop():
                         resolved_profiles = infer_profiles_for_novel(book["path"], book.get("name", ""))
                         task["resolved_profiles"] = resolved_profiles
                         task["resolved_profile"] = "、".join(resolved_profiles)
+                    elif isinstance(profile_name, list):
+                        task["resolved_profiles"] = profile_name
+                        task["resolved_profile"] = "、".join(profile_name)
                     result = process_novel_with_profiles(book["path"], profile_name=profile_name, run_id=_generate_run_id(), skip_fresh=True)
             with STATE_LOCK:
                 task["status"] = "completed" if result.get("status") in {"ok", "skipped"} else "failed"
                 task["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
                 task["result"] = result
                 book["status"] = task["status"]
-                book["active_profile"] = result.get("profile", profile_name)
-                book["active_profiles"] = result.get("profiles") or [result.get("profile", profile_name)]
+                active_profiles = result.get("profiles")
+                if not active_profiles:
+                    fallback_profile = result.get("profile") or profile_name
+                    active_profiles = fallback_profile if isinstance(fallback_profile, list) else [fallback_profile]
+                book["active_profile"] = result.get("profile", _profile_display_value(profile_name))
+                book["active_profiles"] = active_profiles
                 book["profile_suggestions"] = task.get("profile_suggestions", book.get("profile_suggestions", []))
                 book["message"] = "完成" if task["status"] == "completed" else result.get("error", "失败")
                 _save_state()
@@ -681,7 +705,10 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 self.send_error(413, str(exc))
                 return
-            profile = _normalize_web_profile(form.getfirst("profile", "auto")) or "auto"
+            profile_values = form.getlist("profile")
+            if not profile_values:
+                profile_values = [form.getfirst("profile", "auto")]
+            profile = _normalize_web_profile(profile_values if len(profile_values) > 1 else profile_values[0]) or "auto"
             book_id = _book_id_from_path(path)
             OUTPUTS_CACHE.pop((os.path.abspath(os.path.join(get_base_dir(), "results")), book_id), None)
             suggestions = _profile_suggestions(path, book_id)

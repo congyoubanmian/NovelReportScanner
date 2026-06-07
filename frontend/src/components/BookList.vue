@@ -5,6 +5,8 @@ import StatusTag from './StatusTag.vue'
 const props = defineProps({ books: Array, profiles: Array })
 const emit = defineEmits(['scan', 'detail', 'profileChange'])
 
+const manualProfiles = computed(() => (props.profiles || []).filter(p => p.name !== 'auto'))
+
 function renderSuggestions(book) {
   const suggestions = book.profile_suggestions || []
   if (!suggestions.length) return null
@@ -21,6 +23,32 @@ function renderSuggestions(book) {
 
 function isBusy(book) {
   return book.status === 'queued' || book.status === 'running'
+}
+
+function profileValues(book) {
+  const value = book.profile
+  if (Array.isArray(value)) return value
+  return value ? [value] : ['auto']
+}
+
+function isAutoProfile(book) {
+  return profileValues(book).includes('auto')
+}
+
+function isProfileChecked(book, profileName) {
+  return profileValues(book).includes(profileName)
+}
+
+function toggleAuto(book) {
+  emit('profileChange', book.id, 'auto')
+}
+
+function toggleManualProfile(book, profileName, checked) {
+  const current = profileValues(book).filter(name => name !== 'auto')
+  const next = checked
+    ? Array.from(new Set([...current, profileName]))
+    : current.filter(name => name !== profileName)
+  emit('profileChange', book.id, next.length ? next : 'auto')
 }
 
 const displayBooks = computed(() => (props.books || []).map(book => ({
@@ -56,15 +84,28 @@ const displayBooks = computed(() => (props.books || []).map(book => ({
           <tr v-for="book in displayBooks" :key="book.id">
             <td class="col-name">{{ book.name }}</td>
             <td>
-              <select
-                :value="book.profile"
-                @change="emit('profileChange', book.id, $event.target.value)"
-                :disabled="isBusy(book)"
-              >
-                <option v-for="p in profiles" :key="p.name" :value="p.name">
-                  {{ p.display_name || p.name }}
-                </option>
-              </select>
+              <div class="profile-picker">
+                <label class="profile-option">
+                  <input
+                    type="checkbox"
+                    :checked="isAutoProfile(book)"
+                    :disabled="isBusy(book)"
+                    @change="toggleAuto(book)"
+                  />
+                  <span>自动前三</span>
+                </label>
+                <div class="profile-options">
+                  <label v-for="p in manualProfiles" :key="p.name" class="profile-option">
+                    <input
+                      type="checkbox"
+                      :checked="isProfileChecked(book, p.name)"
+                      :disabled="isBusy(book)"
+                      @change="toggleManualProfile(book, p.name, $event.target.checked)"
+                    />
+                    <span>{{ p.display_name || p.name }}</span>
+                  </label>
+                </div>
+              </div>
             </td>
             <td>
               <div class="suggestion-chips" v-if="book.suggestions.length">

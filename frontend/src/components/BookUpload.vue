@@ -6,11 +6,30 @@ const props = defineProps({ profiles: Array })
 const emit = defineEmits(['uploaded', 'error'])
 
 const files = ref([])
-const profile = ref('auto')
+const autoProfile = ref(true)
+const selectedProfiles = ref([])
 const uploading = ref(false)
 const dragover = ref(false)
 
 const fileNames = computed(() => files.value.map(f => f.name).join(', '))
+const manualProfiles = computed(() => (props.profiles || []).filter(p => p.name !== 'auto'))
+
+function toggleAuto() {
+  autoProfile.value = true
+  selectedProfiles.value = []
+}
+
+function toggleProfile(profileName, checked) {
+  autoProfile.value = false
+  if (checked) {
+    selectedProfiles.value = Array.from(new Set([...selectedProfiles.value, profileName]))
+  } else {
+    selectedProfiles.value = selectedProfiles.value.filter(name => name !== profileName)
+  }
+  if (!selectedProfiles.value.length) {
+    autoProfile.value = true
+  }
+}
 
 function onFileChange(e) {
   if (e.target.files?.length) {
@@ -35,7 +54,11 @@ async function submit() {
   for (const file of files.value) {
     const fd = new FormData()
     fd.append('file', file)
-    fd.append('profile', profile.value)
+    if (autoProfile.value || !selectedProfiles.value.length) {
+      fd.append('profile', 'auto')
+    } else {
+      selectedProfiles.value.forEach(name => fd.append('profile', name))
+    }
     try {
       await uploadBook(fd)
       successCount++
@@ -74,11 +97,22 @@ async function submit() {
           </template>
         </div>
       </div>
-      <select v-model="profile">
-        <option v-for="p in profiles" :key="p.name" :value="p.name">
-          {{ p.display_name || p.name }}
-        </option>
-      </select>
+      <div class="profile-picker">
+        <label class="profile-option">
+          <input type="checkbox" :checked="autoProfile" @change="toggleAuto" />
+          <span>自动前三</span>
+        </label>
+        <div class="profile-options">
+          <label v-for="p in manualProfiles" :key="p.name" class="profile-option">
+            <input
+              type="checkbox"
+              :checked="selectedProfiles.includes(p.name)"
+              @change="toggleProfile(p.name, $event.target.checked)"
+            />
+            <span>{{ p.display_name || p.name }}</span>
+          </label>
+        </div>
+      </div>
       <button class="btn" @click="submit" :disabled="!files.length || uploading">
         {{ uploading ? '上传中...' : `上传${files.length > 1 ? ` (${files.length}个)` : ''}` }}
       </button>

@@ -445,16 +445,43 @@ def _merge_profile_results(book_name, results):
     }
 
 
+def _normalize_requested_profiles(value):
+    from analysis_profiles import AUTO_PROFILE, normalize_profile_name, resolve_profile_name
+
+    if isinstance(value, (list, tuple, set)):
+        raw_values = value
+    else:
+        raw_text = str(value or os.environ.get("ANALYSIS_PROFILE") or AUTO_PROFILE)
+        raw_values = [part for part in raw_text.replace("，", ",").split(",")]
+
+    profiles = []
+    for item in raw_values:
+        name = normalize_profile_name(str(item or "").strip())
+        if not name:
+            continue
+        if name == AUTO_PROFILE:
+            return [AUTO_PROFILE]
+        resolved = resolve_profile_name(name)
+        if resolved not in profiles:
+            profiles.append(resolved)
+    return profiles or [AUTO_PROFILE]
+
+
 def process_novel_with_profiles(novel_path, profile_name=None, run_id=None, skip_fresh=True):
     from analysis_profiles import AUTO_PROFILE, infer_profiles_for_novel, normalize_profile_name
 
-    requested = normalize_profile_name(profile_name or os.environ.get("ANALYSIS_PROFILE"))
     book_name = os.path.splitext(os.path.basename(novel_path))[0]
-    if requested != AUTO_PROFILE:
-        return process_single_novel(novel_path, profile_name=requested, run_id=run_id, skip_fresh=skip_fresh)
+    requested_profiles = _normalize_requested_profiles(profile_name)
+    if requested_profiles[0] == AUTO_PROFILE:
+        profiles = infer_profiles_for_novel(novel_path, book_name)
+        print(f"自动识别命中 {len(profiles)} 个分类: {', '.join(profiles)}")
+    else:
+        profiles = requested_profiles
 
-    profiles = infer_profiles_for_novel(novel_path, book_name)
-    print(f"自动识别命中 {len(profiles)} 个分类: {', '.join(profiles)}")
+    if len(profiles) == 1:
+        return process_single_novel(novel_path, profile_name=profiles[0], run_id=run_id, skip_fresh=skip_fresh)
+
+    print(f"将按 {len(profiles)} 个分类分别扫描: {', '.join(profiles)}")
     results = []
     for profile in profiles:
         profile_run_id = run_id or _generate_run_id()

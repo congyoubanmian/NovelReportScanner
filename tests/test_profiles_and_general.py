@@ -224,6 +224,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("history", profiles)
         self.assertIn("harem", profiles)
         self.assertIn("hard_sci_fi", profiles)
+        self.assertLessEqual(len(profiles), analysis_profiles.AUTO_PROFILE_MAX_PROFILES)
 
         crossed = analysis_profiles.infer_profiles_for_text(
             "末世诡秘娱乐圈",
@@ -258,6 +259,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["profile"], "harem")
         self.assertEqual(result["profiles"], ["harem", "history"])
+
+    def test_requested_profiles_accepts_manual_multi_select(self):
+        self.assertEqual(main._normalize_requested_profiles(["历史", "科幻"]), ["history", "hard_sci_fi"])
+        self.assertEqual(main._normalize_requested_profiles("历史,科幻"), ["history", "hard_sci_fi"])
+        self.assertEqual(main._normalize_requested_profiles(["auto", "历史"]), ["auto"])
+
+    def test_web_profile_accepts_manual_multi_select(self):
+        self.assertEqual(web_manager._normalize_web_profile(["历史", "科幻"]), ["history", "hard_sci_fi"])
+        self.assertEqual(web_manager._normalize_web_profile(["auto", "历史"]), ["auto"])
 
     def test_specialty_profiles_use_general_character_mode(self):
         old_profile = os.environ.get("ANALYSIS_PROFILE")
@@ -519,6 +529,52 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("案件结构", more_text)
         self.assertIn("证据链", more_text)
         self.assertIn("法医与侦查程序", more_text)
+
+    def test_harem_report_dedupes_title_variants_with_llm_decision(self):
+        old_judge = report._llm_judge_heroine_duplicate_group
+        try:
+            report._llm_judge_heroine_duplicate_group = lambda group: {
+                "same_person": True,
+                "canonical_name": "沈南歌（太后）",
+                "aliases": [item["name"] for item in group],
+                "reason": "同一角色称谓变体",
+            }
+            heroines = report.dedupe_heroines_for_report(
+                [
+                    {"name": "沈南歌（太后）", "importance_rank": 1},
+                    {"name": "太后沈南歌", "importance_rank": 2},
+                    {"name": "苏青绮", "importance_rank": 3},
+                ],
+                {},
+            )
+        finally:
+            report._llm_judge_heroine_duplicate_group = old_judge
+
+        names = [item["name"] for item in heroines]
+        self.assertEqual(names.count("沈南歌（太后）"), 1)
+        self.assertNotIn("太后沈南歌", names)
+        self.assertIn("苏青绮", names)
+
+    def test_harem_report_keeps_variants_when_llm_rejects_merge(self):
+        old_judge = report._llm_judge_heroine_duplicate_group
+        try:
+            report._llm_judge_heroine_duplicate_group = lambda group: {
+                "same_person": False,
+                "canonical_name": "",
+                "aliases": [],
+                "reason": "不是同一角色",
+            }
+            heroines = report.dedupe_heroines_for_report(
+                [
+                    {"name": "沈南歌（太后）", "importance_rank": 1},
+                    {"name": "太后沈南歌", "importance_rank": 2},
+                ],
+                {},
+            )
+        finally:
+            report._llm_judge_heroine_duplicate_group = old_judge
+
+        self.assertEqual([item["name"] for item in heroines], ["沈南歌（太后）", "太后沈南歌"])
 
     def test_report_suffix_distinguishes_general_specialties(self):
         general = analysis_profiles.load_analysis_profile("general")
