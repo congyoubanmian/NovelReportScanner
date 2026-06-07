@@ -993,6 +993,16 @@ def _contains_positive_signal_text(value, keywords) -> bool:
     return False
 
 
+def _has_positive_heroine_position_signal(text: str) -> bool:
+    text = str(text or "")
+    if not text:
+        return False
+    return _contains_positive_signal_text(
+        text,
+        ["主线女主", "目标女主", "核心女主", "第一女主", "正牌女主", "女主角", "女主之一", "女主线"],
+    )
+
+
 def _summarize_heroine_effectiveness(heroine_meta: dict, profile: dict, evidence: dict = None) -> str:
     heroine_meta = heroine_meta or {}
     profile = profile or {}
@@ -1070,9 +1080,9 @@ def _heroine_position_level(heroine_meta: dict, profile: dict, evidence: dict = 
     if purity_info.get("is_leak_heroine") is True or purity_info.get("leak_emotional_depth") is True:
         score += 3
         signals.append("漏女/情感深度证据")
-    relationship_position_words = ["女主", "妻", "道侣", "恋人", "爱人", "后宫", "未婚妻", "伴侣", "情侣", "女朋友", "老婆"]
+    strong_relationship_position_words = ["妻", "道侣", "恋人", "爱人", "后宫", "未婚妻", "伴侣", "情侣", "女朋友", "老婆"]
     romance_signal_words = ["喜欢", "爱慕", "表白", "暧昧", "吃醋", "双修", "同房", "亲密", "推倒", "收女", "动心", "倾心"]
-    if _contains_positive_signal_text(text, relationship_position_words):
+    if _contains_positive_signal_text(text, strong_relationship_position_words) or _has_positive_heroine_position_signal(text):
         score += 2
         signals.append("关系定位明确")
     if _contains_positive_signal_text(text, romance_signal_words):
@@ -1111,7 +1121,8 @@ def _heroine_position_level(heroine_meta: dict, profile: dict, evidence: dict = 
         has_confirmed_target
         or purity_info.get("is_leak_heroine") is True
         or purity_info.get("leak_emotional_depth") is True
-        or _contains_positive_signal_text(text, relationship_position_words)
+        or _has_positive_heroine_position_signal(text)
+        or _contains_positive_signal_text(text, strong_relationship_position_words)
         or _contains_positive_signal_text(text, romance_signal_words)
     )
     if score >= 7 and has_confirmed_target:

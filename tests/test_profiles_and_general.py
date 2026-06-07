@@ -3420,6 +3420,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(level.startswith("弱准女主"), level)
         self.assertIn("缺少感情/后宫定位证据", level)
 
+    def test_report_ignores_tooling_heroine_word_as_relationship_position(self):
+        self.assertFalse(report._has_positive_heroine_position_signal("工具人女主，负责捧哏和背景说明"))
+        self.assertFalse(report._has_positive_heroine_position_signal("女主有效性存疑，存在感很低"))
+        self.assertTrue(report._has_positive_heroine_position_signal("主线女主，与男主长期同行"))
+        self.assertTrue(report._has_positive_heroine_position_signal("主线女主，但近期有工具人风险"))
+
     def test_harem_report_adds_heroine_context_to_issue_lines(self):
         old_openai = report.OpenAI
         old_api_key_pool = report.API_KEY_POOL
