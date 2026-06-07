@@ -372,7 +372,7 @@ def build_report_sections(detailed_data, reviewer, features_map=None):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     header = [f"精简报告 生成时间：{ts}", "=" * 60]
 
-    # 从 reviewer 构建：肉体/精神状态 + 推倒判定（支持四维度洁度判定 + 验证信息）
+    # 从 reviewer 构建：肉体/精神状态 + 推倒判定（支持五维洁度判定 + 验证信息）
     purity_map = {}  # name -> {is_virgin, virgin_status, has_other_contact, contact_status, no_partner, partner_status, verification, ...}
     if reviewer:
         for item in reviewer.get("heroines_purity", []):
@@ -380,7 +380,7 @@ def build_report_sections(detailed_data, reviewer, features_map=None):
             if name:
                 verification = item.get("verification", {})
                 purity_map[name] = {
-                    # 四维度洁度判定
+                    # 五维洁度判定
                     "is_virgin": item.get("is_virgin", True),
                     "virgin_status": item.get("virgin_status", item.get("body_status", "❓ 未知")),
                     "has_other_contact": item.get("has_other_contact", False),
@@ -475,7 +475,7 @@ def build_report_sections(detailed_data, reviewer, features_map=None):
                         break
             
             if purity_info:
-                # 四维度洁度判定
+                # 五维洁度判定
                 virgin_status = purity_info.get("virgin_status", purity_info.get("body_status", "❓ 未知"))
                 contact_status = purity_info.get("contact_status", "❓ 未知")
                 partner_status = purity_info.get("partner_status", "❓ 未知")
@@ -500,7 +500,7 @@ def build_report_sections(detailed_data, reviewer, features_map=None):
             else:
                 pushed_flag = "❓ 未知"
 
-            # 新格式输出（四维度洁度判定）
+            # 新格式输出（五维洁度判定）
             lines.append(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             lines.append(f"【{rank}】{name}")
             lines.append(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -562,7 +562,7 @@ def build_report_sections(detailed_data, reviewer, features_map=None):
                 lines.append(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
                 lines.append(f"【?】{pname}")
                 lines.append(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-                # 四维度洁度判定
+                # 五维洁度判定
                 lines.append(f"  是否处女：{pinfo.get('virgin_status', pinfo.get('body_status', '❓ 未知'))}")
                 lines.append(f"  非男主接触：{pinfo.get('contact_status', '❓ 未知')}")
                 lines.append(f"  有无男伴：{pinfo.get('partner_status', '❓ 未知')}")
@@ -692,7 +692,7 @@ def build_purity_map(reviewer: dict) -> dict:
             "contact_level_reason": item.get("contact_level_reason", ""),
             "pushed_by_male_lead": item.get("pushed_by_male_lead"),
             "pushed_reason": item.get("pushed_reason", ""),
-            # original 4-dim summary
+            # original summary and leak status
             "is_leak_heroine": item.get("is_leak_heroine"),
             "leak_reason": item.get("leak_reason", ""),
             "leak_emotional_depth": item.get("leak_emotional_depth"),

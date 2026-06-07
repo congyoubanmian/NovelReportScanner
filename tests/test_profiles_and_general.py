@@ -1872,6 +1872,24 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(level5["contact_level"], "L5")
         self.assertIn("性关系", level5["contact_level_label"])
 
+    def test_reviewer_formats_purity_supplement_for_text_report(self):
+        lines = novel_reviewer._format_heroine_purity_supplement(
+            {
+                "contact_level": "L2",
+                "contact_level_label": "被迫婚约/伴侣关系线索",
+                "contact_level_reason": "原故事线里曾被安排嫁给非男主。",
+                "past_life_severity": "partner",
+                "past_life_severity_label": "前世/原故事线伴侣或婚约风险",
+                "past_life_status": "前世/原故事线存在风险线索",
+                "past_life_reason": "原故事线里曾被安排嫁给非男主。",
+            }
+        )
+
+        text = "\n".join(lines)
+        self.assertIn("接触等级: L2（被迫婚约/伴侣关系线索）", text)
+        self.assertIn("前世洁度: 前世/原故事线存在风险线索", text)
+        self.assertIn("前世风险等级: partner（前世/原故事线伴侣或婚约风险）", text)
+
     def test_spirit_judge_exposes_partner_exemption_notes(self):
         old_chat = novel_reviewer.chat_completion
         old_record = novel_reviewer.record_usage

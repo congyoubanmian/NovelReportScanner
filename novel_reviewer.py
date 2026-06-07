@@ -684,6 +684,25 @@ def _bool_mark(value: Optional[bool]) -> str:
     return "❓"
 
 
+def _format_heroine_purity_supplement(info: Dict[str, Any]) -> List[str]:
+    """Format supplemental purity fields for the final text report."""
+    contact_level = str(info.get("contact_level") or "L0")
+    contact_label = str(info.get("contact_level_label") or "无非男主接触事实")
+    contact_reason = str(info.get("contact_level_reason") or "未见明确非男主接触证据")
+    past_status = str(info.get("past_life_status") or "未见前世/原故事线洁度线索")
+    past_severity = str(info.get("past_life_severity") or "none")
+    past_label = str(info.get("past_life_severity_label") or "无前世/原故事线线索")
+    past_reason = str(info.get("past_life_reason") or "未见前世/原故事线婚恋或接触证据")
+
+    return [
+        f"  - 接触等级: {contact_level}（{contact_label}）",
+        f"  - 接触等级说明: {contact_reason[:160]}",
+        f"  - 前世洁度: {past_status}",
+        f"  - 前世风险等级: {past_severity}（{past_label}）",
+        f"  - 前世洁度说明: {past_reason[:160]}",
+    ]
+
+
 def _derive_past_life_cleanliness(facts: Dict[str, Any], summary: str = "") -> Dict[str, Any]:
     """Derive a conservative 前世/原故事线 cleanliness note from existing facts."""
     blob_parts = [summary or ""]
@@ -4233,7 +4252,7 @@ def judge_purity_by_facts(
     - male_lead: 男主名称
     
     输出：
-    - 四维度洁度判定结果
+    - 五维洁度判定结果（含前世/原故事线与接触等级补充）
     """
     # 先清洗一遍，避免“身世”误当“生育”
     facts = _sanitize_purity_facts_for_heroine(name, facts)
@@ -4730,7 +4749,7 @@ def verify_purity_by_llm(name: str, facts: Dict[str, Any], program_result: Dict[
 - “精神洁”=【排他性精神洁】：只要存在非男主的性关系/亲生孩子/正式伴侣（男友/丈夫/前夫等）/明确爱过，就判 ❌精神非初。
   仅“被迫订婚且未完婚/未圆房”等可豁免。
 
-【四维判定规则】：
+【五维判定规则（核心四项 + 前世/接触等级补充）】：
 1. 是否处女：仅与男主发生性关系/或无性关系 = ✅处女；任何与非男主的性关系/亲生孩子(父亲非男主或未知且为正常生育) = ❌非处
 2. 非男主接触：被非男主实际触碰 = ❌有接触；若存在与非男主性关系或亲生孩子，也视为 ❌有接触（即使 physical_contacts 没抽到）
 3. 有无男伴：无非男主正式伴侣 = ✅无男伴；有非男主男友/丈夫 = ❌有男伴（被迫订婚未完婚豁免）
@@ -4873,7 +4892,7 @@ def verify_purity_second_round(name: str, facts: Dict[str, Any], program_result:
 - “处女”=【排他性处女】：仅与男主发生性关系也必须判 ✅处女（仅男主）；严禁判成 ❌非处！
 - “精神洁”=【排他性精神洁】：出现非男主性关系/亲生孩子/正式伴侣/明确爱过 → 直接判 ❌精神非初。
 
-【四维判定规则】：
+【五维判定规则（核心四项 + 前世/接触等级补充）】：
 1. 是否处女：仅与男主发生性关系/或无性关系 = ✅处女；任何与非男主的性关系/亲生孩子(父亲非男主或未知且为正常生育) = ❌非处
 2. 非男主接触：被非男主实际触碰 = ❌有接触；若存在与非男主性关系或亲生孩子，也视为 ❌有接触（即使 physical_contacts 没抽到）
 3. 有无男伴：无非男主正式伴侣 = ✅无男伴；有非男主男友/丈夫 = ❌有男伴（被迫订婚未完婚豁免）
@@ -5049,7 +5068,7 @@ def judge_with_verification(name: str, facts: Dict[str, Any], male_lead: str) ->
     return _normalize_purity_result_consistency(final_result)
 
 
-# ================= 新版：分步骤LLM四维纯洁度判断 =================
+# ================= 新版：分步骤LLM五维纯洁度判断 =================
 # 五个步骤顺序：
 # Step 0: 孩子来源判断（最复杂，单独判断）
 # Step 1: 是否有男伴（最简单）
@@ -7451,7 +7470,7 @@ def judge_purity_by_llm_stepwise(
     chunk_manifest: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    分步骤LLM四维纯洁度判断（替代原有混合判断）
+    分步骤LLM五维纯洁度判断（替代原有混合判断）
     
     五个步骤顺序：
     Step 0: 孩子来源判断（最复杂，含母亲归属校验）
@@ -7470,7 +7489,7 @@ def judge_purity_by_llm_stepwise(
     - chunks: 预加载的 chunks（优先使用，避免重复读取）
     
     返回：
-    - 四维度洁度判定结果（与原有格式兼容）
+    - 五维洁度判定结果（与原有格式兼容，含前世/原故事线与接触等级补充）
     """
     # 先清洗事实
     facts = _sanitize_purity_facts_for_heroine(name, facts)
@@ -7716,7 +7735,7 @@ def judge_purity_by_llm_stepwise(
 # --- 4. 保留原 LLM 版本作为备用 ---
 def judge_character_purity_llm(name, evidence_list, male_lead):
     """
-    【逻辑重构 V17.0】四维度洁度判定版
+    【逻辑重构 V17.0】五维洁度判定版
     
     判定维度：
     1. 是否处女（is_virgin）：是否仅与男主/从未与任何人发生过性关系
@@ -8550,7 +8569,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
             if is_lead or not is_clean:
                 clean_tag = "[🌟 全初]" if is_clean else "[💔 有瑕]"
                 f.write(f"角色：{name} {clean_tag}\n")
-                # 显示四维度洁度
+                # 显示五维洁度
                 virgin_status = info.get('virgin_status', info.get('body_status', '❓ 未知'))
                 contact_status = info.get('contact_status', '❓ 未知')
                 partner_status = info.get('partner_status', '❓ 未知')
@@ -8602,6 +8621,8 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
                     if rule_partner_reason:
                         f.write(f"    规则理由: {rule_partner_reason[:120]}\n")
                 f.write(f"  - 精神: {info.get('spirit_status')}\n")
+                for line in _format_heroine_purity_supplement(info):
+                    f.write(line + "\n")
                 is_leak_heroine = leak_info.get("is_leak_heroine")
                 leak_reason = str(leak_info.get("leak_reason", "未判定") or "未判定")
                 f.write(f"  - 是否被推倒: {_bool_mark(pushed)}\n")
@@ -8689,7 +8710,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         
         heroine_entry = {
             "name": name,
-            # 四维度洁度判定
+            # 五维洁度判定
             "is_virgin": info.get("is_virgin", True),
             "virgin_status": info.get("virgin_status", info.get("body_status", "❓ 未知")),
             "virgin_judgement_conflict": _to_bool(info.get("virgin_judgement_conflict", False), False),
