@@ -1011,6 +1011,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
         "吃", "喝", "看", "用", "好", "好者", "好是", "心", "护", "惜", "美", "漂亮", "玩", "闹",
         "丽", "莉", "琳", "莲", "莎", "丝", "薇", "娜", "妮", "德", "尔", "伦", "蜜", "丽丝", "丽莎",
     )
+    non_romantic_emotion_contexts = ("读者", "书友", "粉丝", "作者", "剧情", "副本", "设定", "文笔", "设计", "说明")
     for word in keywords:
         start = 0
         while word:
@@ -1030,11 +1031,16 @@ def _contains_positive_signal_text(value, keywords) -> bool:
                 any(text[max(0, index - len(hint)):index] == hint for hint in non_romantic_love_prefixes)
                 or any(next_text.startswith(hint) for hint in non_romantic_love_followers)
             )
+            non_romantic_emotion = word in ("动心", "倾心") and any(
+                hint in text[max(0, index - 8):index + len(word) + 8]
+                for hint in non_romantic_emotion_contexts
+            )
             if (
                 not any(hint in window or hint in around_window for hint in negative_hints)
                 and not any(hint in roleplay_window for hint in roleplay_hints)
                 and not non_romantic_like
                 and not non_romantic_love
+                and not non_romantic_emotion
             ):
                 return True
             start = index + len(word)

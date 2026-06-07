@@ -3613,6 +3613,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(report._contains_positive_signal_text("她爱男主，并主动告白。", ["爱"]))
         self.assertTrue(report._contains_positive_signal_text("她爱他，并愿意相伴余生。", ["爱"]))
         self.assertTrue(report._contains_positive_signal_text("她爱上男主。", ["爱"]))
+        self.assertFalse(report._contains_positive_signal_text("剧情让读者动心，但角色没有恋爱线。", ["动心"]))
+        self.assertFalse(report._contains_positive_signal_text("作者对蒸汽设定很倾心，说明文字很多。", ["倾心"]))
+        self.assertTrue(report._contains_positive_signal_text("她对男主动心，并开始吃醋。", ["动心"]))
+        self.assertTrue(report._contains_positive_signal_text("她倾心男主，并主动表白。", ["倾心"]))
         self.assertTrue(report._contains_positive_signal_text("她是男主未婚妻，双方感情稳定。", ["未婚妻"]))
         self.assertFalse(report._contains_positive_signal_text("她尚未成为男主妻子。", ["妻子"]))
 
@@ -3670,6 +3674,18 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertIn("情感深度=未明", reader_or_hobby)
         self.assertIn("结论=证据不足", reader_or_hobby)
+
+    def test_leak_three_layers_ignores_reader_or_author_emotion_words(self):
+        meta_emotion = report._summarize_leak_three_layers(
+            {},
+            {
+                "relationship_with_protagonist": "剧情让读者动心，但她只是案件配角。",
+                "key_events": "作者对蒸汽设定很倾心，她主要负责解释背景。",
+            },
+        )
+
+        self.assertIn("情感深度=未明", meta_emotion)
+        self.assertIn("结论=证据不足", meta_emotion)
 
     def test_leak_three_layers_requires_specific_concubine_terms(self):
         generic = report._summarize_leak_three_layers(
