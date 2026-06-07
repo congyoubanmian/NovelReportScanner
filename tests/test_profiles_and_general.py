@@ -1139,6 +1139,49 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(leak_map["甲女"]["is_leak_heroine"])
         self.assertTrue(leak_map["甲女"]["leak_emotional_depth"])
 
+    def test_rebuild_leak_state_ignores_roleplay_emotion_words(self):
+        data = {
+            "heroine_result": {
+                "heroines": [
+                    {
+                        "name": "乙女",
+                        "summaries": [
+                            "她假装表白以套取情报，任务结束后澄清。",
+                            "她念出告白台词，只是在排练舞台剧。",
+                            "她扮演恋人潜入宴会，行动结束后恢复任务伙伴关系。",
+                        ],
+                    },
+                    {
+                        "name": "甲女",
+                        "summaries": ["她向男主表白并长期暧昧，但结局未交代归宿。"],
+                    },
+                ]
+            }
+        }
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+            char_path = f.name
+        try:
+            issues, leak_map = novel_reviewer._rebuild_leak_state_from_pushed_map(
+                female_leads=["乙女", "甲女"],
+                char_file_path=char_path,
+                novel_tail="尾声里只有男主离开江湖。",
+                finished=True,
+                pushed_map={
+                    "乙女": (False, "未见推倒或同房证据"),
+                    "甲女": (False, "未见推倒或同房证据"),
+                },
+            )
+        finally:
+            os.unlink(char_path)
+
+        self.assertEqual([issue["content"] for issue in issues], ["甲女 未被男主明确推倒，且尾声未明确交代结局"])
+        self.assertFalse(leak_map["乙女"]["is_leak_heroine"])
+        self.assertFalse(leak_map["乙女"]["leak_emotional_depth"])
+        self.assertIn("未达到漏女判定门槛", leak_map["乙女"]["leak_reason"])
+        self.assertTrue(leak_map["甲女"]["is_leak_heroine"])
+        self.assertTrue(leak_map["甲女"]["leak_emotional_depth"])
+
     def test_rebuild_leak_state_keeps_unknown_relationship_unjudged(self):
         data = {
             "heroine_result": {
