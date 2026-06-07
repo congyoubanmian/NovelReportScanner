@@ -331,6 +331,8 @@ Web 管理端常用配置：
 - `OUTPUTS_CACHE_TTL_SECONDS`：书籍输出文件列表缓存时间，默认 `5` 秒。
 - `SSE_STATE_INTERVAL_SECONDS`：SSE 状态推送间隔，默认 `3` 秒。
 
+Web 页面顶部可直接调整部分非敏感运行配置，包括 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`GENERAL_SCAN_MAX_CHUNKS` 和 `HAREM_PLUS_GENERAL_SCAN`。这些修改只影响当前 Web 服务进程及其后续扫描子进程，不会写回 `.env`、`setting.txt`，也不会展示或修改 API Key。
+
 前端开发检查：
 
 ```bash

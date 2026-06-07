@@ -39,6 +39,14 @@ OUTPUTS_CACHE_TTL_SECONDS = float(os.environ.get("OUTPUTS_CACHE_TTL_SECONDS", "5
 SSE_STATE_INTERVAL_SECONDS = float(os.environ.get("SSE_STATE_INTERVAL_SECONDS", "3"))
 LAST_BOOK_SYNC_AT = 0.0
 OUTPUTS_CACHE = {}
+EDITABLE_RUNTIME_CONFIG = {
+    "max_workers": {"env": "MAX_WORKERS", "type": "int", "min": 1, "max": 64},
+    "rpm_limit": {"env": "RPM_LIMIT", "type": "int", "min": 0, "max": 1000000, "empty": True},
+    "tpm_limit": {"env": "TPM_LIMIT", "type": "int", "min": 0, "max": 1000000000, "empty": True},
+    "rate_limit_scope": {"env": "RATE_LIMIT_SCOPE", "type": "choice", "choices": {"global", "per_key"}},
+    "general_scan_max_chunks": {"env": "GENERAL_SCAN_MAX_CHUNKS", "type": "int", "min": 0, "max": 100000},
+    "harem_plus_general_scan": {"env": "HAREM_PLUS_GENERAL_SCAN", "type": "bool"},
+}
 
 
 def _state_path():
@@ -322,6 +330,10 @@ def _runtime_config_summary():
         "rpm_limit": os.environ.get("RPM_LIMIT", ""),
         "tpm_limit": os.environ.get("TPM_LIMIT", ""),
         "rate_limit_scope": os.environ.get("RATE_LIMIT_SCOPE", "global"),
+        "general_scan_max_chunks": os.environ.get("GENERAL_SCAN_MAX_CHUNKS", "80"),
+        "harem_plus_general_scan": _env_bool_value(os.environ.get("HAREM_PLUS_GENERAL_SCAN", "0")),
+        "editable": sorted(EDITABLE_RUNTIME_CONFIG.keys()),
+        "runtime_only": True,
         "api_key_configured": bool(key_pool or has_single_key),
         "api_key_count": len(key_pool) if key_pool else (1 if has_single_key else 0),
         "web": {
@@ -336,6 +348,57 @@ def _runtime_config_summary():
             "auth_enabled": _web_auth_enabled(),
         },
     }
+
+
+def _env_bool_value(value):
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _normalize_config_value(field, value):
+    spec = EDITABLE_RUNTIME_CONFIG.get(field)
+    if not spec:
+        raise ValueError(f"unsupported config field: {field}")
+    if spec["type"] == "int":
+        if value in (None, "") and spec.get("empty"):
+            return ""
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"{field} must be an integer") from None
+        if parsed < spec["min"] or parsed > spec["max"]:
+            raise ValueError(f"{field} must be between {spec['min']} and {spec['max']}")
+        return str(parsed)
+    if spec["type"] == "choice":
+        normalized = str(value or "").strip().lower()
+        if normalized not in spec["choices"]:
+            raise ValueError(f"{field} must be one of: {', '.join(sorted(spec['choices']))}")
+        return normalized
+    if spec["type"] == "bool":
+        if isinstance(value, bool):
+            return "1" if value else "0"
+        normalized = str(value or "").strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return "1"
+        if normalized in {"0", "false", "no", "n", "off", ""}:
+            return "0"
+        raise ValueError(f"{field} must be a boolean")
+    raise ValueError(f"unsupported config type for {field}")
+
+
+def _update_runtime_config(values):
+    if not isinstance(values, dict):
+        return False, "config must be an object"
+    normalized = {}
+    for field, value in values.items():
+        if field not in EDITABLE_RUNTIME_CONFIG:
+            return False, f"unsupported config field: {field}"
+        try:
+            normalized[field] = _normalize_config_value(field, value)
+        except ValueError as exc:
+            return False, str(exc)
+    for field, value in normalized.items():
+        os.environ[EDITABLE_RUNTIME_CONFIG[field]["env"]] = value
+    return True, _runtime_config_summary()
 
 
 def _web_access_token():
@@ -1244,6 +1307,18 @@ class Handler(BaseHTTPRequestHandler):
                 book["message"] = "分类已更新"
                 _save_state()
             self._send_json({"ok": True})
+            return
+        if parsed.path == "/api/config":
+            if not self._require_auth(parsed):
+                return
+            payload = self._read_json_payload()
+            if payload is None:
+                return
+            ok, result = _update_runtime_config(payload.get("config"))
+            if not ok:
+                self._send_json({"error": result}, 400)
+                return
+            self._send_json({"ok": True, "config": result})
             return
         if parsed.path == "/api/enqueue":
             if not self._require_auth(parsed):

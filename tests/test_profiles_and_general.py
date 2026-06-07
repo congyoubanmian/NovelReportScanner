@@ -1475,6 +1475,89 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             else:
                 os.environ["WEB_ACCESS_TOKEN"] = old_token
 
+    def test_web_manager_runtime_config_update_allows_only_safe_fields(self):
+        keys = [
+            "MAX_WORKERS",
+            "RPM_LIMIT",
+            "TPM_LIMIT",
+            "RATE_LIMIT_SCOPE",
+            "GENERAL_SCAN_MAX_CHUNKS",
+            "HAREM_PLUS_GENERAL_SCAN",
+            "API_KEY",
+        ]
+        old_env = {key: os.environ.get(key) for key in keys}
+        try:
+            os.environ["API_KEY"] = "sk-secret"
+            ok, result = web_manager._update_runtime_config({
+                "max_workers": "4",
+                "rpm_limit": "",
+                "tpm_limit": "5000",
+                "rate_limit_scope": "per_key",
+                "general_scan_max_chunks": "120",
+                "harem_plus_general_scan": True,
+            })
+
+            self.assertTrue(ok)
+            self.assertEqual(os.environ["MAX_WORKERS"], "4")
+            self.assertEqual(os.environ["RPM_LIMIT"], "")
+            self.assertEqual(os.environ["TPM_LIMIT"], "5000")
+            self.assertEqual(os.environ["RATE_LIMIT_SCOPE"], "per_key")
+            self.assertEqual(os.environ["GENERAL_SCAN_MAX_CHUNKS"], "120")
+            self.assertEqual(os.environ["HAREM_PLUS_GENERAL_SCAN"], "1")
+            self.assertEqual(result["max_workers"], "4")
+            self.assertTrue(result["harem_plus_general_scan"])
+            self.assertIn("max_workers", result["editable"])
+            self.assertNotIn("api_key", result["editable"])
+            self.assertNotIn("sk-secret", json.dumps(result, ensure_ascii=False))
+
+            ok, error = web_manager._update_runtime_config({"api_key": "sk-leak"})
+            self.assertFalse(ok)
+            self.assertIn("unsupported config field", error)
+
+            ok, error = web_manager._update_runtime_config({"max_workers": "0"})
+            self.assertFalse(ok)
+            self.assertIn("between", error)
+
+            ok, error = web_manager._update_runtime_config({"rate_limit_scope": "account"})
+            self.assertFalse(ok)
+            self.assertIn("one of", error)
+        finally:
+            for key, value in old_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_web_manager_config_api_updates_runtime_config(self):
+        class FakeHandler(web_manager.Handler):
+            def __init__(self, body):
+                self.path = "/api/config"
+                self.headers = {"Content-Length": str(len(body))}
+                self.rfile = io.BytesIO(body)
+                self.sent = []
+
+            def _send_json(self, data, status=200):
+                self.sent.append((status, data))
+
+        old_env = {key: os.environ.get(key) for key in ("WEB_ACCESS_TOKEN", "MAX_WORKERS")}
+        try:
+            os.environ.pop("WEB_ACCESS_TOKEN", None)
+            body = json.dumps({"config": {"max_workers": 5}}, ensure_ascii=False).encode("utf-8")
+            handler = FakeHandler(body)
+
+            web_manager.Handler.do_POST(handler)
+
+            self.assertEqual(handler.sent[0][0], 200)
+            self.assertTrue(handler.sent[0][1]["ok"])
+            self.assertEqual(handler.sent[0][1]["config"]["max_workers"], "5")
+            self.assertEqual(os.environ["MAX_WORKERS"], "5")
+        finally:
+            for key, value in old_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
     def test_web_manager_handler_rejects_unauthorized_api_requests(self):
         class FakeHandler(web_manager.Handler):
             def __init__(self, path="/api/state", headers=None):

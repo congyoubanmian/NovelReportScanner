@@ -11,6 +11,7 @@ import {
   getState,
   getBookDetail,
   setProfile,
+  updateRuntimeConfig,
   enqueueBook,
   enqueueBooks,
   cancelQueuedBook,
@@ -40,6 +41,16 @@ if (initialUrlToken) {
   window.history.replaceState({}, '', cleanUrl.toString())
 }
 const accessTokenInput = ref(getAccessToken())
+const configForm = ref({
+  max_workers: '',
+  rpm_limit: '',
+  tpm_limit: '',
+  rate_limit_scope: 'global',
+  general_scan_max_chunks: '',
+  harem_plus_general_scan: false
+})
+const savingRuntimeConfig = ref(false)
+const runtimeConfigDirty = ref(false)
 
 // Race-condition guard for detail loading
 let detailRequestId = 0
@@ -48,6 +59,9 @@ async function applyState(data) {
   books.value = data.books || []
   profiles.value = data.profiles || profiles.value
   runtimeConfig.value = data.config || runtimeConfig.value
+  if (!runtimeConfigDirty.value) {
+    syncConfigForm(runtimeConfig.value)
+  }
   configReady.value = data.config_ready
   if (selectedBookId.value) {
     const found = (books.value || []).find((b) => b.id === selectedBookId.value)
@@ -79,6 +93,41 @@ async function saveAccessToken() {
   setAccessToken(accessTokenInput.value)
   toastSuccess(accessTokenInput.value.trim() ? '访问令牌已保存' : '访问令牌已清除')
   await refresh()
+}
+
+function syncConfigForm(config) {
+  if (!config) return
+  configForm.value = {
+    max_workers: config.max_workers || '',
+    rpm_limit: config.rpm_limit || '',
+    tpm_limit: config.tpm_limit || '',
+    rate_limit_scope: config.rate_limit_scope || 'global',
+    general_scan_max_chunks: config.general_scan_max_chunks || '80',
+    harem_plus_general_scan: Boolean(config.harem_plus_general_scan)
+  }
+}
+
+async function saveRuntimeConfig() {
+  savingRuntimeConfig.value = true
+  try {
+    const response = await updateRuntimeConfig({
+      max_workers: configForm.value.max_workers,
+      rpm_limit: configForm.value.rpm_limit,
+      tpm_limit: configForm.value.tpm_limit,
+      rate_limit_scope: configForm.value.rate_limit_scope,
+      general_scan_max_chunks: configForm.value.general_scan_max_chunks,
+      harem_plus_general_scan: configForm.value.harem_plus_general_scan
+    })
+    runtimeConfig.value = response.config || runtimeConfig.value
+    runtimeConfigDirty.value = false
+    syncConfigForm(runtimeConfig.value)
+    toastSuccess('运行配置已更新')
+    await refresh()
+  } catch (e) {
+    toastError('更新运行配置失败: ' + e.message)
+  } finally {
+    savingRuntimeConfig.value = false
+  }
 }
 
 async function loadDetail(bookId) {
@@ -269,6 +318,64 @@ useStateEvents(applyState, {
         @keyup.enter="saveAccessToken"
       />
       <button class="token-save" @click="saveAccessToken">保存</button>
+    </div>
+
+    <div class="runtime-config-panel" v-if="runtimeConfig">
+      <label>
+        <span>并发</span>
+        <input
+          v-model="configForm.max_workers"
+          type="number"
+          min="1"
+          max="64"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>RPM</span>
+        <input
+          v-model="configForm.rpm_limit"
+          type="number"
+          min="0"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>TPM</span>
+        <input
+          v-model="configForm.tpm_limit"
+          type="number"
+          min="0"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>限流域</span>
+        <select v-model="configForm.rate_limit_scope" @change="runtimeConfigDirty = true">
+          <option value="global">global</option>
+          <option value="per_key">per_key</option>
+        </select>
+      </label>
+      <label>
+        <span>通用片段</span>
+        <input
+          v-model="configForm.general_scan_max_chunks"
+          type="number"
+          min="0"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label class="runtime-toggle">
+        <input
+          v-model="configForm.harem_plus_general_scan"
+          type="checkbox"
+          @change="runtimeConfigDirty = true"
+        />
+        <span>后宫增强</span>
+      </label>
+      <button class="runtime-save" :disabled="savingRuntimeConfig" @click="saveRuntimeConfig">
+        {{ savingRuntimeConfig ? '保存中...' : '保存运行配置' }}
+      </button>
     </div>
 
     <BookUpload :profiles="profiles" @uploaded="handleUploaded" @error="toastError" />
@@ -463,6 +570,68 @@ header p {
   background: var(--primary-hover);
 }
 
+.runtime-config-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+}
+.runtime-config-panel label {
+  display: grid;
+  gap: 4px;
+  min-width: 96px;
+}
+.runtime-config-panel label span {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.runtime-config-panel input,
+.runtime-config-panel select {
+  height: 34px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.84rem;
+}
+.runtime-toggle {
+  grid-auto-flow: column;
+  align-items: center;
+  min-height: 34px;
+}
+.runtime-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+.runtime-save {
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: var(--primary);
+  color: white;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.84rem;
+}
+.runtime-save:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+.runtime-save:disabled {
+  background: #d1d5db;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
 @media (max-width: 768px) {
   header {
     padding: 28px 16px 40px;
@@ -472,6 +641,10 @@ header p {
   }
   .access-token-row {
     align-items: stretch;
+  }
+  .runtime-config-panel label,
+  .runtime-save {
+    flex: 1 1 140px;
   }
 }
 </style>
