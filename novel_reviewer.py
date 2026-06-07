@@ -470,6 +470,10 @@ def _leak_emotional_depth_effective_text(texts: List[str]) -> str:
     nonfactual_markers = (
         "调侃", "玩笑", "误会", "误传", "传闻", "传言", "据说", "听说", "疑似", "像", "读者觉得",
     )
+    meta_emotion_markers = (
+        "读者喜欢", "读者爱看", "读者偏爱", "读者觉得", "作者喜欢", "作者偏爱", "作者宠",
+        "粉丝喜欢", "粉丝爱看", "粉丝偏爱", "人气", "受欢迎", "观众喜欢", "观众爱看",
+    )
     effective: List[str] = []
     for text in texts or []:
         for chunk in re.split(r"[\n，,。；;！？!?]+", str(text or "")):
@@ -479,6 +483,8 @@ def _leak_emotional_depth_effective_text(texts: List[str]) -> str:
             if any(marker in chunk for marker in negative_markers):
                 continue
             if any(marker in chunk for marker in nonfactual_markers):
+                continue
+            if any(marker in chunk for marker in meta_emotion_markers):
                 continue
             effective.append(chunk)
     return " ".join(effective)

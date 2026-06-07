@@ -1053,6 +1053,49 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("未达到漏女判定门槛", leak_map["乙女"]["leak_reason"])
         self.assertTrue(leak_map["甲女"]["is_leak_heroine"])
 
+    def test_rebuild_leak_state_ignores_meta_popularity_emotion(self):
+        data = {
+            "heroine_result": {
+                "heroines": [
+                    {
+                        "name": "乙女",
+                        "summaries": [
+                            "读者喜欢她的吐槽，但她只是探案助手，结局未交代。",
+                            "作者偏爱她，经常给她镜头。",
+                            "人气很高，粉丝爱看她出场，但她只负责解释背景。",
+                        ],
+                    },
+                    {
+                        "name": "甲女",
+                        "summaries": ["她喜欢男主并长期暧昧，但结局未交代归宿。"],
+                    },
+                ]
+            }
+        }
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+            char_path = f.name
+        try:
+            issues, leak_map = novel_reviewer._rebuild_leak_state_from_pushed_map(
+                female_leads=["乙女", "甲女"],
+                char_file_path=char_path,
+                novel_tail="尾声里只有男主离开江湖。",
+                finished=True,
+                pushed_map={
+                    "乙女": (False, "未见推倒或同房证据"),
+                    "甲女": (False, "未见推倒或同房证据"),
+                },
+            )
+        finally:
+            os.unlink(char_path)
+
+        self.assertEqual([issue["content"] for issue in issues], ["甲女 未被男主明确推倒，且尾声未明确交代结局"])
+        self.assertFalse(leak_map["乙女"]["is_leak_heroine"])
+        self.assertFalse(leak_map["乙女"]["leak_emotional_depth"])
+        self.assertIn("未达到漏女判定门槛", leak_map["乙女"]["leak_reason"])
+        self.assertTrue(leak_map["甲女"]["is_leak_heroine"])
+        self.assertTrue(leak_map["甲女"]["leak_emotional_depth"])
+
     def test_rebuild_leak_state_keeps_unknown_relationship_unjudged(self):
         data = {
             "heroine_result": {
