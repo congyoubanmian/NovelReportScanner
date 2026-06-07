@@ -1632,6 +1632,59 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
             web_manager.STATE = old_state
 
+    def test_web_manager_cancel_queued_book_marks_task_canceled(self):
+        old_state = web_manager.STATE
+        old_queue_ids = set(web_manager.TASK_QUEUE_IDS)
+        try:
+            web_manager.TASK_QUEUE_IDS.clear()
+            while not web_manager.TASK_QUEUE.empty():
+                web_manager.TASK_QUEUE.get_nowait()
+                web_manager.TASK_QUEUE.task_done()
+            web_manager.STATE = {
+                "books": {
+                    "ready": {"id": "ready", "name": "ready", "path": "/tmp/ready.txt", "profile": "general", "status": "idle"},
+                },
+                "tasks": [],
+            }
+            ok, task_id = web_manager._enqueue("ready")
+            self.assertTrue(ok)
+            self.assertIn(task_id, web_manager.TASK_QUEUE_IDS)
+
+            ok, result = web_manager._cancel_queued_book("ready")
+
+            self.assertTrue(ok)
+            self.assertEqual(result, task_id)
+            self.assertNotIn(task_id, web_manager.TASK_QUEUE_IDS)
+            self.assertEqual(web_manager.STATE["books"]["ready"]["status"], "idle")
+            self.assertEqual(web_manager.STATE["books"]["ready"]["message"], "已取消排队")
+            self.assertNotIn("task_id", web_manager.STATE["books"]["ready"])
+            self.assertEqual(web_manager.STATE["tasks"][0]["status"], "canceled")
+            self.assertEqual(web_manager.STATE["tasks"][0]["error"], "用户取消排队")
+        finally:
+            while not web_manager.TASK_QUEUE.empty():
+                web_manager.TASK_QUEUE.get_nowait()
+                web_manager.TASK_QUEUE.task_done()
+            web_manager.TASK_QUEUE_IDS.clear()
+            web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
+            web_manager.STATE = old_state
+
+    def test_web_manager_cancel_rejects_non_queued_books(self):
+        old_state = web_manager.STATE
+        try:
+            web_manager.STATE = {
+                "books": {
+                    "running": {"id": "running", "name": "running", "profile": "general", "status": "running", "task_id": "t1"},
+                    "idle": {"id": "idle", "name": "idle", "profile": "general", "status": "idle"},
+                },
+                "tasks": [{"id": "t1", "book_id": "running", "status": "running"}],
+            }
+
+            self.assertEqual(web_manager._cancel_queued_book("missing"), (False, "book not found"))
+            self.assertEqual(web_manager._cancel_queued_book("running"), (False, "book is not queued"))
+            self.assertEqual(web_manager._cancel_queued_book("idle"), (False, "book is not queued"))
+        finally:
+            web_manager.STATE = old_state
+
     def test_web_manager_finds_dynamic_profile_outputs(self):
         results_dir = os.path.join(main.get_base_dir(), "results")
         os.makedirs(results_dir, exist_ok=True)

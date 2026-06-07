@@ -6,7 +6,7 @@ import BookDetail from './components/BookDetail.vue'
 import { useToast } from './composables/useToast.js'
 import { useTheme } from './composables/useTheme.js'
 import { usePolling } from './composables/usePolling.js'
-import { getState, getBookDetail, setProfile, enqueueBook, enqueueBooks } from './api.js'
+import { getState, getBookDetail, setProfile, enqueueBook, enqueueBooks, cancelQueuedBook } from './api.js'
 
 const { toast, success: toastSuccess, error: toastError } = useToast()
 const { theme, toggle: toggleTheme } = useTheme()
@@ -86,6 +86,16 @@ async function handleBatchScan(bookIds) {
   }
 }
 
+async function handleCancel(bookId) {
+  try {
+    await cancelQueuedBook(bookId)
+    toastSuccess('已取消排队')
+    await refresh()
+  } catch (e) {
+    toastError('取消排队失败: ' + e.message)
+  }
+}
+
 async function handleProfileChange(bookId, profile) {
   try {
     await setProfile(bookId, profile)
@@ -143,6 +153,7 @@ usePolling(refresh, 3000)
       :profiles="profiles"
       @scan="handleScan"
       @batchScan="handleBatchScan"
+      @cancel="handleCancel"
       @detail="loadDetail"
       @profileChange="handleProfileChange"
     />

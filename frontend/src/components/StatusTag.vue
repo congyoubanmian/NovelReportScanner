@@ -7,6 +7,7 @@ const map = {
   running: { cls: 'tag-running', icon: '▶️', label: '扫描中' },
   queued:  { cls: 'tag-queued',  icon: '⏳', label: '排队中' },
   completed:{cls:'tag-completed', icon:'✅', label:'已完成'},
+  canceled:{cls:'tag-interrupted', icon:'⏹️', label:'已取消'},
   failed:  { cls: 'tag-failed',  icon: '❌', label: '失败' },
   interrupted:{cls:'tag-interrupted', icon:'⏸️', label:'中断'},
   idle:    { cls: 'tag-idle',    icon: '💤', label: '空闲' },

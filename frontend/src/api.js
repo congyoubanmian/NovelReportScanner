@@ -67,6 +67,14 @@ export function enqueueBooks(bookIds) {
   })
 }
 
+export function cancelQueuedBook(bookId) {
+  return _api('/api/cancel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ book_id: bookId })
+  })
+}
+
 export function uploadBook(formData) {
   return _api('/upload', {
     method: 'POST',

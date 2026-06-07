@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import StatusTag from './StatusTag.vue'
 
 const props = defineProps({ books: Array, profiles: Array })
-const emit = defineEmits(['scan', 'batchScan', 'detail', 'profileChange'])
+const emit = defineEmits(['scan', 'batchScan', 'cancel', 'detail', 'profileChange'])
 const selectedIds = ref([])
 
 const manualProfiles = computed(() => (props.profiles || []).filter(p => p.name !== 'auto'))
@@ -24,6 +24,10 @@ function renderSuggestions(book) {
 
 function isBusy(book) {
   return book.status === 'queued' || book.status === 'running'
+}
+
+function isQueued(book) {
+  return book.status === 'queued'
 }
 
 function profileValues(book) {
@@ -180,6 +184,11 @@ function emitBatchScan() {
                   @click="emit('scan', book.id)"
                   :disabled="isBusy(book)"
                 >加入队列</button>
+                <button
+                  v-if="isQueued(book)"
+                  class="btn btn-sm btn-secondary"
+                  @click="emit('cancel', book.id)"
+                >取消排队</button>
                 <button
                   class="btn btn-sm btn-secondary"
                   @click="emit('detail', book.id)"

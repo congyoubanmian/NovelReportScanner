@@ -507,6 +507,28 @@ def _enqueue_many(book_ids):
     return {"queued": queued, "skipped": skipped}
 
 
+def _cancel_queued_book(book_id):
+    with STATE_LOCK:
+        book = STATE["books"].get(book_id)
+        if not book:
+            return False, "book not found"
+        if book.get("status") != "queued":
+            return False, "book is not queued"
+        task_id = book.get("task_id")
+        task = _find_task(task_id)
+        if not task or task.get("status") != "queued":
+            return False, "queued task not found"
+        task["status"] = "canceled"
+        task["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        task["error"] = "用户取消排队"
+        book["status"] = "idle"
+        book["message"] = "已取消排队"
+        book.pop("task_id", None)
+        TASK_QUEUE_IDS.discard(task_id)
+        _save_state()
+    return True, task_id
+
+
 def _find_task(task_id):
     for task in STATE["tasks"]:
         if task.get("id") == task_id:
@@ -522,6 +544,9 @@ def _worker_loop():
         with STATE_LOCK:
             task = _find_task(task_id)
             if not task:
+                TASK_QUEUE.task_done()
+                continue
+            if task.get("status") == "canceled":
                 TASK_QUEUE.task_done()
                 continue
             book = STATE["books"].get(task.get("book_id"))
@@ -760,6 +785,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             result = _enqueue_many(book_ids)
             self._send_json({"ok": bool(result["queued"]), "result": result}, 200)
+            return
+        if parsed.path == "/api/cancel":
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+            ok, result = _cancel_queued_book(payload.get("book_id"))
+            self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
             return
         if parsed.path == "/upload":
             try:
