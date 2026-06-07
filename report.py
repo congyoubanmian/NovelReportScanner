@@ -1962,6 +1962,8 @@ def _has_male_past_romance_risk(text: str) -> bool:
         return False
     if _male_past_romance_text_has_only_non_partner_homonyms(text):
         return False
+    if _male_past_romance_text_has_only_predecessor_partner(text):
+        return False
     explicit_past_partner_words = (
         "前妻", "前女友", "前任女友", "前任妻子", "前任恋人", "前任爱人", "前夫", "前未婚妻", "前世老婆", "前世妻子", "前世爱人",
         "上一世老婆", "上一世妻子", "原配", "亡妻",
@@ -1994,6 +1996,34 @@ def _male_past_romance_text_has_only_non_partner_homonyms(text: str) -> bool:
         "老婆", "妻子", "女友", "爱人", "未婚妻", "恋人", "婚姻", "结婚", "离婚", "丧偶",
     )
     return any(word in text for word in non_partner_words) and not any(marker in protected for marker in risk_markers)
+
+
+def _male_past_romance_text_has_only_predecessor_partner(text: str) -> bool:
+    matches = _male_past_romance_predecessor_partner_mentions(text)
+    if not matches:
+        return False
+    protected = text
+    for word in matches:
+        protected = protected.replace(word, "")
+    risk_markers = (
+        "前妻", "前女友", "前任女友", "前任妻子", "前任恋人", "前任爱人", "前夫", "前未婚妻",
+        "前世老婆", "前世妻子", "前世爱人", "上一世老婆", "上一世妻子", "原配", "亡妻",
+        "老婆", "妻子", "女友", "爱人", "未婚妻", "恋人", "婚姻", "结婚", "离婚", "丧偶",
+    )
+    return not any(marker in protected for marker in risk_markers)
+
+
+def _male_past_romance_predecessor_partner_mentions(text: str) -> list[str]:
+    predecessor_roles = (
+        "勇者", "宿主", "主人", "掌门", "门主", "宗主", "家主", "族长", "皇帝", "国王",
+        "队长", "团长", "会长", "老板", "上司", "领导", "主管", "城主", "校长", "导师",
+        "师父", "师傅", "上任", "前代", "前朝",
+    )
+    partner_words = ("老婆", "妻子", "女友", "爱人", "未婚妻", "恋人", "夫人", "丈夫")
+    role_pattern = "|".join(re.escape(word) for word in predecessor_roles)
+    partner_pattern = "|".join(re.escape(word) for word in partner_words)
+    pattern = rf"前任(?:{role_pattern})(?:的)?(?:{partner_pattern})|(?:上任|前代|前朝)(?:{role_pattern})?(?:的)?(?:{partner_pattern})"
+    return re.findall(pattern, str(text or ""))
 
 
 def _male_past_romance_non_partner_homonyms(text: str) -> list[str]:
