@@ -14,6 +14,7 @@ const { theme, toggle: toggleTheme } = useTheme()
 
 const books = ref([])
 const profiles = ref([{ name: 'auto', display_name: '自动识别' }])
+const runtimeConfig = ref(null)
 const configReady = ref(false)
 const selectedBook = ref(null)
 const selectedBookId = ref(null)
@@ -25,6 +26,7 @@ let detailRequestId = 0
 async function applyState(data) {
   books.value = data.books || []
   profiles.value = data.profiles || profiles.value
+  runtimeConfig.value = data.config || runtimeConfig.value
   configReady.value = data.config_ready
   if (selectedBookId.value) {
     const found = (books.value || []).find(b => b.id === selectedBookId.value)
@@ -171,6 +173,14 @@ useStateEvents(applyState, {
       <span>⚠️</span> API 配置未就绪：可以先上传和排队，但开始扫描前需要在 .env 或环境变量中配置 API_KEY/API_KEY_POOL。
     </div>
 
+    <div class="runtime-strip" v-if="runtimeConfig">
+      <span class="runtime-item"><b>模型</b>{{ runtimeConfig.model_name || '—' }}</span>
+      <span class="runtime-item"><b>并发</b>{{ runtimeConfig.max_workers || '—' }}</span>
+      <span class="runtime-item"><b>限流</b>{{ runtimeConfig.rpm_limit || '—' }} RPM / {{ runtimeConfig.tpm_limit || '—' }} TPM</span>
+      <span class="runtime-item"><b>Key</b>{{ runtimeConfig.api_key_configured ? `${runtimeConfig.api_key_count || 1} 个` : '未配置' }}</span>
+      <span class="runtime-item"><b>上传上限</b>{{ Math.round((runtimeConfig.web?.max_upload_size || 0) / 1024 / 1024) || '—' }} MB</span>
+    </div>
+
     <BookUpload
       :profiles="profiles"
       @uploaded="handleUploaded"
@@ -283,6 +293,29 @@ header p { margin: 6px 0 0; opacity: 0.85; font-size: 0.95rem; }
 
 /* Card wrap */
 .card-wrap { padding-bottom: 32px; }
+
+.runtime-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+.runtime-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+.runtime-item b {
+  color: var(--text-heading);
+  font-weight: 600;
+}
 
 @media (max-width: 768px) {
   header { padding: 28px 16px 40px; }

@@ -301,7 +301,39 @@ def _public_state():
     with STATE_LOCK:
         books = _with_queue_positions(sorted(STATE["books"].values(), key=lambda x: x.get("created_at", ""), reverse=True))
         tasks = _with_queue_positions(list(STATE["tasks"]))
-    return {"books": books, "tasks": tasks, "config_ready": CONFIG_READY, "profiles": profile_options(include_auto=True)}
+    return {
+        "books": books,
+        "tasks": tasks,
+        "config_ready": CONFIG_READY,
+        "config": _runtime_config_summary(),
+        "profiles": profile_options(include_auto=True),
+    }
+
+
+def _runtime_config_summary():
+    key_pool = [key for key in os.environ.get("API_KEY_POOL", "").split(",") if key.strip()]
+    has_single_key = bool(os.environ.get("API_KEY", "").strip())
+    return {
+        "base_url": os.environ.get("BASE_URL", ""),
+        "model_name": os.environ.get("MODEL_NAME", ""),
+        "analysis_profile": os.environ.get("ANALYSIS_PROFILE", ""),
+        "max_workers": os.environ.get("MAX_WORKERS", ""),
+        "rpm_limit": os.environ.get("RPM_LIMIT", ""),
+        "tpm_limit": os.environ.get("TPM_LIMIT", ""),
+        "rate_limit_scope": os.environ.get("RATE_LIMIT_SCOPE", "global"),
+        "api_key_configured": bool(key_pool or has_single_key),
+        "api_key_count": len(key_pool) if key_pool else (1 if has_single_key else 0),
+        "web": {
+            "max_upload_size": MAX_UPLOAD_SIZE,
+            "max_json_body_size": MAX_JSON_BODY_SIZE,
+            "file_response_chunk_size": FILE_RESPONSE_CHUNK_SIZE,
+            "request_timeout": WEB_REQUEST_TIMEOUT_SECONDS,
+            "cors_allow_origin": os.environ.get("WEB_CORS_ALLOW_ORIGIN", "*"),
+            "sync_books_ttl_seconds": SYNC_BOOKS_TTL_SECONDS,
+            "outputs_cache_ttl_seconds": OUTPUTS_CACHE_TTL_SECONDS,
+            "sse_state_interval_seconds": SSE_STATE_INTERVAL_SECONDS,
+        },
+    }
 
 
 def _put_task_queue(task_id):

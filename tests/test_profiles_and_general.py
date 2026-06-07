@@ -1650,10 +1650,16 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
     def test_web_manager_public_state_includes_profiles_and_suggestions(self):
         old_state = web_manager.STATE
+        old_env = {key: os.environ.get(key) for key in ("API_KEY", "API_KEY_POOL", "BASE_URL", "MODEL_NAME", "MAX_WORKERS")}
         with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as f:
             f.write("皇帝与朝廷争论，男主和红颜卷入后宫风波。")
             novel_path = f.name
         try:
+            os.environ["API_KEY_POOL"] = "sk-one,sk-two"
+            os.environ["API_KEY"] = "sk-one"
+            os.environ["BASE_URL"] = "https://example.test/v1"
+            os.environ["MODEL_NAME"] = "test-model"
+            os.environ["MAX_WORKERS"] = "3"
             web_manager.STATE = {
                 "books": {"book": {"id": "book", "name": "book", "path": novel_path, "profile": "auto", "status": "idle"}},
                 "tasks": [],
@@ -1661,10 +1667,22 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager._refresh_book_suggestions(web_manager.STATE["books"]["book"])
             state = web_manager._public_state()
             self.assertIn("profiles", state)
+            self.assertIn("config", state)
+            self.assertEqual(state["config"]["base_url"], "https://example.test/v1")
+            self.assertEqual(state["config"]["model_name"], "test-model")
+            self.assertEqual(state["config"]["max_workers"], "3")
+            self.assertTrue(state["config"]["api_key_configured"])
+            self.assertEqual(state["config"]["api_key_count"], 2)
+            self.assertNotIn("sk-one", json.dumps(state, ensure_ascii=False))
             self.assertTrue(any(item["name"] == "history" for item in state["books"][0]["profile_suggestions"]))
             self.assertTrue(any(item["name"] == "harem" for item in state["books"][0]["profile_suggestions"]))
         finally:
             web_manager.STATE = old_state
+            for key, value in old_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
             os.unlink(novel_path)
 
     def test_web_manager_sync_refreshes_suggestions_outside_state_lock(self):
