@@ -158,7 +158,7 @@ useStateEvents(applyState, {
 
   <div class="container card-wrap">
     <div class="banner warn" v-if="!configReady">
-      <span>⚠️</span> API 配置未就绪：可以先上传和排队，但开始扫描前需要在 api.txt 中写入可用 API Key。
+      <span>⚠️</span> API 配置未就绪：可以先上传和排队，但开始扫描前需要在 .env 或环境变量中配置 API_KEY/API_KEY_POOL。
     </div>
 
     <BookUpload

@@ -87,9 +87,10 @@ Web 端适合管理多本书：先上传 `.txt`，根据自动建议调整分类
 
 1. 安装 Python 3.10 或更高版本。
 2. 把待分析的小说 `.txt` 放进 `novels/` 目录。
-3. 在项目根目录创建 `api.txt`，每行写一个可用的 API Key。
-4. 按需修改 `setting.txt`。
-5. 双击运行 `win一键运行脚本.bat`。
+3. 复制 `.env.sample` 为 `.env`，填写 `API_KEY` 或 `API_KEY_POOL`。
+4. 如仍沿用旧方式，也可以在项目根目录创建 `api.txt`，每行写一个可用的 API Key；`api.txt` 只作为 `.env` 未配置时的回退。
+5. 按需修改 `setting.txt`。
+6. 双击运行 `win一键运行脚本.bat`。
 
 `win一键运行脚本.bat` 会优先使用本地 `.venv\Scripts\python.exe`。如果 `.venv` 还不存在，它会调用 `bootstrap_venv.py` 自动完成以下动作：
 
@@ -282,6 +283,13 @@ TPM_LIMIT=10000000
 RATE_LIMIT_SCOPE=global
 API_KEY=sk-your-key
 # API_KEY_POOL=sk-key-1,sk-key-2
+
+WEB_HOST=0.0.0.0
+WEB_PORT=8765
+WEB_REQUEST_TIMEOUT=60
+MAX_UPLOAD_SIZE=104857600
+MAX_JSON_BODY_SIZE=65536
+FILE_RESPONSE_CHUNK_SIZE=1048576
 ```
 
 配置加载优先级是：进程环境变量 / `.env` > `setting.txt` > 默认值。API Key 优先读取 `API_KEY_POOL` 或 `API_KEY`；如果没有设置，才会回退读取根目录 `api.txt`。
@@ -319,6 +327,18 @@ HAREM_PLUS_GENERAL_SCAN=0
 - `HAREM_PLUS_GENERAL_SCAN`：后宫增强模式开关。设为 `1` 时，`harem` 流程会在后宫排雷后额外运行一次通用剧情扫描，并在后宫报告末尾追加“作品整体评价”；默认 `0`，不增加额外调用。
 - `RPM_LIMIT` / `TPM_LIMIT`：程序本地预限流配置，用来在请求发出前控制最近 60 秒内的请求数和预估 token 数。
 - `RATE_LIMIT_SCOPE`：本地限流作用域。`global` 表示当前进程内所有线程和 key 共用一个限流桶；`per_key` 表示每个 key 单独计数。默认推荐 `global`，因为很多 OpenAI 兼容供应商会按账号或出口 IP 限速，多个 key 不一定能绕开同一个 RPM/TPM 限制。
+
+Web 管理端常用配置：
+
+- `WEB_HOST` / `WEB_PORT`：Web 管理端监听地址和端口。
+- `WEB_CORS_ALLOW_ORIGIN`：CORS 允许来源，默认 `*`。
+- `WEB_REQUEST_TIMEOUT`：单个 HTTP 连接的 socket 超时时间，默认 `60` 秒；设为 `0` 可关闭。
+- `MAX_UPLOAD_SIZE`：单个上传 `.txt` 文件大小上限，默认 `104857600` 字节。
+- `MAX_JSON_BODY_SIZE`：JSON API 请求体大小上限，默认 `65536` 字节。
+- `FILE_RESPONSE_CHUNK_SIZE`：`/files` 下载或预览文件时的流式输出块大小，默认 `1048576` 字节。
+- `SYNC_BOOKS_TTL_SECONDS`：同步 `novels/` 目录的最短间隔，默认 `5` 秒。
+- `OUTPUTS_CACHE_TTL_SECONDS`：书籍输出文件列表缓存时间，默认 `5` 秒。
+- `SSE_STATE_INTERVAL_SECONDS`：SSE 状态推送间隔，默认 `3` 秒。
 
 ### 分析模式
 
