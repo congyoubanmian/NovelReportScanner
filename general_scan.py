@@ -24,6 +24,27 @@ def _summary_field_label(field: str) -> str:
         return field.replace("_", " ")
 
 
+def _summary_field_candidates(field: str) -> List[str]:
+    try:
+        from report import SUMMARY_FIELD_ALIASES
+
+        aliases = [
+            alias
+            for alias, canonical in SUMMARY_FIELD_ALIASES.items()
+            if canonical == field
+        ]
+        return [field] + aliases
+    except Exception:
+        return [field]
+
+
+def _summary_field_value(data: Dict[str, Any], field: str) -> List[str]:
+    values = []
+    for candidate in _summary_field_candidates(field):
+        values.extend(_safe_list(data.get(candidate), limit=20))
+    return values[:20]
+
+
 
 def _read_novel(path: str) -> str:
     return read_file_safely(path)
@@ -331,7 +352,7 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         "overall_assessment": str(data.get("overall_assessment", "") or "").strip(),
     }
     for field in specialty_fields:
-        summary[field] = _safe_list(data.get(field), limit=20)
+        summary[field] = _summary_field_value(data, field)
     return summary
 
 

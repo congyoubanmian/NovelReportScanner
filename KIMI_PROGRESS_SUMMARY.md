@@ -86,6 +86,7 @@
   - 专长总评字段
 - 统一 `summary_field_label`，避免 `general_scan.py` 和 `report.py` 两边维护两份不一致的中文字段标题。
 - 增加测试确保新增 profile 字段都有中文标题。
+- 增加 Kimi 草案字段别名兼容，`humanity_and_morality`、`power_system`、`exploration_and_adventure`、`social_relevance`、`adventure_structure`、`companions` 等旧/草案字段会归并到当前报告字段，避免历史 summary 或模型返回旧字段时丢失内容。
 
 ### 5. Web 和部署工程项
 
@@ -127,7 +128,7 @@
 - Web 删除、批量删除、队列调整、配置摘要、JSON 限制、文件流式输出等接口行为。
 - 专项报告字段标题和输出结构。
 
-最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **88 个测试 OK**。
+最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **91 个测试 OK**。
 
 ## 已推送的关键提交
 
@@ -191,7 +192,7 @@ Kimi 草案里仍有少量字段名与当前项目不一致，例如：
   - Kimi：`adventure_structure`、`companions`
   - 当前：`adventure_system`、`party_dynamics`
 
-这些多半是命名风格差异，当前字段更贴合已有报告标题和测试，不建议为了完全一致而改名，除非同步迁移报告字段映射和历史结果兼容。
+这些多半是命名风格差异，当前字段更贴合已有报告标题和测试。当前已增加字段别名兼容，不建议为了完全一致而改名。
 
 ### 3. 剩余 scan_focus 文案差异
 

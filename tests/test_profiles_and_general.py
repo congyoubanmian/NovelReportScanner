@@ -3659,6 +3659,68 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(any('"golden_finger_system": ["异能/金手指体系专项分析要点"]' in prompt for prompt in prompts))
         self.assertTrue(any('"relationships": ["关系线专项分析要点"]' in prompt for prompt in prompts))
 
+    def test_general_scan_summary_accepts_kimi_field_aliases(self):
+        profile = analysis_profiles.load_analysis_profile("apocalypse_survival")
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(_messages, max_tokens=3000):
+                return {
+                    "story_overview": "末世求生。",
+                    "main_plot": ["主角建立据点"],
+                    "core_conflicts": ["幸存者争夺资源"],
+                    "worldbuilding": ["灾变后秩序崩塌"],
+                    "themes": ["人性选择"],
+                    "foreshadowing_and_payoff": ["基地隐患"],
+                    "humanity_and_morality": ["旧 Kimi 字段：道德选择有代价"],
+                    "power_system": ["旧 Kimi 字段：异能进化消耗资源"],
+                    "exploration_and_adventure": ["旧 Kimi 字段：外出探索有路线风险"],
+                    "strengths": ["末世氛围稳定"],
+                    "risks_or_issues": ["资源压力不足"],
+                    "reader_fit": "末世读者",
+                    "overall_assessment": "可读",
+                }
+
+            general_scan._call_json = fake_call_json
+            summary = general_scan._summarize_book(
+                "末世测试",
+                [{"one_sentence_summary": "主角建立据点。"}],
+                profile=profile,
+            )
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertEqual(summary["humanity_moral_dilemmas"], ["旧 Kimi 字段：道德选择有代价"])
+        self.assertEqual(summary["power_evolution_system"], ["旧 Kimi 字段：异能进化消耗资源"])
+        self.assertEqual(summary["exploration_adventure"], ["旧 Kimi 字段：外出探索有路线风险"])
+
+    def test_general_report_reads_summary_field_alias_values(self):
+        self.assertEqual(report.summary_field_label("power_system"), "异能/金手指体系")
+        self.assertEqual(report.summary_field_label("humanity_and_morality"), "人性与道德困境")
+
+        text = report.build_general_report(
+            "字段别名测试",
+            {"male_protagonist": {"name": "男主"}, "all_female_characters": {}},
+            {
+                "profile_display_name": "末世生存专长分析",
+                "summary_fields": ["main_plot", "humanity_moral_dilemmas", "power_evolution_system"],
+                "summary": {
+                    "story_overview": "末世概览",
+                    "main_plot": ["主线"],
+                    "humanity_and_morality": ["旧字段人性道德内容"],
+                    "power_system": ["旧字段能力体系内容"],
+                    "strengths": [],
+                    "risks_or_issues": [],
+                    "reader_fit": "读者",
+                    "overall_assessment": "评价",
+                },
+            },
+        )
+
+        self.assertIn("【人性与道德困境】", text)
+        self.assertIn("旧字段人性道德内容", text)
+        self.assertIn("【能力/进化体系】", text)
+        self.assertIn("旧字段能力体系内容", text)
+
     def test_general_scan_field_labels_cover_profile_summary_fields(self):
         common = {
             "main_plot",

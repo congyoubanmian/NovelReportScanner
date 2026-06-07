@@ -161,9 +161,38 @@ SUMMARY_FIELD_TITLES = {
     "male_past_romance_risk": "男主前史情感雷点",
 }
 
+SUMMARY_FIELD_ALIASES = {
+    "humanity_and_morality": "humanity_moral_dilemmas",
+    "power_system": "power_evolution_system",
+    "exploration_and_adventure": "exploration_adventure",
+    "social_relevance": "social_reflection",
+    "adventure_structure": "adventure_system",
+    "companions": "party_dynamics",
+}
+
 
 def summary_field_label(field: str) -> str:
-    return SUMMARY_FIELD_TITLES.get(field, field.replace("_", " "))
+    if field in SUMMARY_FIELD_TITLES:
+        return SUMMARY_FIELD_TITLES[field]
+    canonical = SUMMARY_FIELD_ALIASES.get(field, field)
+    return SUMMARY_FIELD_TITLES.get(canonical, field.replace("_", " "))
+
+
+def summary_field_values(summary: dict, field: str):
+    if not isinstance(summary, dict):
+        return []
+    values = []
+    candidate_fields = [field]
+    candidate_fields.extend(
+        alias for alias, canonical in SUMMARY_FIELD_ALIASES.items() if canonical == field
+    )
+    for candidate in candidate_fields:
+        value = summary.get(candidate)
+        if isinstance(value, list):
+            values.extend(value)
+        elif value:
+            values.append(value)
+    return values
 
 
 def init_token_tracker(book_name, run_id=None):
@@ -1762,7 +1791,7 @@ def _append_general_scan_section(lines: list, general_summary: dict):
         }
     ]
     for field in specialty_fields:
-        add_list(summary_field_label(field), summary.get(field))
+        add_list(summary_field_label(field), summary_field_values(summary, field))
     add_list("优点", summary.get("strengths"))
     add_list("问题与阅读门槛", summary.get("risks_or_issues"))
     lines.extend(["", "【适合读者】", summary.get("reader_fit") or "未描述"])
