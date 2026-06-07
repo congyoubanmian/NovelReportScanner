@@ -3617,6 +3617,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(report._contains_positive_signal_text("作者对蒸汽设定很倾心，说明文字很多。", ["倾心"]))
         self.assertTrue(report._contains_positive_signal_text("她对男主动心，并开始吃醋。", ["动心"]))
         self.assertTrue(report._contains_positive_signal_text("她倾心男主，并主动表白。", ["倾心"]))
+        self.assertFalse(report._contains_positive_signal_text("她爱吃醋拌菜，经常负责厨房笑料。", ["吃醋"]))
+        self.assertFalse(report._contains_positive_signal_text("她打翻醋坛子，众人以为她吃醋，其实只是厨房事故。", ["吃醋"]))
+        self.assertTrue(report._contains_positive_signal_text("她看到男主和别的女子同行后吃醋。", ["吃醋"]))
         self.assertFalse(report._contains_positive_signal_text("旁人传言她和男主暧昧，但实际只是任务搭档。", ["暧昧"]))
         self.assertFalse(report._contains_positive_signal_text("营销炒作她和男主暧昧，没有正文互动。", ["暧昧"]))
         self.assertFalse(report._contains_positive_signal_text("误会她和男主暧昧，后来澄清只是伪装。", ["暧昧"]))
@@ -3795,7 +3798,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             {},
             {
                 "relationship_with_protagonist": "与男主暧昧并喜欢男主。",
-                "key_events": "她留下线索后离开，跟随案件线索调查，还负责同行评审报告。",
+                "key_events": "她留下线索后离开，跟随案件线索调查，同行后继续处理支线，还负责同行评审报告。",
             },
         )
         accounted = report._summarize_leak_three_layers(
@@ -3809,6 +3812,26 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("结局交代=未明", action_terms)
         self.assertIn("结论=需关注", action_terms)
         self.assertIn("结局交代=有", accounted)
+
+    def test_leak_three_layers_ignores_kitchen_vinegar_as_jealousy(self):
+        kitchen = report._summarize_leak_three_layers(
+            {},
+            {
+                "relationship_with_protagonist": "她爱吃醋拌菜，经常负责厨房笑料。",
+                "key_events": "她打翻醋坛子，众人以为她吃醋，其实只是厨房事故。",
+            },
+        )
+        romantic = report._summarize_leak_three_layers(
+            {},
+            {
+                "relationship_with_protagonist": "她看到男主和别的女子同行后吃醋。",
+                "key_events": "结局未交代归宿。",
+            },
+        )
+
+        self.assertIn("情感深度=未明", kitchen)
+        self.assertIn("结论=证据不足", kitchen)
+        self.assertIn("情感深度=有", romantic)
 
     def test_leak_three_layers_requires_specific_concubine_terms(self):
         generic = report._summarize_leak_three_layers(
