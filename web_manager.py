@@ -403,6 +403,66 @@ def _normalize_config_value(field, value):
     raise ValueError(f"unsupported config type for {field}")
 
 
+def _persist_runtime_config_to_env_file(values):
+    """将运行时配置变更安全地写回 .env 文件。
+
+    只更新 EDITABLE_RUNTIME_CONFIG 中列出的非敏感字段；保留其他所有行
+    （包括注释、空行、API Key 等敏感信息）。使用原子写入避免文件损坏。
+    """
+    base_dir = get_base_dir()
+    env_path = os.path.join(base_dir, ".env")
+
+    # 构建 env_name -> (field_name, value) 映射
+    env_to_field = {}
+    for field, spec in EDITABLE_RUNTIME_CONFIG.items():
+        env_name = spec["env"]
+        if field in values:
+            env_to_field[env_name] = (field, values[field])
+
+    lines = []
+    if os.path.exists(env_path):
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                lines = f.read().splitlines()
+        except Exception:
+            lines = []
+
+    updated_envs = set()
+    new_lines = []
+    for line in lines:
+        stripped = line.lstrip()
+        # 保留注释、空行、无等号行原样
+        if not stripped or stripped.startswith("#") or "=" not in line:
+            new_lines.append(line)
+            continue
+        # 解析 KEY=VALUE（不拆分值中的等号）
+        eq_idx = line.index("=")
+        key = line[:eq_idx].rstrip()
+        if key in env_to_field:
+            _field, new_value = env_to_field[key]
+            new_lines.append(f"{key}={new_value}")
+            updated_envs.add(key)
+        else:
+            new_lines.append(line)
+
+    # 追加尚未存在的字段
+    for env_name, (field, value) in env_to_field.items():
+        if env_name not in updated_envs:
+            new_lines.append(f"{env_name}={value}")
+
+    # 原子写入
+    try:
+        tmp_path = f"{env_path}.{os.getpid()}.tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(new_lines))
+            if new_lines and not new_lines[-1].endswith("\n"):
+                f.write("\n")
+        os.replace(tmp_path, env_path)
+    except Exception as exc:
+        return False, f"failed to persist config: {exc}"
+    return True, ""
+
+
 def _update_runtime_config(values):
     if not isinstance(values, dict):
         return False, "config must be an object"
@@ -416,6 +476,8 @@ def _update_runtime_config(values):
             return False, str(exc)
     for field, value in normalized.items():
         os.environ[EDITABLE_RUNTIME_CONFIG[field]["env"]] = value
+    # 尝试持久化到 .env 文件（失败不影响内存中的更新）
+    _persist_runtime_config_to_env_file(normalized)
     return True, _runtime_config_summary()
 
 

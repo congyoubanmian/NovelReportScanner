@@ -1225,6 +1225,49 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(leak_map["甲女"]["is_leak_heroine"])
         self.assertTrue(leak_map["甲女"]["leak_emotional_depth"])
 
+    def test_rebuild_leak_state_ignores_physical_event_without_romance_depth(self):
+        data = {
+            "heroine_result": {
+                "heroines": [
+                    {
+                        "name": "乙女",
+                        "summaries": [
+                            "她传授男主双修之法并实践，但完全没有任何感情描写。",
+                            "两人只有一次功法双修事件，没有恋爱线，没有暧昧推进。",
+                            "她和男主有亲密接触记录，但没有感情戏也未确认后宫关系。",
+                        ],
+                    },
+                    {
+                        "name": "甲女",
+                        "summaries": ["她喜欢男主并长期暧昧，但结局未交代归宿。"],
+                    },
+                ]
+            }
+        }
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+            char_path = f.name
+        try:
+            issues, leak_map = novel_reviewer._rebuild_leak_state_from_pushed_map(
+                female_leads=["乙女", "甲女"],
+                char_file_path=char_path,
+                novel_tail="尾声里只有男主离开江湖。",
+                finished=True,
+                pushed_map={
+                    "乙女": (False, "未见推倒或同房证据"),
+                    "甲女": (False, "未见推倒或同房证据"),
+                },
+            )
+        finally:
+            os.unlink(char_path)
+
+        self.assertEqual([issue["content"] for issue in issues], ["甲女 未被男主明确推倒，且尾声未明确交代结局"])
+        self.assertFalse(leak_map["乙女"]["is_leak_heroine"])
+        self.assertFalse(leak_map["乙女"]["leak_emotional_depth"])
+        self.assertIn("未达到漏女判定门槛", leak_map["乙女"]["leak_reason"])
+        self.assertTrue(leak_map["甲女"]["is_leak_heroine"])
+        self.assertTrue(leak_map["甲女"]["leak_emotional_depth"])
+
     def test_rebuild_leak_state_keeps_unknown_relationship_unjudged(self):
         data = {
             "heroine_result": {
@@ -2146,6 +2189,69 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     os.environ.pop(key, None)
                 else:
                     os.environ[key] = value
+
+    def test_web_manager_runtime_config_persists_to_env_file(self):
+        import tempfile
+
+        env_field_map = {
+            "MAX_WORKERS": "max_workers",
+            "RPM_LIMIT": "rpm_limit",
+            "TPM_LIMIT": "tpm_limit",
+            "RATE_LIMIT_SCOPE": "rate_limit_scope",
+            "GENERAL_SCAN_MAX_CHUNKS": "general_scan_max_chunks",
+            "HAREM_PLUS_GENERAL_SCAN": "harem_plus_general_scan",
+        }
+        old_values = {env: os.environ.get(env) for env in env_field_map}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_path = os.path.join(tmpdir, ".env")
+            # 模拟 get_base_dir 返回 tmpdir
+            original_base_dir = web_manager.get_base_dir
+            web_manager.get_base_dir = lambda: tmpdir
+            try:
+                # 场景1：写入全新 .env
+                ok, _ = web_manager._update_runtime_config({
+                    "max_workers": 8,
+                    "rpm_limit": 120,
+                })
+                self.assertTrue(ok)
+                with open(env_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                self.assertIn("MAX_WORKERS=8", content)
+                self.assertIn("RPM_LIMIT=120", content)
+                # 不存在的字段不应被写入
+                self.assertNotIn("API_KEY", content)
+
+                # 场景2：更新已有字段，保留其他行
+                with open(env_path, "w", encoding="utf-8") as f:
+                    f.write("# 注释\nAPI_KEY=secret\nMAX_WORKERS=4\n\n")
+                ok, _ = web_manager._update_runtime_config({
+                    "max_workers": 16,
+                    "harem_plus_general_scan": True,
+                })
+                self.assertTrue(ok)
+                with open(env_path, "r", encoding="utf-8") as f:
+                    lines = f.read().splitlines()
+                self.assertIn("# 注释", lines)
+                self.assertIn("API_KEY=secret", lines)
+                self.assertIn("MAX_WORKERS=16", lines)
+                self.assertIn("HAREM_PLUS_GENERAL_SCAN=1", lines)
+                # 旧值不应残留
+                self.assertNotIn("MAX_WORKERS=4", lines)
+                self.assertNotIn("MAX_WORKERS=8", lines)
+
+                # 场景3：持久化失败不应阻止内存更新
+                web_manager.get_base_dir = lambda: "/nonexistent/path/that/cannot/be/created"
+                ok, result = web_manager._update_runtime_config({"max_workers": 32})
+                self.assertTrue(ok)
+                self.assertEqual(os.environ.get("MAX_WORKERS"), "32")
+            finally:
+                web_manager.get_base_dir = original_base_dir
+                for env, value in old_values.items():
+                    if value is None:
+                        os.environ.pop(env, None)
+                    else:
+                        os.environ[env] = value
 
     def test_web_manager_handler_rejects_unauthorized_api_requests(self):
         class FakeHandler(web_manager.Handler):

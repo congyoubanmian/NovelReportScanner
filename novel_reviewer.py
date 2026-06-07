@@ -491,7 +491,7 @@ def _heroine_has_emotional_depth_for_leak(heroine_info: Dict[str, Any]) -> Tuple
             texts.extend(str(x) for x in val if str(x).strip())
         elif isinstance(val, str) and val.strip():
             texts.append(val)
-    keywords = ("暧昧", "喜欢", "爱", "动心", "倾心", "表白", "告白", "吃醋", "承诺", "救赎", "道侣", "恋人", "未婚妻", "双修", "亲密")
+    keywords = ("暧昧", "喜欢", "爱", "动心", "倾心", "表白", "告白", "吃醋", "道侣", "恋人", "未婚妻")
     effective_text = _leak_emotional_depth_effective_text(texts)
     matched = [kw for kw in keywords if kw in effective_text]
     if matched:
