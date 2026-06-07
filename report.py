@@ -163,8 +163,19 @@ SUMMARY_FIELD_TITLES = {
 }
 
 SUMMARY_FIELD_ALIASES = {
+    "plot": "main_plot",
     "main_story": "main_plot",
     "plot_summary": "main_plot",
+    "storyline": "main_plot",
+    "conflict": "core_conflicts",
+    "conflicts": "core_conflicts",
+    "main_conflicts": "core_conflicts",
+    "world_building": "worldbuilding",
+    "setting": "worldbuilding",
+    "settings": "worldbuilding",
+    "world_setting": "worldbuilding",
+    "theme": "themes",
+    "motifs": "themes",
     "characters": "character_highlights",
     "characterization": "character_highlights",
     "character_arcs": "character_highlights",
@@ -184,6 +195,13 @@ SUMMARY_FIELD_ALIASES = {
     "technology_constraints": "technology_chain",
     "science_logic": "science_consistency",
     "sense_of_wonder": "scale_and_wonder",
+    "advantages": "strengths",
+    "merits": "strengths",
+    "highlights": "strengths",
+    "risks": "risks_or_issues",
+    "issues": "risks_or_issues",
+    "problems": "risks_or_issues",
+    "weaknesses": "risks_or_issues",
     "humanity_and_morality": "humanity_moral_dilemmas",
     "power_system": "power_evolution_system",
     "exploration_and_adventure": "exploration_adventure",
@@ -2448,10 +2466,10 @@ def _append_general_scan_section(lines: list, general_summary: dict):
 
     lines.extend(["", "【作品概览】"])
     lines.append(summary.get("story_overview") or "未描述")
-    add_list("主线剧情", summary.get("main_plot"))
-    add_list("核心冲突", summary.get("core_conflicts"))
-    add_list("世界观/设定", summary.get("worldbuilding"))
-    add_list("主题表达", summary.get("themes"))
+    add_list("主线剧情", summary_field_values(summary, "main_plot"))
+    add_list("核心冲突", summary_field_values(summary, "core_conflicts"))
+    add_list("世界观/设定", summary_field_values(summary, "worldbuilding"))
+    add_list("主题表达", summary_field_values(summary, "themes"))
     add_list("伏笔与回收", summary_field_values(summary, "foreshadowing_and_payoff"))
     base_summary_fields = {
         "main_plot",
@@ -2470,8 +2488,8 @@ def _append_general_scan_section(lines: list, general_summary: dict):
     ]
     for field in specialty_fields:
         add_list(summary_field_label(field), summary_field_values(summary, field))
-    add_list("优点", summary.get("strengths"))
-    add_list("问题与阅读门槛", summary.get("risks_or_issues"))
+    add_list("优点", summary_field_values(summary, "strengths"))
+    add_list("问题与阅读门槛", summary_field_values(summary, "risks_or_issues"))
     lines.extend(["", "【适合读者】", summary_field_text(summary, "reader_fit")])
     lines.extend(["", "【总体评价】", summary_field_text(summary, "overall_assessment")])
 

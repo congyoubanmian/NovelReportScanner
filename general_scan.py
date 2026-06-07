@@ -359,13 +359,13 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
     )
     summary = {
         "story_overview": str(data.get("story_overview", "") or "").strip(),
-        "main_plot": _safe_list(data.get("main_plot"), limit=20),
-        "core_conflicts": _safe_list(data.get("core_conflicts"), limit=20),
-        "worldbuilding": _safe_list(data.get("worldbuilding"), limit=20),
-        "themes": _safe_list(data.get("themes"), limit=20),
+        "main_plot": _summary_field_value(data, "main_plot"),
+        "core_conflicts": _summary_field_value(data, "core_conflicts"),
+        "worldbuilding": _summary_field_value(data, "worldbuilding"),
+        "themes": _summary_field_value(data, "themes"),
         "foreshadowing_and_payoff": _summary_field_value(data, "foreshadowing_and_payoff"),
-        "strengths": _safe_list(data.get("strengths"), limit=20),
-        "risks_or_issues": _safe_list(data.get("risks_or_issues"), limit=20),
+        "strengths": _summary_field_value(data, "strengths"),
+        "risks_or_issues": _summary_field_value(data, "risks_or_issues"),
         "reader_fit": "；".join(_summary_field_value(data, "reader_fit")),
         "overall_assessment": "；".join(_summary_field_value(data, "overall_assessment")),
     }

@@ -5138,10 +5138,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             def fake_call_json(_messages, max_tokens=3000):
                 return {
                     "story_overview": "旧字段请求测试。",
-                    "main_plot": ["主线"],
-                    "core_conflicts": ["冲突"],
-                    "worldbuilding": ["设定"],
-                    "themes": ["主题"],
+                    "plot": ["旧字段主线"],
+                    "conflicts": ["旧字段冲突"],
+                    "world_building": ["旧字段设定"],
+                    "theme": ["旧字段主题"],
                     "characters": ["旧字段角色内容"],
                     "pacing_emotion": ["旧字段节奏情绪内容"],
                     "historical_accuracy": ["旧字段史实逻辑内容"],
@@ -5154,8 +5154,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "sense_of_wonder": ["旧字段科幻奇观内容"],
                     "tech_feasibility": ["标准字段技术内容"],
                     "technology_feasibility": ["标准字段技术内容", "同义旧字段技术内容"],
-                    "strengths": ["优点"],
-                    "risks_or_issues": ["问题"],
+                    "advantages": ["旧字段优点"],
+                    "issues": ["旧字段问题"],
                     "reader_fit": "读者",
                     "overall_assessment": "评价",
                 }
@@ -5196,6 +5196,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             summary["tech_plausibility"],
             ["标准字段技术内容", "同义旧字段技术内容"],
         )
+        self.assertEqual(summary["main_plot"], ["旧字段主线"])
+        self.assertEqual(summary["core_conflicts"], ["旧字段冲突"])
+        self.assertEqual(summary["worldbuilding"], ["旧字段设定"])
+        self.assertEqual(summary["themes"], ["旧字段主题"])
         self.assertEqual(summary["character_highlights"], ["旧字段角色内容"])
         self.assertEqual(summary["pacing_and_emotion"], ["旧字段节奏情绪内容"])
         self.assertEqual(summary["historical_logic"], ["旧字段史实逻辑内容"])
@@ -5204,6 +5208,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(summary["technology_chain"], ["旧字段技术链内容"])
         self.assertEqual(summary["science_consistency"], ["旧字段科学逻辑内容"])
         self.assertEqual(summary["scale_and_wonder"], ["旧字段科幻奇观内容"])
+        self.assertEqual(summary["strengths"], ["旧字段优点"])
+        self.assertEqual(summary["risks_or_issues"], ["旧字段问题"])
         self.assertEqual(summary["foreshadowing_and_payoff"], ["伏笔", "旧字段伏笔内容"])
 
     def test_general_report_reads_summary_field_alias_values(self):
@@ -5313,6 +5319,34 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("旧字段技术链内容", kimi_alias_text)
         self.assertIn("旧字段科学逻辑内容", kimi_alias_text)
         self.assertIn("旧字段科幻奇观内容", kimi_alias_text)
+
+        base_alias_text = report.build_general_report(
+            "通用旧字段别名测试",
+            {"male_protagonist": {"name": "男主"}, "all_female_characters": {}},
+            {
+                "profile_display_name": "通用小说分析",
+                "summary_fields": ["main_plot"],
+                "summary": {
+                    "story_overview": "通用旧字段概览",
+                    "plot": ["旧字段主线"],
+                    "conflicts": ["旧字段冲突"],
+                    "setting": ["旧字段设定"],
+                    "theme": ["旧字段主题"],
+                    "advantages": ["旧字段优点"],
+                    "issues": ["旧字段问题"],
+                    "reader_fit": "读者",
+                    "overall_assessment": "评价",
+                },
+            },
+        )
+
+        self.assertIn("【主线剧情】", base_alias_text)
+        self.assertIn("旧字段主线", base_alias_text)
+        self.assertIn("旧字段冲突", base_alias_text)
+        self.assertIn("旧字段设定", base_alias_text)
+        self.assertIn("旧字段主题", base_alias_text)
+        self.assertIn("旧字段优点", base_alias_text)
+        self.assertIn("旧字段问题", base_alias_text)
 
         legacy_field_text = report.build_general_report(
             "旧请求字段别名测试",
