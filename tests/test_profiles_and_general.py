@@ -5016,6 +5016,21 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("送女排除配角/家族/反派把女性献给男主", sent_to_male_lead_issue["definition_review_hint"])
         self.assertIn("收女/献女/后宫扩张", sent_to_male_lead_issue["definition_review_hint"])
 
+        marriage_invitation_issue = report._annotate_issue_for_report(
+            {"type": "送女", "content": "女王向男主发起与强女的联姻邀请，被男主拒绝。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(marriage_invitation_issue["heroine_position_context"], "强女=强准女主")
+        self.assertIn("送女排除配角/家族/反派把女性献给男主", marriage_invitation_issue["definition_review_hint"])
+        self.assertIn("联姻邀请/拒绝收女", marriage_invitation_issue["definition_review_hint"])
+
         active_send_to_other_issue = report._annotate_issue_for_report(
             {"type": "送女", "content": "男主主动把强女送给路人男。"},
             [
