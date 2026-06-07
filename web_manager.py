@@ -454,46 +454,233 @@ HTML = r"""<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NovelReportScanner</title>
   <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 24px; background: #f7f7f8; color: #222; }
-    main { max-width: 1100px; margin: 0 auto; }
-    section { background: white; border: 1px solid #ddd; padding: 16px; margin-bottom: 16px; border-radius: 6px; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: left; vertical-align: middle; }
-    select, button, input[type=file] { padding: 6px; }
-    .status { font-weight: 600; }
-    .muted { color: #666; }
+    :root {
+      --bg: #f0f2f5;
+      --card: #ffffff;
+      --text: #1f2937;
+      --text-secondary: #6b7280;
+      --border: #e5e7eb;
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --primary-light: #eef2ff;
+      --success: #10b981;
+      --success-bg: #ecfdf5;
+      --warning: #f59e0b;
+      --warning-bg: #fffbeb;
+      --danger: #ef4444;
+      --danger-bg: #fef2f2;
+      --info: #3b82f6;
+      --info-bg: #eff6ff;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05);
+      --shadow-lg: 0 10px 25px rgba(0,0,0,0.08), 0 4px 10px rgba(0,0,0,0.04);
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      margin: 0; padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    header {
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      color: white;
+      padding: 40px 24px;
+      margin-bottom: 32px;
+      box-shadow: var(--shadow-lg);
+    }
+    header .container { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+    header h1 { margin: 0; font-size: 1.75rem; font-weight: 700; letter-spacing: -0.5px; }
+    header p { margin: 4px 0 0; opacity: 0.9; font-size: 0.95rem; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px; border-radius: 999px; font-size: 0.75rem; font-weight: 600;
+      background: rgba(255,255,255,0.2); color: white;
+    }
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 24px;
+      margin-bottom: 24px;
+      border: 1px solid var(--border);
+      transition: box-shadow 0.2s;
+    }
+    .card:hover { box-shadow: var(--shadow-lg); }
+    .card-title {
+      font-size: 1.15rem; font-weight: 600; margin: 0 0 16px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .card-title .icon { font-size: 1.3rem; }
+
+    /* Upload area */
+    .upload-wrap { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+    .file-input-wrapper {
+      position: relative; flex: 1; min-width: 240px;
+      border: 2px dashed var(--border); border-radius: var(--radius-sm);
+      padding: 16px; text-align: center; cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .file-input-wrapper:hover { border-color: var(--primary); background: var(--primary-light); }
+    .file-input-wrapper input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .file-input-wrapper .label { color: var(--text-secondary); font-size: 0.9rem; pointer-events: none; }
+    .file-input-wrapper .label strong { color: var(--primary); }
+    select, button {
+      font-family: inherit; font-size: 0.95rem; border-radius: var(--radius-sm); outline: none;
+      transition: all 0.15s;
+    }
+    select {
+      padding: 10px 14px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer;
+    }
+    select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.12); }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 10px 20px; border: none; cursor: pointer; font-weight: 500;
+      background: var(--primary); color: white;
+    }
+    .btn:hover { background: var(--primary-hover); transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+    .btn:disabled { background: #c7c7c7; cursor: not-allowed; transform: none; }
+    .btn-secondary { background: #6b7280; }
+    .btn-secondary:hover { background: #4b5563; }
+    .btn-sm { padding: 6px 12px; font-size: 0.85rem; }
+
+    /* Warning banner */
+    .banner {
+      display: none; align-items: center; gap: 10px;
+      padding: 14px 18px; border-radius: var(--radius-sm); margin-bottom: 24px;
+      font-size: 0.9rem; font-weight: 500;
+    }
+    .banner.warn { background: var(--warning-bg); color: #92400e; border: 1px solid #fcd34d; }
+
+    /* Status tags */
+    .tag {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600;
+      white-space: nowrap;
+    }
+    .tag-running { background: var(--info-bg); color: #1e40af; }
+    .tag-queued  { background: var(--warning-bg); color: #92400e; }
+    .tag-completed { background: var(--success-bg); color: #065f46; }
+    .tag-failed { background: var(--danger-bg); color: #991b1b; }
+    .tag-interrupted { background: #f3f4f6; color: #4b5563; }
+    .tag-idle { background: #f3f4f6; color: #6b7280; }
+    .tag-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .tag-running .tag-dot { animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* Tables */
+    .table-wrap { overflow-x: auto; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    thead { background: #f9fafb; }
+    th { padding: 12px 16px; text-align: left; font-weight: 600; color: #374151; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.4px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    td { padding: 14px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tbody tr { transition: background 0.12s; }
+    tbody tr:hover { background: #f9fafb; }
+    tbody tr:last-child td { border-bottom: none; }
+    .col-name { font-weight: 500; color: #111827; }
+    .col-msg { color: var(--text-secondary); font-size: 0.85rem; max-width: 280px; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    /* Detail panel */
+    .detail-empty { color: var(--text-secondary); text-align: center; padding: 40px 20px; font-style: italic; }
+    .detail-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+    .detail-header h3 { margin: 0; font-size: 1.25rem; }
+    .detail-meta { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; font-size: 0.9rem; color: var(--text-secondary); }
+    .detail-meta span { display: inline-flex; align-items: center; gap: 6px; }
+    .detail-meta .label { font-weight: 500; color: var(--text); }
+    .file-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+    .file-list li a {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px; border-radius: var(--radius-sm);
+      background: var(--primary-light); color: var(--primary);
+      text-decoration: none; font-weight: 500; font-size: 0.9rem;
+      transition: background 0.15s;
+    }
+    .file-list li a:hover { background: #e0e7ff; }
+    .file-list li a::before { content: "📄"; }
+    .suggestion-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 4px 10px; border-radius: 999px; font-size: 0.8rem;
+      background: #f3f4f6; color: #374151; border: 1px solid var(--border);
+    }
+    .chip .score { font-weight: 600; color: var(--primary); }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      header h1 { font-size: 1.4rem; }
+      .container { padding: 16px; }
+      .card { padding: 16px; }
+      th, td { padding: 10px 12px; }
+    }
   </style>
 </head>
 <body>
-<main>
-  <h1>NovelReportScanner</h1>
-  <section id="configWarning" style="display:none; border-color:#e0a800; background:#fff8e1;">
-    API 配置未就绪：可以先上传和排队，但开始扫描前需要在 api.txt 中写入可用 API Key。
-  </section>
-  <section>
-    <h2>上传小说</h2>
+<header>
+  <div class="container">
+    <div>
+      <h1>📚 NovelReportScanner</h1>
+      <p>小说扫书分析工具 — 上传、分类、扫描、报告一站式管理</p>
+    </div>
+    <div class="badge" id="configBadge">⚙️ 配置检查中</div>
+  </div>
+</header>
+
+<div class="container">
+  <div class="banner warn" id="configWarning">
+    <span>⚠️</span> API 配置未就绪：可以先上传和排队，但开始扫描前需要在 api.txt 中写入可用 API Key。
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="icon">⬆️</span> 上传小说</div>
     <form action="/upload" method="post" enctype="multipart/form-data">
-      <input type="file" name="file" accept=".txt" required>
-      <select id="uploadProfile" name="profile">
-        <option value="auto">自动识别</option>
-      </select>
-      <button type="submit">上传</button>
+      <div class="upload-wrap">
+        <div class="file-input-wrapper">
+          <input type="file" name="file" id="fileInput" accept=".txt" required onchange="document.getElementById('fileLabel').textContent=this.files[0]?this.files[0].name:'点击或拖拽上传 .txt 小说文件'">
+          <div class="label" id="fileLabel">点击或拖拽上传 <strong>.txt</strong> 小说文件</div>
+        </div>
+        <select id="uploadProfile" name="profile">
+          <option value="auto">自动识别</option>
+        </select>
+        <button type="submit" class="btn">上传</button>
+      </div>
     </form>
-  </section>
-  <section>
-    <h2>书籍列表</h2>
-    <table>
-      <thead><tr><th>书名</th><th>分类</th><th>自动建议</th><th>状态</th><th>消息</th><th>操作</th></tr></thead>
-      <tbody id="books"></tbody>
-    </table>
-  </section>
-  <section>
-    <h2>书籍详情</h2>
-    <div id="detail" class="muted">点击书籍列表中的“详情”查看任务历史和输出文件。</div>
-  </section>
-</main>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="icon">📖</span> 书籍列表</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>书名</th>
+            <th>分类</th>
+            <th>自动建议</th>
+            <th>状态</th>
+            <th>消息</th>
+            <th style="text-align:right">操作</th>
+          </tr>
+        </thead>
+        <tbody id="books"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="icon">🔍</span> 书籍详情</div>
+    <div id="detail" class="detail-empty">点击书籍列表中的「详情」查看任务历史和输出文件。</div>
+  </div>
+</div>
+
 <script>
 let profiles = [{name: 'auto', display_name: '自动识别'}];
 async function api(path, options) {
@@ -505,14 +692,25 @@ function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;',
 function renderProfileOptions(selected) {
   return profiles.map(p => `<option value="${esc(p.name)}" ${selected === p.name ? 'selected' : ''}>${esc(p.display_name || p.name)}</option>`).join('');
 }
+function statusTag(status) {
+  const map = {
+    running: {cls:'tag-running', icon:'▶️', label:'扫描中'},
+    queued:  {cls:'tag-queued',  icon:'⏳', label:'排队中'},
+    completed:{cls:'tag-completed', icon:'✅', label:'已完成'},
+    failed:  {cls:'tag-failed',  icon:'❌', label:'失败'},
+    interrupted:{cls:'tag-interrupted', icon:'⏸️', label:'中断'},
+    idle:    {cls:'tag-idle',    icon:'💤', label:'空闲'},
+  };
+  const m = map[status] || {cls:'tag-idle', icon:'', label:status};
+  return `<span class="tag ${m.cls}"><span class="tag-dot"></span>${m.icon} ${esc(m.label)}</span>`;
+}
 function renderSuggestions(book) {
   const suggestions = book.profile_suggestions || [];
-  if (!suggestions.length) return '<span class="muted">暂无</span>';
-  return suggestions.map(s => {
+  if (!suggestions.length) return '<span style="color:var(--text-secondary);font-size:0.85rem">暂无</span>';
+  return '<div class="suggestion-chips">' + suggestions.map(s => {
     const words = (s.matched_keywords || []).slice(0, 5).join('、');
-    const suffix = words ? `：${esc(words)}` : '';
-    return `<span title="${esc(words)}">${esc(s.display_name || s.name)}(${esc(s.score)})${suffix}</span>`;
-  }).join('<br>');
+    return `<span class="chip" title="${esc(words)}">${esc(s.display_name || s.name)} <span class="score">${esc(s.score)}</span></span>`;
+  }).join('') + '</div>';
 }
 function syncUploadProfileOptions() {
   const select = document.getElementById('uploadProfile');
@@ -524,20 +722,36 @@ async function refresh() {
   const data = await api('/api/state');
   profiles = data.profiles || profiles;
   syncUploadProfileOptions();
-  document.getElementById('configWarning').style.display = data.config_ready ? 'none' : 'block';
+
+  const warn = document.getElementById('configWarning');
+  warn.style.display = data.config_ready ? 'none' : 'flex';
+
+  const badge = document.getElementById('configBadge');
+  if (data.config_ready) {
+    badge.innerHTML = '✅ 配置就绪';
+    badge.style.background = 'rgba(255,255,255,0.25)';
+  } else {
+    badge.innerHTML = '⚠️ 配置未就绪';
+    badge.style.background = 'rgba(255,255,255,0.25)';
+  }
+
   const tbody = document.getElementById('books');
-  tbody.innerHTML = data.books.map(book => {
-    const opts = renderProfileOptions(book.profile);
-    const disabled = book.status === 'queued' || book.status === 'running' ? 'disabled' : '';
-    return `<tr>
-      <td>${esc(book.name)}</td>
-      <td><select data-profile="${esc(book.id)}" ${disabled}>${opts}</select></td>
-      <td class="muted">${renderSuggestions(book)}</td>
-      <td class="status">${esc(book.status || 'idle')}</td>
-      <td class="muted">${esc(book.message || '')}</td>
-      <td><button data-scan="${esc(book.id)}" ${disabled}>加入队列</button> <button data-detail="${esc(book.id)}">详情</button></td>
-    </tr>`;
-  }).join('');
+  if (!data.books.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-secondary);padding:28px">暂无书籍，请先上传小说</td></tr>';
+  } else {
+    tbody.innerHTML = data.books.map(book => {
+      const opts = renderProfileOptions(book.profile);
+      const disabled = book.status === 'queued' || book.status === 'running' ? 'disabled' : '';
+      return `<tr>
+        <td class="col-name">${esc(book.name)}</td>
+        <td><select data-profile="${esc(book.id)}" ${disabled} style="min-width:120px">${opts}</select></td>
+        <td>${renderSuggestions(book)}</td>
+        <td>${statusTag(book.status || 'idle')}</td>
+        <td class="col-msg">${esc(book.message || '')}</td>
+        <td style="text-align:right"><div class="actions"><button class="btn btn-sm" data-scan="${esc(book.id)}" ${disabled}>加入队列</button><button class="btn btn-sm btn-secondary" data-detail="${esc(book.id)}">详情</button></div></td>
+      </tr>`;
+    }).join('');
+  }
   document.querySelectorAll('[data-profile]').forEach(sel => {
     sel.onchange = () => api('/api/profile', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({book_id: sel.dataset.profile, profile: sel.value})}).then(refresh);
   });
@@ -550,22 +764,41 @@ async function refresh() {
 }
 async function showDetail(bookId) {
   const book = await api('/api/book?id=' + encodeURIComponent(bookId));
-  const outputs = (book.outputs || []).map(f => `<li><a href="${esc(f.url)}" target="_blank">${esc(f.name)}</a></li>`).join('') || '<li>暂无输出文件</li>';
+  const outputs = (book.outputs || []).map(f => `<li><a href="${esc(f.url)}" target="_blank">${esc(f.name)}</a></li>`).join('') || '<li style="color:var(--text-secondary)">暂无输出文件</li>';
   const suggestions = renderSuggestions(book);
   const tasks = (book.tasks || []).map(t => {
-    const log = t.log_file ? `<a href="${esc(t.log_file.url)}" target="_blank">日志</a>` : '';
+    const log = t.log_file ? `<a href="${esc(t.log_file.url)}" target="_blank" style="color:var(--primary);text-decoration:none;font-weight:500">📋 日志</a>` : '';
     const status = t.queue_position ? `${t.status} #${t.queue_position}` : t.status;
-    return `<tr><td>${esc(t.id)}</td><td>${esc(t.profile)}</td><td>${esc(t.resolved_profile || '')}</td><td>${esc(status)}</td><td>${esc(t.created_at || '')}</td><td>${esc(t.finished_at || t.error || '')}</td><td>${log}</td></tr>`;
-  }).join('') || '<tr><td colspan="7">暂无任务</td></tr>';
+    return `<tr><td style="font-family:monospace;font-size:0.82rem">${esc(t.id)}</td><td>${esc(t.profile)}</td><td>${esc(t.resolved_profile || '—')}</td><td>${statusTag(status)}</td><td style="font-size:0.82rem;white-space:nowrap">${esc(t.created_at || '—')}</td><td style="font-size:0.82rem;color:var(--text-secondary)">${esc(t.finished_at || t.error || '—')}</td><td style="text-align:center">${log}</td></tr>`;
+  }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);padding:20px">暂无任务</td></tr>';
+
   document.getElementById('detail').innerHTML = `
-    <h3>${esc(book.name)}</h3>
-    <p>当前分类：${esc(book.profile)}；实际扫描分类：${esc(book.active_profile || '')}；状态：${esc(book.status)}</p>
-    <p>自动建议：${suggestions}</p>
-    <p>路径：${esc(book.path)}</p>
-    <h4>输出文件</h4>
-    <ul>${outputs}</ul>
-    <h4>任务历史</h4>
-    <table><thead><tr><th>任务</th><th>分类</th><th>实际分类</th><th>状态</th><th>创建</th><th>结束/错误</th><th>日志</th></tr></thead><tbody>${tasks}</tbody></table>
+    <div class="detail-header">
+      <h3>${esc(book.name)}</h3>
+      ${statusTag(book.status)}
+    </div>
+    <div class="detail-meta">
+      <span><span class="label">当前分类:</span> ${esc(book.profile)}</span>
+      <span><span class="label">实际扫描:</span> ${esc(book.active_profile || '—')}</span>
+      <span><span class="label">路径:</span> <code style="background:#f3f4f6;padding:2px 6px;border-radius:4px;font-size:0.82rem">${esc(book.path)}</code></span>
+    </div>
+    <div style="margin-bottom:20px">
+      <div style="font-size:0.85rem;font-weight:600;color:#374151;margin-bottom:8px">🎯 自动建议</div>
+      ${suggestions}
+    </div>
+    <div style="margin-bottom:20px">
+      <div style="font-size:0.85rem;font-weight:600;color:#374151;margin-bottom:10px">📁 输出文件</div>
+      <ul class="file-list">${outputs}</ul>
+    </div>
+    <div>
+      <div style="font-size:0.85rem;font-weight:600;color:#374151;margin-bottom:10px">📜 任务历史</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>任务ID</th><th>分类</th><th>实际分类</th><th>状态</th><th>创建时间</th><th>结束/错误</th><th style="text-align:center">日志</th></tr></thead>
+          <tbody>${tasks}</tbody>
+        </table>
+      </div>
+    </div>
   `;
 }
 refresh();
