@@ -1888,6 +1888,51 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
             web_manager.STATE = old_state
 
+    def test_web_manager_move_queued_book_changes_queue_order(self):
+        old_state = web_manager.STATE
+        old_queue_ids = set(web_manager.TASK_QUEUE_IDS)
+        try:
+            web_manager.TASK_QUEUE_IDS.clear()
+            while not web_manager.TASK_QUEUE.empty():
+                web_manager.TASK_QUEUE.get_nowait()
+                web_manager.TASK_QUEUE.task_done()
+            web_manager.STATE = {
+                "books": {
+                    "first": {"id": "first", "name": "first", "path": "/tmp/first.txt", "profile": "general", "status": "idle"},
+                    "second": {"id": "second", "name": "second", "path": "/tmp/second.txt", "profile": "general", "status": "idle"},
+                    "third": {"id": "third", "name": "third", "path": "/tmp/third.txt", "profile": "general", "status": "idle"},
+                },
+                "tasks": [],
+            }
+            for book_id in ("first", "second", "third"):
+                ok, _task_id = web_manager._enqueue(book_id)
+                self.assertTrue(ok)
+
+            self.assertEqual(web_manager._move_queued_book("first", "up"), (False, "already at boundary"))
+            ok, _task_id = web_manager._move_queued_book("second", "up")
+            self.assertTrue(ok)
+
+            queue_ids = list(web_manager.TASK_QUEUE.queue)
+            self.assertEqual(queue_ids[0], web_manager.STATE["books"]["second"]["task_id"])
+            self.assertEqual(queue_ids[1], web_manager.STATE["books"]["first"]["task_id"])
+            books = {book["id"]: book for book in web_manager._public_state()["books"]}
+            self.assertEqual(books["second"]["queue_position"], 1)
+            self.assertEqual(books["first"]["queue_position"], 2)
+
+            ok, _task_id = web_manager._move_queued_book("second", "down")
+            self.assertTrue(ok)
+            queue_ids = list(web_manager.TASK_QUEUE.queue)
+            self.assertEqual(queue_ids[0], web_manager.STATE["books"]["first"]["task_id"])
+            self.assertEqual(queue_ids[1], web_manager.STATE["books"]["second"]["task_id"])
+            self.assertEqual(web_manager._move_queued_book("second", "bad"), (False, "invalid direction"))
+        finally:
+            while not web_manager.TASK_QUEUE.empty():
+                web_manager.TASK_QUEUE.get_nowait()
+                web_manager.TASK_QUEUE.task_done()
+            web_manager.TASK_QUEUE_IDS.clear()
+            web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
+            web_manager.STATE = old_state
+
     def test_web_manager_cancel_queued_book_marks_task_canceled(self):
         old_state = web_manager.STATE
         old_queue_ids = set(web_manager.TASK_QUEUE_IDS)

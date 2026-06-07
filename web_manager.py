@@ -386,6 +386,11 @@ def _reorder_task_queue_locked():
         TASK_QUEUE.queue.extend(reordered)
 
 
+def _renumber_queued_tasks_locked(queued):
+    for index, task in enumerate(queued):
+        task["queue_order"] = index
+
+
 def _with_queue_positions(items):
     positions = _queued_task_positions()
     out = []
@@ -658,13 +663,42 @@ def _prioritize_queued_book(book_id):
         if not task or task.get("status") != "queued":
             return False, "queued task not found"
         queued = sorted(
-            [item for item in STATE.get("tasks", []) if item.get("status") == "queued" and item.get("id") != task.get("id")],
+            [item for item in STATE.get("tasks", []) if item.get("status") == "queued"],
             key=_queued_task_sort_key,
         )
-        task["queue_order"] = 0
+        queued = [item for item in queued if item.get("id") != task.get("id")]
+        queued.insert(0, task)
+        _renumber_queued_tasks_locked(queued)
         task["message"] = "已置顶排队"
-        for index, queued_task in enumerate(queued, start=1):
-            queued_task["queue_order"] = index
+        _reorder_task_queue_locked()
+        _save_state()
+    return True, task.get("id")
+
+
+def _move_queued_book(book_id, direction):
+    if direction not in {"up", "down"}:
+        return False, "invalid direction"
+    with STATE_LOCK:
+        book = STATE["books"].get(book_id)
+        if not book:
+            return False, "book not found"
+        if book.get("status") != "queued":
+            return False, "book is not queued"
+        task = _find_task(book.get("task_id"))
+        if not task or task.get("status") != "queued":
+            return False, "queued task not found"
+        queued = sorted([item for item in STATE.get("tasks", []) if item.get("status") == "queued"], key=_queued_task_sort_key)
+        task_ids = [item.get("id") for item in queued]
+        try:
+            index = task_ids.index(task.get("id"))
+        except ValueError:
+            return False, "queued task not found"
+        new_index = index - 1 if direction == "up" else index + 1
+        if new_index < 0 or new_index >= len(queued):
+            return False, "already at boundary"
+        queued[index], queued[new_index] = queued[new_index], queued[index]
+        _renumber_queued_tasks_locked(queued)
+        task["message"] = "已调整排队顺序"
         _reorder_task_queue_locked()
         _save_state()
     return True, task.get("id")
@@ -1082,6 +1116,13 @@ class Handler(BaseHTTPRequestHandler):
             if payload is None:
                 return
             ok, result = _prioritize_queued_book(payload.get("book_id"))
+            self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
+            return
+        if parsed.path == "/api/move-queue":
+            payload = self._read_json_payload()
+            if payload is None:
+                return
+            ok, result = _move_queued_book(payload.get("book_id"), payload.get("direction"))
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
             return
         if parsed.path == "/api/delete":

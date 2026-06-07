@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import StatusTag from './StatusTag.vue'
 
 const props = defineProps({ books: Array, profiles: Array })
-const emit = defineEmits(['scan', 'batchScan', 'cancel', 'prioritize', 'delete', 'detail', 'profileChange'])
+const emit = defineEmits(['scan', 'batchScan', 'cancel', 'prioritize', 'moveQueued', 'delete', 'detail', 'profileChange'])
 const selectedIds = ref([])
 
 const manualProfiles = computed(() => (props.profiles || []).filter(p => p.name !== 'auto'))
@@ -195,6 +195,16 @@ function confirmDelete(book) {
                   class="btn btn-sm btn-secondary"
                   @click="emit('cancel', book.id)"
                 >取消排队</button>
+                <button
+                  v-if="isQueued(book)"
+                  class="btn btn-sm btn-secondary"
+                  @click="emit('moveQueued', book.id, 'up')"
+                >上移</button>
+                <button
+                  v-if="isQueued(book)"
+                  class="btn btn-sm btn-secondary"
+                  @click="emit('moveQueued', book.id, 'down')"
+                >下移</button>
                 <button
                   v-if="isQueued(book)"
                   class="btn btn-sm btn-secondary"

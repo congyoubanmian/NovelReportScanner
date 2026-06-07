@@ -7,7 +7,7 @@ import { useToast } from './composables/useToast.js'
 import { useTheme } from './composables/useTheme.js'
 import { usePolling } from './composables/usePolling.js'
 import { useStateEvents } from './composables/useStateEvents.js'
-import { getState, getBookDetail, setProfile, enqueueBook, enqueueBooks, cancelQueuedBook, prioritizeQueuedBook, deleteBook } from './api.js'
+import { getState, getBookDetail, setProfile, enqueueBook, enqueueBooks, cancelQueuedBook, prioritizeQueuedBook, moveQueuedBook, deleteBook } from './api.js'
 
 const { toast, success: toastSuccess, error: toastError } = useToast()
 const { theme, toggle: toggleTheme } = useTheme()
@@ -114,6 +114,16 @@ async function handlePrioritize(bookId) {
   }
 }
 
+async function handleMoveQueued(bookId, direction) {
+  try {
+    await moveQueuedBook(bookId, direction)
+    toastSuccess('已调整排队顺序')
+    await refresh()
+  } catch (e) {
+    toastError('调整排队顺序失败: ' + e.message)
+  }
+}
+
 async function handleDelete(bookId) {
   try {
     await deleteBook(bookId)
@@ -199,6 +209,7 @@ useStateEvents(applyState, {
       @batchScan="handleBatchScan"
       @cancel="handleCancel"
       @prioritize="handlePrioritize"
+      @moveQueued="handleMoveQueued"
       @delete="handleDelete"
       @detail="loadDetail"
       @profileChange="handleProfileChange"
