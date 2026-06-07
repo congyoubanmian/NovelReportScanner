@@ -839,6 +839,19 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertNotIn("送女/绿帽锁定定义", ntr_review_prompt)
 
+        for issue_type in ("绿帽传闻", "NTR口嗨", "牛头人弱暗示", "送女误会", "送女未来计划"):
+            prompt, _ = toxic_reviewer.build_review_prompts(
+                {
+                    "category": "郁闷点",
+                    "type": issue_type,
+                    "content": "传闻或口嗨层面的关系风险，没有明确事实证据。",
+                },
+                f"{issue_type}定义",
+                "男主",
+                ["甲女"],
+            )
+            self.assertNotIn("送女/绿帽锁定定义", prompt)
+
     def test_toxic_reviewer_prompt_keeps_general_issue_review_short(self):
         system_prompt, _ = toxic_reviewer.build_review_prompts(
             {
