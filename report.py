@@ -1834,10 +1834,12 @@ def _has_male_past_romance_risk(text: str) -> bool:
     if _male_past_romance_blob_is_nonfactual_or_negated(text):
         return False
     explicit_past_partner_words = (
-        "前妻", "前女友", "前任", "前夫", "前未婚妻", "前世老婆", "前世妻子", "前世爱人",
+        "前妻", "前女友", "前任女友", "前任妻子", "前任恋人", "前任爱人", "前夫", "前未婚妻", "前世老婆", "前世妻子", "前世爱人",
         "上一世老婆", "上一世妻子", "原配", "亡妻",
     )
     if any(word in text for word in explicit_past_partner_words):
+        return True
+    if _has_male_romantic_ex_partner_context(text):
         return True
 
     past_context_words = ("前世", "上一世", "前史", "过往", "过去", "穿越前", "重生前", "原世界", "原故事线")
@@ -1850,6 +1852,23 @@ def _has_male_past_romance_risk(text: str) -> bool:
         any(word in text for word in partner_words)
         and any(word in text for word in negative_words)
     )
+
+
+def _has_male_romantic_ex_partner_context(text: str) -> bool:
+    if "前任" not in text:
+        return False
+    non_romantic_followers = (
+        "掌门", "门主", "宗主", "家主", "族长", "皇帝", "国王", "队长", "团长", "会长",
+        "老板", "上司", "领导", "主管", "城主", "校长", "导师", "师父", "师傅",
+        "职位", "职务", "留下", "继承",
+    )
+    if any(f"前任{word}" in text for word in non_romantic_followers):
+        return False
+    romantic_context_words = (
+        "女友", "女朋友", "妻子", "老婆", "未婚妻", "恋人", "爱人", "情人",
+        "恋爱", "感情", "分手", "复合", "结婚", "离婚", "婚姻",
+    )
+    return any(word in text for word in romantic_context_words)
 
 
 def _male_past_romance_blob_is_nonfactual_or_negated(text: str) -> bool:

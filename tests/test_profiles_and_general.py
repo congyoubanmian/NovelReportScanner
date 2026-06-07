@@ -3450,8 +3450,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
     def test_harem_romance_overview_avoids_current_wife_as_past_risk(self):
         self.assertFalse(report._has_male_past_romance_risk("男主与妻子一起经营家族。"))
+        self.assertFalse(report._has_male_past_romance_risk("男主是前任掌门留下的弟子。"))
+        self.assertFalse(report._has_male_past_romance_risk("男主继承前任队长的职位。"))
         self.assertTrue(report._has_male_past_romance_risk("男主前世老婆在他绝症后卷光家产跑路。"))
         self.assertTrue(report._has_male_past_romance_risk("男主有前女友但已经分手。"))
+        self.assertTrue(report._has_male_past_romance_risk("男主有前任但已经分手。"))
+        self.assertTrue(report._has_male_past_romance_risk("男主有前任女友但已经分手。"))
         self.assertFalse(report._has_male_past_romance_risk("男主听说前世老婆卷光家产跑路，后来证实是误会。"))
         self.assertFalse(report._has_male_past_romance_risk("有人传言男主有前女友，但实际没有恋爱经历。"))
         self.assertFalse(report._has_male_past_romance_risk("男主梦见自己前世有妻子背叛。"))
