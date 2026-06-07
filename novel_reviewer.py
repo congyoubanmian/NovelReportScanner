@@ -484,6 +484,11 @@ def _leak_emotional_depth_effective_text(texts: List[str]) -> str:
         "扮演恋人", "扮演情侣", "扮演夫妻", "告白台词", "表白台词", "排练舞台剧",
         "排练剧本", "演戏", "舞台剧", "剧本", "套取情报", "任务潜入", "潜入宴会",
     )
+    familial_or_comrade_markers = (
+        "亲情", "战友情", "友情", "家人式", "像兄妹", "像姐弟", "兄妹一样", "姐弟一样",
+        "当弟弟", "当哥哥", "当妹妹", "当姐姐", "爱护后辈", "照顾后辈", "照顾晚辈",
+        "姐姐照顾", "妹妹照顾", "师徒情", "同伴情", "伙伴情",
+    )
     effective: List[str] = []
     for text in texts or []:
         for chunk in re.split(r"[\n，,。；;！？!?]+", str(text or "")):
@@ -499,6 +504,8 @@ def _leak_emotional_depth_effective_text(texts: List[str]) -> str:
             if any(marker in chunk for marker in hobby_or_function_markers):
                 continue
             if any(marker in chunk for marker in roleplay_markers):
+                continue
+            if any(marker in chunk for marker in familial_or_comrade_markers):
                 continue
             effective.append(chunk)
     return " ".join(effective)
