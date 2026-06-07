@@ -423,9 +423,30 @@ def _ending_accounted_in_tail(tail: str, name: str, aliases: List[str]) -> Tuple
         "归宿", "去处", "留下", "留在", "陪在", "跟随", "同行", "同去", "回到", "去了",
         "嫁", "娶", "婚", "成亲", "大婚", "完婚", "圆房", "同房", "怀孕", "生下", "孩子",
         "道侣", "伴侣", "妻", "妾", "夫人", "皇后", "王妃", "后宫", "收入", "收了",
-        "在一起", "相伴", "白头", "团聚", "重逢", "守着", "等着", "阵营", "府中", "身边",
+        "在一起", "相伴", "余生", "一生", "白头", "团聚", "重逢", "守着", "等着", "阵营", "府中", "身边",
         "死", "牺牲", "葬", "坟", "墓", "陨落",
     )
+    non_ending_action_followers = (
+        "线索", "证据", "伏笔", "案件", "调查", "评审", "报告", "评价", "评论", "记录",
+        "名单", "名字", "遗物", "遗迹", "传说", "故事", "痕迹", "传闻", "消息", "信息",
+        "资料", "档案", "谜题", "悬念", "铺垫", "后", "时", "期间", "过程",
+    )
+
+    def _has_substantive_ending_marker(text: str) -> bool:
+        for marker in strong_ending_markers:
+            start = 0
+            while True:
+                marker_idx = text.find(marker, start)
+                if marker_idx < 0:
+                    break
+                next_text = text[marker_idx + len(marker):marker_idx + len(marker) + 6]
+                non_ending_action = marker in ("留下", "留在", "跟随", "同行", "同去", "回到") and any(
+                    next_text.startswith(hint) for hint in non_ending_action_followers
+                )
+                if not non_ending_action:
+                    return True
+                start = marker_idx + len(marker)
+        return False
 
     for candidate in candidates:
         start = 0
@@ -446,7 +467,7 @@ def _ending_accounted_in_tail(tail: str, name: str, aliases: List[str]) -> Tuple
                 any(marker in window for marker in weak_mention_markers)
                 and not any(marker in window for marker in strong_ending_markers)
             )
-            if any(marker in window for marker in ending_markers) and not weak_mention_only:
+            if any(marker in window for marker in ending_markers) and _has_substantive_ending_marker(window) and not weak_mention_only:
                 return True, f"尾声检索：{candidate} 周边出现明确结局交代"
             start = idx + len(candidate)
 

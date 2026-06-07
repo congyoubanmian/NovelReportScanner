@@ -1341,6 +1341,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "尾声里男主梦见丁女死亡，醒来后发现只是幻境。",
             "结局传闻丁女战死，但后来证实是假消息。",
             "尾声里丁女讨论墓葬制度，并未交代归宿。",
+            "结局里丁女留下线索后再未出现，男主独自离开江湖。",
+            "尾声只提到丁女留下遗物和传说，没有说明她的归宿。",
+            "番外中丁女跟随案件线索继续调查，正文没有交代去向。",
         ]
         for tail in negated_tails:
             with self.subTest(tail=tail):
@@ -1376,25 +1379,31 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 ]
             }
         }
-        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False)
-            char_path = f.name
-        try:
-            issues, leak_map = novel_reviewer._rebuild_leak_state_from_pushed_map(
-                female_leads=["戊女"],
-                char_file_path=char_path,
-                novel_tail="番外多年后，阿戊留在男主身边，与他一起回到府中相伴余生。",
-                finished=True,
-                pushed_map={"戊女": (False, "未见推倒或同房证据")},
-            )
-        finally:
-            os.unlink(char_path)
+        explicit_tails = [
+            "番外多年后，阿戊留在男主身边，与他一起回到府中相伴余生。",
+            "番外多年后，阿戊留下遗物后又战死牺牲，最终葬在宗门后山。",
+        ]
+        for tail in explicit_tails:
+            with self.subTest(tail=tail):
+                with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False)
+                    char_path = f.name
+                try:
+                    issues, leak_map = novel_reviewer._rebuild_leak_state_from_pushed_map(
+                        female_leads=["戊女"],
+                        char_file_path=char_path,
+                        novel_tail=tail,
+                        finished=True,
+                        pushed_map={"戊女": (False, "未见推倒或同房证据")},
+                    )
+                finally:
+                    os.unlink(char_path)
 
-        self.assertEqual(issues, [])
-        info = leak_map["戊女"]
-        self.assertFalse(info["is_leak_heroine"])
-        self.assertTrue(info["leak_ending_accounted"])
-        self.assertIn("明确结局交代", info["leak_ending_reason"])
+                self.assertEqual(issues, [])
+                info = leak_map["戊女"]
+                self.assertFalse(info["is_leak_heroine"])
+                self.assertTrue(info["leak_ending_accounted"])
+                self.assertIn("明确结局交代", info["leak_ending_reason"])
 
     def test_auto_profile_inference(self):
         self.assertEqual(
