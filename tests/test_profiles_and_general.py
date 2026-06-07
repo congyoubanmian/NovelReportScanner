@@ -4147,6 +4147,22 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(ex_wife_vibe.startswith("目标女主"), ex_wife_vibe)
         self.assertIn("缺少感情/后宫定位证据", ex_wife_vibe)
 
+        past_fiancee_vibe = report._heroine_position_level(
+            {"importance_rank": 1},
+            {
+                "identity": "男主前史说明角色",
+                "relationship_with_protagonist": "男主前未婚妻的传闻对象，当前线没有恋爱线。",
+                "features": "主线案件证人",
+                "key_events": "高频出场说明男主过去，但没有感情戏。",
+            },
+            {"count": 12, "summaries": ["男主前未婚妻相关前史反复被提及，但没有当前感情戏。"]},
+            {},
+        )
+        self.assertFalse(past_fiancee_vibe.startswith("目标女主"), past_fiancee_vibe)
+        self.assertFalse(past_fiancee_vibe.startswith("强准女主"), past_fiancee_vibe)
+        self.assertIn("明确缺少恋爱/后宫推进", past_fiancee_vibe)
+        self.assertIn("缺少感情/后宫定位证据", past_fiancee_vibe)
+
         no_romance_functional = report._heroine_position_level(
             {"importance_rank": 1},
             {

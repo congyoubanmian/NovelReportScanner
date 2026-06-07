@@ -1110,6 +1110,8 @@ def _contains_positive_signal_text(value, keywords) -> bool:
     nonfactual_ending_contexts = ("梦见", "梦到", "梦境", "幻境", "假死", "制度", "结构", "讲解", "研究", "传说", "故事")
     non_ending_action_followers = ("线索", "证据", "伏笔", "案件", "调查", "评审", "报告", "评价", "评论", "后", "时", "期间", "过程")
     non_romantic_jealousy_contexts = ("厨房", "拌菜", "醋坛", "米醋", "陈醋", "香醋", "调料", "做菜", "事故")
+    past_relation_prefixes = ("前", "前任", "前世", "上一世", "过去", "过往", "前史", "重生前", "穿越前")
+    current_relation_words = {"妻子", "正妻", "妻室", "夫妻", "夫妇", "未婚妻", "女朋友", "老婆", "恋人", "爱人", "伴侣", "情侣"}
     tight_roleplay_words = {"喜欢", "爱", "动心", "倾心", "表白", "告白", "暧昧"}
     for word in keywords:
         start = 0
@@ -1160,6 +1162,10 @@ def _contains_positive_signal_text(value, keywords) -> bool:
                 hint in text[max(0, index - 8):index + len(word) + 8]
                 for hint in non_romantic_jealousy_contexts
             )
+            past_relation_mention = word in current_relation_words and any(
+                text[max(0, index - len(prefix)):index] == prefix
+                for prefix in past_relation_prefixes
+            )
             roleplay_blocked = (
                 any(hint in tight_roleplay_window for hint in roleplay_hints)
                 if word in tight_roleplay_words
@@ -1178,6 +1184,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
                 and not nonfactual_ending
                 and not non_ending_action
                 and not non_romantic_jealousy
+                and not past_relation_mention
             ):
                 return True
             start = index + len(word)
