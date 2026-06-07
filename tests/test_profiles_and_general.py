@@ -2962,6 +2962,25 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("沈砚", text)
         self.assertIn("阵营/势力：沈家", text)
 
+    def test_general_report_does_not_repeat_footer_summary_fields(self):
+        general_summary = {
+            "profile_display_name": "通用小说分析",
+            "summary_fields": ["main_plot", "reader_fit", "overall_assessment"],
+            "summary": {
+                "story_overview": "主角完成一条清晰主线。",
+                "main_plot": ["完成主线任务"],
+                "reader_fit": "适合喜欢完整主线的读者。",
+                "overall_assessment": "整体完成度较高。",
+            },
+        }
+
+        text = report.build_general_report("测试书", {}, general_summary)
+
+        self.assertEqual(text.count("【适合读者】"), 1)
+        self.assertEqual(text.count("【总体评价】"), 1)
+        self.assertNotIn("【reader fit】", text)
+        self.assertNotIn("【overall assessment】", text)
+
     def test_general_report_uses_specialty_field_titles(self):
         general_summary = {
             "profile_display_name": "游戏/系统/无限流专长分析",

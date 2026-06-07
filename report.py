@@ -2392,6 +2392,8 @@ def _append_general_scan_section(lines: list, general_summary: dict):
             "foreshadowing_and_payoff",
             "strengths",
             "risks_or_issues",
+            "reader_fit",
+            "overall_assessment",
         }
     ]
     for field in specialty_fields:
