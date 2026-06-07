@@ -71,8 +71,10 @@ Web 端适合管理多本书：先上传 `.txt`，根据自动建议调整分类
 ├─ analysis_profiles.py    # 分析 profile 加载与流程能力描述
 ├─ profiles/               # 不同小说类型/分析模式的规则和模板入口
 ├─ rules2.json             # 规则库，定义雷点/郁闷点及其说明
-├─ setting.txt             # 运行配置
-├─ api.txt                 # API Key 列表，每行一个
+├─ .env.sample             # .env 本地配置模板
+├─ setting.txt.sample      # setting.txt 本地配置模板
+├─ setting.txt             # 本地运行配置，已被 .gitignore 忽略
+├─ api.txt                 # 本地 API Key 列表，已被 .gitignore 忽略
 ├─ novels/                 # 输入小说文本目录
 ├─ results/                # 输出目录
    └─ learned_keywords/    # 扫描阶段生成的增量关键词快照
@@ -89,7 +91,7 @@ Web 端适合管理多本书：先上传 `.txt`，根据自动建议调整分类
 2. 把待分析的小说 `.txt` 放进 `novels/` 目录。
 3. 复制 `.env.sample` 为 `.env`，填写 `API_KEY` 或 `API_KEY_POOL`。
 4. 如仍沿用旧方式，也可以在项目根目录创建 `api.txt`，每行写一个可用的 API Key；`api.txt` 只作为 `.env` 未配置时的回退。
-5. 按需修改 `setting.txt`。
+5. 如需旧式配置文件，复制 `setting.txt.sample` 为 `setting.txt` 后修改。
 6. 双击运行 `win一键运行脚本.bat`。
 
 `win一键运行脚本.bat` 会优先使用本地 `.venv\Scripts\python.exe`。如果 `.venv` 还不存在，它会调用 `bootstrap_venv.py` 自动完成以下动作：
@@ -299,25 +301,7 @@ FILE_RESPONSE_CHUNK_SIZE=1048576
 
 ### `setting.txt`
 
-`main.py` 会从 `setting.txt` 中读取常用配置，并写入环境变量。下面是一组可参考的示例：
-
-```ini
-BASE_URL=https://api.deepseek.com
-MODEL_NAME=deepseek-chat
-MAX_WORKERS=6
-ANALYSIS_PROFILE=harem
-RPM_LIMIT=10
-TPM_LIMIT=100000
-RATE_LIMIT_SCOPE=global
-DIM_BOOST_MAX_PER_CHUNK=3
-RESCAN_ROUNDS=3
-MAX_MIDDLE_SUMMARY_CALLS=10
-RESCAN_MAX_HITS=4
-RESCAN_PRE_FILTER_THRESHOLD=1.0
-RESCAN_MAX_WINDOW=2000
-RESCAN_MAX_PROMPT_HEROINES=4
-HAREM_PLUS_GENERAL_SCAN=0
-```
+`main.py` 会从本地 `setting.txt` 中读取常用配置，并写入环境变量。仓库只保留 `setting.txt.sample`，真实 `setting.txt` 已在 `.gitignore` 中忽略。需要使用旧式配置文件时，可以复制 `setting.txt.sample` 为 `setting.txt` 后再修改。
 
 最常用的几个配置是：
 

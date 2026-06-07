@@ -1,0 +1,39 @@
+BASE_URL=https://api.deepseek.com
+MODEL_NAME=deepseek-chat
+
+# 分析模式：auto=按每本书自动识别；harem=后宫/男性向排雷；general=通用；history=历史小说；hard_sci_fi=硬科幻
+ANALYSIS_PROFILE=harem
+
+# 并发和本地预限流
+MAX_WORKERS=3
+RPM_LIMIT=10
+TPM_LIMIT=100000
+# 本地限流作用域：global=所有线程/key共用一个桶；per_key=每个key单独计数
+RATE_LIMIT_SCOPE=global
+
+# 每个片段最多做多少次“维度补抽”；越大越积极补抽，但额外调用也可能更多，最大为5，数值为0-5
+DIM_BOOST_MAX_PER_CHUNK=1
+
+# 扫描结束后最多补扫几轮遗漏或失败片段；越大越稳，但整体耗时更长
+RESCAN_ROUNDS=3
+
+# 扫描过程中最多额外生成多少次“中间上下文摘要”；越大越利于承接上下文，但会增加额外调用
+MAX_MIDDLE_SUMMARY_CALLS=10
+
+# 全局补扫里每个“女主+维度”最多保留多少个候选命中片段；越大越容易补到遗漏，但额外扫描也会更多，设置为0不开启
+RESCAN_MAX_HITS=4
+
+# 全局补扫对候选命中的最低预过滤分数；越高越严格，进入后续补扫的片段越少
+RESCAN_PRE_FILTER_THRESHOLD=1.0
+
+# 全局补扫截取聚类窗口时允许的最大文本长度；越大上下文更完整，但 prompt 也会更长
+RESCAN_MAX_WINDOW=2000
+
+# 单次全局补扫 prompt 最多带多少名女主；越大覆盖人物更多，但 prompt 会更拥挤
+RESCAN_MAX_PROMPT_HEROINES=4
+
+# 通用小说分析模式下使用：最多扫描多少个正文片段；0 表示不限制
+GENERAL_SCAN_MAX_CHUNKS=80
+
+# 后宫增强模式：1=后宫排雷后额外运行通用剧情扫描，并在报告末尾追加作品整体评价；0=关闭
+HAREM_PLUS_GENERAL_SCAN=0
