@@ -123,6 +123,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(any("知晓本身即是危险" in item for item in cosmic_horror.scan_focus))
         self.assertTrue(any("'知晓的代价'" in item for item in cosmic_horror.scan_focus))
         self.assertTrue(any("组织是否也是污染来源" in item for item in cosmic_horror.scan_focus))
+        self.assertTrue(any("收容物" in item and "失控风险" in item for item in cosmic_horror.scan_focus))
+        self.assertTrue(any("认知失稳" in item and "世界观崩坏" in item for item in cosmic_horror.scan_focus))
 
         self.assertEqual(sports_competition.name, "sports_competition")
         self.assertTrue(sports_competition.uses_general_scan)
@@ -132,6 +134,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("rivalry_and_opponents", sports_competition.summary_fields)
         self.assertTrue(any("规则约束下的竞技" in item for item in sports_competition.scan_focus))
         self.assertTrue(any("名场面" in item for item in sports_competition.scan_focus))
+        self.assertTrue(any("训练积累" in item and "战术选择" in item for item in sports_competition.scan_focus))
+        self.assertTrue(any("职业风险" in item and "职业寿命" in item for item in sports_competition.scan_focus))
 
         self.assertEqual(entertainment_industry.name, "entertainment_industry")
         self.assertTrue(entertainment_industry.uses_general_scan)
@@ -182,6 +186,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertEqual(steampunk_fantasy.name, "steampunk_fantasy")
         self.assertTrue(steampunk_fantasy.uses_general_scan)
+        mystery_detective = analysis_profiles.load_analysis_profile("mystery_detective")
+        self.assertTrue(any("外挂硬解" in item and "可复核线索推理" in item for item in mystery_detective.scan_focus))
+        self.assertTrue(any("案件彼此割裂" in item for item in mystery_detective.scan_focus))
         self.assertIn("tech_feasibility", steampunk_fantasy.summary_fields)
 
         for profile in [
