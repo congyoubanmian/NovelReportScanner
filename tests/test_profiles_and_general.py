@@ -111,6 +111,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("power_evolution_system", apocalypse_survival.summary_fields)
         self.assertTrue(any("信任危机" in item for item in apocalypse_survival.scan_focus))
         self.assertTrue(any("资源无限" in item for item in apocalypse_survival.scan_focus))
+        self.assertTrue(any("势力信用背书" in item for item in apocalypse_survival.scan_focus))
+        self.assertTrue(any("基地生产链缺失" in item for item in apocalypse_survival.scan_focus))
 
         self.assertEqual(cosmic_horror.name, "cosmic_horror")
         self.assertTrue(cosmic_horror.uses_general_scan)
@@ -151,6 +153,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("team_dynamics", crime_forensics.summary_fields)
         self.assertTrue(any("技术细节与专业度" in item for item in crime_forensics.scan_focus))
         self.assertTrue(any("程序违法无后果" in item for item in crime_forensics.scan_focus))
+        self.assertTrue(any("非法取证" in item and "证据效力" in item for item in crime_forensics.scan_focus))
+        self.assertTrue(any("法医技术是否被神化" in item and "误差边界" in item for item in crime_forensics.scan_focus))
 
         self.assertEqual(campus_youth.name, "campus_youth")
         self.assertTrue(campus_youth.uses_general_scan)
