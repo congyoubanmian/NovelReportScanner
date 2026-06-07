@@ -314,8 +314,44 @@ def _put_task_queue(task_id):
 
 def _queued_task_positions():
     queued = [task for task in STATE.get("tasks", []) if task.get("status") == "queued"]
-    queued.sort(key=lambda x: x.get("created_at", ""))
+    queued.sort(key=_queued_task_sort_key)
     return {task.get("id"): index + 1 for index, task in enumerate(queued)}
+
+
+def _queued_task_sort_key(task):
+    try:
+        queue_order = float(task.get("queue_order"))
+    except (TypeError, ValueError):
+        queue_order = float("inf")
+    return (queue_order, task.get("created_at", ""), task.get("id", ""))
+
+
+def _next_queue_order_locked():
+    orders = []
+    for task in STATE.get("tasks", []):
+        if task.get("status") != "queued":
+            continue
+        try:
+            orders.append(float(task.get("queue_order")))
+        except (TypeError, ValueError):
+            continue
+    return (max(orders) + 1) if orders else time.time()
+
+
+def _reorder_task_queue_locked():
+    desired = [
+        task.get("id")
+        for task in sorted(STATE.get("tasks", []), key=_queued_task_sort_key)
+        if task.get("status") == "queued" and task.get("id") in TASK_QUEUE_IDS
+    ]
+    with TASK_QUEUE.mutex:
+        current = list(TASK_QUEUE.queue)
+        desired_set = set(desired)
+        current_set = set(current)
+        reordered = [task_id for task_id in desired if task_id in current_set]
+        reordered.extend(task_id for task_id in current if task_id not in desired_set)
+        TASK_QUEUE.queue.clear()
+        TASK_QUEUE.queue.extend(reordered)
 
 
 def _with_queue_positions(items):
@@ -549,6 +585,7 @@ def _enqueue(book_id):
             "profile": profile_name,
             "profile_suggestions": book.get("profile_suggestions", []),
             "status": "queued",
+            "queue_order": _next_queue_order_locked(),
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         }
         STATE["tasks"].append(task)
@@ -576,6 +613,29 @@ def _enqueue_many(book_ids):
         else:
             skipped.append({"book_id": book_id, "reason": result})
     return {"queued": queued, "skipped": skipped}
+
+
+def _prioritize_queued_book(book_id):
+    with STATE_LOCK:
+        book = STATE["books"].get(book_id)
+        if not book:
+            return False, "book not found"
+        if book.get("status") != "queued":
+            return False, "book is not queued"
+        task = _find_task(book.get("task_id"))
+        if not task or task.get("status") != "queued":
+            return False, "queued task not found"
+        queued = sorted(
+            [item for item in STATE.get("tasks", []) if item.get("status") == "queued" and item.get("id") != task.get("id")],
+            key=_queued_task_sort_key,
+        )
+        task["queue_order"] = 0
+        task["message"] = "已置顶排队"
+        for index, queued_task in enumerate(queued, start=1):
+            queued_task["queue_order"] = index
+        _reorder_task_queue_locked()
+        _save_state()
+    return True, task.get("id")
 
 
 def _cancel_queued_book(book_id):
@@ -983,6 +1043,13 @@ class Handler(BaseHTTPRequestHandler):
             if payload is None:
                 return
             ok, result = _cancel_queued_book(payload.get("book_id"))
+            self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
+            return
+        if parsed.path == "/api/prioritize":
+            payload = self._read_json_payload()
+            if payload is None:
+                return
+            ok, result = _prioritize_queued_book(payload.get("book_id"))
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
             return
         if parsed.path == "/api/delete":

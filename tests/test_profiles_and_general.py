@@ -1829,6 +1829,47 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
             web_manager.STATE = old_state
 
+    def test_web_manager_prioritize_queued_book_moves_task_to_front(self):
+        old_state = web_manager.STATE
+        old_queue_ids = set(web_manager.TASK_QUEUE_IDS)
+        try:
+            web_manager.TASK_QUEUE_IDS.clear()
+            while not web_manager.TASK_QUEUE.empty():
+                web_manager.TASK_QUEUE.get_nowait()
+                web_manager.TASK_QUEUE.task_done()
+            web_manager.STATE = {
+                "books": {
+                    "first": {"id": "first", "name": "first", "path": "/tmp/first.txt", "profile": "general", "status": "idle"},
+                    "second": {"id": "second", "name": "second", "path": "/tmp/second.txt", "profile": "general", "status": "idle"},
+                    "third": {"id": "third", "name": "third", "path": "/tmp/third.txt", "profile": "general", "status": "idle"},
+                },
+                "tasks": [],
+            }
+
+            for book_id in ("first", "second", "third"):
+                ok, _task_id = web_manager._enqueue(book_id)
+                self.assertTrue(ok)
+
+            ok, result = web_manager._prioritize_queued_book("third")
+
+            self.assertTrue(ok)
+            self.assertEqual(result, web_manager.STATE["books"]["third"]["task_id"])
+            queue_ids = list(web_manager.TASK_QUEUE.queue)
+            self.assertEqual(queue_ids[0], web_manager.STATE["books"]["third"]["task_id"])
+            state = web_manager._public_state()
+            books = {book["id"]: book for book in state["books"]}
+            self.assertEqual(books["third"]["queue_position"], 1)
+            self.assertEqual(books["first"]["queue_position"], 2)
+            self.assertEqual(books["second"]["queue_position"], 3)
+            self.assertEqual(web_manager._prioritize_queued_book("missing"), (False, "book not found"))
+        finally:
+            while not web_manager.TASK_QUEUE.empty():
+                web_manager.TASK_QUEUE.get_nowait()
+                web_manager.TASK_QUEUE.task_done()
+            web_manager.TASK_QUEUE_IDS.clear()
+            web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
+            web_manager.STATE = old_state
+
     def test_web_manager_cancel_queued_book_marks_task_canceled(self):
         old_state = web_manager.STATE
         old_queue_ids = set(web_manager.TASK_QUEUE_IDS)

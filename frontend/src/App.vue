@@ -7,7 +7,7 @@ import { useToast } from './composables/useToast.js'
 import { useTheme } from './composables/useTheme.js'
 import { usePolling } from './composables/usePolling.js'
 import { useStateEvents } from './composables/useStateEvents.js'
-import { getState, getBookDetail, setProfile, enqueueBook, enqueueBooks, cancelQueuedBook, deleteBook } from './api.js'
+import { getState, getBookDetail, setProfile, enqueueBook, enqueueBooks, cancelQueuedBook, prioritizeQueuedBook, deleteBook } from './api.js'
 
 const { toast, success: toastSuccess, error: toastError } = useToast()
 const { theme, toggle: toggleTheme } = useTheme()
@@ -102,6 +102,16 @@ async function handleCancel(bookId) {
   }
 }
 
+async function handlePrioritize(bookId) {
+  try {
+    await prioritizeQueuedBook(bookId)
+    toastSuccess('已置顶排队')
+    await refresh()
+  } catch (e) {
+    toastError('置顶排队失败: ' + e.message)
+  }
+}
+
 async function handleDelete(bookId) {
   try {
     await deleteBook(bookId)
@@ -178,6 +188,7 @@ useStateEvents(applyState, {
       @scan="handleScan"
       @batchScan="handleBatchScan"
       @cancel="handleCancel"
+      @prioritize="handlePrioritize"
       @delete="handleDelete"
       @detail="loadDetail"
       @profileChange="handleProfileChange"

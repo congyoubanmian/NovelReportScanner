@@ -75,6 +75,14 @@ export function cancelQueuedBook(bookId) {
   })
 }
 
+export function prioritizeQueuedBook(bookId) {
+  return _api('/api/prioritize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ book_id: bookId })
+  })
+}
+
 export function deleteBook(bookId) {
   return _api('/api/delete', {
     method: 'POST',
