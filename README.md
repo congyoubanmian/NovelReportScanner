@@ -116,6 +116,8 @@ python main.py
 
 Docker 镜像默认启动 Web 管理端，监听容器内 `8765` 端口。小说文本、扫描结果和 Web 状态都建议挂载到宿主机目录，避免容器重建后丢失。
 
+容器入口会默认检查 `API_KEY` 或 `API_KEY_POOL`，至少需要配置其中一个，否则容器会直接退出，避免 Web 页面能打开但扫描任务启动后才失败。如果你只是临时启动 Web UI、不准备扫描，可以设置 `NOVEL_REPORT_SCANNER_REQUIRE_API_KEY=0` 跳过这个启动校验。
+
 容器默认不再以 root 身份运行，默认使用 `1000:1000`。首次部署前建议先创建宿主机挂载目录，并让运行容器的 UID / GID 拥有读写权限：
 
 ```bash
@@ -231,6 +233,7 @@ docker run -d \
 生产部署注意事项：
 
 - `.env` 保存真实 API Key 和模型配置，不要打进镜像，也不要提交到仓库。
+- Docker/Compose 默认要求 `.env` 中存在 `API_KEY` 或 `API_KEY_POOL`；多 Key 时优先使用 `API_KEY_POOL=sk-key-1,sk-key-2`。
 - `novels/` 用于放上传或预置的 `.txt` 小说，`results/` 用于保存报告、任务日志和 Web 管理状态。
 - 如果容器无法上传小说或写报告，优先检查宿主机 `novels/`、`results/` 的属主是否匹配 `PUID` / `PGID`。
 - 容器内 Web 服务默认绑定 `0.0.0.0:8765`，宿主机端口可通过 `-p 宿主机端口:8765` 或 Compose 里的 `WEB_PORT` 调整。

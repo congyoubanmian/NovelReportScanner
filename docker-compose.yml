@@ -12,6 +12,7 @@ services:
       WEB_HOST: 0.0.0.0
       WEB_PORT: 8765
       WEB_ACCESS_TOKEN: ${WEB_ACCESS_TOKEN:-}
+      NOVEL_REPORT_SCANNER_REQUIRE_API_KEY: ${NOVEL_REPORT_SCANNER_REQUIRE_API_KEY:-1}
       BASE_URL: ${BASE_URL:-https://api.deepseek.com}
       MODEL_NAME: ${MODEL_NAME:-deepseek-chat}
       API_KEY: ${API_KEY:-}
