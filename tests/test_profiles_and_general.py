@@ -5137,7 +5137,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         try:
             def fake_call_json(_messages, max_tokens=3000):
                 return {
-                    "story_overview": "旧字段请求测试。",
+                    "overview": "旧字段概览测试。",
                     "plot": ["旧字段主线"],
                     "conflicts": ["旧字段冲突"],
                     "world_building": ["旧字段设定"],
@@ -5196,6 +5196,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             summary["tech_plausibility"],
             ["标准字段技术内容", "同义旧字段技术内容"],
         )
+        self.assertEqual(summary["story_overview"], "旧字段概览测试。")
         self.assertEqual(summary["main_plot"], ["旧字段主线"])
         self.assertEqual(summary["core_conflicts"], ["旧字段冲突"])
         self.assertEqual(summary["worldbuilding"], ["旧字段设定"])
@@ -5327,7 +5328,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "profile_display_name": "通用小说分析",
                 "summary_fields": ["main_plot"],
                 "summary": {
-                    "story_overview": "通用旧字段概览",
+                    "book_overview": "通用旧字段概览",
                     "plot": ["旧字段主线"],
                     "conflicts": ["旧字段冲突"],
                     "setting": ["旧字段设定"],
@@ -5340,6 +5341,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             },
         )
 
+        self.assertIn("通用旧字段概览", base_alias_text)
         self.assertIn("【主线剧情】", base_alias_text)
         self.assertIn("旧字段主线", base_alias_text)
         self.assertIn("旧字段冲突", base_alias_text)

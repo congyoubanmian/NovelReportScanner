@@ -163,6 +163,10 @@ SUMMARY_FIELD_TITLES = {
 }
 
 SUMMARY_FIELD_ALIASES = {
+    "overview": "story_overview",
+    "book_overview": "story_overview",
+    "story_summary": "story_overview",
+    "summary_overview": "story_overview",
     "plot": "main_plot",
     "main_story": "main_plot",
     "plot_summary": "main_plot",
@@ -2465,7 +2469,7 @@ def _append_general_scan_section(lines: list, general_summary: dict):
             lines.append("未描述")
 
     lines.extend(["", "【作品概览】"])
-    lines.append(summary.get("story_overview") or "未描述")
+    lines.append(summary_field_text(summary, "story_overview"))
     add_list("主线剧情", summary_field_values(summary, "main_plot"))
     add_list("核心冲突", summary_field_values(summary, "core_conflicts"))
     add_list("世界观/设定", summary_field_values(summary, "worldbuilding"))

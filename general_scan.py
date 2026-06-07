@@ -59,6 +59,13 @@ def _summary_field_value(data: Dict[str, Any], field: str) -> List[str]:
     return values[:20]
 
 
+def _summary_field_text(data: Dict[str, Any], field: str) -> str:
+    values = _summary_field_value(data, field)
+    if not values:
+        return ""
+    return str(values[0] or "").strip()
+
+
 
 def _read_novel(path: str) -> str:
     return read_file_safely(path)
@@ -358,7 +365,7 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         max_tokens=4000,
     )
     summary = {
-        "story_overview": str(data.get("story_overview", "") or "").strip(),
+        "story_overview": _summary_field_text(data, "story_overview"),
         "main_plot": _summary_field_value(data, "main_plot"),
         "core_conflicts": _summary_field_value(data, "core_conflicts"),
         "worldbuilding": _summary_field_value(data, "worldbuilding"),
