@@ -98,6 +98,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("war_type_and_scale", military_war.summary_fields)
         self.assertIn("force_buildup", military_war.summary_fields)
         self.assertIn("equipment_and_tech", military_war.summary_fields)
+        self.assertTrue(any("军事战斗场面是否为叙事核心" in item for item in military_war.scan_focus))
 
         self.assertEqual(apocalypse_survival.name, "apocalypse_survival")
         self.assertTrue(apocalypse_survival.uses_general_scan)
@@ -881,6 +882,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "military_war",
         )
         self.assertEqual(
+            analysis_profiles.infer_profile_for_text("兵王归队", "兵王回到军营后带领部队演习，依靠战区指挥和后勤补给完成任务。"),
+            "military_war",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("军阀争霸", "近代军阀扩编军团，建设军备和兵工厂，用火炮步兵争夺战局。"),
+            "military_war",
+        )
+        self.assertEqual(
             analysis_profiles.infer_profile_for_text("末世安全区", "丧尸病毒爆发后，幸存者搜集物资并建设避难所。"),
             "apocalypse_survival",
         )
@@ -1109,6 +1118,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(crime_keywords.get("侧写"), 5)
         self.assertEqual(crime_keywords.get("禁毒"), 5)
         self.assertEqual(crime_keywords.get("DNA"), 4)
+
+        military_keywords = dict(analysis_profiles._keywords_from_manifest("military_war"))
+        self.assertEqual(military_keywords.get("兵王"), 4)
+        self.assertEqual(military_keywords.get("军阀"), 4)
+        self.assertEqual(military_keywords.get("战争"), 4)
+        self.assertEqual(military_keywords.get("后勤"), 4)
 
         sports_keywords = dict(analysis_profiles._keywords_from_manifest("sports_competition"))
         self.assertEqual(sports_keywords.get("格斗"), 5)
