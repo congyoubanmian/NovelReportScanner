@@ -1833,6 +1833,8 @@ def _has_male_past_romance_risk(text: str) -> bool:
         return False
     if _male_past_romance_blob_is_nonfactual_or_negated(text):
         return False
+    if _male_past_romance_text_has_only_non_partner_homonyms(text):
+        return False
     explicit_past_partner_words = (
         "前妻", "前女友", "前任女友", "前任妻子", "前任恋人", "前任爱人", "前夫", "前未婚妻", "前世老婆", "前世妻子", "前世爱人",
         "上一世老婆", "上一世妻子", "原配", "亡妻",
@@ -1852,6 +1854,19 @@ def _has_male_past_romance_risk(text: str) -> bool:
         any(word in text for word in partner_words)
         and any(word in text for word in negative_words)
     )
+
+
+def _male_past_romance_text_has_only_non_partner_homonyms(text: str) -> bool:
+    non_partner_words = ("前夫子", "前夫人")
+    protected = text
+    for word in non_partner_words:
+        protected = protected.replace(word, "")
+    risk_markers = (
+        "前妻", "前女友", "前任女友", "前任妻子", "前任恋人", "前任爱人", "前夫", "前未婚妻",
+        "前世老婆", "前世妻子", "前世爱人", "上一世老婆", "上一世妻子", "原配", "亡妻",
+        "老婆", "妻子", "女友", "爱人", "未婚妻", "恋人", "婚姻", "结婚", "离婚", "丧偶",
+    )
+    return any(word in text for word in non_partner_words) and not any(marker in protected for marker in risk_markers)
 
 
 def _has_male_romantic_ex_partner_context(text: str) -> bool:
