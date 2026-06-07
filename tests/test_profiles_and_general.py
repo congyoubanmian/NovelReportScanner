@@ -338,6 +338,71 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("能力体系", apocalypse_text)
         self.assertIn("犯罪心理", crime_text)
 
+    def test_mystery_horror_sports_and_farming_rules_include_kimi_categories(self):
+        rule_paths = {
+            "mystery_detective": os.path.join("profiles", "mystery_detective", "rules.json"),
+            "cosmic_horror": os.path.join("profiles", "cosmic_horror", "rules.json"),
+            "sports_competition": os.path.join("profiles", "sports_competition", "rules.json"),
+            "farming_management": os.path.join("profiles", "farming_management", "rules.json"),
+        }
+        rules = {}
+        for name, path in rule_paths.items():
+            with open(path, "r", encoding="utf-8") as f:
+                rules[name] = json.load(f)
+
+        mystery_categories = {item["name"] for item in rules["mystery_detective"]["categories"]}
+        mystery_points = {
+            point["name"]
+            for category in rules["mystery_detective"]["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertIn("侦探角色与叙事结构", mystery_categories)
+        self.assertIn("侦探魅力", mystery_points)
+        self.assertIn("推理方法论", mystery_points)
+        self.assertIn("叙事结构", mystery_points)
+
+        horror_categories = {item["name"] for item in rules["cosmic_horror"]["categories"]}
+        horror_points = {
+            point["name"]
+            for category in rules["cosmic_horror"]["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertIn("超凡体系与组织", horror_categories)
+        self.assertIn("规则怪谈", horror_points)
+        self.assertIn("力量边界", horror_points)
+        self.assertIn("组织两面性", horror_points)
+
+        sports_categories = {item["name"] for item in rules["sports_competition"]["categories"]}
+        sports_points = {
+            point["name"]
+            for category in rules["sports_competition"]["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertIn("对手刻画与名场面", sports_categories)
+        self.assertIn("竞争关系", sports_points)
+        self.assertIn("关键比赛", sports_points)
+        self.assertIn("名场面", sports_points)
+
+        farming_categories = {item["name"] for item in rules["farming_management"]["categories"]}
+        farming_points = {
+            point["name"]
+            for category in rules["farming_management"]["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertIn("类型边界", farming_categories)
+        self.assertIn("科技树", farming_points)
+        self.assertIn("基建路径", farming_points)
+        self.assertIn("慢节奏爽点", farming_points)
+
+        mystery_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("mystery_detective"))
+        horror_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("cosmic_horror"))
+        sports_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("sports_competition"))
+        farming_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("farming_management"))
+        self.assertIn("侦探魅力", mystery_text)
+        self.assertIn("规则怪谈", horror_text)
+        self.assertIn("名场面", sports_text)
+        self.assertIn("科技树", farming_text)
+
     def test_harem_rules_include_kimi_expansions_without_losing_locks(self):
         rules_path = os.path.join("profiles", "harem", "rules.json")
         with open(rules_path, "r", encoding="utf-8") as f:
