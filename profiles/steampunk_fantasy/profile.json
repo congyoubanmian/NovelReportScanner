@@ -4,6 +4,12 @@
   "enabled_stages": ["character_analysis", "general_scan", "general_report"],
   "rules_file": "rules.json",
   "report_mode": "general",
+  "cross_profile_rules": {
+    "harem": {
+      "import_categories": ["雷点（严重毒点）", "郁闷点"],
+      "import_points": ["绿帽", "死女", "送女", "前世雷", "破鞋/非处/非初", "漏女", "亵女"]
+    }
+  },
   "scan_focus": [
     "西幻国家、教会、王室、骑士、神明、龙族或神秘组织的权力结构",
     "蒸汽时代、工业革命、炼金术、机械装置和神秘学技术如何结合",
