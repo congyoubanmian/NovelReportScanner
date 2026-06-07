@@ -1003,7 +1003,10 @@ def _contains_positive_signal_text(value, keywords) -> bool:
     roleplay_hints = ("假装成", "假扮成", "伪装成", "冒充", "扮作", "装作")
     non_romantic_like_followers = ("什么", "哪", "吃", "喝", "看", "用", "这", "那", "某", "衣", "裙", "书", "菜", "颜色", "东西", "物件")
     non_romantic_love_prefixes = ("可", "讨人喜")
-    non_romantic_love_followers = ("吃", "喝", "看", "用", "好", "好者", "好是", "心", "护", "惜", "美", "漂亮", "玩", "闹")
+    non_romantic_love_followers = (
+        "吃", "喝", "看", "用", "好", "好者", "好是", "心", "护", "惜", "美", "漂亮", "玩", "闹",
+        "丽", "莉", "琳", "莲", "莎", "丝", "薇", "娜", "妮", "德", "尔", "伦", "蜜", "丽丝", "丽莎",
+    )
     for word in keywords:
         start = 0
         while word:

@@ -3604,7 +3604,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(report._contains_positive_signal_text("她喜欢男主，并珍惜他送的簪子。", ["喜欢"]))
         self.assertFalse(report._contains_positive_signal_text("她性格活泼可爱，是搞笑担当。", ["爱"]))
         self.assertFalse(report._contains_positive_signal_text("她爱吃点心，经常提供笑料。", ["爱"]))
+        self.assertFalse(report._contains_positive_signal_text("三小只包括爱丽丝、小人鱼和公主。", ["爱"]))
+        self.assertFalse(report._contains_positive_signal_text("角色名叫爱琳，主要是女仆助手。", ["爱"]))
         self.assertTrue(report._contains_positive_signal_text("她爱男主，并主动告白。", ["爱"]))
+        self.assertTrue(report._contains_positive_signal_text("她爱他，并愿意相伴余生。", ["爱"]))
+        self.assertTrue(report._contains_positive_signal_text("她爱上男主。", ["爱"]))
         self.assertTrue(report._contains_positive_signal_text("她是男主未婚妻，双方感情稳定。", ["未婚妻"]))
         self.assertFalse(report._contains_positive_signal_text("她尚未成为男主妻子。", ["妻子"]))
 
@@ -3638,6 +3642,18 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("结论=需关注", risky)
         self.assertIn("情感深度=未明", promise_only)
         self.assertIn("结论=证据不足", promise_only)
+
+    def test_leak_three_layers_ignores_love_character_inside_names(self):
+        named_only = report._summarize_leak_three_layers(
+            {},
+            {
+                "relationship_with_protagonist": "爱丽丝是男主捡到的小女孩，负责支线陪伴。",
+                "key_events": "爱琳偶尔客串，主要帮男主处理召唤物。",
+            },
+        )
+
+        self.assertIn("情感深度=未明", named_only)
+        self.assertIn("结论=证据不足", named_only)
 
     def test_leak_three_layers_requires_specific_concubine_terms(self):
         generic = report._summarize_leak_three_layers(
