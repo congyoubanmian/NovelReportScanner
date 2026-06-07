@@ -12,7 +12,7 @@
 - **后宫/男性向排雷专项**：约 **82% - 86%**。核心定义、五维洁度、接触等级、partner 豁免、漏女三层判断、女主事实扩展、重复女主大模型合并等关键项已落地；仍需要更多真实书籍报告校准误判。
 - **多标签/混合类型扫描**：约 **85% - 88%**。已支持自动多标签、手动多选、后宫+其他类型补扫，并对历史、科幻、仙侠、都市、游戏、异世界、蒸汽西幻等做了后宫交叉规则。
 - **报告输出和字段标题**：约 **90%**。通用报告、专项报告、后宫报告的字段标题和收尾字段已多轮补齐，新增了统一中文标签映射测试。
-- **Web/部署/GitHub Actions/Docker**：约 **96% - 97%**。前后端分离、SSE 实时状态、队列管理、删除/批量删除、Token 展示、配置摘要、非敏感运行配置编辑、可选访问令牌、Docker/GHCR/DockerHub 流程、请求体限制、文件流式输出、任务日志隔离、前端 ESLint/Prettier 检查、CI 自动验证、输出文件索引等工程项已完成；剩余主要是进一步生产化部署细节。
+- **Web/部署/GitHub Actions/Docker**：约 **97%**。前后端分离、SSE 实时状态、队列管理、删除/批量删除、Token 展示、配置摘要、非敏感运行配置编辑、可选访问令牌、Docker/GHCR/DockerHub 流程、请求体限制、文件流式输出、任务日志隔离、前端 ESLint/Prettier 检查、CI 自动验证、输出文件索引、Docker 最终镜像瘦身等工程项已完成；剩余主要是进一步生产化部署细节。
 
 ## 已完成的主要工作
 
@@ -101,6 +101,7 @@
 - GitHub Actions 增加 CI 工作流，覆盖后端 unittest、前端 audit/lint/format/build；Docker 发布工作流继续负责 GHCR 和 Docker Hub 镜像推送。
 - Web 扫描完成后会把报告和 summary 输出写入书籍 `output_index`，详情页优先读取持久索引，减少重复遍历 `results/`。
 - Web 页面支持编辑 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`GENERAL_SCAN_MAX_CHUNKS`、`HAREM_PLUS_GENERAL_SCAN` 等非敏感运行配置；修改只在当前服务进程生效，不写回本地配置文件，也不展示或修改 API Key。
+- Docker 最终运行镜像不再 `COPY . .`，只复制 Python 源码、`profiles/`、`rules2.json` 和前端构建产物，避免把测试、前端源码、文档和本地杂项带入运行层。
 
 ### 6. 测试覆盖
 

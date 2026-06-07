@@ -27,10 +27,10 @@ ARG APP_GID=1000
 COPY requirements.txt .
 RUN pip install --no-cache-dir --timeout 120 --retries 5 -i "$PIP_INDEX_URL" -r requirements.txt
 
-# Copy Python source code
-COPY . .
-
-# Copy frontend build artifacts from stage 1
+# Copy only runtime application files into the final image.
+COPY *.py ./
+COPY rules2.json ./
+COPY profiles ./profiles
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 RUN groupadd --gid "$APP_GID" appuser \
