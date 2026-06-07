@@ -32,6 +32,7 @@ CONFIG_READY = False
 MAX_UPLOAD_SIZE = int(os.environ.get("MAX_UPLOAD_SIZE", str(100 * 1024 * 1024)))
 MAX_JSON_BODY_SIZE = int(os.environ.get("MAX_JSON_BODY_SIZE", str(64 * 1024)))
 FILE_RESPONSE_CHUNK_SIZE = int(os.environ.get("FILE_RESPONSE_CHUNK_SIZE", str(1024 * 1024)))
+WEB_REQUEST_TIMEOUT_SECONDS = float(os.environ.get("WEB_REQUEST_TIMEOUT", "60"))
 SYNC_BOOKS_TTL_SECONDS = float(os.environ.get("SYNC_BOOKS_TTL_SECONDS", "5"))
 OUTPUTS_CACHE_TTL_SECONDS = float(os.environ.get("OUTPUTS_CACHE_TTL_SECONDS", "5"))
 SSE_STATE_INTERVAL_SECONDS = float(os.environ.get("SSE_STATE_INTERVAL_SECONDS", "3"))
@@ -81,6 +82,20 @@ def _task_log_dir():
 
 def _task_log_path(task_id):
     return os.path.join(_task_log_dir(), f"{task_id}.log")
+
+
+class TimeoutHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self, *args, request_timeout=WEB_REQUEST_TIMEOUT_SECONDS, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.request_timeout = request_timeout
+
+    def get_request(self):
+        request, client_address = super().get_request()
+        if self.request_timeout and self.request_timeout > 0:
+            request.settimeout(self.request_timeout)
+        return request, client_address
 
 
 def _novels_dir():
@@ -1035,7 +1050,7 @@ def run_server(host="127.0.0.1", port=8765):
     _try_load_runtime_config("web")
     _load_state()
     _start_worker_once()
-    server = ThreadingHTTPServer((host, int(port)), Handler)
+    server = TimeoutHTTPServer((host, int(port)), Handler)
     print(f"Web 管理端已启动: http://{host}:{port}")
     server.serve_forever()
 

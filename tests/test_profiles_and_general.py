@@ -1588,6 +1588,34 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.get_base_dir = old_base_dir
             web_manager.FILE_RESPONSE_CHUNK_SIZE = old_chunk_size
 
+    def test_web_manager_timeout_http_server_sets_request_timeout(self):
+        class FakeSocket:
+            def __init__(self):
+                self.timeout = None
+
+            def settimeout(self, value):
+                self.timeout = value
+
+        server = object.__new__(web_manager.TimeoutHTTPServer)
+        server.request_timeout = 12.5
+        fake_socket = FakeSocket()
+
+        old_get_request = web_manager.ThreadingHTTPServer.get_request
+        try:
+            web_manager.ThreadingHTTPServer.get_request = lambda _self: (fake_socket, ("127.0.0.1", 12345))
+            request, client = web_manager.TimeoutHTTPServer.get_request(server)
+
+            self.assertIs(request, fake_socket)
+            self.assertEqual(client, ("127.0.0.1", 12345))
+            self.assertEqual(fake_socket.timeout, 12.5)
+
+            fake_socket.timeout = None
+            server.request_timeout = 0
+            web_manager.TimeoutHTTPServer.get_request(server)
+            self.assertIsNone(fake_socket.timeout)
+        finally:
+            web_manager.ThreadingHTTPServer.get_request = old_get_request
+
     def test_web_manager_scan_subprocess_parses_result_and_logs_output(self):
         class FakeProcess:
             def __init__(self):
