@@ -163,12 +163,25 @@ SUMMARY_FIELD_TITLES = {
 }
 
 SUMMARY_FIELD_ALIASES = {
+    "main_story": "main_plot",
+    "plot_summary": "main_plot",
+    "character_arcs": "character_highlights",
+    "character_moments": "character_highlights",
+    "pacing": "pacing_and_emotion",
+    "emotion_curve": "pacing_and_emotion",
     "humanity_and_morality": "humanity_moral_dilemmas",
     "power_system": "power_evolution_system",
     "exploration_and_adventure": "exploration_adventure",
+    "case_design": "case_structure",
+    "case_logic": "logic_chain_integrity",
+    "clue_logic": "clue_fairness",
     "social_relevance": "social_reflection",
+    "tech_plausibility": "tech_feasibility",
+    "technology_feasibility": "tech_feasibility",
     "adventure_structure": "adventure_system",
     "companions": "party_dynamics",
+    "romance_subplot": "romance_comedy_balance",
+    "daily_life": "slice_of_life",
 }
 
 

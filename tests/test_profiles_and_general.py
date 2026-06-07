@@ -4315,9 +4315,92 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(summary["power_evolution_system"], ["旧 Kimi 字段：异能进化消耗资源"])
         self.assertEqual(summary["exploration_adventure"], ["旧 Kimi 字段：外出探索有路线风险"])
 
+    def test_general_scan_summary_accepts_common_specialty_field_aliases(self):
+        steampunk_profile = analysis_profiles.load_analysis_profile("steampunk_fantasy")
+        mystery_profile = analysis_profiles.load_analysis_profile("mystery_detective")
+        crime_profile = analysis_profiles.load_analysis_profile("crime_forensics")
+        old_call_json = general_scan._call_json
+        try:
+            def fake_steampunk_json(_messages, max_tokens=3000):
+                return {
+                    "story_overview": "蒸汽侦探处理单元案件。",
+                    "main_plot": ["侦探接案"],
+                    "core_conflicts": ["系统破案与人工推理冲突"],
+                    "worldbuilding": ["蒸汽帝国"],
+                    "themes": ["技术代价"],
+                    "foreshadowing_and_payoff": ["神秘复苏伏笔"],
+                    "tech_plausibility": ["旧字段：煤精和差分机需要制造链解释"],
+                    "strengths": ["氛围明确"],
+                    "risks_or_issues": ["技术跃迁偏快"],
+                    "reader_fit": "蒸汽读者",
+                    "overall_assessment": "可读",
+                }
+
+            general_scan._call_json = fake_steampunk_json
+            steampunk_summary = general_scan._summarize_book(
+                "蒸汽测试",
+                [{"one_sentence_summary": "侦探接案。"}],
+                profile=steampunk_profile,
+            )
+
+            def fake_mystery_json(_messages, max_tokens=3000):
+                return {
+                    "story_overview": "侦探连续破案。",
+                    "main_plot": ["连续案件"],
+                    "core_conflicts": ["侦探与凶手博弈"],
+                    "worldbuilding": ["近代城市"],
+                    "themes": ["真相"],
+                    "foreshadowing_and_payoff": ["凶器伏笔"],
+                    "clue_logic": ["旧字段：关键线索提前出现"],
+                    "case_logic": ["旧字段：推理链条闭合"],
+                    "strengths": ["案件清晰"],
+                    "risks_or_issues": ["外挂偏强"],
+                    "reader_fit": "推理读者",
+                    "overall_assessment": "尚可",
+                }
+
+            general_scan._call_json = fake_mystery_json
+            mystery_summary = general_scan._summarize_book(
+                "推理测试",
+                [{"one_sentence_summary": "侦探破案。"}],
+                profile=mystery_profile,
+            )
+
+            def fake_crime_json(_messages, max_tokens=3000):
+                return {
+                    "story_overview": "刑警围绕命案推进侦查。",
+                    "main_plot": ["命案侦查"],
+                    "core_conflicts": ["刑警与嫌疑人对抗"],
+                    "worldbuilding": ["现代刑侦"],
+                    "themes": ["法律与真相"],
+                    "foreshadowing_and_payoff": ["物证伏笔"],
+                    "case_design": ["旧字段：案件结构有起承转合"],
+                    "strengths": ["证据清晰"],
+                    "risks_or_issues": ["程序细节略弱"],
+                    "reader_fit": "刑侦读者",
+                    "overall_assessment": "尚可",
+                }
+
+            general_scan._call_json = fake_crime_json
+            crime_summary = general_scan._summarize_book(
+                "刑侦测试",
+                [{"one_sentence_summary": "刑警破案。"}],
+                profile=crime_profile,
+            )
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertEqual(steampunk_summary["tech_feasibility"], ["旧字段：煤精和差分机需要制造链解释"])
+        self.assertEqual(crime_summary["case_structure"], ["旧字段：案件结构有起承转合"])
+        self.assertEqual(mystery_summary["clue_fairness"], ["旧字段：关键线索提前出现"])
+        self.assertEqual(mystery_summary["logic_chain_integrity"], ["旧字段：推理链条闭合"])
+
     def test_general_report_reads_summary_field_alias_values(self):
         self.assertEqual(report.summary_field_label("power_system"), "异能/金手指体系")
         self.assertEqual(report.summary_field_label("humanity_and_morality"), "人性与道德困境")
+        self.assertEqual(report.summary_field_label("tech_plausibility"), "技术可行性")
+        self.assertEqual(report.summary_field_label("case_design"), "案件结构")
+        self.assertEqual(report.summary_field_label("romance_subplot"), "恋爱喜剧平衡")
 
         text = report.build_general_report(
             "字段别名测试",
@@ -4342,6 +4425,32 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("旧字段人性道德内容", text)
         self.assertIn("【能力/进化体系】", text)
         self.assertIn("旧字段能力体系内容", text)
+
+        specialty_text = report.build_general_report(
+            "专项字段别名测试",
+            {"male_protagonist": {"name": "男主"}, "all_female_characters": {}},
+            {
+                "profile_display_name": "混合专长分析",
+                "summary_fields": ["tech_feasibility", "case_structure", "romance_comedy_balance"],
+                "summary": {
+                    "story_overview": "专项概览",
+                    "tech_plausibility": ["旧字段技术可行性内容"],
+                    "case_design": ["旧字段案件结构内容"],
+                    "romance_subplot": ["旧字段恋爱支线内容"],
+                    "strengths": [],
+                    "risks_or_issues": [],
+                    "reader_fit": "读者",
+                    "overall_assessment": "评价",
+                },
+            },
+        )
+
+        self.assertIn("【技术可行性】", specialty_text)
+        self.assertIn("旧字段技术可行性内容", specialty_text)
+        self.assertIn("【案件结构】", specialty_text)
+        self.assertIn("旧字段案件结构内容", specialty_text)
+        self.assertIn("【恋爱喜剧平衡】", specialty_text)
+        self.assertIn("旧字段恋爱支线内容", specialty_text)
 
     def test_general_scan_field_labels_cover_profile_summary_fields(self):
         common = {
