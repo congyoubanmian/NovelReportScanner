@@ -3404,6 +3404,22 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(low_evidence.startswith("低证据女角色"))
         self.assertIn("低存在感/工具人线索", low_evidence)
 
+    def test_report_does_not_promote_functional_character_without_romance_signal(self):
+        level = report._heroine_position_level(
+            {"importance_rank": 2},
+            {
+                "identity": "探案搭档和物理输出",
+                "relationship_with_protagonist": "跟随男主处理案件，负责捧哏和战斗",
+                "features": "怪力少女，工具人功能明显",
+                "key_events": "多次参与案件侦破，但没有恋爱、暧昧或后宫关系确认",
+            },
+            {"count": 12, "summaries": ["长期参与主线案件，主要承担输出和说明功能"]},
+            {},
+        )
+
+        self.assertTrue(level.startswith("弱准女主"), level)
+        self.assertIn("缺少感情/后宫定位证据", level)
+
     def test_harem_report_adds_heroine_context_to_issue_lines(self):
         old_openai = report.OpenAI
         old_api_key_pool = report.API_KEY_POOL

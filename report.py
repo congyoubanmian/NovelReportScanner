@@ -966,6 +966,33 @@ def _contains_any_text(value, keywords) -> bool:
     return any(word in text for word in keywords)
 
 
+def _contains_positive_signal_text(value, keywords) -> bool:
+    if isinstance(value, (list, tuple, set)):
+        text = " ".join(str(x) for x in value if x is not None)
+    elif isinstance(value, dict):
+        text = json.dumps(value, ensure_ascii=False)
+    else:
+        text = str(value or "")
+    if not text:
+        return False
+
+    negative_hints = (
+        "没有", "没", "无", "未见", "未", "尚未", "并未", "不曾", "不存在", "缺少", "缺乏",
+        "无明确", "没有明确", "未确认", "未发生", "未产生", "未建立", "未收入",
+    )
+    for word in keywords:
+        start = 0
+        while word:
+            index = text.find(word, start)
+            if index < 0:
+                break
+            window = text[max(0, index - 12):index]
+            if not any(hint in window for hint in negative_hints):
+                return True
+            start = index + len(word)
+    return False
+
+
 def _summarize_heroine_effectiveness(heroine_meta: dict, profile: dict, evidence: dict = None) -> str:
     heroine_meta = heroine_meta or {}
     profile = profile or {}
@@ -1043,10 +1070,12 @@ def _heroine_position_level(heroine_meta: dict, profile: dict, evidence: dict = 
     if purity_info.get("is_leak_heroine") is True or purity_info.get("leak_emotional_depth") is True:
         score += 3
         signals.append("漏女/情感深度证据")
-    if _contains_any_text(text, ["女主", "妻", "道侣", "恋人", "爱人", "后宫", "未婚妻", "伴侣", "情侣"]):
+    relationship_position_words = ["女主", "妻", "道侣", "恋人", "爱人", "后宫", "未婚妻", "伴侣", "情侣", "女朋友", "老婆"]
+    romance_signal_words = ["喜欢", "爱慕", "表白", "暧昧", "吃醋", "双修", "同房", "亲密", "推倒", "收女", "动心", "倾心"]
+    if _contains_positive_signal_text(text, relationship_position_words):
         score += 2
         signals.append("关系定位明确")
-    if _contains_any_text(text, ["喜欢", "爱慕", "表白", "暧昧", "吃醋", "双修", "同房", "亲密", "推倒", "收女"]):
+    if _contains_positive_signal_text(text, romance_signal_words):
         score += 2
         signals.append("感情/亲密推进")
     if profile.get("relationship_with_protagonist") and profile.get("relationship_with_protagonist") != "未描述":
@@ -1076,16 +1105,26 @@ def _heroine_position_level(heroine_meta: dict, profile: dict, evidence: dict = 
 
     has_confirmed_target = (
         purity_info.get("pushed_by_male_lead") is True
-        or _contains_any_text(text, ["妻", "道侣", "恋人", "爱人", "后宫", "未婚妻", "伴侣", "情侣"])
+        or _contains_positive_signal_text(text, ["妻", "道侣", "恋人", "爱人", "后宫", "未婚妻", "伴侣", "情侣", "女朋友", "老婆"])
+    )
+    has_candidate_relationship_signal = (
+        has_confirmed_target
+        or purity_info.get("is_leak_heroine") is True
+        or purity_info.get("leak_emotional_depth") is True
+        or _contains_positive_signal_text(text, relationship_position_words)
+        or _contains_positive_signal_text(text, romance_signal_words)
     )
     if score >= 7 and has_confirmed_target:
         label = "目标女主"
-    elif score >= 4:
+    elif score >= 4 and has_candidate_relationship_signal:
         label = "强准女主"
     elif score >= 2:
         label = "弱准女主"
     else:
         label = "低证据女角色"
+
+    if score >= 4 and not has_candidate_relationship_signal:
+        risks.append("缺少感情/后宫定位证据")
 
     detail = "；".join(dict.fromkeys(signals[:4] + risks[:2])) or "证据不足"
     return f"{label}：{detail}"
