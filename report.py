@@ -1002,6 +1002,94 @@ def _summarize_heroine_effectiveness(heroine_meta: dict, profile: dict, evidence
     return f"有效性较明确：{'；'.join(signals[:4])}。"
 
 
+def _heroine_position_level(heroine_meta: dict, profile: dict, evidence: dict = None, purity_info: dict = None) -> str:
+    heroine_meta = heroine_meta or {}
+    profile = profile or {}
+    evidence = evidence or {}
+    purity_info = purity_info or {}
+
+    def _int_value(value, default=9999):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    rank = _int_value(heroine_meta.get("importance_rank"), 9999)
+    count = _int_value(evidence.get("count") or heroine_meta.get("count"), 0)
+    text = " ".join(
+        str(x or "")
+        for x in [
+            profile.get("identity"),
+            profile.get("relationship_with_protagonist"),
+            profile.get("features"),
+            profile.get("key_events"),
+            heroine_meta.get("relationship_type"),
+            heroine_meta.get("summary"),
+            " ".join(str(s) for s in (evidence.get("summaries") or [])[:8]),
+            " ".join(str(s) for s in (evidence.get("relationships") or [])[:8]),
+            " ".join(str(s) for s in (evidence.get("interactions") or [])[:8]),
+            " ".join(str(s) for s in (evidence.get("emotion_signals") or [])[:8]),
+        ]
+    )
+
+    score = 0
+    signals = []
+    risks = []
+
+    if purity_info.get("pushed_by_male_lead") is True:
+        score += 4
+        signals.append("已被男主明确推倒/确认关系")
+    if purity_info.get("is_leak_heroine") is True or purity_info.get("leak_emotional_depth") is True:
+        score += 3
+        signals.append("漏女/情感深度证据")
+    if _contains_any_text(text, ["女主", "妻", "道侣", "恋人", "爱人", "后宫", "未婚妻", "伴侣", "情侣"]):
+        score += 2
+        signals.append("关系定位明确")
+    if _contains_any_text(text, ["喜欢", "爱慕", "表白", "暧昧", "吃醋", "双修", "同房", "亲密", "推倒", "收女"]):
+        score += 2
+        signals.append("感情/亲密推进")
+    if profile.get("relationship_with_protagonist") and profile.get("relationship_with_protagonist") != "未描述":
+        score += 1
+        signals.append("有男主关系描述")
+    if profile.get("key_events") and profile.get("key_events") != "未描述":
+        score += 1
+        signals.append("有关键事件")
+    if count >= 5:
+        score += 2
+        signals.append(f"高频出场 {count} 次")
+    elif count >= 3:
+        score += 1
+        signals.append(f"多次出场 {count} 次")
+    if rank <= 3:
+        score += 2
+        signals.append(f"重要度排序 {rank}")
+    elif rank <= 8:
+        score += 1
+        signals.append(f"重要度排序 {rank}")
+
+    if _contains_any_text(text, ["工具", "召唤", "捧哏", "背景", "说明", "偶尔", "客串", "存在感", "神隐"]):
+        score -= 2
+        risks.append("低存在感/工具人线索")
+    if not signals:
+        risks.append("缺少关系、事件和出场证据")
+
+    has_confirmed_target = (
+        purity_info.get("pushed_by_male_lead") is True
+        or _contains_any_text(text, ["妻", "道侣", "恋人", "爱人", "后宫", "未婚妻", "伴侣", "情侣"])
+    )
+    if score >= 7 and has_confirmed_target:
+        label = "目标女主"
+    elif score >= 4:
+        label = "强准女主"
+    elif score >= 2:
+        label = "弱准女主"
+    else:
+        label = "低证据女角色"
+
+    detail = "；".join(dict.fromkeys(signals[:4] + risks[:2])) or "证据不足"
+    return f"{label}：{detail}"
+
+
 def _summarize_heroine_relationship_structure(profile: dict, evidence: dict = None) -> str:
     profile = profile or {}
     evidence = evidence or {}
@@ -1612,6 +1700,7 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
             f"\u7279\u70b9\uff1a{prof.get('features') or missing_desc}",
             f"\u5173\u952e\u4e8b\u4ef6\uff1a{prof.get('key_events') or missing_desc}",
             f"关系结构标签：{_summarize_heroine_relationship_structure(prof, evid)}",
+            f"女主定位分级：{_heroine_position_level(h, prof, evid, p)}",
             f"女主有效性：{_summarize_heroine_effectiveness(h, prof, evid)}",
             f"\u56db\u7ef4\u7eaf\u6d01\u5ea6summary\uff1a{purity_summary or empty_text}",
             f"是否被推倒：{pushed}",

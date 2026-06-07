@@ -3177,6 +3177,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("经济依附", text)
         self.assertIn("政治联姻/婚约", text)
         self.assertIn("受害/胁迫记录", text)
+        self.assertIn("女主定位分级", text)
         self.assertIn("女主有效性", text)
         self.assertIn("有效性存疑", text)
         self.assertIn("漏女三层判定", text)
@@ -3184,6 +3185,50 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("关系确认=❌", text)
         self.assertIn("结局交代=❌", text)
         self.assertIn("结论=疑似漏女", text)
+
+    def test_report_classifies_heroine_position_level(self):
+        target = report._heroine_position_level(
+            {"importance_rank": 1},
+            {
+                "relationship_with_protagonist": "男主道侣，互相喜欢并同房",
+                "key_events": "多次双修并确认关系",
+                "features": "主线女主",
+            },
+            {"count": 8, "summaries": ["长期陪伴男主推进主线"]},
+            {"pushed_by_male_lead": True},
+        )
+        strong_candidate = report._heroine_position_level(
+            {"importance_rank": 4},
+            {
+                "relationship_with_protagonist": "与男主长期暧昧并喜欢男主",
+                "key_events": "结局未交代归宿",
+                "features": "反复参与主线",
+            },
+            {"count": 4, "emotion_signals": ["吃醋", "表白"]},
+            {"is_leak_heroine": True, "leak_emotional_depth": True},
+        )
+        weak_candidate = report._heroine_position_level(
+            {"importance_rank": 9},
+            {
+                "relationship_with_protagonist": "受男主保护并有单独互动",
+                "key_events": "协助男主一次",
+                "features": "配角",
+            },
+            {"count": 2, "summaries": ["参与一次支线"]},
+            {},
+        )
+        low_evidence = report._heroine_position_level(
+            {},
+            {"features": "背景说明角色，客串神隐"},
+            {"count": 1, "summaries": ["存在感约等于没有"]},
+            {},
+        )
+
+        self.assertTrue(target.startswith("目标女主"))
+        self.assertTrue(strong_candidate.startswith("强准女主"))
+        self.assertTrue(weak_candidate.startswith("弱准女主"))
+        self.assertTrue(low_evidence.startswith("低证据女角色"))
+        self.assertIn("低存在感/工具人线索", low_evidence)
 
     def test_reviewer_derives_past_life_cleanliness(self):
         risky = novel_reviewer._derive_past_life_cleanliness(
