@@ -653,6 +653,69 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(info["leak_ending_accounted"])
         self.assertIn("关系确认未知", info["leak_reason"])
 
+    def test_rebuild_leak_state_requires_explicit_ending_account(self):
+        data = {
+            "heroine_result": {
+                "heroines": [
+                    {
+                        "name": "丁女",
+                        "summaries": ["与男主长期暧昧并喜欢男主，但结局未交代归宿。"],
+                    }
+                ]
+            }
+        }
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+            char_path = f.name
+        try:
+            issues, leak_map = novel_reviewer._rebuild_leak_state_from_pushed_map(
+                female_leads=["丁女"],
+                char_file_path=char_path,
+                novel_tail="尾声里男主偶然想起丁女的名字，随后独自离开江湖。",
+                finished=True,
+                pushed_map={"丁女": (False, "未见推倒或同房证据")},
+            )
+        finally:
+            os.unlink(char_path)
+
+        self.assertEqual(len(issues), 1)
+        info = leak_map["丁女"]
+        self.assertTrue(info["is_leak_heroine"])
+        self.assertFalse(info["leak_ending_accounted"])
+        self.assertIn("缺少归宿", info["leak_ending_reason"])
+
+    def test_rebuild_leak_state_accepts_explicit_ending_account(self):
+        data = {
+            "heroine_result": {
+                "heroines": [
+                    {
+                        "name": "戊女",
+                        "aliases": ["阿戊"],
+                        "summaries": ["与男主长期暧昧并喜欢男主，但正文未确认推倒。"],
+                    }
+                ]
+            }
+        }
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+            char_path = f.name
+        try:
+            issues, leak_map = novel_reviewer._rebuild_leak_state_from_pushed_map(
+                female_leads=["戊女"],
+                char_file_path=char_path,
+                novel_tail="番外多年后，阿戊留在男主身边，与他一起回到府中相伴余生。",
+                finished=True,
+                pushed_map={"戊女": (False, "未见推倒或同房证据")},
+            )
+        finally:
+            os.unlink(char_path)
+
+        self.assertEqual(issues, [])
+        info = leak_map["戊女"]
+        self.assertFalse(info["is_leak_heroine"])
+        self.assertTrue(info["leak_ending_accounted"])
+        self.assertIn("明确结局交代", info["leak_ending_reason"])
+
     def test_auto_profile_inference(self):
         self.assertEqual(
             analysis_profiles.infer_profile_for_text("大明权臣", "皇帝与朝廷在庙堂上争论边军粮饷。"),

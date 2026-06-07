@@ -293,11 +293,37 @@ def judge_pushed_by_male_lead(heroine: Dict[str, Any], male_name: str = "男主"
     return None, f"判定失败: {last_err}"
 
 
-def _name_in_tail(tail: str, name: str, aliases: List[str]) -> bool:
+def _ending_accounted_in_tail(tail: str, name: str, aliases: List[str]) -> Tuple[bool, str]:
     if not tail:
-        return False
-    candidates = [name] + aliases
-    return any(c and c in tail for c in candidates)
+        return False, "尾声检索：无尾声文本"
+
+    candidates = [c for c in [name] + aliases if c]
+    if not any(c in tail for c in candidates):
+        return False, "尾声检索：未命中姓名或别名"
+
+    ending_markers = (
+        "结局", "最终", "最后", "后来", "此后", "从此", "余生", "一生", "多年后", "番外",
+        "归宿", "去处", "留下", "留在", "陪在", "跟随", "同行", "同去", "回到", "去了",
+        "嫁", "娶", "婚", "成亲", "大婚", "完婚", "圆房", "同房", "怀孕", "生下", "孩子",
+        "道侣", "伴侣", "妻", "妾", "夫人", "皇后", "王妃", "后宫", "收入", "收了",
+        "在一起", "相伴", "白头", "团聚", "重逢", "守着", "等着", "阵营", "府中", "身边",
+        "死", "牺牲", "葬", "坟", "墓", "陨落",
+    )
+    weak_mention_markers = ("想起", "提到", "听说", "传闻", "名字", "名单", "回忆", "梦见", "路过", "问起")
+
+    for candidate in candidates:
+        start = 0
+        while True:
+            idx = tail.find(candidate, start)
+            if idx < 0:
+                break
+            window = tail[max(0, idx - 80): idx + len(candidate) + 120]
+            if any(marker in window for marker in ending_markers):
+                return True, f"尾声检索：{candidate} 周边出现明确结局交代"
+            start = idx + len(candidate)
+
+    weak_hint = "；可能只是提及" if any(marker in tail for marker in weak_mention_markers) else ""
+    return False, f"尾声检索：命中姓名或别名，但缺少归宿/关系/去向等结局语义{weak_hint}"
 
 
 def _heroine_has_emotional_depth_for_leak(heroine_info: Dict[str, Any]) -> Tuple[bool, str]:
@@ -408,18 +434,18 @@ def _rebuild_leak_state_from_pushed_map(
         hinfo = heroine_map.get(name, {"name": name})
         has_emotional_depth, emotional_depth_reason = _heroine_has_emotional_depth_for_leak(hinfo)
         aliases = hinfo.get("aliases", []) if isinstance(hinfo.get("aliases", []), list) else []
-        tail_ok = _name_in_tail(novel_tail or "", name, aliases)
-        is_leak = has_emotional_depth and (relationship_confirmed is False) and (not tail_ok)
+        ending_accounted, ending_reason = _ending_accounted_in_tail(novel_tail or "", name, aliases)
+        is_leak = has_emotional_depth and (relationship_confirmed is False) and (not ending_accounted)
 
         if is_leak:
             leak_reason = (
                 f"情感深度：{emotional_depth_reason}；"
-                f"推倒判定：{pushed_reason}；尾声检索：未命中姓名或别名"
+                f"推倒判定：{pushed_reason}；{ending_reason}"
             )
             issues.append({
                 "category": "郁闷点",
                 "type": "漏女",
-                "content": f"{name} 未被男主明确推倒，且在尾声未出现，未交代结局",
+                "content": f"{name} 未被男主明确推倒，且尾声未明确交代结局",
                 "reason": leak_reason,
                 "review_comment": f"{name} 未被男主明确推倒，且尾声未交代结局，判为漏女。",
                 "chunk_index": -1,
@@ -431,7 +457,7 @@ def _rebuild_leak_state_from_pushed_map(
         elif relationship_confirmed is None:
             leak_reason = f"推倒判定：{pushed_reason}；关系确认未知，暂不判漏女"
         else:
-            leak_reason = f"推倒判定：{pushed_reason}；尾声检索：命中姓名或别名"
+            leak_reason = f"推倒判定：{pushed_reason}；{ending_reason}"
 
         leak_status_map[name] = {
             "is_leak_heroine": is_leak,
@@ -440,10 +466,10 @@ def _rebuild_leak_state_from_pushed_map(
             "leak_emotional_depth_reason": emotional_depth_reason,
             "leak_relationship_confirmed": relationship_confirmed,
             "leak_relationship_reason": f"推倒判定：{pushed_reason}",
-            "leak_ending_accounted": tail_ok,
-            "leak_ending_reason": "尾声检索：命中姓名或别名" if tail_ok else "尾声检索：未命中姓名或别名",
+            "leak_ending_accounted": ending_accounted,
+            "leak_ending_reason": ending_reason,
         }
-        logger.info(f"[漏女判定] {name}: pushed_ok={pushed_ok}, tail_ok={tail_ok}, pushed={pushed}")
+        logger.info(f"[漏女判定] {name}: pushed_ok={pushed_ok}, ending_accounted={ending_accounted}, pushed={pushed}")
 
     return issues, leak_status_map
 
