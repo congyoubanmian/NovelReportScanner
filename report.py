@@ -1001,6 +1001,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
         "谈不上喜欢", "谈不上爱", "称不上喜欢", "称不上爱", "讨厌", "厌恶",
     )
     roleplay_hints = ("假装成", "假扮成", "伪装成", "冒充", "扮作", "装作")
+    non_romantic_like_followers = ("什么", "哪", "吃", "喝", "看", "用", "这", "那", "某", "衣", "裙", "书", "菜", "颜色", "东西", "物件")
     for word in keywords:
         start = 0
         while word:
@@ -1010,7 +1011,16 @@ def _contains_positive_signal_text(value, keywords) -> bool:
             window = text[max(0, index - 12):index]
             around_window = text[max(0, index - 8):index + len(word)]
             roleplay_window = text[max(0, index - 8):index]
-            if not any(hint in window or hint in around_window for hint in negative_hints) and not any(hint in roleplay_window for hint in roleplay_hints):
+            next_text = text[index + len(word):index + len(word) + 4]
+            non_romantic_like = word == "喜欢" and (
+                text[max(0, index - 2):index] == "喜不"
+                or any(next_text.startswith(hint) for hint in non_romantic_like_followers)
+            )
+            if (
+                not any(hint in window or hint in around_window for hint in negative_hints)
+                and not any(hint in roleplay_window for hint in roleplay_hints)
+                and not non_romantic_like
+            ):
                 return True
             start = index + len(word)
     return False

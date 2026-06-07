@@ -3599,6 +3599,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(report._contains_positive_signal_text("她不喜欢男主，只是执行任务。", ["喜欢"]))
         self.assertFalse(report._contains_positive_signal_text("她并不爱男主，只把他当同伴。", ["爱"]))
         self.assertTrue(report._contains_positive_signal_text("她明确喜欢男主，并主动表白。", ["喜欢"]))
+        self.assertFalse(report._contains_positive_signal_text("她问男主喜不喜欢这件衣服。", ["喜欢"]))
+        self.assertFalse(report._contains_positive_signal_text("男主询问她最喜欢什么。", ["喜欢"]))
+        self.assertTrue(report._contains_positive_signal_text("她喜欢男主，并珍惜他送的簪子。", ["喜欢"]))
 
     def test_harem_report_adds_heroine_context_to_issue_lines(self):
         old_openai = report.OpenAI
