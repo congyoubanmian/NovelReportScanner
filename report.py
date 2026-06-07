@@ -1655,10 +1655,12 @@ def _strict_send_girl_to_male_lead_review_hint(issue: dict, text: str) -> str:
         "献给男主", "献给主角", "送给男主", "送给主角", "安排给男主", "安排给主角",
         "交给男主", "交给主角", "嫁给男主", "嫁给主角", "收入后宫", "收进后宫",
         "接收", "救下", "纳入后宫", "纳为妾", "纳妾",
+        "向男主发起联姻", "向主角发起联姻", "向男主提出联姻", "向主角提出联姻",
+        "联姻邀请", "邀请联姻", "被男主拒绝", "被主角拒绝", "男主拒绝", "主角拒绝",
     )
     if not any(marker in text for marker in to_male_lead_markers):
         return ""
-    return "送女排除配角/家族/反派把女性献给男主或男主接收女性；当前证据更像收女/献女/后宫扩张，需复核是否误标送女。"
+    return "送女排除配角/家族/反派把女性献给男主或男主接收女性；当前证据更像收女/献女/后宫扩张或联姻邀请/拒绝收女，需复核是否误标送女。"
 
 
 def _annotate_issue_for_report(issue: dict, heroine_contexts: list) -> dict:
