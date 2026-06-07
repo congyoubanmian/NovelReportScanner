@@ -3422,6 +3422,57 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("女主定位上下文：正女=目标女主", text)
         self.assertEqual(text.count("定义复核提示"), 1)
 
+    def test_harem_report_flags_strict_issue_without_heroine_anchor(self):
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        try:
+            report.OpenAI = None
+            report.API_KEY_POOL = []
+            text = report.build_report_v2(
+                "测试后宫",
+                {
+                    "male_protagonist": {"name": "男主"},
+                    "heroine_result": {
+                        "heroines": [
+                            {
+                                "name": "甲女",
+                                "importance_rank": 1,
+                                "relationship_type": "道侣",
+                            }
+                        ]
+                    },
+                    "all_female_characters": {
+                        "甲女": {
+                            "count": 8,
+                            "profile_for_report": {
+                                "identity": "主线女主",
+                                "relationship_with_protagonist": "男主道侣",
+                                "features": "长期陪伴男主",
+                                "key_events": "确认关系",
+                            },
+                        }
+                    },
+                },
+                {
+                    "heroines_purity": [{"name": "甲女", "pushed_by_male_lead": True}],
+                    "lei_points": [
+                        {
+                            "type": "绿帽",
+                            "chunk_index": 21,
+                            "content": "有人传言漂亮女子和路人男有暧昧。",
+                            "review_comment": "疑似绿帽。",
+                        }
+                    ],
+                },
+            )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+
+        self.assertNotIn("女主定位上下文", text)
+        self.assertIn("定义复核提示：按锁定定义，送女/绿帽必须锚定目标女主或强准女主", text)
+        self.assertIn("未命中已识别女主名或别名", text)
+
     def test_reviewer_derives_past_life_cleanliness(self):
         risky = novel_reviewer._derive_past_life_cleanliness(
             {

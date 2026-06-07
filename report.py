@@ -1179,7 +1179,7 @@ def _issue_definition_review_hint(issue: dict, heroine_contexts: list) -> str:
         return ""
     matched = _matched_issue_heroine_contexts(issue, heroine_contexts)
     if not matched:
-        return ""
+        return "按锁定定义，送女/绿帽必须锚定目标女主或强准女主；当前条目未命中已识别女主名或别名，建议复核对象是否成立。"
     weak_names = [
         ctx.get("name")
         for ctx in matched
