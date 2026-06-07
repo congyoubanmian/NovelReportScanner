@@ -1722,7 +1722,7 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
             ]
             if x
         )
-        if any(word in blob for word in intimacy_words):
+        if _contains_positive_signal_text(blob, intimacy_words):
             intimacy_hits += 1
         count = int(evid.get("count") or h.get("count") or 0)
         if count <= 2 and len(blob) < 120:
@@ -1759,7 +1759,7 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
         romance_density = "偏低：二审已命中感情戏缺失/预期落差类郁闷点。"
         romance_progression = "存在感情线推进不足风险，需结合郁闷点条目复核。"
         expectation_gap = "已出现感情戏缺失或预期落差线索。"
-    elif heroine_count and intimacy_hits <= max(1, heroine_count // 4):
+    elif heroine_count > 1 and intimacy_hits <= max(1, heroine_count // 4):
         romance_density = "偏低"
         romance_progression = "存在少量亲密/暧昧推进，但覆盖女角色比例偏低。"
         expectation_gap = "若读者期待高密度恋爱互动，需要关注实际感情戏占比。"

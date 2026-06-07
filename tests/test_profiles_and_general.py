@@ -3396,6 +3396,58 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("明显感情戏缺失风险", overview["romance_expectation_gap"])
         self.assertIn("工具人女主", overview["female_tooling_risk"])
 
+    def test_harem_romance_overview_ignores_negated_romance_signals(self):
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        try:
+            report.OpenAI = None
+            report.API_KEY_POOL = []
+            negated = report._summarize_harem_romance_overview(
+                {
+                    "all_female_characters": {
+                        "甲女": {
+                            "count": 5,
+                            "summaries": ["长期跟随男主处理案件，但没有恋爱、没有喜欢、没有感情描写。"],
+                        }
+                    }
+                },
+                {},
+                [
+                    {
+                        "name": "甲女",
+                        "relationship_type": "探案搭档",
+                        "summary": "没有恋爱、没有喜欢男主，只负责案件捧哏。",
+                    }
+                ],
+                {},
+            )
+            positive = report._summarize_harem_romance_overview(
+                {
+                    "all_female_characters": {
+                        "乙女": {
+                            "count": 5,
+                            "emotion_signals": ["喜欢男主并主动表白。"],
+                        }
+                    }
+                },
+                {},
+                [
+                    {
+                        "name": "乙女",
+                        "relationship_type": "恋人",
+                        "summary": "喜欢男主并主动表白。",
+                    }
+                ],
+                {},
+            )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+
+        self.assertIn("极低", negated["romance_density"])
+        self.assertIn("未见明确恋爱推进", negated["romance_progression"])
+        self.assertIn("中等或以上", positive["romance_density"])
+
     def test_harem_romance_overview_avoids_current_wife_as_past_risk(self):
         self.assertFalse(report._has_male_past_romance_risk("男主与妻子一起经营家族。"))
         self.assertTrue(report._has_male_past_romance_risk("男主前世老婆在他绝症后卷光家产跑路。"))
