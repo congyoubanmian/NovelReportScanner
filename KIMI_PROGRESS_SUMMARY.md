@@ -129,7 +129,7 @@
 - Web 删除、批量删除、队列调整、配置摘要、JSON 限制、文件流式输出等接口行为。
 - 专项报告字段标题和输出结构。
 
-最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **94 个测试 OK**。
+最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **95 个测试 OK**。
 
 ## 已推送的关键提交
 

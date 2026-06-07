@@ -3230,6 +3230,75 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(low_evidence.startswith("低证据女角色"))
         self.assertIn("低存在感/工具人线索", low_evidence)
 
+    def test_harem_report_adds_heroine_context_to_issue_lines(self):
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        try:
+            report.OpenAI = None
+            report.API_KEY_POOL = []
+            text = report.build_report_v2(
+                "测试后宫",
+                {
+                    "male_protagonist": {"name": "男主"},
+                    "heroine_result": {
+                        "heroines": [
+                            {
+                                "name": "甲女",
+                                "aliases": ["甲姑娘"],
+                                "importance_rank": 1,
+                                "relationship_type": "道侣",
+                            },
+                            {"name": "乙女", "importance_rank": 9},
+                        ]
+                    },
+                    "all_female_characters": {
+                        "甲女": {
+                            "count": 8,
+                            "profile_for_report": {
+                                "identity": "主线女主",
+                                "relationship_with_protagonist": "男主道侣",
+                                "features": "长期陪伴男主",
+                                "key_events": "多次同房并确认关系",
+                            },
+                        },
+                        "乙女": {
+                            "count": 1,
+                            "profile_for_report": {
+                                "identity": "客串角色",
+                                "features": "背景说明角色，存在感低",
+                            },
+                        },
+                    },
+                },
+                {
+                    "heroines_purity": [
+                        {"name": "甲女", "pushed_by_male_lead": True},
+                        {"name": "乙女"},
+                    ],
+                    "lei_points": [
+                        {
+                            "type": "绿帽",
+                            "chunk_index": 12,
+                            "content": "甲姑娘被非男主男性牵涉进婚约传闻。",
+                            "review_comment": "命中甲女相关风险。",
+                        }
+                    ],
+                    "yumen_points": [
+                        {
+                            "type": "工具人女主",
+                            "chunk_index": 3,
+                            "content": "未出现具体姓名，只说女角色工具人。",
+                        }
+                    ],
+                },
+            )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+
+        self.assertIn("女主定位上下文：甲女=目标女主", text)
+        self.assertEqual(text.count("女主定位上下文"), 1)
+
     def test_reviewer_derives_past_life_cleanliness(self):
         risky = novel_reviewer._derive_past_life_cleanliness(
             {

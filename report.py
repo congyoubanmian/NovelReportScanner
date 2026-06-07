@@ -1090,6 +1090,95 @@ def _heroine_position_level(heroine_meta: dict, profile: dict, evidence: dict = 
     return f"{label}：{detail}"
 
 
+def _build_heroine_position_contexts(
+    heroines: list,
+    all_female_characters: dict,
+    profile_cache: dict,
+    purity_map: dict,
+) -> list:
+    contexts = []
+    seen = set()
+    for h in heroines or []:
+        if not isinstance(h, dict):
+            continue
+        name = str(h.get("name") or "").strip()
+        if not name:
+            continue
+        aliases = [
+            str(x).strip()
+            for x in (h.get("aliases") or h.get("other_names") or [])
+            if str(x).strip()
+        ]
+        evid = _match_female_evidence(name, aliases, all_female_characters) or {}
+        aliases.extend(str(x).strip() for x in (evid.get("other_names") or []) if str(x).strip())
+        prof = _normalize_profile_for_report(profile_cache.get(name, {}))
+        purity_info = purity_map.get(name) or purity_map.get(_heroine_name_key(name)) or {}
+        level = _heroine_position_level(h, prof, evid, purity_info)
+        label = level.split("：", 1)[0]
+
+        names = [name, *aliases, _heroine_name_key(name)]
+        normalized_names = []
+        for candidate in names:
+            candidate = str(candidate or "").strip()
+            if len(candidate) < 2:
+                continue
+            key = (name, candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized_names.append(candidate)
+        if not normalized_names:
+            continue
+        contexts.append({"name": name, "aliases": normalized_names, "label": label, "level": level})
+    return contexts
+
+
+def _match_issue_heroine_context(issue: dict, heroine_contexts: list) -> str:
+    if not issue or not heroine_contexts:
+        return ""
+    haystack = " ".join(
+        str(issue.get(field) or "")
+        for field in ["content", "review_comment", "type", "reason", "evidence", "category"]
+    )
+    if not haystack:
+        return ""
+
+    matches = []
+    for ctx in heroine_contexts:
+        aliases = ctx.get("aliases") or []
+        matched_aliases = [alias for alias in aliases if alias and alias in haystack]
+        if not matched_aliases:
+            continue
+        best_alias = max(matched_aliases, key=len)
+        matches.append((len(best_alias), ctx))
+
+    if not matches:
+        return ""
+    matches.sort(key=lambda item: (-item[0], item[1].get("name", "")))
+    unique = []
+    seen = set()
+    for _, ctx in matches:
+        name = ctx.get("name") or ""
+        if name in seen:
+            continue
+        seen.add(name)
+        unique.append(ctx)
+        if len(unique) >= 3:
+            break
+    return "；".join(f"{ctx.get('name')}={ctx.get('label')}" for ctx in unique if ctx.get("name"))
+
+
+def _append_issue_lines(risk_lines: list, issues: list, heroine_contexts: list) -> None:
+    for i, p in enumerate(issues, 1):
+        risk_lines.append(f"{i}. [{p.get('type','')}] @chunk {p.get('chunk_index')}")
+        context = _match_issue_heroine_context(p, heroine_contexts)
+        if context:
+            risk_lines.append(f"   女主定位上下文：{context}")
+        risk_lines.append(f"   原文：{p.get('content','')}")
+        if p.get("review_comment"):
+            risk_lines.append(f"   裁决：{p.get('review_comment')}")
+
+
 def _summarize_heroine_relationship_structure(profile: dict, evidence: dict = None) -> str:
     profile = profile or {}
     evidence = evidence or {}
@@ -1758,25 +1847,18 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
     ]
 
     # ---------------- 毒点/雷点（原样输出，不润色） ----------------
+    heroine_contexts = _build_heroine_position_contexts(heroines, all_female_characters, profile_cache, purity_map)
     risk_lines = ["", "【毒点】"]
     yumen = (reviewer or {}).get("yumen_points") or []
     if yumen:
-        for i, p in enumerate(yumen, 1):
-            risk_lines.append(f"{i}. [{p.get('type','')}] @chunk {p.get('chunk_index')}")
-            risk_lines.append(f"   原文：{p.get('content','')}")
-            if p.get("review_comment"):
-                risk_lines.append(f"   裁决：{p.get('review_comment')}")
+        _append_issue_lines(risk_lines, yumen, heroine_contexts)
     else:
         risk_lines.append("（无）")
 
     risk_lines.extend(["", "【雷点】"])
     lei = (reviewer or {}).get("lei_points") or []
     if lei:
-        for i, p in enumerate(lei, 1):
-            risk_lines.append(f"{i}. [{p.get('type','')}] @chunk {p.get('chunk_index')}")
-            risk_lines.append(f"   原文：{p.get('content','')}")
-            if p.get("review_comment"):
-                risk_lines.append(f"   裁决：{p.get('review_comment')}")
+        _append_issue_lines(risk_lines, lei, heroine_contexts)
     else:
         risk_lines.append("（无）")
 
