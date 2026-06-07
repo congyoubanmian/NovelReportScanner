@@ -74,6 +74,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("logic_chain_integrity", mystery_detective.summary_fields)
         self.assertIn("reader_fit", mystery_detective.summary_fields)
         self.assertIn("overall_assessment", mystery_detective.summary_fields)
+        self.assertTrue(any("叙事结构特色" in item for item in mystery_detective.scan_focus))
 
         self.assertEqual(game_system.name, "game_system")
         self.assertTrue(game_system.uses_general_scan)
@@ -111,6 +112,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("sequence_system", cosmic_horror.summary_fields)
         self.assertIn("san_mechanics", cosmic_horror.summary_fields)
         self.assertIn("rule_based_horror", cosmic_horror.summary_fields)
+        self.assertTrue(any("知晓本身即是危险" in item for item in cosmic_horror.scan_focus))
+        self.assertTrue(any("组织是否也是污染来源" in item for item in cosmic_horror.scan_focus))
 
         self.assertEqual(sports_competition.name, "sports_competition")
         self.assertTrue(sports_competition.uses_general_scan)
@@ -118,6 +121,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("technique_tactics", sports_competition.summary_fields)
         self.assertIn("season_structure", sports_competition.summary_fields)
         self.assertIn("rivalry_and_opponents", sports_competition.summary_fields)
+        self.assertTrue(any("规则约束下的竞技" in item for item in sports_competition.scan_focus))
+        self.assertTrue(any("名场面" in item for item in sports_competition.scan_focus))
 
         self.assertEqual(entertainment_industry.name, "entertainment_industry")
         self.assertTrue(entertainment_industry.uses_general_scan)
@@ -150,6 +155,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("technology_progression", farming_management.summary_fields)
         self.assertIn("civilization_level", farming_management.summary_fields)
         self.assertIn("population_management", farming_management.summary_fields)
+        self.assertTrue(any("升级路径" in item for item in farming_management.scan_focus))
+        self.assertTrue(any("外部威胁与内部发展" in item for item in farming_management.scan_focus))
 
         self.assertEqual(isekai_lightnovel.name, "isekai_lightnovel")
         self.assertTrue(isekai_lightnovel.uses_general_scan)
