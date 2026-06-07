@@ -2066,7 +2066,6 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
         "感情戏缺失", "没有感情戏", "无感情戏", "没有感情线", "无感情线",
         "没有恋爱线", "无恋爱线", "没有恋爱", "没有暧昧", "恋爱推进缺失", "感情推进缺失",
     )
-    tooling_words = ("工具人女主", "工具人", "捧哏", "召唤物", "背景说明", "客串", "神隐")
     presence_low = 0
     intimacy_hits = 0
     explicit_romance_gap_hits = 0
@@ -2109,7 +2108,7 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
         for field in ("type", "content", "review_comment", "reason")
     )
     has_romance_gap_issue = any(word in issue_blob for word in romance_gap_words)
-    has_tooling_issue = any(word in issue_blob for word in tooling_words)
+    has_tooling_issue = _has_low_presence_or_tooling_signal(issue_blob)
 
     male_blob = "；".join(
         str(x)

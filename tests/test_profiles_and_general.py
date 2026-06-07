@@ -3800,6 +3800,39 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertIn("低存在感条目约 1 位", overview["female_presence"])
 
+    def test_harem_romance_overview_ignores_negated_tooling_issue(self):
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        try:
+            report.OpenAI = None
+            report.API_KEY_POOL = []
+            overview = report._summarize_harem_romance_overview(
+                {
+                    "all_female_characters": {
+                        "甲女": {
+                            "count": 8,
+                            "summaries": ["主线参与充分，与男主暧昧并偶尔吃醋。"],
+                        }
+                    }
+                },
+                {
+                    "yumen_points": [
+                        {
+                            "type": "角色塑造复核",
+                            "content": "甲女不是工具人女主，也不是背景板。",
+                        }
+                    ]
+                },
+                [{"name": "甲女", "importance_rank": 1}],
+                {},
+            )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+
+        self.assertNotIn("工具人女主", overview["female_tooling_risk"])
+        self.assertEqual(overview["female_tooling_risk"], "未见明显大面积工具人风险")
+
     def test_harem_romance_overview_ignores_negated_romance_signals(self):
         old_openai = report.OpenAI
         old_api_key_pool = report.API_KEY_POOL
