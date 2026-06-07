@@ -3452,6 +3452,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(report._has_male_past_romance_risk("男主与妻子一起经营家族。"))
         self.assertTrue(report._has_male_past_romance_risk("男主前世老婆在他绝症后卷光家产跑路。"))
         self.assertTrue(report._has_male_past_romance_risk("男主有前女友但已经分手。"))
+        self.assertFalse(report._has_male_past_romance_risk("男主听说前世老婆卷光家产跑路，后来证实是误会。"))
+        self.assertFalse(report._has_male_past_romance_risk("有人传言男主有前女友，但实际没有恋爱经历。"))
+        self.assertFalse(report._has_male_past_romance_risk("男主梦见自己前世有妻子背叛。"))
+        self.assertTrue(report._has_male_past_romance_risk("证据显示男主前世老婆在他绝症后卷光家产跑路。"))
 
         old_openai = report.OpenAI
         old_api_key_pool = report.API_KEY_POOL
@@ -3470,12 +3474,19 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 [],
                 {"summaries": ["男主前世老婆在他绝症后卷光家产跑路。"]},
             )
+            rumor = report._summarize_harem_romance_overview(
+                {"all_female_characters": {}},
+                {},
+                [],
+                {"summaries": ["男主听说前世老婆卷光家产跑路，后来证实是误会。"]},
+            )
         finally:
             report.OpenAI = old_openai
             report.API_KEY_POOL = old_api_key_pool
 
         self.assertEqual(clean["male_past_romance_risk"], "未见明确男主前史情感雷点。")
         self.assertIn("前妻/前女友/前世婚恋", risky["male_past_romance_risk"])
+        self.assertEqual(rumor["male_past_romance_risk"], "未见明确男主前史情感雷点。")
 
     def test_report_classifies_heroine_position_level(self):
         target = report._heroine_position_level(

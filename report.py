@@ -1831,6 +1831,8 @@ def _has_male_past_romance_risk(text: str) -> bool:
     text = str(text or "")
     if not text:
         return False
+    if _male_past_romance_blob_is_nonfactual_or_negated(text):
+        return False
     explicit_past_partner_words = (
         "前妻", "前女友", "前任", "前夫", "前未婚妻", "前世老婆", "前世妻子", "前世爱人",
         "上一世老婆", "上一世妻子", "原配", "亡妻",
@@ -1848,6 +1850,24 @@ def _has_male_past_romance_risk(text: str) -> bool:
         any(word in text for word in partner_words)
         and any(word in text for word in negative_words)
     )
+
+
+def _male_past_romance_blob_is_nonfactual_or_negated(text: str) -> bool:
+    nonfactual_words = ("传言", "传闻", "据说", "听说", "流言", "谣言", "误传", "谣传", "猜测", "疑似", "梦见", "梦到", "梦境")
+    resolved_words = ("证实是误会", "证实不成立", "后来证实", "澄清", "不属实", "并非事实", "假的", "假消息")
+    negated_patterns = (
+        "没有恋爱经历", "没有感情经历", "没有前女友", "没有前妻", "没有前任",
+        "没谈过恋爱", "从未恋爱", "未恋爱", "无恋爱经历", "无感情经历",
+        "没有结婚", "未结婚", "未婚", "没有婚史", "无婚史",
+    )
+    strong_factual_anchors = ("确实", "明确", "实锤", "证据显示", "事实是", "实际发生", "真的发生", "已确认", "确认了")
+    if any(word in text for word in resolved_words):
+        return True
+    if any(pattern in text for pattern in negated_patterns):
+        return True
+    if any(word in text for word in nonfactual_words):
+        return not any(anchor in text for anchor in strong_factual_anchors)
+    return False
 
 
 def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
