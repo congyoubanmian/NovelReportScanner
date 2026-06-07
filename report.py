@@ -1547,6 +1547,8 @@ def _strict_ntr_victim_only_review_hint(issue: dict, text: str) -> str:
     victim_or_threat_markers = (
         "被强迫", "被胁迫", "被囚禁", "被调戏", "被窥视", "被绑走", "被绑架", "被下药",
         "被骚扰", "被侵犯未遂", "强奸未遂", "企图侵犯", "企图强奸", "差点被侵犯", "险些被侵犯",
+        "被强吻", "被猥亵", "被占便宜", "被非礼", "被轻薄", "被摸", "被搂抱", "被抱住",
+        "强吻", "猥亵", "非礼", "轻薄", "强行亲吻", "强行搂抱", "强行抱住",
         "绑走调戏", "囚禁调戏", "言语调戏",
     )
     if not any(marker in text for marker in victim_or_threat_markers):
@@ -1558,6 +1560,8 @@ def _strict_ntr_victim_only_review_hint(issue: dict, text: str) -> str:
     negated_relationship_markers = (
         "没有性关系", "未发生性关系", "没有发生关系", "没有同房", "未同房", "没有圆房", "未圆房",
         "没有情感背叛", "无情感背叛", "没有主观背叛", "未背叛男主", "没有背叛男主",
+        "没有暧昧", "未暧昧", "没有恋爱", "未恋爱", "没有动心", "未动心", "没有喜欢上", "未喜欢上",
+        "没有爱上", "未爱上", "并未喜欢", "并未爱上", "并无暧昧", "并无恋爱",
     )
     has_relationship_fact = any(marker in text for marker in relationship_fact_markers)
     has_negated_relationship = any(marker in text for marker in negated_relationship_markers)

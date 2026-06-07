@@ -4687,6 +4687,36 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("绿帽必须有明确暧昧/恋爱/性关系或实质情感背叛", victim_only_ntr_issue["definition_review_hint"])
         self.assertIn("应复核是否应降为亵女/虐女/NTR擦边", victim_only_ntr_issue["definition_review_hint"])
 
+        forced_kiss_ntr_issue = report._annotate_issue_for_report(
+            {"type": "绿帽", "content": "强女被路人男强吻，但没有暧昧也没有喜欢上对方。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(forced_kiss_ntr_issue["heroine_position_context"], "强女=强准女主")
+        self.assertIn("绿帽必须有明确暧昧/恋爱/性关系或实质情感背叛", forced_kiss_ntr_issue["definition_review_hint"])
+        self.assertIn("应复核是否应降为亵女/虐女/NTR擦边", forced_kiss_ntr_issue["definition_review_hint"])
+
+        harassment_ntr_issue = report._annotate_issue_for_report(
+            {"type": "NTR", "content": "强女被反派猥亵未遂，未恋爱也未背叛男主。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(harassment_ntr_issue["heroine_position_context"], "强女=强准女主")
+        self.assertIn("绿帽必须有明确暧昧/恋爱/性关系或实质情感背叛", harassment_ntr_issue["definition_review_hint"])
+        self.assertIn("应复核是否应降为亵女/虐女/NTR擦边", harassment_ntr_issue["definition_review_hint"])
+
         factual_ntr_issue = report._annotate_issue_for_report(
             {"type": "绿帽", "content": "强女与路人男发生性关系并背叛男主。"},
             [
