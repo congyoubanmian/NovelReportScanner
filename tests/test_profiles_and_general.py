@@ -1531,6 +1531,63 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         finally:
             web_manager.MAX_JSON_BODY_SIZE = old_limit
 
+    def test_web_manager_send_public_file_streams_in_chunks(self):
+        class TrackingWFile:
+            def __init__(self):
+                self.data = b""
+                self.write_sizes = []
+
+            def write(self, data):
+                self.write_sizes.append(len(data))
+                self.data += data
+
+        class FakeHandler(web_manager.Handler):
+            def __init__(self):
+                self.wfile = TrackingWFile()
+                self.headers_sent = []
+                self.errors = []
+
+            def send_response(self, code):
+                self.response = code
+
+            def send_header(self, key, value):
+                self.headers_sent.append((key, value))
+
+            def end_headers(self):
+                pass
+
+            def send_error(self, code, message=None):
+                self.errors.append((code, message))
+
+        old_base_dir = web_manager.get_base_dir
+        old_chunk_size = web_manager.FILE_RESPONSE_CHUNK_SIZE
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                results_dir = os.path.join(tmp, "results")
+                os.makedirs(results_dir, exist_ok=True)
+                path = os.path.join(results_dir, "report.txt")
+                with open(path, "wb") as f:
+                    f.write(b"abcdefghi")
+
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.FILE_RESPONSE_CHUNK_SIZE = 4
+
+                handler = FakeHandler()
+                web_manager.Handler._send_public_file(handler, path)
+
+                self.assertEqual(handler.response, 200)
+                self.assertEqual(handler.wfile.data, b"abcdefghi")
+                self.assertEqual(handler.wfile.write_sizes, [4, 4, 1])
+                self.assertIn(("Content-Length", "9"), handler.headers_sent)
+                self.assertIn(("Content-Type", "text/plain; charset=utf-8"), handler.headers_sent)
+
+                forbidden_handler = FakeHandler()
+                web_manager.Handler._send_public_file(forbidden_handler, os.path.join(tmp, "secret.txt"))
+                self.assertEqual(forbidden_handler.errors[0][0], 403)
+        finally:
+            web_manager.get_base_dir = old_base_dir
+            web_manager.FILE_RESPONSE_CHUNK_SIZE = old_chunk_size
+
     def test_web_manager_scan_subprocess_parses_result_and_logs_output(self):
         class FakeProcess:
             def __init__(self):

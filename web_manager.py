@@ -31,6 +31,7 @@ STATE = {"books": {}, "tasks": []}
 CONFIG_READY = False
 MAX_UPLOAD_SIZE = int(os.environ.get("MAX_UPLOAD_SIZE", str(100 * 1024 * 1024)))
 MAX_JSON_BODY_SIZE = int(os.environ.get("MAX_JSON_BODY_SIZE", str(64 * 1024)))
+FILE_RESPONSE_CHUNK_SIZE = int(os.environ.get("FILE_RESPONSE_CHUNK_SIZE", str(1024 * 1024)))
 SYNC_BOOKS_TTL_SECONDS = float(os.environ.get("SYNC_BOOKS_TTL_SECONDS", "5"))
 OUTPUTS_CACHE_TTL_SECONDS = float(os.environ.get("OUTPUTS_CACHE_TTL_SECONDS", "5"))
 SSE_STATE_INTERVAL_SECONDS = float(os.environ.get("SSE_STATE_INTERVAL_SECONDS", "3"))
@@ -854,6 +855,26 @@ class Handler(BaseHTTPRequestHandler):
             except OSError:
                 return
 
+    def _send_public_file(self, path):
+        if not _is_safe_public_file(path):
+            self.send_error(403, "file is not allowed")
+            return
+        try:
+            size = os.path.getsize(path)
+            content_type = "application/json; charset=utf-8" if path.lower().endswith(".json") else "text/plain; charset=utf-8"
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(size))
+            self.end_headers()
+            with open(path, "rb") as f:
+                while True:
+                    chunk = f.read(FILE_RESPONSE_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+        except OSError:
+            self.send_error(404)
+
     def do_OPTIONS(self):
         self.send_response(204)
         self.end_headers()
@@ -897,21 +918,7 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/files":
             params = parse_qs(parsed.query)
             path = unquote((params.get("path") or [""])[0])
-            if not _is_safe_public_file(path):
-                self.send_error(403, "file is not allowed")
-                return
-            try:
-                with open(path, "rb") as f:
-                    body = f.read()
-            except OSError:
-                self.send_error(404)
-                return
-            content_type = "application/json; charset=utf-8" if path.lower().endswith(".json") else "text/plain; charset=utf-8"
-            self.send_response(200)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self._send_public_file(path)
             return
         self.send_error(404)
 
