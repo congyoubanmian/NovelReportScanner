@@ -1000,7 +1000,8 @@ def _contains_positive_signal_text(value, keywords) -> bool:
         "不喜欢", "不爱", "并不喜欢", "并不爱", "不是喜欢", "不是爱",
         "谈不上喜欢", "谈不上爱", "称不上喜欢", "称不上爱", "讨厌", "厌恶",
     )
-    roleplay_hints = ("假装成", "假扮成", "伪装成", "冒充", "扮作", "装作")
+    roleplay_hints = ("假装成", "假装", "假扮成", "假扮", "伪装成", "伪装", "冒充", "扮作", "装作")
+    roleplay_after_hints = ("台词", "排练", "演戏", "舞台剧", "剧本")
     non_romantic_like_prefixes = ("读者", "粉丝", "书友")
     non_romantic_like_followers = (
         "什么", "哪", "吃", "喝", "看", "用", "这", "那", "某", "衣", "裙", "书", "菜", "颜色", "东西", "物件",
@@ -1013,6 +1014,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
     )
     non_romantic_emotion_contexts = ("读者", "书友", "粉丝", "作者", "剧情", "副本", "设定", "文笔", "设计", "说明")
     nonfactual_romance_contexts = ("传言", "传闻", "流言", "谣言", "误会", "误传", "炒作", "营销", "澄清", "伪装")
+    tight_roleplay_words = {"喜欢", "爱", "动心", "倾心", "表白", "告白", "暧昧"}
     for word in keywords:
         start = 0
         while word:
@@ -1022,6 +1024,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
             window = text[max(0, index - 12):index]
             around_window = text[max(0, index - 8):index + len(word)]
             roleplay_window = text[max(0, index - 8):index]
+            tight_roleplay_window = text[max(0, index - 3):index]
             next_text = text[index + len(word):index + len(word) + 4]
             non_romantic_like = word == "喜欢" and (
                 text[max(0, index - 2):index] == "喜不"
@@ -1040,9 +1043,15 @@ def _contains_positive_signal_text(value, keywords) -> bool:
                 hint in text[max(0, index - 10):index + len(word) + 12]
                 for hint in nonfactual_romance_contexts
             )
+            roleplay_blocked = (
+                any(hint in tight_roleplay_window for hint in roleplay_hints)
+                if word in tight_roleplay_words
+                else any(hint in roleplay_window for hint in roleplay_hints)
+            )
             if (
                 not any(hint in window or hint in around_window for hint in negative_hints)
-                and not any(hint in roleplay_window for hint in roleplay_hints)
+                and not roleplay_blocked
+                and not any(hint in next_text for hint in roleplay_after_hints)
                 and not non_romantic_like
                 and not non_romantic_love
                 and not non_romantic_emotion
