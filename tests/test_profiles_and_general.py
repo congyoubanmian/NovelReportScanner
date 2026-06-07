@@ -740,6 +740,21 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertIn("送女/绿帽锁定定义", ntr_system_prompt)
 
+    def test_toxic_reviewer_prompt_keeps_ntr_edge_as_general_issue(self):
+        system_prompt, _ = toxic_reviewer.build_review_prompts(
+            {
+                "category": "郁闷点",
+                "type": "NTR擦边/反复救援",
+                "content": "反派反复试图绑走甲女，但都被男主救下。",
+            },
+            "NTR擦边定义",
+            "男主",
+            ["甲女"],
+        )
+
+        self.assertIn("一般郁闷点/亵女类指控", system_prompt)
+        self.assertNotIn("送女/绿帽锁定定义", system_prompt)
+
     def test_toxic_reviewer_prompt_keeps_general_issue_review_short(self):
         system_prompt, _ = toxic_reviewer.build_review_prompts(
             {
@@ -3509,6 +3524,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("未命中已识别女主名或别名", missing_issue["definition_review_hint"])
         self.assertEqual(normal_issue["heroine_position_context"], "弱女=弱准女主")
         self.assertNotIn("definition_review_hint", normal_issue)
+
+        edge_issue = report._annotate_issue_for_report(
+            {"type": "NTR擦边/反复救援", "content": "弱女差点被反派绑走。"},
+            contexts,
+        )
+        self.assertEqual(edge_issue["heroine_position_context"], "弱女=弱准女主")
+        self.assertNotIn("definition_review_hint", edge_issue)
 
     def test_reviewer_derives_past_life_cleanliness(self):
         risky = novel_reviewer._derive_past_life_cleanliness(
