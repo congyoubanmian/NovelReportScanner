@@ -25,6 +25,8 @@
     "clue_fairness",
     "trick_logic",
     "reveal_and_payoff",
+    "cheat_detection_dependency",
+    "case_mainline_link",
     "strengths",
     "risks_or_issues"
   ],

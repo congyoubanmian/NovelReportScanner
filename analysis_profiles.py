@@ -69,6 +69,7 @@ _PROFILE_ORDER = {
     "campus_youth": 160,
     "farming_management": 170,
     "isekai_lightnovel": 180,
+    "steampunk_fantasy": 190,
 }
 
 
@@ -169,6 +170,12 @@ def normalize_profile_name(value: str) -> str:
         "转生": "isekai_lightnovel",
         "穿越异世界": "isekai_lightnovel",
         "日轻": "isekai_lightnovel",
+        "西幻": "steampunk_fantasy",
+        "蒸汽": "steampunk_fantasy",
+        "蒸汽朋克": "steampunk_fantasy",
+        "炼金": "steampunk_fantasy",
+        "炼金工业": "steampunk_fantasy",
+        "蒸汽西幻": "steampunk_fantasy",
     }
     return aliases.get(name, name)
 

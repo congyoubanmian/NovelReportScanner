@@ -30,6 +30,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         campus_youth = analysis_profiles.load_analysis_profile("校园青春")
         farming_management = analysis_profiles.load_analysis_profile("种田经营")
         isekai_lightnovel = analysis_profiles.load_analysis_profile("异世界")
+        steampunk_fantasy = analysis_profiles.load_analysis_profile("蒸汽西幻")
 
         self.assertEqual(harem.name, "harem")
         self.assertTrue(harem.uses_harem_reviewer)
@@ -103,6 +104,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(isekai_lightnovel.uses_general_scan)
         self.assertIn("isekai_premise", isekai_lightnovel.summary_fields)
 
+        self.assertEqual(steampunk_fantasy.name, "steampunk_fantasy")
+        self.assertTrue(steampunk_fantasy.uses_general_scan)
+        self.assertIn("tech_feasibility", steampunk_fantasy.summary_fields)
+
         self.assertEqual(analysis_profiles.resolve_profile_name("自动"), "auto")
 
     def test_profile_options_are_discovered(self):
@@ -128,6 +133,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("campus_youth", names)
         self.assertIn("farming_management", names)
         self.assertIn("isekai_lightnovel", names)
+        self.assertIn("steampunk_fantasy", names)
 
     def test_auto_profile_inference(self):
         self.assertEqual(
@@ -197,6 +203,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(
             analysis_profiles.infer_profile_for_text("转生勇者", "主角转生异世界，加入冒险者公会，在地下城挑战魔王。"),
             "isekai_lightnovel",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("蒸汽炼金侦探", "蒸汽时代的教会帝国里，炼金矩阵和差分机卷入神秘复苏案件。"),
+            "steampunk_fantasy",
         )
         self.assertEqual(
             analysis_profiles.infer_profile_for_text("小镇旧事", "他回到故乡，重新面对童年的朋友。"),
@@ -529,6 +539,68 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("案件结构", more_text)
         self.assertIn("证据链", more_text)
         self.assertIn("法医与侦查程序", more_text)
+
+        specialty_summary = {
+            "profile_display_name": "西幻/蒸汽朋克/炼金工业专长分析",
+            "summary_fields": [
+                "steampunk_setting",
+                "alchemy_industry",
+                "tech_feasibility",
+                "unit_plot_mainline_link",
+                "cheat_detection_dependency",
+                "system_cost_validity",
+                "technical_leap_risk",
+            ],
+            "summary": {
+                "story_overview": "蒸汽时代的侦探依靠炼金系统处理案件。",
+                "steampunk_setting": ["教会、帝国和蒸汽工业共同构成背景"],
+                "alchemy_industry": ["炼金矩阵参与军工生产"],
+                "tech_feasibility": ["差分机和高能煤精需要解释制造链"],
+                "unit_plot_mainline_link": ["多个案件与主线联系偏弱"],
+                "cheat_detection_dependency": ["破案高度依赖系统回放案发现场"],
+                "system_cost_validity": ["寿命消耗是系统核心代价"],
+                "technical_leap_risk": ["超级能源和制导技术跃迁过快"],
+            }
+        }
+        specialty_text = report.build_general_report("测试书", {}, specialty_summary)
+        self.assertIn("蒸汽西幻底盘", specialty_text)
+        self.assertIn("技术可行性", specialty_text)
+        self.assertIn("单元剧情与主线连接度", specialty_text)
+        self.assertIn("外挂破案依赖度", specialty_text)
+        self.assertIn("系统代价有效性", specialty_text)
+        self.assertIn("技术跃迁风险", specialty_text)
+
+    def test_harem_report_adds_romance_overview_and_past_risk(self):
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        try:
+            report.OpenAI = None
+            report.API_KEY_POOL = []
+            text = report.build_report_v2(
+                "测试后宫",
+                {
+                    "male_protagonist": {
+                        "name": "男主",
+                        "summaries": ["男主前世老婆在他绝症后卷光家产跑路。"],
+                    },
+                    "heroine_result": {
+                        "heroines": [{"name": "甲女", "importance_rank": 1}]
+                    },
+                    "all_female_characters": {
+                        "甲女": {"count": 1, "summaries": ["偶尔出场。"]}
+                    },
+                },
+                {"heroines_purity": [{"name": "甲女", "is_virgin": True, "is_spirit_clean": True, "no_partner": True}]},
+            )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+
+        self.assertIn("【感情线与女角色有效性】", text)
+        self.assertIn("感情戏密度", text)
+        self.assertIn("女角色存在感", text)
+        self.assertIn("男主前史情感雷点", text)
+        self.assertIn("前妻/前女友/前世婚恋", text)
 
     def test_harem_report_dedupes_title_variants_with_llm_decision(self):
         old_judge = report._llm_judge_heroine_duplicate_group

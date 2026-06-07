@@ -1052,6 +1052,99 @@ def summarize_heroine_profile_llm(
         }
 
 
+def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroines: list, male_obj: dict) -> dict:
+    all_female_characters = (detailed_data or {}).get("all_female_characters") or {}
+    heroine_material = []
+    intimacy_words = ("亲吻", "拥抱", "牵手", "同床", "双修", "成亲", "表白", "吃醋", "暧昧", "喜欢", "爱慕", "私通", "推倒")
+    presence_low = 0
+    intimacy_hits = 0
+    for h in heroines or []:
+        name = str((h or {}).get("name") or "").strip()
+        if not name:
+            continue
+        aliases = h.get("aliases") or h.get("other_names") or []
+        evid = _match_female_evidence(name, aliases, all_female_characters) or {}
+        blob = "；".join(
+            str(x)
+            for x in [
+                h.get("relationship_type", ""),
+                h.get("summary", ""),
+                h.get("character_traits", ""),
+                *(evid.get("relationships") or [])[:8],
+                *(evid.get("interactions") or [])[:8],
+                *(evid.get("emotion_signals") or [])[:8],
+                *(evid.get("summaries") or [])[:8],
+            ]
+            if x
+        )
+        if any(word in blob for word in intimacy_words):
+            intimacy_hits += 1
+        count = int(evid.get("count") or h.get("count") or 0)
+        if count <= 2 and len(blob) < 120:
+            presence_low += 1
+        heroine_material.append({"name": name, "count": count, "material": blob[:900]})
+
+    male_blob = "；".join(
+        str(x)
+        for x in [
+            (male_obj or {}).get("identity", ""),
+            *((male_obj or {}).get("summaries") or [])[:80],
+            *((male_obj or {}).get("relationships") or [])[:40],
+        ]
+        if x
+    )
+    fallback = {
+        "romance_density": "偏低" if heroines and intimacy_hits <= max(1, len(heroines) // 4) else "中等或以上",
+        "female_presence": f"共识别 {len(heroines or [])} 位女主/准女主，低存在感条目约 {presence_low} 位。",
+        "romance_progression": "未见足够材料判断" if not intimacy_hits else "存在部分亲密/暧昧推进，需结合具体女主条目查看。",
+        "female_tooling_risk": "女角色可能偏工具人" if presence_low >= max(2, len(heroines or []) // 2) else "未见明显大面积工具人风险",
+        "romance_expectation_gap": "若读者期待高密度恋爱互动，需要关注实际感情戏占比。",
+        "male_past_romance_risk": "未见明确男主前史情感雷点。",
+    }
+    past_words = ("前妻", "前女友", "前世老婆", "老婆", "妻子", "卷走", "卷光", "跑路", "离婚", "绝症")
+    if any(word in male_blob for word in past_words):
+        fallback["male_past_romance_risk"] = "男主材料中出现前妻/前女友/前世婚恋等前史线索，需人工关注是否构成情感背景雷点。"
+
+    if not OpenAI or not API_KEY_POOL:
+        return fallback
+
+    system_prompt = """你是男性向后宫小说感情线审稿助手。请基于材料评估：
+1. 感情戏密度是否充足；
+2. 女角色是否有存在感和塑造；
+3. 恋爱/暧昧/亲密关系是否有推进；
+4. 女角色是否偏工具人；
+5. 标题、标签、女角色数量与实际感情戏是否有预期落差；
+6. 男主前史情感雷点，如前妻、前女友、前世婚姻、丧偶、被卷钱跑路等。
+
+只根据材料输出，不要编造。只输出 JSON 对象。"""
+    user_prompt = json.dumps({
+        "male_material": male_blob[:4000],
+        "heroine_count": len(heroines or []),
+        "heroine_material": heroine_material[:40],
+        "reviewer_heroine_purity_names": [x.get("name") for x in (reviewer or {}).get("heroines_purity", [])[:60]],
+        "output_schema": fallback,
+    }, ensure_ascii=False, indent=2)
+    try:
+        resp = chat_completion(
+            model=MODEL,
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+            temperature=0.1,
+            max_tokens=1400,
+            response_format={"type": "json_object"},
+        )
+        record_usage(resp)
+        data = json.loads(resp.choices[0].message.content or "{}")
+        if not isinstance(data, dict):
+            return fallback
+        return {
+            key: str(data.get(key) or fallback[key]).strip()
+            for key in fallback
+        }
+    except Exception as exc:
+        log_report(f"后宫感情概览生成失败，使用保守兜底: {exc}")
+        return fallback
+
+
 def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     header = [f"书名：{book_key or '未识别'}", f"报告生成时间：{ts}", "=" * 60]
@@ -1202,6 +1295,18 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
 
         heroine_lines.extend(block)
 
+    romance_overview = _summarize_harem_romance_overview(detailed_data, reviewer, heroines, male_obj)
+    romance_lines = [
+        "",
+        "【感情线与女角色有效性】",
+        f"感情戏密度：{romance_overview.get('romance_density') or '未描述'}",
+        f"女角色存在感：{romance_overview.get('female_presence') or '未描述'}",
+        f"恋爱推进：{romance_overview.get('romance_progression') or '未描述'}",
+        f"工具人风险：{romance_overview.get('female_tooling_risk') or '未描述'}",
+        f"预期落差：{romance_overview.get('romance_expectation_gap') or '未描述'}",
+        f"男主前史情感雷点：{romance_overview.get('male_past_romance_risk') or '未描述'}",
+    ]
+
     # ---------------- 毒点/雷点（原样输出，不润色） ----------------
     risk_lines = ["", "【毒点】"]
     yumen = (reviewer or {}).get("yumen_points") or []
@@ -1225,7 +1330,7 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
     else:
         risk_lines.append("（无）")
 
-    return "\n".join([*header, "", *male_lines, *heroine_lines, *risk_lines])
+    return "\n".join([*header, "", *male_lines, *heroine_lines, *romance_lines, *risk_lines])
 
 
 def _clean_text_items(items, limit=5, max_len=120):
@@ -1358,6 +1463,23 @@ def _append_general_scan_section(lines: list, general_summary: dict):
         "adventure_system": "冒险体系",
         "party_dynamics": "队伍互动",
         "lightnovel_pacing": "轻小说节奏",
+        "steampunk_setting": "蒸汽西幻底盘",
+        "alchemy_industry": "炼金工业",
+        "tech_feasibility": "技术可行性",
+        "church_empire_politics": "教会/帝国/王室政治",
+        "mysticism_integration": "神秘学与工业结合",
+        "unit_plot_mainline_link": "单元剧情与主线连接度",
+        "cheat_detection_dependency": "外挂破案依赖度",
+        "case_mainline_link": "案件与主线连接度",
+        "system_cost_validity": "系统代价有效性",
+        "power_creep": "能力膨胀风险",
+        "technical_leap_risk": "技术跃迁风险",
+        "romance_density": "感情戏密度",
+        "female_presence": "女角色存在感",
+        "romance_progression": "恋爱推进",
+        "female_tooling_risk": "女角色工具人风险",
+        "romance_expectation_gap": "感情预期落差",
+        "male_past_romance_risk": "男主前史情感雷点",
     }
 
     def add_list(title, items):
