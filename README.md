@@ -244,6 +244,71 @@ docker run -d \
 - 容器内存限制可通过 `CONTAINER_MEMORY_LIMIT` 和 `CONTAINER_MEMORY_RESERVATION` 调整；超长小说或多分类扫描建议适当调高。
 - 镜像健康检查使用 `/healthz`，只证明 Web 管理端进程可访问；是否能真正扫描取决于 `.env` / API Key 是否配置正确。
 
+公网反向代理 / TLS 建议：
+
+如果 Web 管理端暴露到公网，建议不要直接开放裸 `8765` 端口。更稳妥的做法是让容器只监听本机回环地址，再用 Caddy 或 Nginx 负责 HTTPS、域名和访问入口：
+
+```yaml
+# docker-compose.yml 可把端口改成只绑定本机
+ports:
+  - "127.0.0.1:${WEB_PORT:-8765}:8765"
+```
+
+同时在 `.env` 中设置访问令牌，并把 CORS 收窄到你的域名：
+
+```ini
+WEB_ACCESS_TOKEN=换成一段长随机字符串
+WEB_CORS_ALLOW_ORIGIN=https://scanner.example.com
+```
+
+Caddy 示例：
+
+```caddyfile
+scanner.example.com {
+  reverse_proxy 127.0.0.1:8765
+}
+```
+
+Nginx 示例：
+
+```nginx
+server {
+    listen 80;
+    server_name scanner.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name scanner.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/scanner.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/scanner.example.com/privkey.pem;
+
+    client_max_body_size 100m;
+
+    location / {
+        proxy_pass http://127.0.0.1:8765;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /api/events {
+        proxy_pass http://127.0.0.1:8765;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+    }
+}
+```
+
+反向代理配置完成后，浏览器访问 `https://scanner.example.com/?token=你的令牌` 可首次保存令牌；后续页面会把令牌放入 `Authorization: Bearer ...` 头中请求 API。`/healthz` 不需要令牌，只能证明 Web 进程可达，不应当作为 API Key 或扫描能力是否正常的判断。
+
 ### 方式四：本地 Web 管理端
 
 如果你需要管理多本书、上传后手动调整分类，可以启动本地 Web 管理端：

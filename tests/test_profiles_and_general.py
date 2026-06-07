@@ -75,6 +75,22 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("*.tar", gitignore_lines)
         self.assertIn("*.log", gitignore_lines)
 
+    def test_readme_documents_public_proxy_tls_deployment(self):
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        readme_path = os.path.join(base_dir, "README.md")
+        with open(readme_path, "r", encoding="utf-8") as f:
+            text = f.read()
+
+        self.assertIn("公网反向代理 / TLS 建议", text)
+        self.assertIn("127.0.0.1:${WEB_PORT:-8765}:8765", text)
+        self.assertIn("WEB_ACCESS_TOKEN=换成一段长随机字符串", text)
+        self.assertIn("WEB_CORS_ALLOW_ORIGIN=https://scanner.example.com", text)
+        self.assertIn("reverse_proxy 127.0.0.1:8765", text)
+        self.assertIn("return 301 https://$host$request_uri", text)
+        self.assertIn("proxy_buffering off", text)
+        self.assertIn("proxy_read_timeout 3600s", text)
+        self.assertIn("Authorization: Bearer", text)
+
     def test_profile_aliases_and_stages(self):
         harem = analysis_profiles.load_analysis_profile("后宫")
         general = analysis_profiles.load_analysis_profile("通用")

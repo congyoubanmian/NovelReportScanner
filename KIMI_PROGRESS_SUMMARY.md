@@ -112,6 +112,7 @@
 - Web 运行信息条展示容器 Key 启动校验是否开启，方便确认 Docker/Compose 部署是否允许跳过 Key 校验。
 - `docker-compose.yml` 显式透传后宫增强、上传限制、JSON 限制、文件流式块大小、目录同步 TTL、输出缓存 TTL 和 SSE 推送间隔等 `.env` 运行参数，避免只写在 `.env` 但容器内未生效。
 - `.env.sample` 补齐 Compose 支持的镜像名、UID/GID、容器内存、分析模式、后宫增强和补扫调优变量，降低远程部署时漏配参数的概率。
+- README 已补充公网反向代理/TLS 部署建议，包含本机端口绑定、`WEB_ACCESS_TOKEN`、CORS 收窄、Caddy/Nginx 示例和 SSE 代理配置。
 
 ### 6. 测试覆盖
 
