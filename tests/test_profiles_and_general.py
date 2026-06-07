@@ -163,6 +163,29 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(steampunk_fantasy.uses_general_scan)
         self.assertIn("tech_feasibility", steampunk_fantasy.summary_fields)
 
+        for profile in [
+            general,
+            history,
+            hard_sci_fi,
+            xianxia_fantasy,
+            mystery_detective,
+            game_system,
+            urban_power,
+            military_war,
+            apocalypse_survival,
+            cosmic_horror,
+            sports_competition,
+            entertainment_industry,
+            business_career,
+            crime_forensics,
+            campus_youth,
+            farming_management,
+            isekai_lightnovel,
+            steampunk_fantasy,
+        ]:
+            self.assertIn("reader_fit", profile.summary_fields, profile.name)
+            self.assertIn("overall_assessment", profile.summary_fields, profile.name)
+
         self.assertEqual(analysis_profiles.resolve_profile_name("自动"), "auto")
 
     def test_general_profile_fallback_keeps_general_scan_stage(self):

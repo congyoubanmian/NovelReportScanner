@@ -44,7 +44,9 @@
     "real_world_impact",
     "power_creep",
     "strengths",
-    "risks_or_issues"
+    "risks_or_issues",
+    "reader_fit",
+    "overall_assessment"
   ],
   "inference_keywords": [
     {"word": "系统", "weight": 5},
