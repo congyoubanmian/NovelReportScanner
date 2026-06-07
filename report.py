@@ -1015,7 +1015,10 @@ def _contains_positive_signal_text(value, keywords) -> bool:
     )
     non_romantic_emotion_contexts = ("读者", "书友", "粉丝", "作者", "剧情", "副本", "设定", "文笔", "设计", "说明")
     nonfactual_romance_contexts = ("传言", "传闻", "流言", "谣言", "误会", "误传", "炒作", "营销", "澄清", "伪装")
-    system_or_setting_followers = ("功法", "理论", "设定", "制度", "体系", "流派", "知识", "丫鬟", "女仆", "安排")
+    system_or_setting_followers = (
+        "功法", "理论", "设定", "制度", "体系", "流派", "知识", "丫鬟", "女仆", "安排",
+        "规则", "规矩", "桥段", "写法", "模板", "套路",
+    )
     nonfactual_ending_contexts = ("梦见", "梦到", "梦境", "幻境", "假死", "制度", "结构", "讲解", "研究", "传说", "故事")
     tight_roleplay_words = {"喜欢", "爱", "动心", "倾心", "表白", "告白", "暧昧"}
     for word in keywords:
@@ -1046,7 +1049,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
                 hint in text[max(0, index - 10):index + len(word) + 12]
                 for hint in nonfactual_romance_contexts
             )
-            system_or_setting_relation = word in ("双修", "同房") and any(
+            system_or_setting_relation = word in ("双修", "同房", "道侣", "恋人", "情侣", "伴侣") and any(
                 next_text.startswith(hint) for hint in system_or_setting_followers
             )
             nonfactual_ending = word in ("死亡", "死去", "牺牲", "陨落", "葬", "坟", "墓") and any(
