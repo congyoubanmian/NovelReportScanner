@@ -1335,6 +1335,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "尾声提到丁女未交代归宿，男主独自离开江湖。",
             "尾声里丁女没有留在男主身边，也没有去向说明。",
             "尾声说明丁女最终没有同行，归宿不明。",
+            "尾声里丁女不知去了哪里，男主独自离开江湖。",
+            "结局中丁女去向未知，再无音讯。",
+            "多年后众人不知道丁女的去处，只偶尔提起她。",
         ]
         for tail in negated_tails:
             with self.subTest(tail=tail):

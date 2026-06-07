@@ -409,8 +409,10 @@ def _ending_accounted_in_tail(tail: str, name: str, aliases: List[str]) -> Tuple
     weak_mention_markers = ("想起", "提到", "听说", "传闻", "名字", "名单", "回忆", "梦见", "路过", "问起")
     negated_ending_markers = (
         "未交代归宿", "没有交代归宿", "未明确交代", "没有明确交代", "归宿不明", "去向不明",
-        "没有去向说明", "未说明去向", "未交代去向", "没有留在", "未留在", "没有同行",
-        "未同行", "没有跟随", "未跟随", "结局未交代", "尾声未交代",
+        "去向未知", "不知去了哪里", "不知道去了哪里", "不知道去处", "不知去处", "去处不明",
+        "没有去向说明", "未说明去向", "未交代去向", "下落不明", "行踪不明", "再无音讯",
+        "音讯全无", "没有留在", "未留在", "没有同行", "未同行", "没有跟随", "未跟随",
+        "结局未交代", "尾声未交代",
     )
     strong_ending_markers = (
         "归宿", "去处", "留下", "留在", "陪在", "跟随", "同行", "同去", "回到", "去了",
@@ -427,7 +429,8 @@ def _ending_accounted_in_tail(tail: str, name: str, aliases: List[str]) -> Tuple
             if idx < 0:
                 break
             window = tail[max(0, idx - 80): idx + len(candidate) + 120]
-            if any(marker in window for marker in negated_ending_markers):
+            negated_named_ending = re.search(r"(?:不知|不知道|未说明|没有说明).{0,12}(?:去处|归宿|下落|行踪)", window)
+            if any(marker in window for marker in negated_ending_markers) or negated_named_ending:
                 start = idx + len(candidate)
                 continue
             weak_mention_only = (
