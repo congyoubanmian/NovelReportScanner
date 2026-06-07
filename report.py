@@ -13,6 +13,7 @@ from Timerror import make_chat_completion
 from shared_utils import get_base_dir, read_file_safely
 from token_tracker import create_default_tracker
 from analysis_profiles import load_analysis_profile
+from toxic_reviewer import is_strict_harem_issue_type
 
 try:
     from openai import OpenAI
@@ -1175,7 +1176,7 @@ def _match_issue_heroine_context(issue: dict, heroine_contexts: list) -> str:
 
 def _issue_definition_review_hint(issue: dict, heroine_contexts: list) -> str:
     issue_type = str((issue or {}).get("type") or "")
-    if not any(word in issue_type for word in ("送女", "绿帽")):
+    if not is_strict_harem_issue_type(issue_type):
         return ""
     matched = _matched_issue_heroine_contexts(issue, heroine_contexts)
     if not matched:

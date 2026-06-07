@@ -728,6 +728,18 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("不能仅因为“占有欲读者不适”就判 valid=true", joined)
         self.assertIn("缺少任一必要构成时必须判 invalid", joined)
 
+        ntr_system_prompt, _ = toxic_reviewer.build_review_prompts(
+            {
+                "category": "雷点（严重毒点）",
+                "type": "NTR",
+                "content": "旁人意淫甲女。",
+            },
+            "NTR定义",
+            "男主",
+            ["甲女"],
+        )
+        self.assertIn("送女/绿帽锁定定义", ntr_system_prompt)
+
     def test_toxic_reviewer_prompt_keeps_general_issue_review_short(self):
         system_prompt, _ = toxic_reviewer.build_review_prompts(
             {
@@ -3485,7 +3497,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         weak_issue, missing_issue, normal_issue = report._annotate_issues_for_report(
             [
                 {"type": "送女", "content": "弱女被安排嫁给路人男。"},
-                {"type": "绿帽", "content": "漂亮女子与路人男有传闻。"},
+                {"type": "NTR", "content": "漂亮女子与路人男有传闻。"},
                 {"type": "亵女", "content": "弱女被路人调戏。"},
             ],
             contexts,

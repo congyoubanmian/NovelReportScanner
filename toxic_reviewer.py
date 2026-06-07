@@ -10,7 +10,11 @@ from tqdm import tqdm
 from shared_utils import MODEL, RULES_FILE, _safe_json_loads_maybe, chat_completion, logger, record_usage, read_file_safely
 
 
-STRICT_HAREM_ISSUE_TYPES = ("绿帽", "送女")
+STRICT_HAREM_ISSUE_TYPES = ("绿帽", "送女", "NTR", "ntr")
+
+
+def is_strict_harem_issue_type(issue_type: str) -> bool:
+    return any(word in str(issue_type or "") for word in STRICT_HAREM_ISSUE_TYPES)
 
 
 def load_rules_dict(rules_file: str = RULES_FILE) -> Dict[str, str]:
@@ -25,7 +29,7 @@ def load_rules_dict(rules_file: str = RULES_FILE) -> Dict[str, str]:
 
 
 def _strict_harem_review_rules(issue_type: str) -> str:
-    if not any(word in str(issue_type or "") for word in STRICT_HAREM_ISSUE_TYPES):
+    if not is_strict_harem_issue_type(issue_type):
         return ""
     return """
 5. **送女/绿帽锁定定义（高于占有欲泛化判断）**：
