@@ -1002,6 +1002,8 @@ def _contains_positive_signal_text(value, keywords) -> bool:
     )
     roleplay_hints = ("假装成", "假扮成", "伪装成", "冒充", "扮作", "装作")
     non_romantic_like_followers = ("什么", "哪", "吃", "喝", "看", "用", "这", "那", "某", "衣", "裙", "书", "菜", "颜色", "东西", "物件")
+    non_romantic_love_prefixes = ("可", "讨人喜")
+    non_romantic_love_followers = ("吃", "喝", "看", "用", "好", "好者", "好是", "心", "护", "惜", "美", "漂亮", "玩", "闹")
     for word in keywords:
         start = 0
         while word:
@@ -1016,10 +1018,15 @@ def _contains_positive_signal_text(value, keywords) -> bool:
                 text[max(0, index - 2):index] == "喜不"
                 or any(next_text.startswith(hint) for hint in non_romantic_like_followers)
             )
+            non_romantic_love = word == "爱" and (
+                any(text[max(0, index - len(hint)):index] == hint for hint in non_romantic_love_prefixes)
+                or any(next_text.startswith(hint) for hint in non_romantic_love_followers)
+            )
             if (
                 not any(hint in window or hint in around_window for hint in negative_hints)
                 and not any(hint in roleplay_window for hint in roleplay_hints)
                 and not non_romantic_like
+                and not non_romantic_love
             ):
                 return True
             start = index + len(word)
@@ -1385,7 +1392,7 @@ def _summarize_leak_three_layers(purity_info: dict, profile: dict) -> str:
     events_text = profile.get("key_events") or ""
     profile_text = f"{relation_text} {events_text}"
 
-    has_emotional_depth = _contains_any_text(
+    has_emotional_depth = _contains_positive_signal_text(
         profile_text,
         ["暧昧", "喜欢", "爱", "动心", "倾心", "表白", "告白", "吃醋", "承诺", "救赎", "道侣", "恋人", "未婚妻"],
     )
