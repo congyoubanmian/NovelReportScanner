@@ -6,6 +6,7 @@ import BookDetail from './components/BookDetail.vue'
 import { useToast } from './composables/useToast.js'
 import { useTheme } from './composables/useTheme.js'
 import { usePolling } from './composables/usePolling.js'
+import { useStateEvents } from './composables/useStateEvents.js'
 import { getState, getBookDetail, setProfile, enqueueBook, enqueueBooks, cancelQueuedBook, deleteBook } from './api.js'
 
 const { toast, success: toastSuccess, error: toastError } = useToast()
@@ -21,21 +22,26 @@ const loading = ref(true)
 // Race-condition guard for detail loading
 let detailRequestId = 0
 
+async function applyState(data) {
+  books.value = data.books || []
+  profiles.value = data.profiles || profiles.value
+  configReady.value = data.config_ready
+  if (selectedBookId.value) {
+    const found = (books.value || []).find(b => b.id === selectedBookId.value)
+    if (found) {
+      await loadDetail(selectedBookId.value)
+    } else {
+      selectedBookId.value = null
+      selectedBook.value = null
+    }
+  }
+  loading.value = false
+}
+
 async function refresh() {
   try {
     const data = await getState()
-    books.value = data.books || []
-    profiles.value = data.profiles || profiles.value
-    configReady.value = data.config_ready
-    if (selectedBookId.value) {
-      const found = (books.value || []).find(b => b.id === selectedBookId.value)
-      if (found) {
-        await loadDetail(selectedBookId.value)
-      } else {
-        selectedBookId.value = null
-        selectedBook.value = null
-      }
-    }
+    await applyState(data)
   } catch (e) {
     console.error('刷新失败:', e)
   } finally {
@@ -125,7 +131,11 @@ async function handleUploaded() {
   await refresh()
 }
 
-usePolling(refresh, 3000)
+const polling = usePolling(refresh, 3000, { autoStart: false })
+useStateEvents(applyState, {
+  onOpen: polling.stop,
+  onFallback: polling.start
+})
 </script>
 
 <template>

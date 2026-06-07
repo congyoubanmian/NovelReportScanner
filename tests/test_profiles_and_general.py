@@ -1439,7 +1439,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.Handler.end_headers(handler)
             self.assertIn(("Access-Control-Allow-Origin", "https://example.test"), handler.headers_sent)
             self.assertIn(("Access-Control-Allow-Methods", "GET, POST, OPTIONS"), handler.headers_sent)
-            self.assertIn(("Access-Control-Allow-Headers", "Content-Type"), handler.headers_sent)
+            self.assertIn(("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID"), handler.headers_sent)
 
             options_handler = FakeHandler()
             web_manager.Handler.do_OPTIONS(options_handler)
@@ -1450,6 +1450,53 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 os.environ.pop("WEB_CORS_ALLOW_ORIGIN", None)
             else:
                 os.environ["WEB_CORS_ALLOW_ORIGIN"] = old_origin
+
+    def test_web_manager_sse_state_stream_sends_state_event(self):
+        class OneShotWFile:
+            def __init__(self):
+                self.data = b""
+
+            def write(self, data):
+                self.data += data
+                raise BrokenPipeError()
+
+            def flush(self):
+                pass
+
+        class FakeHandler(web_manager.Handler):
+            def __init__(self):
+                self.headers_sent = []
+                self.wfile = OneShotWFile()
+
+            def send_response(self, code):
+                self.response = code
+
+            def send_header(self, key, value):
+                self.headers_sent.append((key, value))
+
+            def end_headers(self):
+                pass
+
+        old_state = web_manager.STATE
+        old_sync = web_manager._sync_books_from_disk
+        old_interval = web_manager.SSE_STATE_INTERVAL_SECONDS
+        try:
+            web_manager.STATE = {"books": {}, "tasks": []}
+            web_manager._sync_books_from_disk = lambda: None
+            web_manager.SSE_STATE_INTERVAL_SECONDS = 0
+            handler = FakeHandler()
+
+            web_manager.Handler._send_sse_state_stream(handler)
+
+            self.assertEqual(handler.response, 200)
+            self.assertIn(("Content-Type", "text/event-stream; charset=utf-8"), handler.headers_sent)
+            body = handler.wfile.data.decode("utf-8")
+            self.assertIn("event: state", body)
+            self.assertIn('"books": []', body)
+        finally:
+            web_manager.STATE = old_state
+            web_manager._sync_books_from_disk = old_sync
+            web_manager.SSE_STATE_INTERVAL_SECONDS = old_interval
 
     def test_web_manager_public_state_includes_profiles_and_suggestions(self):
         old_state = web_manager.STATE

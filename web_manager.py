@@ -32,6 +32,7 @@ CONFIG_READY = False
 MAX_UPLOAD_SIZE = int(os.environ.get("MAX_UPLOAD_SIZE", str(100 * 1024 * 1024)))
 SYNC_BOOKS_TTL_SECONDS = float(os.environ.get("SYNC_BOOKS_TTL_SECONDS", "5"))
 OUTPUTS_CACHE_TTL_SECONDS = float(os.environ.get("OUTPUTS_CACHE_TTL_SECONDS", "5"))
+SSE_STATE_INTERVAL_SECONDS = float(os.environ.get("SSE_STATE_INTERVAL_SECONDS", "3"))
 LAST_BOOK_SYNC_AT = 0.0
 OUTPUTS_CACHE = {}
 
@@ -675,7 +676,7 @@ class Handler(BaseHTTPRequestHandler):
     def end_headers(self):
         self.send_header("Access-Control-Allow-Origin", os.environ.get("WEB_CORS_ALLOW_ORIGIN", "*"))
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID")
         super().end_headers()
 
     def _send_json(self, data, status=200):
@@ -723,6 +724,24 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
         return True
 
+    def _send_sse_state_stream(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+        while True:
+            try:
+                _sync_books_from_disk()
+                payload = json.dumps(_public_state(), ensure_ascii=False)
+                self.wfile.write(f"event: state\ndata: {payload}\n\n".encode("utf-8"))
+                self.wfile.flush()
+                time.sleep(SSE_STATE_INTERVAL_SECONDS)
+            except (BrokenPipeError, ConnectionResetError, TimeoutError):
+                return
+            except OSError:
+                return
+
     def do_OPTIONS(self):
         self.send_response(204)
         self.end_headers()
@@ -750,6 +769,9 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/state":
             _sync_books_from_disk()
             self._send_json(_public_state())
+            return
+        if parsed.path == "/api/events":
+            self._send_sse_state_stream()
             return
         if parsed.path == "/api/book":
             params = parse_qs(parsed.query)
