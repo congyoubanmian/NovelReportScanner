@@ -2075,7 +2075,8 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
         if _contains_any_text(blob, explicit_romance_gap_words):
             explicit_romance_gap_hits += 1
         count = int(evid.get("count") or h.get("count") or 0)
-        if count <= 2 and len(blob) < 120:
+        explicit_high_presence = _contains_any_text(blob, ["存在感高", "存在感较高", "存在感很高", "存在感强", "存在感突出"])
+        if _has_low_presence_or_tooling_signal(blob) or (count <= 2 and len(blob) < 120 and not explicit_high_presence):
             presence_low += 1
         heroine_material.append({"name": name, "count": count, "material": blob[:900]})
 
