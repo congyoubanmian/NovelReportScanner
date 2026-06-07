@@ -317,12 +317,40 @@ def _harem_plus_general_scan_enabled(profile):
     return _env_flag_enabled("HAREM_PLUS_GENERAL_SCAN", bool(cfg.get("default_enabled", False)))
 
 
-def _run_harem_plus_general_scan(general_scan_module, novel_path, book_name, run_id, detail_path, profile):
-    from analysis_profiles import load_analysis_profile
+def _select_harem_plus_general_profile(novel_path, book_name, profile):
+    from analysis_profiles import infer_profile_candidates_for_novel, load_analysis_profile
 
     cfg = getattr(profile, "harem_plus", {}) or {}
-    general_profile_name = str(cfg.get("general_profile") or "general")
-    general_profile = load_analysis_profile(general_profile_name)
+    fallback_name = str(cfg.get("general_profile") or "general")
+    selected_name = fallback_name
+    if bool(cfg.get("auto_secondary_profile", False)):
+        try:
+            min_score = int(cfg.get("secondary_min_score", 6))
+        except (TypeError, ValueError):
+            min_score = 6
+        excluded = cfg.get("secondary_exclude_profiles")
+        if not isinstance(excluded, list):
+            excluded = ["harem", "general"]
+        excluded = {str(item) for item in excluded}
+        try:
+            candidates = infer_profile_candidates_for_novel(novel_path, book_name, min_score=1)
+        except Exception as exc:
+            print(f"[harem+] 自动识别副类型失败，回退 {fallback_name}: {exc}")
+            candidates = []
+        for item in candidates:
+            name = str(item.get("name") or "")
+            try:
+                score = int(item.get("score") or 0)
+            except (TypeError, ValueError):
+                score = 0
+            if name and name not in excluded and score >= min_score:
+                selected_name = name
+                break
+    return load_analysis_profile(selected_name)
+
+
+def _run_harem_plus_general_scan(general_scan_module, novel_path, book_name, run_id, detail_path, profile):
+    general_profile = _select_harem_plus_general_profile(novel_path, book_name, profile)
     old_profile = os.environ.get("ANALYSIS_PROFILE")
     old_rules = os.environ.get("ANALYSIS_RULES_FILE")
     try:

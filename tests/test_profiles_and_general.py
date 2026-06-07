@@ -1064,6 +1064,46 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(calls[0]["book_name"], "book")
         self.assertEqual(os.environ.get("ANALYSIS_PROFILE"), old_profile)
 
+    def test_harem_plus_auto_selects_secondary_profile(self):
+        harem = analysis_profiles.load_analysis_profile("harem")
+        old_profile = os.environ.get("ANALYSIS_PROFILE")
+        old_rules = os.environ.get("ANALYSIS_RULES_FILE")
+        calls = []
+
+        class FakeGeneralScan:
+            @staticmethod
+            def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
+                calls.append({
+                    "profile": os.environ.get("ANALYSIS_PROFILE"),
+                    "rules": os.environ.get("ANALYSIS_RULES_FILE"),
+                    "novel_path": novel_path,
+                    "book_name": book_name,
+                })
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            novel_path = os.path.join(tmpdir, "仙路后宫.txt")
+            with open(novel_path, "w", encoding="utf-8") as f:
+                f.write("男主与多女主双修，红颜和道侣一起卷入宗门、金丹、元婴、秘境和飞升传承。")
+
+            try:
+                os.environ["ANALYSIS_PROFILE"] = "harem"
+                os.environ["ANALYSIS_RULES_FILE"] = harem.rules_file
+                selected = main._select_harem_plus_general_profile(novel_path, "仙路后宫", harem)
+                main._run_harem_plus_general_scan(FakeGeneralScan, novel_path, "仙路后宫", "run", "/tmp/detail.json", harem)
+            finally:
+                if old_profile is None:
+                    os.environ.pop("ANALYSIS_PROFILE", None)
+                else:
+                    os.environ["ANALYSIS_PROFILE"] = old_profile
+                if old_rules is None:
+                    os.environ.pop("ANALYSIS_RULES_FILE", None)
+                else:
+                    os.environ["ANALYSIS_RULES_FILE"] = old_rules
+
+        self.assertEqual(selected.name, "xianxia_fantasy")
+        self.assertEqual(calls[0]["profile"], "xianxia_fantasy")
+        self.assertIn("profiles/xianxia_fantasy", calls[0]["rules"])
+
     def test_requested_profiles_accepts_manual_multi_select(self):
         self.assertEqual(main._normalize_requested_profiles(["历史", "科幻"]), ["history", "hard_sci_fi"])
         self.assertEqual(main._normalize_requested_profiles("历史,科幻"), ["history", "hard_sci_fi"])
