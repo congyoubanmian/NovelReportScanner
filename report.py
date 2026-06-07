@@ -1372,8 +1372,21 @@ def _has_low_presence_or_tooling_signal(text: str) -> bool:
     text = str(text or "")
     if not text:
         return False
-    tooling_words = ("工具", "召唤", "捧哏", "背景", "说明", "客串", "神隐")
-    if _contains_any_text(text, tooling_words):
+    negated_tooling_patterns = (
+        "不是工具人", "并非工具人", "非工具人", "不算工具人", "没有工具人化",
+        "不是背景板", "并非背景板", "非背景板",
+    )
+    protected_text = text
+    for pattern in negated_tooling_patterns:
+        protected_text = protected_text.replace(pattern, "")
+    tooling_words = ("工具", "召唤", "捧哏", "客串", "神隐")
+    if _contains_any_text(protected_text, tooling_words):
+        return True
+    background_exposition_patterns = (
+        "背景说明", "说明背景", "负责说明", "负责解释", "解释背景", "讲解背景",
+        "说明功能", "解释功能", "功能性说明", "设定说明", "世界观说明",
+    )
+    if any(pattern in text for pattern in background_exposition_patterns):
         return True
     low_frequency_patterns = (
         "偶尔出场", "偶尔登场", "偶尔出现", "偶尔露面", "偶尔客串", "偶尔同场",

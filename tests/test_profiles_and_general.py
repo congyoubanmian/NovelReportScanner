@@ -4076,6 +4076,33 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertIn("低存在感/工具人线索", occasional_cameo)
 
+        background_identity = report._heroine_position_level(
+            {"importance_rank": 2},
+            {
+                "identity": "身份背景复杂的贵族少女",
+                "relationship_with_protagonist": "与男主长期暧昧并互相扶持。",
+                "features": "家族背景显赫，个人动机明确。",
+                "key_events": "参与主线并多次向男主表白，不是背景板。",
+            },
+            {"count": 10, "summaries": ["背景显赫但不是工具人。"]},
+            {},
+        )
+        self.assertNotIn("低存在感/工具人线索", background_identity)
+        self.assertIn("感情/亲密推进", background_identity)
+
+        exposition_role = report._heroine_position_level(
+            {"importance_rank": 5},
+            {
+                "identity": "设定讲解角色",
+                "relationship_with_protagonist": "负责说明背景，没有感情线。",
+                "features": "功能性说明",
+                "key_events": "主要负责解释背景。",
+            },
+            {"count": 4, "summaries": ["承担背景说明和设定解释功能。"]},
+            {},
+        )
+        self.assertIn("低存在感/工具人线索", exposition_role)
+
     def test_report_does_not_promote_functional_character_without_romance_signal(self):
         level = report._heroine_position_level(
             {"importance_rank": 2},
