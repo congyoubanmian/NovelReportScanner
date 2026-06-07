@@ -37,7 +37,9 @@
     "cheat_detection_dependency",
     "case_mainline_link",
     "strengths",
-    "risks_or_issues"
+    "risks_or_issues",
+    "reader_fit",
+    "overall_assessment"
   ],
   "inference_keywords": [
     {"word": "推理", "weight": 5},

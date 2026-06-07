@@ -72,6 +72,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("puzzle_fairness", mystery_detective.summary_fields)
         self.assertIn("narrative_trick", mystery_detective.summary_fields)
         self.assertIn("logic_chain_integrity", mystery_detective.summary_fields)
+        self.assertIn("reader_fit", mystery_detective.summary_fields)
+        self.assertIn("overall_assessment", mystery_detective.summary_fields)
 
         self.assertEqual(game_system.name, "game_system")
         self.assertTrue(game_system.uses_general_scan)
