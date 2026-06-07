@@ -3990,6 +3990,33 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(no_romance_functional.startswith("低证据女角色"), no_romance_functional)
         self.assertIn("明确缺少恋爱/后宫推进", no_romance_functional)
 
+        high_presence_no_romance = report._heroine_position_level(
+            {"importance_rank": 1},
+            {
+                "identity": "探案搭档",
+                "relationship_with_protagonist": "跟随男主探案，存在感较高，但没有恋爱线。",
+                "features": "主线助手",
+                "key_events": "高频参与案件侦破，没有感情戏。",
+            },
+            {"count": 20, "summaries": ["存在感较高，负责案件推进。"]},
+            {},
+        )
+        self.assertNotIn("低存在感/工具人线索", high_presence_no_romance)
+        self.assertIn("明确缺少恋爱/后宫推进", high_presence_no_romance)
+
+        nearly_absent = report._heroine_position_level(
+            {"importance_rank": 6},
+            {
+                "identity": "客串女角色",
+                "relationship_with_protagonist": "偶尔与男主同场，没有恋爱线。",
+                "features": "存在感约等于没有",
+                "key_events": "很快神隐。",
+            },
+            {"count": 2, "summaries": ["存在感约等于没有。"]},
+            {},
+        )
+        self.assertIn("低存在感/工具人线索", nearly_absent)
+
     def test_report_does_not_promote_functional_character_without_romance_signal(self):
         level = report._heroine_position_level(
             {"importance_rank": 2},

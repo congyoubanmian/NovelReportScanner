@@ -1250,7 +1250,7 @@ def _summarize_heroine_effectiveness(heroine_meta: dict, profile: dict, evidence
             " ".join(str(s) for s in (evidence.get("summaries") or [])[:5]),
         ]
     )
-    if _contains_any_text(raw_text, ["工具", "召唤", "捧哏", "背景", "说明", "偶尔", "客串", "存在感", "神隐"]):
+    if _has_low_presence_or_tooling_signal(raw_text):
         risks.append("存在工具人/低存在感线索")
     if not signals:
         return "证据不足：缺少稳定关系、关键事件和出场信息。"
@@ -1326,7 +1326,7 @@ def _heroine_position_level(heroine_meta: dict, profile: dict, evidence: dict = 
         score += 1
         signals.append(f"重要度排序 {rank}")
 
-    if _contains_any_text(text, ["工具", "召唤", "捧哏", "背景", "说明", "偶尔", "客串", "存在感", "神隐"]):
+    if _has_low_presence_or_tooling_signal(text):
         score -= 2
         risks.append("低存在感/工具人线索")
     has_romance_gap_signal = _contains_any_text(text, [
@@ -1366,6 +1366,21 @@ def _heroine_position_level(heroine_meta: dict, profile: dict, evidence: dict = 
 
     detail = "；".join(dict.fromkeys(signals[:4] + risks[:3])) or "证据不足"
     return f"{label}：{detail}"
+
+
+def _has_low_presence_or_tooling_signal(text: str) -> bool:
+    text = str(text or "")
+    if not text:
+        return False
+    tooling_words = ("工具", "召唤", "捧哏", "背景", "说明", "偶尔", "客串", "神隐")
+    if _contains_any_text(text, tooling_words):
+        return True
+    low_presence_patterns = (
+        "低存在感", "存在感低", "存在感很低", "存在感较低", "存在感偏低", "存在感不高",
+        "存在感约等于没有", "存在感约等于无", "存在感等于没有", "存在感几乎没有",
+        "存在感几乎为零", "存在感接近没有", "存在感接近于无", "存在感稀薄",
+    )
+    return any(pattern in text for pattern in low_presence_patterns)
 
 
 def _build_heroine_position_contexts(
