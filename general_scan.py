@@ -15,48 +15,14 @@ CHUNK_SIZE = int(os.environ.get("GENERAL_SCAN_CHUNK_SIZE", "12000"))
 CHUNK_OVERLAP = int(os.environ.get("GENERAL_SCAN_CHUNK_OVERLAP", "1000"))
 MAX_CHUNKS = int(os.environ.get("GENERAL_SCAN_MAX_CHUNKS", "80"))
 
-SUMMARY_FIELD_LABELS = {
-    "foreshadowing_and_payoff": "伏笔与回收",
-    "historical_logic": "历史制度与时代逻辑",
-    "historical_atmosphere": "历史氛围",
-    "warfare_and_intrigue": "战争与权谋",
-    "scientific_assumptions": "科学假设",
-    "technology_chain": "技术链与工程约束",
-    "science_consistency": "科学设定自洽性",
-    "scale_and_wonder": "尺度感与科幻奇观",
-    "social_ethical_impact": "社会与伦理影响",
-    "cultivation_system": "修炼体系",
-    "bloodline_physique": "血脉/体质/天赋",
-    "dao_theme": "求道/长生主题",
-    "system_rules": "系统规则",
-    "instance_variety": "副本/世界多样性",
-    "player_interaction": "玩家互动",
-    "novelty_mechanics": "系统机制创新",
-    "real_world_impact": "现实世界影响",
-    "golden_finger_system": "异能/金手指体系",
-    "relationships": "关系线",
-    "villain_quality": "反派质量",
-    "war_type_and_scale": "战争类型与规模",
-    "force_buildup": "部队建设",
-    "equipment_and_tech": "装备与军工科技",
-    "combat_writing": "战斗描写",
-    "political_diplomacy": "政治与外交",
-    "social_collapse_and_rebuild": "秩序崩塌与重建",
-    "humanity_moral_dilemmas": "人性与道德困境",
-    "power_evolution_system": "能力/进化体系",
-    "case_complexity": "案件复杂度",
-    "criminal_psychology": "犯罪心理",
-    "team_dynamics": "团队协作",
-    "social_reflection": "社会映射",
-    "races_culture": "种族与文化生态",
-    "politics_society": "贵族/国家政治",
-    "romance_comedy_balance": "恋爱喜剧与主线平衡",
-    "slice_of_life": "日常/经营元素",
-}
-
-
 def _summary_field_label(field: str) -> str:
-    return SUMMARY_FIELD_LABELS.get(field, field.replace("_", " "))
+    try:
+        from report import summary_field_label
+
+        return summary_field_label(field)
+    except Exception:
+        return field.replace("_", " ")
+
 
 
 def _read_novel(path: str) -> str:

@@ -2336,6 +2336,25 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(any('"golden_finger_system": ["异能/金手指体系专项分析要点"]' in prompt for prompt in prompts))
         self.assertTrue(any('"relationships": ["关系线专项分析要点"]' in prompt for prompt in prompts))
 
+    def test_general_scan_field_labels_cover_profile_summary_fields(self):
+        common = {
+            "main_plot",
+            "core_conflicts",
+            "worldbuilding",
+            "themes",
+            "strengths",
+            "risks_or_issues",
+            "reader_fit",
+            "overall_assessment",
+        }
+        for profile in analysis_profiles.list_available_profiles():
+            if profile.name == "harem":
+                continue
+            for field in profile.summary_fields:
+                if field in common:
+                    continue
+                self.assertNotEqual(general_scan._summary_field_label(field), field.replace("_", " "), field)
+
     def test_general_scan_fresh_summary(self):
         with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
             f.write("test")
