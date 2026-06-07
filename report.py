@@ -845,16 +845,21 @@ def _summarize_heroine_relationship_structure(profile: dict, evidence: dict = No
             " ".join(str(s) for s in (evidence.get("summaries") or [])[:8]),
             " ".join(str(s) for s in (evidence.get("relationships") or [])[:8]),
             " ".join(str(s) for s in (evidence.get("features") or [])[:8]),
+            json.dumps((evidence.get("purity_facts") or {}).get("economic_attachments") or [], ensure_ascii=False),
+            json.dumps((evidence.get("purity_facts") or {}).get("power_relations") or [], ensure_ascii=False),
+            json.dumps((evidence.get("purity_facts") or {}).get("political_marriages") or [], ensure_ascii=False),
+            json.dumps((evidence.get("purity_facts") or {}).get("victim_records") or [], ensure_ascii=False),
         ]
     )
     tags = []
-    if _contains_any_text(text, ["依附", "供养", "赡养", "债务", "欠债", "卖身", "赎身", "包养", "经济", "资源", "养活"]):
+    purity_facts = evidence.get("purity_facts") or {}
+    if purity_facts.get("economic_attachments") or _contains_any_text(text, ["依附", "供养", "赡养", "债务", "欠债", "卖身", "赎身", "包养", "经济", "资源", "养活"]):
         tags.append("经济依附")
-    if _contains_any_text(text, ["上司", "下属", "主仆", "主人", "奴", "师徒", "宗主", "皇帝", "女王", "权力", "掌控", "命令", "生杀"]):
+    if purity_facts.get("power_relations") or _contains_any_text(text, ["上司", "下属", "主仆", "主人", "奴", "师徒", "宗主", "皇帝", "女王", "权力", "掌控", "命令", "生杀"]):
         tags.append("权力关系")
-    if _contains_any_text(text, ["联姻", "和亲", "赐婚", "婚约", "包办", "政治婚姻", "家族婚约", "逼婚", "被迫嫁"]):
+    if purity_facts.get("political_marriages") or _contains_any_text(text, ["联姻", "和亲", "赐婚", "婚约", "包办", "政治婚姻", "家族婚约", "逼婚", "被迫嫁"]):
         tags.append("政治联姻/婚约")
-    if _contains_any_text(text, ["受害", "被迫", "强迫", "胁迫", "囚禁", "绑架", "下药", "侵犯", "猥亵", "偷拍", "直播", "曝光", "洗脑"]):
+    if purity_facts.get("victim_records") or _contains_any_text(text, ["受害", "被迫", "强迫", "胁迫", "囚禁", "绑架", "下药", "侵犯", "猥亵", "偷拍", "直播", "曝光", "洗脑"]):
         tags.append("受害/胁迫记录")
     if not tags:
         return "未见明确经济依附、权力关系、政治联姻或受害记录线索。"

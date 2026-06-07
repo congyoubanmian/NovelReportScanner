@@ -527,6 +527,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("权力关系", prompt)
         self.assertIn("政治联姻", prompt)
         self.assertIn("受害/胁迫记录", prompt)
+        self.assertIn("economic_attachments", prompt)
+        self.assertIn("power_relations", prompt)
+        self.assertIn("political_marriages", prompt)
+        self.assertIn("victim_records", prompt)
 
     def test_physical_contact_postprocess_without_partner_relations(self):
         facts = [
@@ -552,6 +556,35 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(len(contacts), 1)
         self.assertEqual(contacts[0]["partner"], "王公子")
         self.assertEqual(contacts[0]["chunk_index"], 826)
+
+    def test_extended_heroine_facts_survive_postprocess_and_merge(self):
+        facts = [
+            {
+                "name": "甲女",
+                "facts": {
+                    "economic_attachments": [
+                        {"benefactor": "王公子", "relationship": "债务", "detail": "欠债被迫依附", "evidence": "甲女因欠债被王公子控制。"}
+                    ],
+                    "power_relations": [
+                        {"superior": "宗主", "relationship": "师徒", "has_abuse": True, "detail": "宗主以师命压迫", "evidence": "宗主以师命压迫甲女。"}
+                    ],
+                    "political_marriages": [
+                        {"partner": "世子", "type": "和亲", "status": "planned", "forced": True, "has_consummation": False, "evidence": "甲女被安排与世子和亲。"}
+                    ],
+                    "victim_records": [
+                        {"perpetrator": "反派", "type": "下药", "outcome": "未遂", "rescued_by": "男主", "evidence": "反派给甲女下药未遂。"}
+                    ],
+                },
+            }
+        ]
+
+        cleaned = novel_scan._postprocess_heroine_facts(facts, ["甲女"], {"name": "男主"}, 827)
+        merged = novel_scan.merge_heroine_facts_by_name(cleaned, heroine_names=["甲女"])
+
+        for dim in ["economic_attachments", "power_relations", "political_marriages", "victim_records"]:
+            self.assertEqual(len(cleaned[0]["facts"][dim]), 1)
+            self.assertEqual(cleaned[0]["facts"][dim][0]["chunk_index"], 827)
+            self.assertEqual(len(merged["甲女"][dim]), 1)
 
     def test_rebuild_leak_state_exposes_three_layers(self):
         data = {
@@ -1936,6 +1969,22 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("权力关系", summary)
         self.assertIn("政治联姻/婚约", summary)
         self.assertIn("受害/胁迫记录", summary)
+
+        structured = report._summarize_heroine_relationship_structure(
+            {},
+            {
+                "purity_facts": {
+                    "economic_attachments": [{"benefactor": "王公子"}],
+                    "power_relations": [{"superior": "宗主"}],
+                    "political_marriages": [{"partner": "世子"}],
+                    "victim_records": [{"perpetrator": "反派"}],
+                }
+            },
+        )
+        self.assertIn("经济依附", structured)
+        self.assertIn("权力关系", structured)
+        self.assertIn("政治联姻/婚约", structured)
+        self.assertIn("受害/胁迫记录", structured)
 
     def test_harem_report_dedupes_title_variants_with_llm_decision(self):
         old_judge = report._llm_judge_heroine_duplicate_group
