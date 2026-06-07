@@ -12,18 +12,20 @@ from shared_utils import MODEL, RULES_FILE, _safe_json_loads_maybe, chat_complet
 
 STRICT_HAREM_ISSUE_TYPES = ("绿帽", "送女")
 STRICT_NTR_ALIASES = ("NTR", "牛头人")
-STRICT_NTR_EXCLUSION_HINTS = ("擦边", "反复救援", "未遂", "风险")
+STRICT_ISSUE_EXCLUSION_HINTS = ("擦边", "反复救援", "未遂", "风险")
 
 
 def is_strict_harem_issue_type(issue_type: str) -> bool:
     text = str(issue_type or "")
+    if any(word in text for word in STRICT_ISSUE_EXCLUSION_HINTS):
+        return False
     if any(word in text for word in STRICT_HAREM_ISSUE_TYPES):
         return True
     upper_text = text.upper()
     has_ntr_alias = "NTR" in upper_text or any(word in text for word in STRICT_NTR_ALIASES if word != "NTR")
     if not has_ntr_alias:
         return False
-    return not any(word in text for word in STRICT_NTR_EXCLUSION_HINTS)
+    return True
 
 
 def load_rules_dict(rules_file: str = RULES_FILE) -> Dict[str, str]:

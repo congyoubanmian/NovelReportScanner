@@ -779,6 +779,30 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertNotIn("送女/绿帽锁定定义", nt_edge_prompt)
 
+        green_edge_prompt, _ = toxic_reviewer.build_review_prompts(
+            {
+                "category": "郁闷点",
+                "type": "绿帽擦边",
+                "content": "反派口嗨要抢走甲女。",
+            },
+            "绿帽擦边定义",
+            "男主",
+            ["甲女"],
+        )
+        self.assertNotIn("送女/绿帽锁定定义", green_edge_prompt)
+
+        gift_attempt_prompt, _ = toxic_reviewer.build_review_prompts(
+            {
+                "category": "郁闷点",
+                "type": "送女未遂",
+                "content": "家族试图安排甲女嫁人，男主阻止。",
+            },
+            "送女未遂定义",
+            "男主",
+            ["甲女"],
+        )
+        self.assertNotIn("送女/绿帽锁定定义", gift_attempt_prompt)
+
     def test_toxic_reviewer_prompt_keeps_general_issue_review_short(self):
         system_prompt, _ = toxic_reviewer.build_review_prompts(
             {
@@ -3550,7 +3574,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertNotIn("definition_review_hint", normal_issue)
 
         edge_issue = report._annotate_issue_for_report(
-            {"type": "NTR擦边/反复救援", "content": "弱女差点被反派绑走。"},
+            {"type": "绿帽擦边", "content": "弱女差点被反派绑走。"},
             contexts,
         )
         self.assertEqual(edge_issue["heroine_position_context"], "弱女=弱准女主")
