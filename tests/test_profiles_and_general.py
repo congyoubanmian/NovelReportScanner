@@ -3809,6 +3809,36 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(negated_marriage["past_life_clean"])
         self.assertEqual(real_romance["past_life_severity"], "romantic")
 
+    def test_reviewer_keeps_explicit_past_life_risk_in_mixed_nonfactual_context(self):
+        mixed_romance = novel_reviewer._derive_past_life_cleanliness(
+            {},
+            "前世传言她嫁给别人是误会，但原故事线她确实喜欢过反派。",
+        )
+        mixed_fact = novel_reviewer._derive_past_life_cleanliness(
+            {
+                "partner_relations": [
+                    {
+                        "partner": "路人甲",
+                        "is_male_lead": False,
+                        "relationship": "传闻前夫",
+                        "evidence": "前世有人传言她嫁给路人甲，但后来证实是误会。",
+                    },
+                    {
+                        "partner": "反派",
+                        "is_male_lead": False,
+                        "relationship": "恋慕对象",
+                        "evidence": "原故事线她明确喜欢过反派。",
+                    },
+                ]
+            },
+            "",
+        )
+
+        self.assertFalse(mixed_romance["past_life_clean"])
+        self.assertEqual(mixed_romance["past_life_severity"], "romantic")
+        self.assertFalse(mixed_fact["past_life_clean"])
+        self.assertEqual(mixed_fact["past_life_severity"], "romantic")
+
     def test_reviewer_derives_contact_level(self):
         level0 = novel_reviewer._derive_contact_level({}, "男主")
         level3 = novel_reviewer._derive_contact_level(

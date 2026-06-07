@@ -732,6 +732,7 @@ def _derive_past_life_cleanliness(facts: Dict[str, Any], summary: str = "") -> D
             "past_life_reason": "前世/原故事线材料属于否定、传闻或误会语境，未见可作为风险的明确事实。",
         }
 
+    risk_blob = _past_life_effective_risk_text(blob) or blob
     severe_markers = ("万人骑", "轮奸", "群交", "多人", "强奸", "强暴", "侵犯", "洗脑", "雌堕", "背叛")
     sexual_markers = ("同房", "圆房", "失身", "破身", "怀孕", "生下", "孩子", "性关系")
     partner_markers = ("前夫", "丈夫", "男友", "恋人", "未婚夫", "嫁给", "成婚", "结婚", "婚约")
@@ -739,19 +740,19 @@ def _derive_past_life_cleanliness(facts: Dict[str, Any], summary: str = "") -> D
     forced_markers = ("被迫", "强迫", "逼婚", "包办", "受害")
     non_ml_markers = ("非男主", "其他男人", "别的男人", "他人")
 
-    if any(marker in blob for marker in severe_markers):
+    if any(marker in risk_blob for marker in severe_markers):
         severity = "severe"
         severity_label = "严重前世雷点/受害风险"
-    elif any(marker in blob for marker in sexual_markers):
+    elif any(marker in risk_blob for marker in sexual_markers):
         severity = "sexual"
         severity_label = "前世/原故事线性关系或子女风险"
-    elif any(marker in blob for marker in partner_markers):
+    elif any(marker in risk_blob for marker in partner_markers):
         severity = "partner"
         severity_label = "前世/原故事线伴侣或婚约风险"
-    elif any(marker in blob for marker in romantic_markers):
+    elif any(marker in risk_blob for marker in romantic_markers):
         severity = "romantic"
         severity_label = "前世/原故事线情感经历风险"
-    elif any(marker in blob for marker in forced_markers) and any(marker in blob for marker in non_ml_markers):
+    elif any(marker in risk_blob for marker in forced_markers) and any(marker in risk_blob for marker in non_ml_markers):
         severity = "forced"
         severity_label = "前世/原故事线被迫关系风险"
     else:
@@ -779,7 +780,9 @@ def _past_life_blob_is_negated_or_nonfactual(blob: str) -> bool:
     text = str(blob or "")
     if not text:
         return False
-    nonfactual_words = ("传言", "谣言", "误会", "误传", "谣传", "猜测", "怀疑", "疑似")
+    if _past_life_blob_has_explicit_factual_risk(text):
+        return False
+    nonfactual_words = ("传言", "传闻", "谣言", "误会", "误传", "谣传", "猜测", "怀疑", "疑似")
     resolved_words = ("证实是误会", "后来证实", "澄清", "不属实", "并非事实", "假的", "假消息")
     negated_patterns = (
         "没有婚恋", "没有喜欢过", "没有爱过", "没有动心", "没有嫁",
@@ -792,6 +795,64 @@ def _past_life_blob_is_negated_or_nonfactual(blob: str) -> bool:
     if any(word in text for word in negated_patterns):
         return True
     return any(word in text for word in nonfactual_words) and not any(word in text for word in ("确认", "实锤", "明确", "证据"))
+
+
+def _past_life_effective_risk_text(text: str) -> str:
+    """Remove rumor/resolved/negated clauses before ranking past-life risk severity."""
+    chunks = re.split(r"[\n，,。；;！？!?]+", str(text or ""))
+    effective: List[str] = []
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if _past_life_clause_is_nonfactual_or_negated(chunk):
+            continue
+        effective.append(chunk)
+    return "\n".join(effective)
+
+
+def _past_life_clause_is_nonfactual_or_negated(text: str) -> bool:
+    nonfactual_words = ("传言", "传闻", "谣言", "误会", "误传", "谣传", "猜测", "怀疑", "疑似")
+    resolved_words = ("证实是误会", "后来证实", "澄清", "不属实", "并非事实", "假的", "假消息")
+    negated_patterns = (
+        "没有婚恋", "没有喜欢过", "没有爱过", "没有动心", "没有嫁",
+        "未嫁", "未曾嫁", "从未嫁", "未婚", "没有成婚", "没有结婚", "未结婚",
+        "没有同房", "未同房", "没有圆房", "未圆房", "没有发生关系", "无性关系",
+        "未发生性关系", "没有孩子", "未生子", "未怀孕",
+    )
+    if any(word in text for word in resolved_words):
+        return True
+    if any(pattern in text for pattern in negated_patterns):
+        return True
+    if any(word in text for word in nonfactual_words):
+        return not _past_life_blob_has_explicit_factual_risk(text)
+    return False
+
+
+def _past_life_blob_has_explicit_factual_risk(text: str) -> bool:
+    """Keep mixed past-life text from being fully washed out by rumor/negation words."""
+    factual_anchors = (
+        "确实", "明确", "实锤", "证据显示", "事实是", "实际", "真的", "已确认", "确认了",
+        "原故事线她", "原著里她", "上一世她", "前世她",
+    )
+    risk_markers = (
+        "爱过", "喜欢过", "动心", "恋慕", "暗恋",
+        "前夫", "丈夫", "男友", "恋人", "未婚夫", "嫁给", "成婚", "结婚", "婚约",
+        "同房", "圆房", "失身", "破身", "怀孕", "生下", "孩子", "性关系",
+        "强奸", "强暴", "侵犯", "洗脑", "雌堕", "背叛",
+    )
+    negated_risk_phrases = (
+        "没有喜欢过", "没有爱过", "没有动心", "未嫁", "未曾嫁", "从未嫁", "没有嫁",
+        "没有同房", "未同房", "没有圆房", "未圆房", "没有发生关系", "未发生性关系",
+        "没有孩子", "未生子", "未怀孕",
+    )
+    if any(phrase in text for phrase in negated_risk_phrases):
+        protected_text = text
+        for phrase in negated_risk_phrases:
+            protected_text = protected_text.replace(phrase, "")
+    else:
+        protected_text = text
+    return any(anchor in protected_text for anchor in factual_anchors) and any(marker in protected_text for marker in risk_markers)
 
 
 def _derive_contact_level(
