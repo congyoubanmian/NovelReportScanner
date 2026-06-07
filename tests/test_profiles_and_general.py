@@ -740,6 +740,18 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertIn("送女/绿帽锁定定义", ntr_system_prompt)
 
+        nt_system_prompt, _ = toxic_reviewer.build_review_prompts(
+            {
+                "category": "雷点（严重毒点）",
+                "type": "牛头人",
+                "content": "旁人意淫甲女。",
+            },
+            "牛头人定义",
+            "男主",
+            ["甲女"],
+        )
+        self.assertIn("送女/绿帽锁定定义", nt_system_prompt)
+
     def test_toxic_reviewer_prompt_keeps_ntr_edge_as_general_issue(self):
         system_prompt, _ = toxic_reviewer.build_review_prompts(
             {
@@ -754,6 +766,18 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertIn("一般郁闷点/亵女类指控", system_prompt)
         self.assertNotIn("送女/绿帽锁定定义", system_prompt)
+
+        nt_edge_prompt, _ = toxic_reviewer.build_review_prompts(
+            {
+                "category": "郁闷点",
+                "type": "牛头人擦边",
+                "content": "反派威胁要抢走甲女。",
+            },
+            "牛头人擦边定义",
+            "男主",
+            ["甲女"],
+        )
+        self.assertNotIn("送女/绿帽锁定定义", nt_edge_prompt)
 
     def test_toxic_reviewer_prompt_keeps_general_issue_review_short(self):
         system_prompt, _ = toxic_reviewer.build_review_prompts(
@@ -3512,7 +3536,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         weak_issue, missing_issue, normal_issue = report._annotate_issues_for_report(
             [
                 {"type": "送女", "content": "弱女被安排嫁给路人男。"},
-                {"type": "NTR", "content": "漂亮女子与路人男有传闻。"},
+                {"type": "牛头人", "content": "漂亮女子与路人男有传闻。"},
                 {"type": "亵女", "content": "弱女被路人调戏。"},
             ],
             contexts,
