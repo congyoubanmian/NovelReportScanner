@@ -450,14 +450,38 @@ def _heroine_has_emotional_depth_for_leak(heroine_info: Dict[str, Any]) -> Tuple
             texts.extend(str(x) for x in val if str(x).strip())
         elif isinstance(val, str) and val.strip():
             texts.append(val)
-    blob = " ".join(texts)
     keywords = ("暧昧", "喜欢", "爱", "动心", "倾心", "表白", "告白", "吃醋", "承诺", "救赎", "道侣", "恋人", "未婚妻", "双修", "亲密")
-    matched = [kw for kw in keywords if kw in blob]
+    effective_text = _leak_emotional_depth_effective_text(texts)
+    matched = [kw for kw in keywords if kw in effective_text]
     if matched:
         return True, f"命中情感/亲密关键词：{','.join(matched[:5])}"
     if texts:
         return False, "已有女主材料，但未见稳定情感深度关键词"
     return False, "缺少女主关系/互动材料"
+
+
+def _leak_emotional_depth_effective_text(texts: List[str]) -> str:
+    negative_markers = (
+        "没有暧昧", "无暧昧", "没有喜欢", "不喜欢", "没有爱", "不爱", "没有动心", "未动心",
+        "没有感情", "无感情", "没感情", "没有感情线", "无感情线", "没有感情戏", "无感情戏",
+        "没有恋爱", "无恋爱", "没有恋爱线", "无恋爱线", "没有亲密", "无亲密",
+        "未确认关系", "没有确认关系", "无后宫关系确认",
+    )
+    nonfactual_markers = (
+        "调侃", "玩笑", "误会", "误传", "传闻", "传言", "据说", "听说", "疑似", "像", "读者觉得",
+    )
+    effective: List[str] = []
+    for text in texts or []:
+        for chunk in re.split(r"[\n，,。；;！？!?]+", str(text or "")):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            if any(marker in chunk for marker in negative_markers):
+                continue
+            if any(marker in chunk for marker in nonfactual_markers):
+                continue
+            effective.append(chunk)
+    return " ".join(effective)
 
 
 def _issue_identity_key(issue: Dict[str, Any]) -> Tuple[Any, Any, Any, Any]:
