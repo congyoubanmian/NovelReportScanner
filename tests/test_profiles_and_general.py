@@ -1684,6 +1684,94 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("forced=true", result["partner_exemption_reason"])
         self.assertTrue(result["partner_exemption_notes"])
 
+    def test_normalize_clean_accepts_top_level_partner_exemption(self):
+        result = novel_reviewer._normalize_purity_result_consistency({
+            "name": "甲女",
+            "is_virgin": True,
+            "virgin_status": "✅ 处女",
+            "has_other_contact": False,
+            "contact_status": "✅ 无接触",
+            "no_partner": False,
+            "partner_status": "❌ 有男伴（被迫政治婚约）",
+            "is_spirit_clean": True,
+            "spirit_status": "✅ 精神洁（被迫无感情）",
+            "partner_exempted_for_clean": True,
+            "is_clean": False,
+        })
+
+        self.assertTrue(result["is_clean"])
+
+    def test_stepwise_clean_allows_partner_exemption(self):
+        old_child = novel_reviewer._llm_judge_child_origin
+        old_partner = novel_reviewer._llm_judge_partner
+        old_contact = novel_reviewer._llm_judge_contact
+        old_spirit = novel_reviewer._llm_judge_spirit
+        old_virgin = novel_reviewer._llm_judge_virgin
+        try:
+            novel_reviewer._llm_judge_child_origin = lambda *args, **kwargs: {
+                "has_biological_children": False,
+                "biological_children": [],
+            }
+            novel_reviewer._llm_judge_partner = lambda *args, **kwargs: {
+                "no_partner": False,
+                "partner_status": "❌ 有男伴（被迫政治婚约）",
+                "partner_reason": "曾被安排政治婚约，但无感情且未圆房",
+                "partner_list": [{"name": "原著前夫", "relationship": "政治婚约", "forced": True, "has_feelings": False}],
+                "analyzed_partners": [{"partner": "原著前夫", "forced": True, "has_feelings": False}],
+            }
+            novel_reviewer._llm_judge_contact = lambda *args, **kwargs: {
+                "has_other_contact": False,
+                "contact_status": "✅ 无接触",
+                "contact_reason": "未见非男主身体接触",
+            }
+            novel_reviewer._llm_judge_spirit = lambda *args, **kwargs: {
+                "is_spirit_clean": True,
+                "spirit_status": "✅ 精神洁（partner豁免）",
+                "spirit_reason": "被迫婚约且无感情投入",
+                "partner_exempted_for_clean": True,
+                "partner_exemption_notes": [{"partner": "原著前夫", "reason": "forced=true, has_feelings=false"}],
+                "partner_exemption_reason": "原著前夫：forced=true，has_feelings=false",
+            }
+            novel_reviewer._llm_judge_virgin = lambda *args, **kwargs: {
+                "is_virgin": True,
+                "virgin_status": "✅ 处女",
+                "virgin_reason": "未见非男主性关系",
+            }
+
+            result = novel_reviewer.judge_purity_by_llm_stepwise(
+                "甲女",
+                {
+                    "sexual_relations": [],
+                    "children_info": [],
+                    "physical_contacts": [],
+                    "romantic_feelings": [],
+                    "partner_relations": [
+                        {
+                            "partner": "原著前夫",
+                            "is_male_lead": False,
+                            "relationship": "政治婚约",
+                            "status": "订婚未圆房",
+                            "forced": True,
+                            "has_feelings": False,
+                            "evidence": "她被迫与原著前夫订婚，未圆房，也从未动心。",
+                        }
+                    ],
+                },
+                {},
+                "男主",
+            )
+        finally:
+            novel_reviewer._llm_judge_child_origin = old_child
+            novel_reviewer._llm_judge_partner = old_partner
+            novel_reviewer._llm_judge_contact = old_contact
+            novel_reviewer._llm_judge_spirit = old_spirit
+            novel_reviewer._llm_judge_virgin = old_virgin
+
+        self.assertFalse(result["no_partner"])
+        self.assertTrue(result["partner_exempted_for_clean"])
+        self.assertTrue(result["is_clean"])
+        self.assertTrue(result["verification"]["partner_exempted_for_clean"])
+
     def test_report_summarizes_heroine_relationship_structure(self):
         summary = report._summarize_heroine_relationship_structure(
             {

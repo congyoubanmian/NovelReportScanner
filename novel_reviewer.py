@@ -775,15 +775,15 @@ def _normalize_purity_result_consistency(result: Dict[str, Any]) -> Dict[str, An
             f"男伴:{result.get('partner_status', '?')}"
         )
 
-    # 统一 is_clean（兼容历史 verification 中的豁免字段）
+    # 统一 is_clean（兼容顶层与历史 verification 中的豁免字段）
     if all(k in result for k in ("has_other_contact", "no_partner", "is_spirit_clean", "is_virgin")):
         has_other_contact = _to_bool(result.get("has_other_contact", False), False)
         no_partner = _to_bool(result.get("no_partner", True), True)
         is_spirit_clean = _to_bool(result.get("is_spirit_clean", True), True)
-        partner_exempted = False
+        partner_exempted = _to_bool(result.get("partner_exempted_for_clean", False), False)
         verification = result.get("verification", {})
         if isinstance(verification, dict):
-            partner_exempted = _to_bool(verification.get("partner_exempted_for_clean", False), False)
+            partner_exempted = partner_exempted or _to_bool(verification.get("partner_exempted_for_clean", False), False)
         result["is_clean"] = bool(result.get("is_virgin", True)) and (not has_other_contact) and (no_partner or partner_exempted) and is_spirit_clean
 
     return result
@@ -7479,8 +7479,8 @@ def judge_purity_by_llm_stepwise(
     rule_spirit_reason = str(rule_baseline.get("rule_spirit_reason", rule_baseline.get("summary", "")) or "")
     spirit_judgement_conflict = (llm_is_spirit_clean != rule_is_spirit_clean)
     
-    # 综合结果
-    is_clean = is_virgin and not has_contact and no_partner and is_spirit_clean
+    # 综合结果：有男伴维度保留事实判定，但被迫/无感情等 partner 豁免可用于最终洁度。
+    is_clean = is_virgin and not has_contact and (no_partner or partner_exempted_for_clean) and is_spirit_clean
     past_life = _derive_past_life_cleanliness(
         facts,
         "; ".join([
@@ -7696,7 +7696,7 @@ def judge_character_purity_llm(name, evidence_list, male_lead):
   "contact_level_label": "简短等级说明",
   "contact_level_reason": "简短证据理由",
   "summary": "50字内理由，必须引用证据原文！禁止编造证据中没有的内容！",
-  "is_clean": true/false             // 处女 + 无接触 + 无男伴 + 精神洁 四者皆满足才为 true
+  "is_clean": true/false             // 处女 + 无接触 + 无男伴（或partner豁免） + 精神洁才为 true
 }}
 
 【前世洁度补充】：
