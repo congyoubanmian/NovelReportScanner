@@ -1857,7 +1857,7 @@ def _has_male_past_romance_risk(text: str) -> bool:
 
 
 def _male_past_romance_text_has_only_non_partner_homonyms(text: str) -> bool:
-    non_partner_words = ("前夫子", "前夫人", "前妻子", "前妻弟", "前妻兄", "前妻姐", "前妻妹")
+    non_partner_words = _male_past_romance_non_partner_homonyms(text)
     protected = text
     for word in non_partner_words:
         protected = protected.replace(word, "")
@@ -1867,6 +1867,16 @@ def _male_past_romance_text_has_only_non_partner_homonyms(text: str) -> bool:
         "老婆", "妻子", "女友", "爱人", "未婚妻", "恋人", "婚姻", "结婚", "离婚", "丧偶",
     )
     return any(word in text for word in non_partner_words) and not any(marker in protected for marker in risk_markers)
+
+
+def _male_past_romance_non_partner_homonyms(text: str) -> list[str]:
+    relation_roots = ("前妻", "前夫")
+    non_partner_suffixes = ("子", "人", "弟", "兄", "姐", "妹", "侄", "甥", "父", "母", "哥", "嫂", "叔", "婶", "舅", "姨")
+    matches: list[str] = []
+    for root in relation_roots:
+        pattern = rf"{re.escape(root)}(?:{'|'.join(re.escape(s) for s in non_partner_suffixes)})+"
+        matches.extend(re.findall(pattern, text))
+    return matches
 
 
 def _has_male_romantic_ex_partner_context(text: str) -> bool:
