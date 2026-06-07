@@ -1050,7 +1050,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
                 hint in text[max(0, index - 10):index + len(word) + 12]
                 for hint in nonfactual_romance_contexts
             )
-            system_or_setting_relation = word in ("双修", "同房", "道侣", "恋人", "情侣", "伴侣") and any(
+            system_or_setting_relation = word in ("双修", "同房", "道侣", "恋人", "情侣", "伴侣", "未婚妻") and any(
                 next_text.startswith(hint) for hint in system_or_setting_followers
             )
             nonfactual_ending = word in ("死亡", "死去", "牺牲", "陨落", "葬", "坟", "墓") and any(
