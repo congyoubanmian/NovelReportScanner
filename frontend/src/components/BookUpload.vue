@@ -10,6 +10,7 @@ const autoProfile = ref(true)
 const selectedProfiles = ref([])
 const uploading = ref(false)
 const dragover = ref(false)
+const overwriteExisting = ref(false)
 
 const fileNames = computed(() => files.value.map(f => f.name).join(', '))
 const manualProfiles = computed(() => (props.profiles || []).filter(p => p.name !== 'auto'))
@@ -54,6 +55,9 @@ async function submit() {
   for (const file of files.value) {
     const fd = new FormData()
     fd.append('file', file)
+    if (overwriteExisting.value) {
+      fd.append('overwrite', 'true')
+    }
     if (autoProfile.value || !selectedProfiles.value.length) {
       fd.append('profile', 'auto')
     } else {
@@ -113,6 +117,10 @@ async function submit() {
           </label>
         </div>
       </div>
+      <label class="overwrite-option">
+        <input type="checkbox" v-model="overwriteExisting" :disabled="uploading" />
+        <span>覆盖同名文件</span>
+      </label>
       <button class="btn" @click="submit" :disabled="!files.length || uploading">
         {{ uploading ? '上传中...' : `上传${files.length > 1 ? ` (${files.length}个)` : ''}` }}
       </button>
@@ -163,6 +171,24 @@ async function submit() {
 .file-input-wrapper .label strong {
   color: var(--primary);
   font-weight: 600;
+}
+.overwrite-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  cursor: pointer;
+  min-height: 38px;
+}
+.overwrite-option input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--danger);
 }
 select {
   font-family: inherit;

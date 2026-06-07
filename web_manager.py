@@ -129,6 +129,15 @@ def _save_upload_file(file_item, dest_path):
     return size
 
 
+def _validate_upload_target(book_id, path, overwrite=False):
+    existing_book = STATE["books"].get(book_id)
+    if os.path.exists(path) and not overwrite:
+        return False, "file already exists"
+    if overwrite and existing_book and existing_book.get("status") in {"queued", "running"}:
+        return False, "book is queued or running"
+    return True, ""
+
+
 def _load_state():
     global STATE
     path = _state_path()
@@ -919,6 +928,15 @@ class Handler(BaseHTTPRequestHandler):
                 return
             filename = _safe_filename(file_item.filename)
             path = os.path.join(_novels_dir(), filename)
+            book_id = _book_id_from_path(path)
+            overwrite = str(form.getfirst("overwrite", "")).lower() in {"1", "true", "yes", "on"}
+            ok, reason = _validate_upload_target(book_id, path, overwrite=overwrite)
+            if not ok and reason == "file already exists":
+                self._send_json({"error": "file already exists", "book_id": book_id}, 409)
+                return
+            if not ok:
+                self._send_json({"error": reason}, 409)
+                return
             try:
                 uploaded_size = _save_upload_file(file_item, path)
             except ValueError as exc:
@@ -928,7 +946,6 @@ class Handler(BaseHTTPRequestHandler):
             if not profile_values:
                 profile_values = [form.getfirst("profile", "auto")]
             profile = _normalize_web_profile(profile_values if len(profile_values) > 1 else profile_values[0]) or "auto"
-            book_id = _book_id_from_path(path)
             _invalidate_book_outputs(book_id)
             suggestions = _profile_suggestions(path, book_id)
             with STATE_LOCK:

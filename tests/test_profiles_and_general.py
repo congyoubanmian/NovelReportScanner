@@ -1796,6 +1796,25 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.STATE = old_state
             web_manager.get_base_dir = old_base_dir
 
+    def test_web_manager_upload_target_rejects_duplicate_without_overwrite(self):
+        old_state = web_manager.STATE
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                path = os.path.join(tmp, "book.txt")
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write("旧文件")
+                web_manager.STATE = {
+                    "books": {"book": {"id": "book", "name": "book", "path": path, "status": "idle"}},
+                    "tasks": [],
+                }
+
+                self.assertEqual(web_manager._validate_upload_target("book", path, overwrite=False), (False, "file already exists"))
+                self.assertEqual(web_manager._validate_upload_target("book", path, overwrite=True), (True, ""))
+                web_manager.STATE["books"]["book"]["status"] = "queued"
+                self.assertEqual(web_manager._validate_upload_target("book", path, overwrite=True), (False, "book is queued or running"))
+        finally:
+            web_manager.STATE = old_state
+
     def test_web_manager_finds_dynamic_profile_outputs(self):
         results_dir = os.path.join(main.get_base_dir(), "results")
         os.makedirs(results_dir, exist_ok=True)
