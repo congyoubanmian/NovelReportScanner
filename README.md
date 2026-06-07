@@ -217,6 +217,8 @@ docker compose up -d
 
 Compose 会把 `.env` 中的模型、限流、后宫增强、上传限制、SSE 间隔、输出缓存等运行参数显式传入容器。改动 `.env` 后需要重新执行 `docker compose up -d` 让容器重建并读取新环境变量。
 
+`.env.sample` 已包含 Compose 支持的常用部署变量和扫描调优变量，可以复制为 `.env` 后按需修改；不要把真实 `.env` 提交到仓库。
+
 没有 Compose 的环境也可以直接拉镜像运行：
 
 ```bash
