@@ -73,6 +73,103 @@ CHILD_OWNER_TRIGGER_WORDS = [
     "产下", "临盆", "流产", "打胎", "堕胎"
 ]
 
+_CORE_FACT_DIMENSIONS = [
+    "sexual_relations",
+    "children_info",
+    "physical_contacts",
+    "romantic_feelings",
+    "partner_relations",
+]
+_EXTENDED_FACT_DIMENSIONS = [
+    "economic_attachments",
+    "power_relations",
+    "political_marriages",
+    "victim_records",
+]
+_FACT_DIMENSIONS = _CORE_FACT_DIMENSIONS + _EXTENDED_FACT_DIMENSIONS
+
+
+def _empty_purity_fact_bucket() -> Dict[str, List[Any]]:
+    return {key: [] for key in _FACT_DIMENSIONS}
+
+
+def _normalize_purity_fact_bucket(facts: Dict[str, Any]) -> Dict[str, List[Any]]:
+    normalized = _empty_purity_fact_bucket()
+    if not isinstance(facts, dict):
+        return normalized
+    for key in _FACT_DIMENSIONS:
+        value = facts.get(key, [])
+        normalized[key] = list(value or []) if isinstance(value, list) else []
+    return normalized
+
+
+def _dedupe_fact_bucket_by_evidence(facts: Dict[str, List[Any]]) -> Dict[str, List[Any]]:
+    for key in _FACT_DIMENSIONS:
+        seen = set()
+        unique = []
+        for item in facts.get(key, []) or []:
+            if not isinstance(item, dict):
+                signature = str(item)
+            else:
+                signature = "|".join(
+                    [
+                        str(item.get("evidence", "") or ""),
+                        str(item.get("detail", "") or ""),
+                        str(item.get("partner") or item.get("target") or item.get("father") or item.get("child_name") or ""),
+                        str(item.get("benefactor") or item.get("superior") or item.get("perpetrator") or ""),
+                    ]
+                )
+            if signature in seen:
+                continue
+            seen.add(signature)
+            unique.append(item)
+        facts[key] = unique
+    return facts
+
+
+def _append_extended_relationship_facts_text(facts_text: List[str], facts: Dict[str, Any]) -> None:
+    for ea in facts.get("economic_attachments", []) or []:
+        if not isinstance(ea, dict):
+            continue
+        benefactor = ea.get("benefactor", "未知")
+        relationship = ea.get("relationship", "")
+        status = ea.get("status", "")
+        forced_flag = ea.get("forced", None)
+        forced = "被迫" if forced_flag is True else ("自愿" if forced_flag is False else "未知")
+        evidence = str(ea.get("evidence", "") or "")[:100]
+        facts_text.append(f"[经济依附] 对象:{benefactor}, 关系:{relationship}, 状态:{status}, {forced} | 证据: {evidence}")
+
+    for power in facts.get("power_relations", []) or []:
+        if not isinstance(power, dict):
+            continue
+        superior = power.get("superior", "未知")
+        relationship = power.get("relationship", "")
+        abuse = "存在滥用" if power.get("has_abuse") is True else ("未见滥用" if power.get("has_abuse") is False else "滥用未知")
+        evidence = str(power.get("evidence", "") or "")[:100]
+        facts_text.append(f"[权力关系] 上位者:{superior}, 关系:{relationship}, {abuse} | 证据: {evidence}")
+
+    for marriage in facts.get("political_marriages", []) or []:
+        if not isinstance(marriage, dict):
+            continue
+        partner = marriage.get("partner", "未知")
+        marriage_type = marriage.get("type", "")
+        status = marriage.get("status", "")
+        forced_flag = marriage.get("forced", None)
+        forced = "被迫" if forced_flag is True else ("自愿" if forced_flag is False else "未知")
+        consummation = "已圆房" if marriage.get("has_consummation") is True else ("未圆房" if marriage.get("has_consummation") is False else "圆房未知")
+        evidence = str(marriage.get("evidence", "") or "")[:100]
+        facts_text.append(f"[政治联姻] 对象:{partner}, 类型:{marriage_type}, 状态:{status}, {forced}, {consummation} | 证据: {evidence}")
+
+    for victim in facts.get("victim_records", []) or []:
+        if not isinstance(victim, dict):
+            continue
+        perpetrator = victim.get("perpetrator", "未知")
+        record_type = victim.get("type", "")
+        outcome = victim.get("outcome", "")
+        rescued_by = victim.get("rescued_by", "")
+        evidence = str(victim.get("evidence", "") or "")[:100]
+        facts_text.append(f"[受害/胁迫] 侵害者:{perpetrator}, 类型:{record_type}, 结果:{outcome}, 救援:{rescued_by} | 证据: {evidence}")
+
 def find_latest_scan_data(scan_dir: Optional[str] = None):
     """在指定目录（默认 SCAN_RESULTS_DIR）递归查找最新 raw_data.json"""
     base = scan_dir or SCAN_RESULTS_DIR
@@ -1396,21 +1493,12 @@ def _sanitize_purity_facts_for_heroine(heroine_name: str, facts: Dict[str, Any])
     - 避免 LLM/规则把“她是某人的女儿”误当成“她生过孩子”，从而把处女误判成非处。
     """
     if not facts or not isinstance(facts, dict):
-        return {
-            "sexual_relations": [],
-            "children_info": [],
-            "physical_contacts": [],
-            "romantic_feelings": [],
-            "partner_relations": [],
-        }
+        return _empty_purity_fact_bucket()
 
-    cleaned: Dict[str, Any] = {
-        "sexual_relations": list(facts.get("sexual_relations", []) or []),
-        "children_info": [],
-        "physical_contacts": list(facts.get("physical_contacts", []) or []),
-        "romantic_feelings": [],
-        "partner_relations": [],
-    }
+    cleaned: Dict[str, Any] = _normalize_purity_fact_bucket(facts)
+    cleaned["children_info"] = []
+    cleaned["romantic_feelings"] = []
+    cleaned["partner_relations"] = []
 
     for child in (facts.get("children_info", []) or []):
         try:
@@ -4526,33 +4614,19 @@ def judge_character_purity_by_facts(name: str, scan_facts: Dict[str, Any], detai
     综合 scan 和 detail 的结构化事实进行判定
     """
     # 合并事实
-    merged_facts = {
-        "sexual_relations": [],
-        "children_info": [],
-        "physical_contacts": [],
-        "romantic_feelings": [],
-        "partner_relations": [],
-    }
+    merged_facts = _empty_purity_fact_bucket()
     
     # 从 scan_facts 合并
-    for key in merged_facts:
+    for key in _FACT_DIMENSIONS:
         merged_facts[key].extend(scan_facts.get(key, []))
     
     # 从 detail_facts.purity_facts 合并
     purity_facts = detail_facts.get("purity_facts", {})
-    for key in merged_facts:
+    for key in _FACT_DIMENSIONS:
         merged_facts[key].extend(purity_facts.get(key, []))
     
     # 去重（基于 evidence）
-    for key in merged_facts:
-        seen = set()
-        unique = []
-        for item in merged_facts[key]:
-            evidence = item.get("evidence", "")
-            if evidence not in seen:
-                seen.add(evidence)
-                unique.append(item)
-        merged_facts[key] = unique
+    merged_facts = _dedupe_fact_bucket_by_evidence(merged_facts)
     
     return judge_purity_by_facts(name, merged_facts, male_lead)
 
@@ -4624,6 +4698,8 @@ def verify_purity_by_llm(name: str, facts: Dict[str, Any], program_result: Dict[
         forced = "被迫" if forced_flag is True else ("自愿" if forced_flag is False else "未知")
         evidence = pr.get("evidence", "")[:100]
         facts_text.append(f"[伴侣] 与{partner}({is_ml})的{rel}关系, 状态:{status}, {forced} | 证据: {evidence}")
+
+    _append_extended_relationship_facts_text(facts_text, facts)
     
     if not facts_text:
         facts_text.append("（无任何事实记录）")
@@ -4664,6 +4740,7 @@ def verify_purity_by_llm(name: str, facts: Dict[str, Any], program_result: Dict[
 - is_male_lead=true 表示与男主相关，不影响洁度
 - is_male_lead=false 表示与非男主相关，才可能影响洁度
 - 无事实记录 = 默认✅洁
+- 经济依附、权力关系、政治联姻、受害/胁迫记录是辅助事实；不能把“未遂/计划中/未圆房/被迫且无感情”的记录直接当成已发生性关系。
 - 只允许基于事实判断，禁止“推定/脑补”。
 
 【重要防呆（必须严格执行）】：
@@ -4780,6 +4857,8 @@ def verify_purity_second_round(name: str, facts: Dict[str, Any], program_result:
         forced = "被迫" if forced_flag is True else ("自愿" if forced_flag is False else "未知")
         evidence = pr.get("evidence", "")[:100]
         facts_text.append(f"[伴侣] 与{partner}({is_ml})的{rel}关系, 状态:{status}, {forced} | 证据: {evidence}")
+
+    _append_extended_relationship_facts_text(facts_text, facts)
     
     if not facts_text:
         facts_text.append("（无任何事实记录）")
@@ -4805,7 +4884,8 @@ def verify_purity_second_round(name: str, facts: Dict[str, Any], program_result:
 - is_male_lead=false 的事实 → 与非男主相关 → 可能影响洁度
 - 无事实记录 → 默认✅洁
 - 仔细核对每个事实的 is_male_lead 字段！
- - 只允许基于事实判断，禁止“推定/脑补”。
+- 经济依附、权力关系、政治联姻、受害/胁迫记录是辅助事实；不能把“未遂/计划中/未圆房/被迫且无感情”的记录直接当成已发生性关系。
+- 只允许基于事实判断，禁止“推定/脑补”。
 
 【重要防呆（必须严格执行）】：
 - 若 children_info / 证据描述的是“{name}是谁的女儿/之女/某人生下了{name}”，这是【身世/出身】信息，
@@ -7864,13 +7944,7 @@ def _load_detail_evidence(char_file_path: str) -> Dict[str, Dict[str, Any]]:
     for name, info in afc.items():
         evid_map[name] = {
             # 新版结构化事实
-            "purity_facts": info.get("purity_facts", {
-                "sexual_relations": [],
-                "children_info": [],
-                "physical_contacts": [],
-                "romantic_feelings": [],
-                "partner_relations": [],
-            }),
+            "purity_facts": _normalize_purity_fact_bucket(info.get("purity_facts", {})),
             # 旧版兼容字段
             "non_male_male_interactions": info.get("non_male_male_interactions", []),
             "male_lead_intimacy": info.get("male_lead_intimacy", []),
@@ -7903,15 +7977,9 @@ def _load_scan_facts(raw_data_path: str) -> Dict[str, Dict[str, Any]]:
             continue
         facts = item.get("facts", {})
         if name not in facts_map:
-            facts_map[name] = {
-                "sexual_relations": [],
-                "children_info": [],
-                "physical_contacts": [],
-                "romantic_feelings": [],
-                "partner_relations": [],
-            }
+            facts_map[name] = _empty_purity_fact_bucket()
         # 合并事实
-        for key in facts_map[name]:
+        for key in _FACT_DIMENSIONS:
             facts_map[name][key].extend(facts.get(key, []))
     return facts_map
 
@@ -8001,31 +8069,17 @@ def aggregate_and_judge_heroines(heroine_status_list, male_lead, detail_evidence
                 detail_keys_to_merge.append(k)
 
         # 合并事实（从 detail_facts.purity_facts）
-        merged_facts = {
-            "sexual_relations": [],
-            "children_info": [],
-            "physical_contacts": [],
-            "romantic_feelings": [],
-            "partner_relations": [],
-        }
+        merged_facts = _empty_purity_fact_bucket()
 
         # 从 detail_facts.purity_facts 合并（可能多个别名key）
         for dk in detail_keys_to_merge:
             detail_facts = detail_evidences.get(dk, {}) or {}
             purity_facts = detail_facts.get("purity_facts", {}) or {}
-            for fact_key in merged_facts:
+            for fact_key in _FACT_DIMENSIONS:
                 merged_facts[fact_key].extend(purity_facts.get(fact_key, []))
         
         # 去重
-        for fact_key in merged_facts:
-            seen = set()
-            unique = []
-            for item in merged_facts[fact_key]:
-                evidence = item.get("evidence", "")
-                if evidence not in seen:
-                    seen.add(evidence)
-                    unique.append(item)
-            merged_facts[fact_key] = unique
+        merged_facts = _dedupe_fact_bucket_by_evidence(merged_facts)
         
         heroine_merged_facts[name] = merged_facts
         

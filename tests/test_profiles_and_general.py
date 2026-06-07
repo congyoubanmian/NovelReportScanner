@@ -1986,6 +1986,83 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("政治联姻/婚约", structured)
         self.assertIn("受害/胁迫记录", structured)
 
+    def test_reviewer_preserves_extended_purity_facts(self):
+        facts = {
+            "children_info": [
+                {"child_name": "甲女", "evidence": "王妃生下甲女。"},
+                {"child_name": "小甲", "father": "王公子", "evidence": "甲女生下小甲。"},
+            ],
+            "economic_attachments": [
+                {"benefactor": "王公子", "relationship": "债务", "evidence": "甲女因欠债被王公子控制。"}
+            ],
+            "power_relations": [
+                {"superior": "宗主", "relationship": "师徒", "evidence": "宗主以师命压迫甲女。"}
+            ],
+            "political_marriages": [
+                {"partner": "世子", "type": "和亲", "status": "planned", "evidence": "甲女被安排与世子和亲。"}
+            ],
+            "victim_records": [
+                {"perpetrator": "反派", "type": "下药", "outcome": "未遂", "evidence": "反派给甲女下药未遂。"}
+            ],
+        }
+
+        cleaned = novel_reviewer._sanitize_purity_facts_for_heroine("甲女", facts)
+
+        self.assertEqual(len(cleaned["children_info"]), 1)
+        for dim in ["economic_attachments", "power_relations", "political_marriages", "victim_records"]:
+            self.assertEqual(len(cleaned[dim]), 1)
+
+    def test_reviewer_loads_and_merges_extended_purity_facts(self):
+        detail_payload = {
+            "all_female_characters": {
+                "甲女": {
+                    "purity_facts": {
+                        "economic_attachments": [
+                            {"benefactor": "王公子", "evidence": "甲女因欠债被王公子控制。"}
+                        ],
+                        "victim_records": [
+                            {"perpetrator": "反派", "evidence": "反派给甲女下药未遂。"}
+                        ],
+                    }
+                }
+            }
+        }
+        raw_payload = {
+            "heroine_facts": [
+                {
+                    "name": "甲女",
+                    "facts": {
+                        "political_marriages": [
+                            {"partner": "世子", "evidence": "甲女被安排与世子和亲。"}
+                        ]
+                    },
+                }
+            ]
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            detail_path = os.path.join(tmpdir, "novel_detailed_test.json")
+            raw_path = os.path.join(tmpdir, "raw_data.json")
+            with open(detail_path, "w", encoding="utf-8") as f:
+                json.dump(detail_payload, f, ensure_ascii=False)
+            with open(raw_path, "w", encoding="utf-8") as f:
+                json.dump(raw_payload, f, ensure_ascii=False)
+
+            detail = novel_reviewer._load_detail_evidence(detail_path)
+            raw = novel_reviewer._load_scan_facts(raw_path)
+
+        self.assertEqual(len(detail["甲女"]["purity_facts"]["economic_attachments"]), 1)
+        self.assertEqual(len(detail["甲女"]["purity_facts"]["victim_records"]), 1)
+        self.assertEqual(len(raw["甲女"]["political_marriages"]), 1)
+
+        result = novel_reviewer.judge_character_purity_by_facts(
+            "甲女",
+            raw["甲女"],
+            detail["甲女"],
+            "男主",
+        )
+        self.assertTrue(result["is_clean"])
+
     def test_harem_report_dedupes_title_variants_with_llm_decision(self):
         old_judge = report._llm_judge_heroine_duplicate_group
         try:
