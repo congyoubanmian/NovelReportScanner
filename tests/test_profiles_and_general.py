@@ -3584,7 +3584,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             {},
         )
 
-        self.assertTrue(level.startswith("弱准女主"), level)
+        self.assertTrue(level.startswith("低证据女角色"), level)
+        self.assertIn("明确缺少恋爱/后宫推进", level)
         self.assertIn("缺少感情/后宫定位证据", level)
 
     def test_report_ignores_tooling_heroine_word_as_relationship_position(self):
