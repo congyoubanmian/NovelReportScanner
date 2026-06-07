@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import StatusTag from './StatusTag.vue'
+import { getTextFile } from '../api.js'
 
 const props = defineProps({ book: Object, profiles: Array })
 
@@ -60,6 +61,7 @@ const preview = ref({
 })
 
 const PREVIEW_MAX_CHARS = 50000
+let previewRequestId = 0
 
 function canPreview(name) {
   const lower = (name || '').toLowerCase()
@@ -67,13 +69,13 @@ function canPreview(name) {
 }
 
 async function previewFile(file) {
+  const reqId = ++previewRequestId
   const url = file.url
   const name = file.name
   preview.value = { url, name, content: '', loading: true, error: '', isJson: false }
   try {
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    let text = await res.text()
+    let text = await getTextFile(url)
+    if (reqId !== previewRequestId) return
     if (text.length > PREVIEW_MAX_CHARS) {
       text = text.slice(0, PREVIEW_MAX_CHARS) + '\n\n... [内容已截断，文件过大请下载查看完整版]'
     }
@@ -88,11 +90,13 @@ async function previewFile(file) {
     }
     preview.value = { url, name, content: text, loading: false, error: '', isJson }
   } catch (e) {
+    if (reqId !== previewRequestId) return
     preview.value = { url, name, content: '', loading: false, error: e.message, isJson: false }
   }
 }
 
 function closePreview() {
+  previewRequestId++
   preview.value = { url: '', name: '', content: '', loading: false, error: '', isJson: false }
 }
 

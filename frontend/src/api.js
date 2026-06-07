@@ -3,6 +3,11 @@ const REQUEST_TIMEOUT_MS = 15000
 const UPLOAD_TIMEOUT_MS = 120000
 
 async function _api(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+  const res = await _request(path, options, timeoutMs)
+  return res.json()
+}
+
+async function _request(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -14,7 +19,7 @@ async function _api(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
       const text = await res.text()
       throw new Error(text || `HTTP ${res.status}`)
     }
-    return res.json()
+    return res
   } catch (e) {
     if (e.name === 'AbortError') {
       throw new Error(timeoutMs >= UPLOAD_TIMEOUT_MS ? '上传超时，请检查网络或减小文件大小' : '请求超时')
@@ -31,6 +36,11 @@ export function getState() {
 
 export function getBookDetail(bookId) {
   return _api(`/api/book?id=${encodeURIComponent(bookId)}`)
+}
+
+export async function getTextFile(url, timeoutMs = REQUEST_TIMEOUT_MS) {
+  const res = await _request(url, {}, timeoutMs)
+  return res.text()
 }
 
 export function setProfile(bookId, profile) {
