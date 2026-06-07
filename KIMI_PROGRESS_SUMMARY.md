@@ -1,17 +1,17 @@
 # Kimi 方案推进进度总结
 
-生成日期：2026-06-07
+生成日期：2026-06-07（本版更新于 2026-06-07）
 
 ## 总体完成度
 
-按当前仓库状态和 Kimi 优化方案拆分，整体完成度约为 **90% - 92%**。
+按当前仓库状态和 Kimi 优化方案拆分，整体完成度约为 **91% - 93%**。
 
 其中：
 
 - **分类/profile 配置完善**：约 **92% - 94%**。18 个分类的 `scan_focus`、`summary_fields`、`inference_keywords` 已基本按 Kimi 方案补齐；常见旧字段名和 Kimi 草案字段名已通过别名归并，剩余主要是少量低风险提示词文案打磨。
 - **后宫/男性向排雷专项**：约 **82% - 86%**。核心定义、五维洁度、接触等级、partner 豁免、漏女三层判断、女主事实扩展、重复女主大模型合并等关键项已落地；仍需要更多真实书籍报告校准误判。
 - **多标签/混合类型扫描**：约 **85% - 88%**。已支持自动多标签、手动多选、后宫+其他类型补扫，并对历史、科幻、仙侠、都市、游戏、异世界、蒸汽西幻等做了后宫交叉规则。
-- **报告输出和字段标题**：约 **93% - 95%**。通用报告、专项报告、后宫报告的字段标题和收尾字段已多轮补齐；通用总评、作品概览、伏笔回收、适合读者、总体评价以及常见专项字段均已支持旧字段名别名读取，并有回归测试覆盖。
+- **报告输出和字段标题**：约 **95% - 97%**。通用报告、专项报告、后宫报告的字段标题和收尾字段已多轮补齐；所有 18 个 profile 的 summary_fields 均已补全中文标题（含主线剧情、核心冲突、世界观、主题、优点与亮点、风险与问题、适合读者、总体评价等通用字段，以及女主群像、候选女主、漏女、洁度评估、毒点、郁闷点、男主定位、感情线推进等后宫字段）；通用总评、作品概览、伏笔回收、适合读者、总体评价以及常见专项字段均已支持旧字段名别名读取，并有回归测试覆盖。
 - **Web/部署/GitHub Actions/Docker**：约 **97%**。前后端分离、SSE 实时状态、队列管理、删除/批量删除、Token 展示、配置摘要、非敏感运行配置编辑、可选访问令牌、Docker/GHCR/DockerHub 流程、请求体限制、文件流式输出、任务日志隔离、前端 ESLint/Prettier 检查、CI 自动验证、输出文件索引、Docker 最终镜像瘦身、容器 API Key 启动校验、书籍同步减少无变化状态写入等工程项已完成；剩余主要是进一步生产化部署细节。
 
 ## 已完成的主要工作
@@ -102,6 +102,8 @@
 - 增加 Kimi 草案字段别名兼容，`humanity_and_morality`、`power_system`、`exploration_and_adventure`、`social_relevance`、`adventure_structure`、`companions` 等旧/草案字段会归并到当前报告字段，避免历史 summary 或模型返回旧字段时丢失内容。
 - 通用总评基础字段也已走统一别名读取：`overview/book_overview/story_summary`、`plot/conflicts/setting/theme`、`advantages/issues` 等常见模型输出会归并到 `story_overview/main_plot/core_conflicts/worldbuilding/themes/strengths/risks_or_issues`。
 - 通用总评缓存复用判断已同步使用作品概览别名，避免旧 summary 只有 `book_overview` 等字段时被误判为过期而重复扫描。
+- 补齐全部 profile `summary_fields` 中文标题：新增 `main_plot`/`core_conflicts`/`worldbuilding`/`themes`/`strengths`/`risks_or_issues`/`reader_fit`/`overall_assessment` 等 8 个通用字段，以及 `heroines`/`candidate_heroines`/`missed_heroines`/`purity_assessment`/`poison_points`/`depressing_points`/`male_protagonist`/`relationship_progression` 等 8 个后宫字段，确保所有报告字段在输出时都有中文展示名。
+- 回归测试 `test_general_scan_field_labels_cover_profile_summary_fields` 已移除对通用字段和后宫 profile 的跳过逻辑，现在强制检查所有 profile 的所有 summary_fields 都必须有中文标题，防止新增 profile 字段遗漏标签。
 
 ### 5. Web 和部署工程项
 
@@ -144,7 +146,7 @@
 - 专项报告字段标题和输出结构。
 - 通用总评字段别名、作品概览别名和旧 summary 缓存复用。
 
-最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **135 个测试 OK**。
+最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **143 个测试 OK**。
 
 ## 已推送的关键提交
 
@@ -211,25 +213,13 @@
 - 多标签：历史+科幻+后宫、蒸汽西幻+探案、异世界+经营等混合类型。
 - 非后宫类型：确认报告输出是否真正体现专项字段，而不是只在 prompt 里出现。
 
-### 2. 不建议机械照搬的字段命名差异
+### 2. 字段命名差异（已处理）
 
-Kimi 草案里仍有少量字段名与当前项目不一致，例如：
+Kimi 草案里少量字段名与当前项目不一致（如 `humanity_and_morality` vs `humanity_moral_dilemmas`、`social_relevance` vs `social_reflection`、`adventure_structure` vs `adventure_system` 等），当前已增加别名兼容和回归测试，不影响功能。后续若发现新的模型旧字段输出，优先补别名和测试即可。
 
-- `apocalypse_survival`
-  - Kimi：`humanity_and_morality`、`power_system`、`exploration_and_adventure`
-  - 当前：`humanity_moral_dilemmas`、`power_evolution_system`、`exploration_adventure`
-- `crime_forensics`
-  - Kimi：`social_relevance`
-  - 当前：`social_reflection`
-- `isekai_lightnovel`
-  - Kimi：`adventure_structure`、`companions`
-  - 当前：`adventure_system`、`party_dynamics`
+### 3. 剩余 scan_focus 文案差异（低风险）
 
-这些多半是命名风格差异，当前字段更贴合已有报告标题和测试。当前已增加字段别名兼容，不建议为了完全一致而改名；后续若发现新的模型旧字段输出，应优先补别名和回归测试，而不是改正式字段名。
-
-### 3. 剩余 scan_focus 文案差异
-
-剩余差异主要是 Kimi 原字段名与当前字段命名风格不同，或部分句子已经语义覆盖但不逐字一致；这些属于低风险提示词打磨，不影响当前功能主线。
+剩余差异主要是 Kimi 原字段名与当前字段命名风格不同，或部分句子已经语义覆盖但不逐字一致；这些属于低风险提示词打磨，不影响当前功能主线。可在真实书籍回归时顺带优化。
 
 ### 4. 可选工程项
 
@@ -238,6 +228,7 @@ Kimi 草案里仍有少量字段名与当前项目不一致，例如：
 - Web 配置持久化写回：非敏感运行配置已可编辑；如果后续要支持写回 `.env`/`setting.txt`，需要单独设计写入策略，并继续避免 API Key 明文回显。
 - 更完整的结果索引：当前已在 Web 扫描完成后持久记录输出文件索引；如果结果规模继续变大，再考虑做全局反向索引或目录监听。
 - 更生产化的部署细节：例如反向代理、TLS、更细粒度访问控制和资源限制。
+- 前端公共 CSS 提取和 `renderSuggestions` 重复计算优化：当前功能正常，属于可维护性优化，可按需排期。
 
 ## 下一步建议
 
@@ -245,6 +236,6 @@ Kimi 草案里仍有少量字段名与当前项目不一致，例如：
 
 1. 先做真实书籍回归，找出误判最高的 3-5 类问题。
 2. 再按需处理 Web 配置编辑、反向代理、TLS 等生产化功能。
-3. 最后做剩余 scan_focus 文案统一；字段名差异优先通过别名兼容和测试补齐。
+3. 最后做剩余 scan_focus 文案统一。
 
-当前不建议再大规模改 profile 字段名；更应该进入“真实报告校准 + 生产使用体验”阶段。
+字段标题、字段别名和回归测试已补齐，当前不建议再大规模改 profile 字段名；更应该进入“真实报告校准 + 生产使用体验”阶段。

@@ -5503,6 +5503,33 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertNotIn("青绮", names)
         self.assertIn("爱琳", names)
 
+    def test_harem_report_keeps_parallel_world_name_variants_without_llm(self):
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        try:
+            report.OpenAI = None
+            report.API_KEY_POOL = []
+            heroines = report.dedupe_heroines_for_report(
+                [
+                    {"name": "安妮", "importance_rank": 1},
+                    {"name": "另一个世界的安妮", "importance_rank": 2},
+                    {"name": "未来线安妮", "importance_rank": 3},
+                    {"name": "太后沈南歌", "importance_rank": 4},
+                    {"name": "沈南歌", "importance_rank": 5},
+                ],
+                {},
+            )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+
+        names = [item["name"] for item in heroines]
+        self.assertIn("安妮", names)
+        self.assertIn("另一个世界的安妮", names)
+        self.assertIn("未来线安妮", names)
+        self.assertEqual(names.count("太后沈南歌"), 1)
+        self.assertNotIn("沈南歌", names)
+
     def test_harem_report_keeps_variants_when_llm_rejects_merge(self):
         old_judge = report._llm_judge_heroine_duplicate_group
         try:
@@ -5972,22 +5999,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("旧字段伏笔内容", foreshadowing_text)
 
     def test_general_scan_field_labels_cover_profile_summary_fields(self):
-        common = {
-            "main_plot",
-            "core_conflicts",
-            "worldbuilding",
-            "themes",
-            "strengths",
-            "risks_or_issues",
-            "reader_fit",
-            "overall_assessment",
-        }
         for profile in analysis_profiles.list_available_profiles():
-            if profile.name == "harem":
-                continue
             for field in profile.summary_fields:
-                if field in common:
-                    continue
                 self.assertNotEqual(general_scan._summary_field_label(field), field.replace("_", " "), field)
 
     def test_general_scan_fresh_summary(self):

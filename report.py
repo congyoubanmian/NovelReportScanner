@@ -160,6 +160,22 @@ SUMMARY_FIELD_TITLES = {
     "female_tooling_risk": "女角色工具人风险",
     "romance_expectation_gap": "感情预期落差",
     "male_past_romance_risk": "男主前史情感雷点",
+    "main_plot": "主线剧情",
+    "core_conflicts": "核心冲突",
+    "worldbuilding": "世界观",
+    "themes": "主题",
+    "strengths": "优点与亮点",
+    "risks_or_issues": "风险与问题",
+    "reader_fit": "适合读者",
+    "overall_assessment": "总体评价",
+    "heroines": "女主群像",
+    "candidate_heroines": "候选女主",
+    "missed_heroines": "漏女",
+    "purity_assessment": "洁度评估",
+    "depressing_points": "郁闷点",
+    "poison_points": "毒点",
+    "male_protagonist": "男主定位",
+    "relationship_progression": "感情线推进",
 }
 
 SUMMARY_FIELD_ALIASES = {
@@ -1795,6 +1811,17 @@ _TITLE_WORDS = [
     "掌门", "女侠", "姑娘", "姨娘", "姑母", "太妃",
 ]
 
+_PARALLEL_TIMELINE_NAME_MARKERS = (
+    "另一个世界", "其他世界", "异世界", "平行世界", "平行线", "世界线",
+    "未来线", "过去线", "原世界", "现世界", "本世界", "前世", "今生", "来世",
+    "重生前", "重生后", "轮回前", "轮回后",
+)
+
+
+def _has_parallel_timeline_name_marker(name: str) -> bool:
+    text = str(name or "").strip()
+    return any(marker in text for marker in _PARALLEL_TIMELINE_NAME_MARKERS)
+
 
 def _heroine_name_key(name: str) -> str:
     text = str(name or "").strip()
@@ -1852,6 +1879,7 @@ def _fallback_same_heroine_group(group: list) -> dict:
     keys = [_heroine_name_key(name) for name in names]
     non_empty = [x for x in keys if x]
     unique_keys = set(non_empty)
+    has_timeline_variant = any(_has_parallel_timeline_name_marker(name) for name in names)
     same = bool(non_empty and len(unique_keys) == 1)
     if not same and unique_keys:
         longest = max(unique_keys, key=len)
@@ -1859,8 +1887,13 @@ def _fallback_same_heroine_group(group: list) -> dict:
             key == longest or (len(key) >= 2 and key in longest and not _is_generic_heroine_anchor_name(key))
             for key in unique_keys
         )
+    if same and has_timeline_variant:
+        same = False
     canonical = max(names, key=lambda n: (len(_heroine_name_key(n)), "（" in n or "(" in n, len(n), n)) if names else ""
-    reason = "称谓归一后相同" if len(unique_keys) == 1 else "称谓归一后为核心名包含关系"
+    if has_timeline_variant:
+        reason = "存在世界线/时间线限定词，兜底判定保守不合并"
+    else:
+        reason = "称谓归一后相同" if len(unique_keys) == 1 else "称谓归一后为核心名包含关系"
     return {"same_person": same, "canonical_name": canonical, "aliases": names, "reason": reason}
 
 
@@ -1887,8 +1920,9 @@ def _llm_judge_heroine_duplicate_group(group: list) -> dict:
 
 判断标准：
 1. 称谓前后缀、括号身份、尊号变化通常可能是同一人，例如“角色名（身份）”与“身份角色名”。
-2. 但亲属关系、身份、姓名核心不同、同时存在为不同角色时，不要合并。
-3. 宁可保守，不确定就 same_person=false。
+2. 带有“另一个世界/平行世界/未来线/前世/重生前”等世界线或时间线限定词的同名角色，不能只因核心名相同就合并，除非证据明确说明是同一真实角色。
+3. 但亲属关系、身份、姓名核心不同、同时存在为不同角色时，不要合并。
+4. 宁可保守，不确定就 same_person=false。
 
 只输出 JSON 对象，不要 Markdown。"""
     user_prompt = json.dumps({
