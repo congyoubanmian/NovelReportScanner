@@ -1,7 +1,7 @@
 {
   "name": "general",
   "display_name": "通用小说分析",
-  "description": "面向非后宫小说的通用分析入口，当前复用角色识别产物生成核心角色报告，后续可扩展剧情、主题、设定、结构和类型专长分析。",
+  "description": "面向非后宫小说的通用分析入口，涵盖剧情、角色、世界观、主题、节奏、爽点/虐点和阅读门槛等全维度评估。当作品无法归入任何专长分类时自动回退至此。",
   "enabled_stages": [
     "character_analysis",
     "general_scan",
@@ -10,11 +10,14 @@
   "rules_file": "rules.json",
   "report_mode": "general",
   "scan_focus": [
-    "剧情主线与关键事件",
-    "核心冲突与人物目标",
-    "世界观、时代背景或制度设定",
+    "剧情主线与关键事件的发展脉络",
+    "核心冲突与人物目标的清晰度与推动力",
+    "世界观基础设定（社会结构、地理、势力分布）的完整度",
     "主题表达与情绪基调",
     "伏笔、悬念与回收",
+    "角色群像与人物弧光（配角立体度、反派塑造、人物成长）",
+    "爽点、虐点、情绪节奏和读者体验设计",
+    "叙事结构、视角选择和文笔水准",
     "节奏、逻辑、人物动机、优点和阅读门槛"
   ],
   "summary_fields": [
@@ -23,8 +26,12 @@
     "worldbuilding",
     "themes",
     "foreshadowing_and_payoff",
+    "character_highlights",
+    "pacing_and_emotion",
     "unit_plot_mainline_link",
     "strengths",
-    "risks_or_issues"
+    "risks_or_issues",
+    "reader_fit",
+    "overall_assessment"
   ]
 }

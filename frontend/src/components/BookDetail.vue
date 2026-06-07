@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import StatusTag from './StatusTag.vue'
 
-const props = defineProps({ book: Object })
+const props = defineProps({ book: Object, profiles: Array })
 
 const outputs = computed(() => props.book?.outputs || [])
 const tasks = computed(() => {
@@ -22,22 +22,32 @@ const suggestions = computed(() => {
   }))
 })
 
+const profileNameMap = computed(() => {
+  const entries = (props.profiles || []).map(p => [p.name, p.display_name || p.name])
+  return Object.fromEntries(entries)
+})
+
+function formatProfileValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(name => profileNameMap.value[name] || name).join('、') || '—'
+  }
+  return profileNameMap.value[value] || value || '—'
+}
+
 const activeProfilesText = computed(() => {
   const profiles = props.book?.active_profiles || []
-  if (profiles.length) return profiles.join('、')
-  return props.book?.active_profile || '—'
+  if (profiles.length) return formatProfileValue(profiles)
+  return formatProfileValue(props.book?.active_profile)
 })
 
 const profileText = computed(() => {
-  const value = props.book?.profile
-  if (Array.isArray(value)) return value.join('、')
-  return value || '—'
+  return formatProfileValue(props.book?.profile)
 })
 
 function resolvedProfilesText(task) {
   const profiles = task.resolved_profiles || []
-  if (profiles.length) return profiles.join('、')
-  return task.resolved_profile || '—'
+  if (profiles.length) return formatProfileValue(profiles)
+  return formatProfileValue(task.resolved_profile)
 }
 
 const preview = ref({

@@ -130,7 +130,7 @@ usePolling(refresh, 3000)
       @profileChange="handleProfileChange"
     />
 
-    <BookDetail :book="selectedBook" />
+    <BookDetail :book="selectedBook" :profiles="profiles" />
   </div>
 
   <div class="toast-container" v-if="toast">

@@ -24,8 +24,18 @@ _DEFAULT_ENV_SETTINGS = {
     "RESCAN_PRE_FILTER_THRESHOLD": "1.0",
     "RESCAN_MAX_WINDOW": "2000",
     "RESCAN_MAX_PROMPT_HEROINES": "4",
+    "HAREM_PLUS_GENERAL_SCAN": "0",
 }
-_PASSTHROUGH_SETTING_KEYS = {"BASE_URL", "MODEL_NAME", "ANALYSIS_PROFILE", "MAX_WORKERS", "RPM_LIMIT", "TPM_LIMIT", "RATE_LIMIT_SCOPE"}
+_PASSTHROUGH_SETTING_KEYS = {
+    "BASE_URL",
+    "MODEL_NAME",
+    "ANALYSIS_PROFILE",
+    "MAX_WORKERS",
+    "RPM_LIMIT",
+    "TPM_LIMIT",
+    "RATE_LIMIT_SCOPE",
+    "HAREM_PLUS_GENERAL_SCAN",
+}
 _VALIDATED_NON_NEGATIVE_INT_KEYS = {
     "DIM_BOOST_MAX_PER_CHUNK": _DEFAULT_ENV_SETTINGS["DIM_BOOST_MAX_PER_CHUNK"],
     "RESCAN_ROUNDS": _DEFAULT_ENV_SETTINGS["RESCAN_ROUNDS"],
@@ -120,9 +130,6 @@ def load_configs(base_dir, interactive=True):
     """
     _load_dotenv(base_dir)
 
-    for key, default_value in _DEFAULT_ENV_SETTINGS.items():
-        os.environ.setdefault(key, default_value)
-
     setting_file = os.path.join(base_dir, "setting.txt")
     if os.path.exists(setting_file):
         text = _read_file_safely(setting_file)
@@ -141,6 +148,9 @@ def load_configs(base_dir, interactive=True):
                 _set_non_negative_int_env(key, value, _VALIDATED_NON_NEGATIVE_INT_KEYS[key])
             elif key in _VALIDATED_NON_NEGATIVE_FLOAT_KEYS:
                 _set_non_negative_float_env(key, value, _VALIDATED_NON_NEGATIVE_FLOAT_KEYS[key])
+
+    for key, default_value in _DEFAULT_ENV_SETTINGS.items():
+        os.environ.setdefault(key, default_value)
 
     env_key_pool = os.environ.get("API_KEY_POOL", "").strip()
     env_key = os.environ.get("API_KEY", "").strip()
@@ -293,6 +303,44 @@ def _get_working_detail_path(protagonist_module, book_name):
     return (report_files or {}).get("detailed")
 
 
+def _env_flag_enabled(name, default=False):
+    raw = os.environ.get(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _harem_plus_general_scan_enabled(profile):
+    if not getattr(profile, "supports_harem_plus", False):
+        return False
+    cfg = getattr(profile, "harem_plus", {}) or {}
+    return _env_flag_enabled("HAREM_PLUS_GENERAL_SCAN", bool(cfg.get("default_enabled", False)))
+
+
+def _run_harem_plus_general_scan(general_scan_module, novel_path, book_name, run_id, detail_path, profile):
+    from analysis_profiles import load_analysis_profile
+
+    cfg = getattr(profile, "harem_plus", {}) or {}
+    general_profile_name = str(cfg.get("general_profile") or "general")
+    general_profile = load_analysis_profile(general_profile_name)
+    old_profile = os.environ.get("ANALYSIS_PROFILE")
+    old_rules = os.environ.get("ANALYSIS_RULES_FILE")
+    try:
+        os.environ["ANALYSIS_PROFILE"] = general_profile.name
+        os.environ["ANALYSIS_RULES_FILE"] = general_profile.rules_file
+        print(f"[harem+] 额外运行通用剧情扫描: {general_profile.display_name} ({general_profile.name})")
+        return general_scan_module.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path)
+    finally:
+        if old_profile is None:
+            os.environ.pop("ANALYSIS_PROFILE", None)
+        else:
+            os.environ["ANALYSIS_PROFILE"] = old_profile
+        if old_rules is None:
+            os.environ.pop("ANALYSIS_RULES_FILE", None)
+        else:
+            os.environ["ANALYSIS_RULES_FILE"] = old_rules
+
+
 def print_token_summary(base_dir, token_usage_path=None):
     """读取 results/token_usage.json，打印当前运行批次的 Token 用量汇总。"""
     token_log = token_usage_path or os.path.join(base_dir, "results", "token_usage.json")
@@ -409,6 +457,14 @@ def process_single_novel(novel_path, profile_name=None, run_id=None, skip_fresh=
             print(f"[general_scan] 异常: {e}")
             status = "fail"
             error = f"general_scan: {e}"
+
+    if status == "ok" and _harem_plus_general_scan_enabled(active_profile):
+        try:
+            _run_harem_plus_general_scan(general_scan, novel_path, book_name, run_id, detail_path, active_profile)
+        except Exception as e:
+            print(f"[harem+ general_scan] 异常: {e}")
+            status = "fail"
+            error = f"harem+ general_scan: {e}"
 
     if status == "ok":
         try:

@@ -22,6 +22,7 @@ class AnalysisProfile:
     report_mode: str
     scan_focus: List[str]
     summary_fields: List[str]
+    harem_plus: Dict[str, Any]
 
     @property
     def uses_harem_reviewer(self) -> bool:
@@ -30,6 +31,10 @@ class AnalysisProfile:
     @property
     def uses_general_scan(self) -> bool:
         return "general_scan" in self.enabled_stages
+
+    @property
+    def supports_harem_plus(self) -> bool:
+        return self.name == "harem" and bool(self.harem_plus.get("enabled"))
 
 
 @dataclass(frozen=True)
@@ -70,27 +75,6 @@ _PROFILE_ORDER = {
     "farming_management": 170,
     "isekai_lightnovel": 180,
     "steampunk_fantasy": 190,
-}
-
-
-_BUILTIN_INFERENCE_KEYWORDS = {
-    "history": [
-        ("皇帝", 3), ("朝廷", 3), ("宰相", 3), ("官职", 2), ("科举", 3),
-        ("藩镇", 3), ("诸侯", 3), ("边军", 2), ("骑兵", 2), ("史书", 2),
-        ("大明", 4), ("大唐", 4), ("大宋", 4), ("三国", 4), ("汉末", 4),
-        ("王朝", 2), ("郡县", 2), ("爵位", 2), ("礼法", 2), ("庙堂", 2),
-    ],
-    "hard_sci_fi": [
-        ("飞船", 4), ("星舰", 4), ("星际", 4), ("光速", 3), ("曲率", 4),
-        ("量子", 3), ("人工智能", 3), ("ai", 2), ("机器人", 2), ("轨道", 2),
-        ("殖民星", 4), ("太空", 3), ("宇宙", 2), ("引擎", 2), ("基因编辑", 3),
-        ("纳米", 3), ("黑洞", 3), ("虫洞", 4), ("戴森", 4), ("文明等级", 3),
-    ],
-    "harem": [
-        ("后宫", 5), ("女主", 2), ("男主", 2), ("双修", 3), ("炉鼎", 3),
-        ("侍妾", 3), ("纳妾", 4), ("道侣", 2), ("红颜", 2), ("暧昧", 2),
-        ("推倒", 4), ("处女", 3), ("初夜", 3), ("未婚妻", 2), ("师姐", 1),
-    ],
 }
 
 
@@ -243,6 +227,7 @@ def load_analysis_profile(profile_name: str = None) -> AnalysisProfile:
         report_mode=str(manifest.get("report_mode") or name),
         scan_focus=[str(x) for x in manifest.get("scan_focus", []) if str(x).strip()],
         summary_fields=[str(x) for x in manifest.get("summary_fields", []) if str(x).strip()],
+        harem_plus=manifest.get("harem_plus") if isinstance(manifest.get("harem_plus"), dict) else {},
     )
 
 
@@ -310,7 +295,7 @@ def _keywords_from_manifest(profile_name: str) -> List[Tuple[str, int]]:
                 except (TypeError, ValueError):
                     weight = 1
                 keywords.append((word, max(1, weight)))
-    return keywords or list(_BUILTIN_INFERENCE_KEYWORDS.get(profile_name, []))
+    return keywords
 
 
 def _score_keyword_matches(text: str, keywords: List[Tuple[str, int]]) -> Tuple[int, List[str]]:

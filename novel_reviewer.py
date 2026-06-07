@@ -300,6 +300,32 @@ def _name_in_tail(tail: str, name: str, aliases: List[str]) -> bool:
     return any(c and c in tail for c in candidates)
 
 
+def _heroine_has_emotional_depth_for_leak(heroine_info: Dict[str, Any]) -> Tuple[bool, str]:
+    texts: List[str] = []
+    for field in [
+        "interactions",
+        "summaries",
+        "summary",
+        "interaction_with_male_lead",
+        "emotion_signals",
+        "relationship_with_protagonist",
+        "key_events",
+    ]:
+        val = (heroine_info or {}).get(field)
+        if isinstance(val, list):
+            texts.extend(str(x) for x in val if str(x).strip())
+        elif isinstance(val, str) and val.strip():
+            texts.append(val)
+    blob = " ".join(texts)
+    keywords = ("暧昧", "喜欢", "爱", "动心", "倾心", "表白", "告白", "吃醋", "承诺", "救赎", "道侣", "恋人", "未婚妻", "双修", "亲密")
+    matched = [kw for kw in keywords if kw in blob]
+    if matched:
+        return True, f"命中情感/亲密关键词：{','.join(matched[:5])}"
+    if texts:
+        return False, "已有女主材料，但未见稳定情感深度关键词"
+    return False, "缺少女主关系/互动材料"
+
+
 def _issue_identity_key(issue: Dict[str, Any]) -> Tuple[Any, Any, Any, Any]:
     return (
         issue.get("category"),
@@ -340,17 +366,33 @@ def _rebuild_leak_state_from_pushed_map(
 
     if finished is False:
         for name in female_leads:
+            hinfo = heroine_map.get(name, {"name": name})
+            has_emotional_depth, emotional_depth_reason = _heroine_has_emotional_depth_for_leak(hinfo)
             leak_status_map[name] = {
                 "is_leak_heroine": None,
                 "leak_reason": "小说未完结，暂不判定漏女",
+                "leak_emotional_depth": has_emotional_depth,
+                "leak_emotional_depth_reason": emotional_depth_reason,
+                "leak_relationship_confirmed": None,
+                "leak_relationship_reason": "小说未完结，暂不判定关系收束",
+                "leak_ending_accounted": None,
+                "leak_ending_reason": "小说未完结，暂不判定结局交代",
             }
         return issues, leak_status_map
 
     if finished is None:
         for name in female_leads:
+            hinfo = heroine_map.get(name, {"name": name})
+            has_emotional_depth, emotional_depth_reason = _heroine_has_emotional_depth_for_leak(hinfo)
             leak_status_map[name] = {
                 "is_leak_heroine": None,
                 "leak_reason": "完结状态未知，暂不判定漏女",
+                "leak_emotional_depth": has_emotional_depth,
+                "leak_emotional_depth_reason": emotional_depth_reason,
+                "leak_relationship_confirmed": None,
+                "leak_relationship_reason": "完结状态未知，暂不判定关系收束",
+                "leak_ending_accounted": None,
+                "leak_ending_reason": "完结状态未知，暂不判定结局交代",
             }
         return issues, leak_status_map
 
@@ -358,6 +400,7 @@ def _rebuild_leak_state_from_pushed_map(
         pushed, pushed_reason = pushed_map.get(name, (None, "未判定"))
         pushed_ok = pushed is True
         hinfo = heroine_map.get(name, {"name": name})
+        has_emotional_depth, emotional_depth_reason = _heroine_has_emotional_depth_for_leak(hinfo)
         aliases = hinfo.get("aliases", []) if isinstance(hinfo.get("aliases", []), list) else []
         tail_ok = _name_in_tail(novel_tail or "", name, aliases)
         is_leak = (not pushed_ok) and (not tail_ok)
@@ -380,6 +423,12 @@ def _rebuild_leak_state_from_pushed_map(
         leak_status_map[name] = {
             "is_leak_heroine": is_leak,
             "leak_reason": leak_reason,
+            "leak_emotional_depth": has_emotional_depth,
+            "leak_emotional_depth_reason": emotional_depth_reason,
+            "leak_relationship_confirmed": pushed_ok,
+            "leak_relationship_reason": f"推倒判定：{pushed_reason}",
+            "leak_ending_accounted": tail_ok,
+            "leak_ending_reason": "尾声检索：命中姓名或别名" if tail_ok else "尾声检索：未命中姓名或别名",
         }
         logger.info(f"[漏女判定] {name}: pushed_ok={pushed_ok}, tail_ok={tail_ok}, pushed={pushed}")
 
@@ -497,6 +546,147 @@ def _bool_mark(value: Optional[bool]) -> str:
     if value is False:
         return "❌"
     return "❓"
+
+
+def _derive_past_life_cleanliness(facts: Dict[str, Any], summary: str = "") -> Dict[str, Any]:
+    """Derive a conservative 前世/原故事线 cleanliness note from existing facts."""
+    blob_parts = [summary or ""]
+    for values in (facts or {}).values():
+        if isinstance(values, list):
+            for item in values:
+                if isinstance(item, dict):
+                    blob_parts.append(json.dumps(item, ensure_ascii=False))
+                else:
+                    blob_parts.append(str(item))
+    blob = "\n".join(blob_parts)
+    past_markers = ("前世", "原故事线", "原著", "前传", "上一世", "轮回", "重生前", "穿越前")
+    if not any(marker in blob for marker in past_markers):
+        return {
+            "past_life_clean": None,
+            "past_life_status": "未见前世/原故事线洁度线索",
+            "past_life_reason": "现有事实未出现前世、原故事线、轮回或穿越前婚恋/接触证据。",
+        }
+
+    risk_markers = (
+        "非男主", "前夫", "丈夫", "男友", "恋人", "未婚夫", "嫁给", "成婚",
+        "同房", "圆房", "失身", "破身", "怀孕", "孩子", "爱过", "喜欢过",
+        "被迫", "强迫", "侵犯", "万人骑", "背叛",
+    )
+    has_risk = any(marker in blob for marker in risk_markers)
+    if has_risk:
+        return {
+            "past_life_clean": False,
+            "past_life_status": "前世/原故事线存在风险线索",
+            "past_life_reason": "现有事实出现前世/原故事线相关的非男主婚恋、身体接触、情感或受害线索，需单独提示。",
+        }
+    return {
+        "past_life_clean": True,
+        "past_life_status": "前世/原故事线未见不洁事实",
+        "past_life_reason": "虽出现前世/原故事线线索，但未见明确非男主婚恋、身体接触、情感或受害事实。",
+    }
+
+
+def _derive_contact_level(
+    facts: Dict[str, Any],
+    male_lead: str = "男主",
+    non_male_male_interactions: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Derive report-only L0-L5 contact level from structured facts."""
+    facts = facts or {}
+    sexual_relations = facts.get("sexual_relations", []) or []
+    children_info = facts.get("children_info", []) or []
+    physical_contacts = facts.get("physical_contacts", []) or []
+    partner_relations = facts.get("partner_relations", []) or []
+    romantic_feelings = facts.get("romantic_feelings", []) or []
+
+    def non_ml(item, key="partner"):
+        if not isinstance(item, dict):
+            return False
+        if item.get("is_male_lead") is True:
+            return False
+        value = str(item.get(key, "") or item.get("father", "") or "")
+        return not _is_placeholder(value)
+
+    # L5: explicit non-ML sex, biological child with non-ML/unknown father, group/rape/personality rewrite signals.
+    for item in sexual_relations:
+        if non_ml(item):
+            text = json.dumps(item, ensure_ascii=False)
+            level = "L5"
+            label = "明确非男主性关系"
+            if _contains_any(text, ["群", "多人", "轮奸", "洗脑", "雌堕", "人格", "调教"]):
+                label = "群体/人格改造/严重性关系风险"
+            return {
+                "contact_level": level,
+                "contact_level_label": label,
+                "contact_level_reason": str(item.get("evidence") or item.get("detail") or "")[:120],
+            }
+    for child in children_info:
+        if not isinstance(child, dict):
+            continue
+        father = str(child.get("father", "") or "")
+        if father in {"男主", "主角", male_lead}:
+            continue
+        if child.get("is_biological") is False:
+            continue
+        text = json.dumps(child, ensure_ascii=False)
+        if _contains_any(text, ["亲生", "怀孕", "生下", "正常生育", "conception_method\": \"sex"]):
+            return {
+                "contact_level": "L5",
+                "contact_level_label": "非男主亲生子女/怀孕强后果",
+                "contact_level_reason": str(child.get("evidence") or child.get("detail") or "")[:120],
+            }
+
+    # L4/L3/L2: physical contact severity.
+    for item in physical_contacts:
+        if not non_ml(item):
+            continue
+        text = json.dumps(item, ensure_ascii=False)
+        reason = str(item.get("evidence") or item.get("detail") or item.get("contact_type") or "")[:120]
+        if _contains_any(text, ["猥亵", "侵犯", "强暴", "强奸", "摸胸", "下体", "脱光", "扒光", "重度", "隐私曝光", "录像", "直播"]):
+            return {"contact_level": "L4", "contact_level_label": "严重猥亵/侵犯未遂/隐私曝光", "contact_level_reason": reason}
+        if _contains_any(text, ["下药", "绑架", "按倒", "强吻", "亲吻", "搂抱", "抱住", "摸", "抚摸", "撕衣"]):
+            return {"contact_level": "L3", "contact_level_label": "强迫亲密/敏感接触/侵犯未遂", "contact_level_reason": reason}
+        return {"contact_level": "L2", "contact_level_label": "轻度身体接触/被迫暴露", "contact_level_reason": reason}
+
+    # L2/L3 can also be inferred from forced partner relation without consummation.
+    for item in partner_relations:
+        if not non_ml(item):
+            continue
+        text = json.dumps(item, ensure_ascii=False)
+        reason = str(item.get("evidence") or item.get("detail") or item.get("relationship") or "")[:120]
+        if item.get("forced") is True or _contains_any(text, ["被迫", "强迫", "逼婚", "包办", "卖嫁"]):
+            return {"contact_level": "L2", "contact_level_label": "被迫婚约/伴侣关系线索", "contact_level_reason": reason}
+
+    # L1: report-only early warning from non-contact harassment, gaze, rumors, or one-sided pursuit.
+    # These do not imply broken first-touch or impurity; they only preserve low-severity reader-risk context.
+    l1_sources: List[str] = []
+    for item in romantic_feelings:
+        if not non_ml(item, key="target"):
+            continue
+        text = json.dumps(item, ensure_ascii=False)
+        if _contains_any(text, ["调戏", "口花花", "意淫", "觊觎", "垂涎", "追求", "纠缠", "尾随", "骚扰", "围观", "注视", "盯着", "流言", "传闻"]):
+            l1_sources.append(str(item.get("evidence") or item.get("detail") or text)[:120])
+            break
+    if not l1_sources:
+        for interaction in (non_male_male_interactions or []):
+            text = str(interaction or "").strip()
+            if not text:
+                continue
+            if _contains_any(text, ["调戏", "口花花", "意淫", "觊觎", "垂涎", "追求", "纠缠", "尾随", "骚扰", "围观", "注视", "盯着", "流言", "传闻"]):
+                l1_sources.append(text[:120])
+                break
+    if l1_sources:
+        return {
+            "contact_level": "L1",
+            "contact_level_label": "言语调戏/被意淫/追求骚扰",
+            "contact_level_reason": l1_sources[0],
+        }
+
+    return {
+        "contact_level": "L0",
+        "contact_level_label": "无非男主接触事实",
+        "contact_level_reason": "现有结构化事实未见非男主接触、伴侣、性关系或亲生子女线索。",
+    }
 
 
 
@@ -6887,6 +7077,16 @@ def _llm_judge_spirit(
                     result["spirit_reason"] = f"{old_reason}；{base_note}"
             else:
                 result["spirit_reason"] = base_note
+        result["partner_exempted_for_clean"] = bool(exempt_partner_notes and not non_exempt_partner_history)
+        result["partner_exemption_notes"] = exempt_partner_notes
+        result["partner_exemption_reason"] = (
+            "；".join(
+                f"{note.get('partner', '未知')}：{note.get('reason', '命中豁免')}"
+                for note in exempt_partner_notes[:3]
+            )
+            if exempt_partner_notes
+            else ""
+        )
         return result
     except Exception as e:
         logger.warning(f"精神洁LLM判断异常: {e}")
@@ -7236,6 +7436,11 @@ def judge_purity_by_llm_stepwise(
         sexual_relations=sexual_relations,  # 传入性关系用于豁免判定（避免未遂/无性行为受孕误判）
     )
     is_spirit_clean = spirit_result.get("is_spirit_clean", True)
+    partner_exempted_for_clean = _to_bool(spirit_result.get("partner_exempted_for_clean", False), False)
+    partner_exemption_notes = spirit_result.get("partner_exemption_notes", [])
+    if not isinstance(partner_exemption_notes, list):
+        partner_exemption_notes = []
+    partner_exemption_reason = str(spirit_result.get("partner_exemption_reason", "") or "")
     
     # Step 4: 是否处女
     logger.info(f"  → Step 4: 判断【{name}】是否处女...")
@@ -7276,6 +7481,16 @@ def judge_purity_by_llm_stepwise(
     
     # 综合结果
     is_clean = is_virgin and not has_contact and no_partner and is_spirit_clean
+    past_life = _derive_past_life_cleanliness(
+        facts,
+        "; ".join([
+            virgin_result.get("virgin_reason", ""),
+            contact_result.get("contact_reason", ""),
+            partner_result.get("partner_reason", ""),
+            spirit_result.get("spirit_reason", ""),
+        ]),
+    )
+    contact_level = _derive_contact_level(facts, male_lead, non_male_male_interactions)
     
     result = {
         "name": name,
@@ -7315,6 +7530,15 @@ def judge_purity_by_llm_stepwise(
         "spirit_judgement_conflict": spirit_judgement_conflict,
         "is_spirit_clean": is_spirit_clean,
         "spirit_status": spirit_result.get("spirit_status", "❓ 未知"),
+        "partner_exempted_for_clean": partner_exempted_for_clean,
+        "partner_exemption_notes": partner_exemption_notes,
+        "partner_exemption_reason": partner_exemption_reason,
+        "past_life_clean": past_life.get("past_life_clean"),
+        "past_life_status": past_life.get("past_life_status"),
+        "past_life_reason": past_life.get("past_life_reason"),
+        "contact_level": contact_level.get("contact_level"),
+        "contact_level_label": contact_level.get("contact_level_label"),
+        "contact_level_reason": contact_level.get("contact_level_reason"),
         "is_clean": is_clean,
         "summary": "; ".join([
             virgin_result.get("virgin_reason", ""),
@@ -7334,6 +7558,8 @@ def judge_purity_by_llm_stepwise(
                 "spirit": spirit_result,
                 "virgin": virgin_result,
             },
+            "partner_exempted_for_clean": partner_exempted_for_clean,
+            "partner_exemption_notes": partner_exemption_notes,
         },
     }
     
@@ -7463,9 +7689,20 @@ def judge_character_purity_llm(name, evidence_list, male_lead):
   "partner_status": "简短结论",       // 男伴状态说明，如"✅ 无男伴""❌ 有前夫（政治联姻）"
   "is_spirit_clean": true/false,     // 精神是否洁
   "spirit_status": "简短结论",        // 精神状态说明
+  "past_life_clean": true/false/null, // 前世/原故事线洁度；无相关线索用 null
+  "past_life_status": "简短结论",      // 如"未见前世线索""前世有前夫风险"
+  "past_life_reason": "简短理由",      // 单独说明前世/原故事线/轮回/穿越前婚恋或接触线索
+  "contact_level": "L0/L1/L2/L3/L4/L5", // 非男主接触等级，无接触为L0
+  "contact_level_label": "简短等级说明",
+  "contact_level_reason": "简短证据理由",
   "summary": "50字内理由，必须引用证据原文！禁止编造证据中没有的内容！",
   "is_clean": true/false             // 处女 + 无接触 + 无男伴 + 精神洁 四者皆满足才为 true
 }}
+
+【前世洁度补充】：
+- 如果证据出现前世、原故事线、原著线、上一世、轮回、重生前、穿越前等线索，必须单独填写 past_life_*。
+- 前世/原故事线风险不自动等同当前线非处，但必须在 past_life_status/past_life_reason 单独提示。
+- 没有前世/原故事线线索时，past_life_clean=null，past_life_status="未见前世/原故事线洁度线索"。
 
 【再次强调】：禁止无中生有！如果证据中没有提到"前夫/前男友/被猥亵/被强吻"等，就不能判定存在这些情况！"""
 
@@ -7492,6 +7729,10 @@ def judge_character_purity_llm(name, evidence_list, male_lead):
             contact_status = result.get("contact_status", "❓ 未知")
             partner_status = result.get("partner_status", "❓ 未知")
             result["body_status"] = f"处女:{virgin_status} | 接触:{contact_status} | 男伴:{partner_status}"
+            if "past_life_clean" not in result:
+                result.update(_derive_past_life_cleanliness({}, result.get("summary", "")))
+            if "contact_level" not in result:
+                result.update(_derive_contact_level({}, male_lead))
             return result
         except Exception as e:
             last_err = e
@@ -7510,6 +7751,12 @@ def judge_character_purity_llm(name, evidence_list, male_lead):
         "partner_status": "❓ 未知",
         "is_spirit_clean": True,
         "spirit_status": "❓ 未知",
+        "past_life_clean": None,
+        "past_life_status": "未见前世/原故事线洁度线索",
+        "past_life_reason": "API调用失败，未能判断前世/原故事线洁度。",
+        "contact_level": "L0",
+        "contact_level_label": "无非男主接触事实",
+        "contact_level_reason": "API调用失败，未能派生接触等级。",
         "body_status": "❓ 未知",
         "summary": f"API调用失败: {last_err}",
         "is_clean": True
@@ -8355,6 +8602,15 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
             "spirit_judgement_conflict": _to_bool(info.get("spirit_judgement_conflict", False), False),
             "is_spirit_clean": info.get("is_spirit_clean", True),
             "spirit_status": info.get("spirit_status"),
+            "partner_exempted_for_clean": _to_bool(info.get("partner_exempted_for_clean", False), False),
+            "partner_exemption_notes": info.get("partner_exemption_notes", []),
+            "partner_exemption_reason": info.get("partner_exemption_reason", ""),
+            "past_life_clean": info.get("past_life_clean"),
+            "past_life_status": info.get("past_life_status", "未见前世/原故事线洁度线索"),
+            "past_life_reason": info.get("past_life_reason", ""),
+            "contact_level": info.get("contact_level", "L0"),
+            "contact_level_label": info.get("contact_level_label", "无非男主接触事实"),
+            "contact_level_reason": info.get("contact_level_reason", ""),
             # 综合判定
             "is_clean": info.get("is_clean"),
             "summary": info.get("summary"),
@@ -8363,6 +8619,12 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
             "pushed_reason": pushed_reason,
             "is_leak_heroine": leak_info.get("is_leak_heroine"),
             "leak_reason": leak_info.get("leak_reason"),
+            "leak_emotional_depth": leak_info.get("leak_emotional_depth"),
+            "leak_emotional_depth_reason": leak_info.get("leak_emotional_depth_reason"),
+            "leak_relationship_confirmed": leak_info.get("leak_relationship_confirmed"),
+            "leak_relationship_reason": leak_info.get("leak_relationship_reason"),
+            "leak_ending_accounted": leak_info.get("leak_ending_accounted"),
+            "leak_ending_reason": leak_info.get("leak_ending_reason"),
             # 兼容旧字段
             "body_status": info.get("body_status"),
             # 验证信息

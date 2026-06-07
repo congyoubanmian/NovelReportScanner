@@ -9,5 +9,61 @@
     "harem_report"
   ],
   "rules_file": "rules.json",
-  "report_mode": "harem"
+  "report_mode": "harem",
+  "harem_plus": {
+    "enabled": true,
+    "default_enabled": false,
+    "general_profile": "general",
+    "general_scan_position": "after_harem_scan",
+    "report_section": "作品整体评价",
+    "description": "可选增强模式：在后宫排雷流程外额外运行通用剧情扫描，并在后宫报告末尾补充剧情、设定、节奏和综合阅读评价。默认关闭，设置 HAREM_PLUS_GENERAL_SCAN=1 后启用。"
+  },
+  "scan_focus": [
+    "男主身份、行动目标、感情态度和对后宫关系的主导性",
+    "女主、准女主、重要女配的出场频率、情感交集、亲密推进和结局归属",
+    "初、处、前世/原故事线、婚恋史、身体接触史和精神动心对象",
+    "绿帽、送女、死女、背叛、万人骑、龟作等严重雷点的事实证据与排除项",
+    "漏女、拒女、亵女、百合、接盘、前世雷、虐主、圣母、擦边等郁闷点",
+    "感情戏密度、收女节奏、女角色有效性、工具人风险和读者预期落差"
+  ],
+  "summary_fields": [
+    "male_protagonist",
+    "heroines",
+    "candidate_heroines",
+    "purity_assessment",
+    "relationship_progression",
+    "romance_density",
+    "female_presence",
+    "romance_progression",
+    "female_tooling_risk",
+    "romance_expectation_gap",
+    "male_past_romance_risk",
+    "missed_heroines",
+    "poison_points",
+    "depressing_points",
+    "overall_assessment"
+  ],
+  "inference_keywords": [
+    {"word": "后宫", "weight": 5},
+    {"word": "多女主", "weight": 5},
+    {"word": "大被同眠", "weight": 5},
+    {"word": "三千佳丽", "weight": 5},
+    {"word": "收女", "weight": 4},
+    {"word": "推倒", "weight": 4},
+    {"word": "种马", "weight": 4},
+    {"word": "推土机", "weight": 4},
+    {"word": "纳妾", "weight": 4},
+    {"word": "侍妾", "weight": 3},
+    {"word": "双修", "weight": 3},
+    {"word": "炉鼎", "weight": 3},
+    {"word": "处女", "weight": 3},
+    {"word": "初夜", "weight": 3},
+    {"word": "女主", "weight": 2},
+    {"word": "男主", "weight": 2},
+    {"word": "道侣", "weight": 2},
+    {"word": "红颜", "weight": 2},
+    {"word": "暧昧", "weight": 2},
+    {"word": "未婚妻", "weight": 2},
+    {"word": "师姐", "weight": 1}
+  ]
 }

@@ -1,14 +1,17 @@
 {
   "display_name": "种田/经营/基建专长分析",
-  "description": "关注资源生产、经营闭环、组织建设、贸易扩张和长期发展节奏。",
+  "description": "关注资源生产、经营闭环、技术升级、组织建设、贸易扩张、民生反馈和长期发展节奏。核心是建设本身就是爽点。",
   "enabled_stages": ["character_analysis", "general_scan", "general_report"],
   "rules_file": "rules.json",
   "report_mode": "general",
   "scan_focus": [
-    "土地、产业、技术、人口、物流和资源产出",
+    "土地、产业、技术、人口、物流和资源产出，强调生产关系的可视化发展",
     "农业、店铺、领地、工坊、基地或城市经营",
     "生产、库存、交易、利润、扩张和风险控制",
     "组织分工、制度建设、人才招募和民生反馈",
+    "科技树解锁、技术升级、产业链延伸和产业升级节奏",
+    "跨类型种田：灵田/灵药体系、历史科技树、现代产业链或末世基地经营",
+    "基建扩张路径：从农田到工坊到城镇到国家的升级逻辑",
     "慢节奏爽点、建设成就、外部威胁和长期目标"
   ],
   "summary_fields": [
@@ -17,6 +20,9 @@
     "worldbuilding",
     "production_chain",
     "resource_management",
+    "technology_progression",
+    "civilization_level",
+    "population_management",
     "trade_expansion",
     "community_building",
     "technical_leap_risk",
@@ -39,7 +45,26 @@
     {"word": "贸易", "weight": 3},
     {"word": "粮食", "weight": 3},
     {"word": "税收", "weight": 3},
-    {"word": "人口", "weight": 2},
-    {"word": "城镇", "weight": 3}
+    {"word": "人口", "weight": 4},
+    {"word": "城镇", "weight": 3},
+    {"word": "科技树", "weight": 4},
+    {"word": "技术升级", "weight": 4},
+    {"word": "产业链", "weight": 4},
+    {"word": "自动化", "weight": 3},
+    {"word": "灵田", "weight": 5},
+    {"word": "药园", "weight": 5},
+    {"word": "洞府", "weight": 4},
+    {"word": "宗门建设", "weight": 5},
+    {"word": "修仙种田", "weight": 5},
+    {"word": "民生", "weight": 4},
+    {"word": "产量", "weight": 3},
+    {"word": "修路", "weight": 4},
+    {"word": "建桥", "weight": 4},
+    {"word": "港口", "weight": 4},
+    {"word": "商会", "weight": 4},
+    {"word": "工厂", "weight": 4},
+    {"word": "供应链", "weight": 3},
+    {"word": "标准化", "weight": 3},
+    {"word": "产业升级", "weight": 4}
   ]
 }

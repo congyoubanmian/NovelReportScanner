@@ -1,7 +1,7 @@
 {
   "name": "mystery_detective",
   "display_name": "悬疑/推理专长分析",
-  "description": "在通用小说分析基础上，重点检查谜题设置、线索公平性、诡计可行性、动机逻辑、反转质量和伏笔回收。",
+  "description": "在通用小说分析基础上，重点检查谜题设计的理性可解性、线索公平性、诡计可行性、侦探角色魅力和叙事结构特色。关注逻辑闭环而非执法程序，区别于刑侦法医文。",
   "enabled_stages": [
     "character_analysis",
     "general_scan",
@@ -10,10 +10,13 @@
   "rules_file": "rules.json",
   "report_mode": "general",
   "scan_focus": [
+    "谜题的理性可解性：核心谜面是否能让读者参与推理，追求逻辑闭环而非超自然解释",
     "案件、谜题、异常事件和核心悬念如何建立",
     "线索投放是否公平，读者是否有机会推理",
     "诡计、作案手法、时间线、空间关系和证据链是否可行",
     "嫌疑人动机、人物隐瞒、误导信息和反转是否合理",
+    "叙述性诡计、暴风雪山庄、倒叙推理、多视角限制等结构特色",
+    "侦探/推理者的人格魅力、方法论和角色定位",
     "伏笔回收、真相揭示、节奏控制和悬疑氛围",
     "常见风险：机械反转、降智侦探、超自然硬解、线索缺失、动机薄弱"
   ],
@@ -22,9 +25,15 @@
     "core_conflicts",
     "worldbuilding",
     "mystery_setup",
+    "puzzle_fairness",
     "clue_fairness",
+    "narrative_trick",
     "trick_logic",
+    "detective_method",
+    "logic_chain_integrity",
     "reveal_and_payoff",
+    "detective_character",
+    "narrative_structure",
     "cheat_detection_dependency",
     "case_mainline_link",
     "strengths",
@@ -41,11 +50,21 @@
     {"word": "不在场证明", "weight": 5},
     {"word": "线索", "weight": 3},
     {"word": "证据", "weight": 3},
-    {"word": "尸体", "weight": 3},
     {"word": "谋杀", "weight": 4},
     {"word": "真相", "weight": 3},
     {"word": "诡计", "weight": 5},
-    {"word": "警探", "weight": 4},
-    {"word": "法医", "weight": 4}
+    {"word": "警探", "weight": 2},
+    {"word": "本格", "weight": 5},
+    {"word": "社会派", "weight": 4},
+    {"word": "暴风雪山庄", "weight": 5},
+    {"word": "叙述性诡计", "weight": 5},
+    {"word": "倒叙推理", "weight": 5},
+    {"word": "逻辑", "weight": 3},
+    {"word": "动机", "weight": 3},
+    {"word": "伪证", "weight": 3},
+    {"word": "红鲱鱼", "weight": 4},
+    {"word": "多重解答", "weight": 5},
+    {"word": "心理诡计", "weight": 4},
+    {"word": "时刻表诡计", "weight": 5}
   ]
 }

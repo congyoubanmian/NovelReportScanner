@@ -209,6 +209,19 @@ def _safe_mtime(path: str):
     return None
 
 
+def _general_summary_matches_novel(summary: dict, novel_path: str, profile_name: str = "general") -> bool:
+    if not isinstance(summary, dict) or not novel_path:
+        return False
+    if summary.get("schema_version") != 1:
+        return False
+    if summary.get("specialty_profile", summary.get("analysis_profile", "general")) != profile_name:
+        return False
+    if os.path.abspath(str(summary.get("novel_path", "") or "")) != os.path.abspath(novel_path):
+        return False
+    current_mtime = _safe_mtime(novel_path)
+    return current_mtime is not None and summary.get("novel_mtime") == current_mtime
+
+
 def load_report_checkpoint(path: str = REPORT_CHECKPOINT_FILE) -> dict:
     data = load_json(path)
     if not isinstance(data, dict):
@@ -666,11 +679,26 @@ def build_purity_map(reviewer: dict) -> dict:
             "llm_spirit_reason": item.get("llm_spirit_reason", ""),
             "rule_spirit_status": item.get("rule_spirit_status", ""),
             "rule_spirit_reason": item.get("rule_spirit_reason", ""),
+            "partner_exempted_for_clean": item.get("partner_exempted_for_clean", False),
+            "partner_exemption_notes": item.get("partner_exemption_notes", []),
+            "partner_exemption_reason": item.get("partner_exemption_reason", ""),
+            "past_life_clean": item.get("past_life_clean"),
+            "past_life_status": item.get("past_life_status", ""),
+            "past_life_reason": item.get("past_life_reason", ""),
+            "contact_level": item.get("contact_level", ""),
+            "contact_level_label": item.get("contact_level_label", ""),
+            "contact_level_reason": item.get("contact_level_reason", ""),
             "pushed_by_male_lead": item.get("pushed_by_male_lead"),
             "pushed_reason": item.get("pushed_reason", ""),
             # original 4-dim summary
             "is_leak_heroine": item.get("is_leak_heroine"),
             "leak_reason": item.get("leak_reason", ""),
+            "leak_emotional_depth": item.get("leak_emotional_depth"),
+            "leak_emotional_depth_reason": item.get("leak_emotional_depth_reason", ""),
+            "leak_relationship_confirmed": item.get("leak_relationship_confirmed"),
+            "leak_relationship_reason": item.get("leak_relationship_reason", ""),
+            "leak_ending_accounted": item.get("leak_ending_accounted"),
+            "leak_ending_reason": item.get("leak_ending_reason", ""),
             "summary": item.get("summary", ""),
         }
         m[name] = data
@@ -753,6 +781,141 @@ def _pick_first_str(items, default=""):
         if s:
             return s
     return default
+
+
+def _contains_any_text(value, keywords) -> bool:
+    if isinstance(value, (list, tuple, set)):
+        text = " ".join(str(x) for x in value if x is not None)
+    elif isinstance(value, dict):
+        text = json.dumps(value, ensure_ascii=False)
+    else:
+        text = str(value or "")
+    return any(word in text for word in keywords)
+
+
+def _summarize_heroine_effectiveness(heroine_meta: dict, profile: dict, evidence: dict = None) -> str:
+    heroine_meta = heroine_meta or {}
+    profile = profile or {}
+    evidence = evidence or {}
+    signals = []
+    risks = []
+
+    if profile.get("relationship_with_protagonist") and profile.get("relationship_with_protagonist") != "未描述":
+        signals.append("有男主关系描述")
+    if profile.get("key_events") and profile.get("key_events") != "未描述":
+        signals.append("有关键事件")
+    if profile.get("features") and profile.get("features") != "未描述":
+        signals.append("有身份/性格特征")
+    if heroine_meta.get("importance_rank") not in (None, "", 9999):
+        signals.append(f"重要度排序 {heroine_meta.get('importance_rank')}")
+    if int(evidence.get("count") or heroine_meta.get("count") or 0) >= 3:
+        signals.append("多次出场")
+
+    raw_text = " ".join(
+        str(x or "")
+        for x in [
+            profile.get("identity"),
+            profile.get("relationship_with_protagonist"),
+            profile.get("features"),
+            profile.get("key_events"),
+            " ".join(str(s) for s in (evidence.get("summaries") or [])[:5]),
+        ]
+    )
+    if _contains_any_text(raw_text, ["工具", "召唤", "捧哏", "背景", "说明", "偶尔", "客串", "存在感", "神隐"]):
+        risks.append("存在工具人/低存在感线索")
+    if not signals:
+        return "证据不足：缺少稳定关系、关键事件和出场信息。"
+    if risks:
+        return f"有效性存疑：{'；'.join(signals[:3])}；{'；'.join(risks)}。"
+    return f"有效性较明确：{'；'.join(signals[:4])}。"
+
+
+def _summarize_heroine_relationship_structure(profile: dict, evidence: dict = None) -> str:
+    profile = profile or {}
+    evidence = evidence or {}
+    text = " ".join(
+        str(x or "")
+        for x in [
+            profile.get("identity"),
+            profile.get("relationship_with_protagonist"),
+            profile.get("features"),
+            profile.get("key_events"),
+            " ".join(str(s) for s in (evidence.get("summaries") or [])[:8]),
+            " ".join(str(s) for s in (evidence.get("relationships") or [])[:8]),
+            " ".join(str(s) for s in (evidence.get("features") or [])[:8]),
+        ]
+    )
+    tags = []
+    if _contains_any_text(text, ["依附", "供养", "赡养", "债务", "欠债", "卖身", "赎身", "包养", "经济", "资源", "养活"]):
+        tags.append("经济依附")
+    if _contains_any_text(text, ["上司", "下属", "主仆", "主人", "奴", "师徒", "宗主", "皇帝", "女王", "权力", "掌控", "命令", "生杀"]):
+        tags.append("权力关系")
+    if _contains_any_text(text, ["联姻", "和亲", "赐婚", "婚约", "包办", "政治婚姻", "家族婚约", "逼婚", "被迫嫁"]):
+        tags.append("政治联姻/婚约")
+    if _contains_any_text(text, ["受害", "被迫", "强迫", "胁迫", "囚禁", "绑架", "下药", "侵犯", "猥亵", "偷拍", "直播", "曝光", "洗脑"]):
+        tags.append("受害/胁迫记录")
+    if not tags:
+        return "未见明确经济依附、权力关系、政治联姻或受害记录线索。"
+    return "；".join(dict.fromkeys(tags))
+
+
+def _summarize_leak_three_layers(purity_info: dict, profile: dict) -> str:
+    purity_info = purity_info or {}
+    profile = profile or {}
+    if any(key in purity_info for key in ("leak_emotional_depth", "leak_relationship_confirmed", "leak_ending_accounted")):
+        emotional_depth = purity_info.get("leak_emotional_depth")
+        relationship_confirmed = purity_info.get("leak_relationship_confirmed")
+        ending_accounted = purity_info.get("leak_ending_accounted")
+        leak = purity_info.get("is_leak_heroine")
+        if leak is True:
+            verdict = "疑似漏女"
+        elif leak is False:
+            verdict = "未判漏女"
+        elif leak is None:
+            verdict = "暂不判定"
+        else:
+            verdict = "证据不足"
+        return (
+            f"情感深度={_bool_mark(emotional_depth)}；"
+            f"关系确认={_bool_mark(relationship_confirmed)}；"
+            f"结局交代={_bool_mark(ending_accounted)}；"
+            f"结论={verdict}"
+        )
+
+    relation_text = profile.get("relationship_with_protagonist") or ""
+    events_text = profile.get("key_events") or ""
+    profile_text = f"{relation_text} {events_text}"
+
+    has_emotional_depth = _contains_any_text(
+        profile_text,
+        ["暧昧", "喜欢", "爱", "动心", "倾心", "表白", "告白", "吃醋", "承诺", "救赎", "道侣", "恋人", "未婚妻"],
+    )
+    pushed = purity_info.get("pushed_by_male_lead")
+    leak = purity_info.get("is_leak_heroine")
+    has_relationship_confirmed = bool(pushed) or _contains_any_text(
+        profile_text,
+        ["推倒", "同房", "双修", "成婚", "纳妾", "妾", "道侣", "恋人", "确认关系", "收入后宫"],
+    )
+    has_ending_note = _contains_any_text(
+        profile_text,
+        ["结局", "最终", "最后", "归宿", "留在", "成婚", "同居", "后宫", "道侣"],
+    )
+
+    if leak is True:
+        verdict = "疑似漏女"
+    elif leak is False:
+        verdict = "未判漏女"
+    elif has_emotional_depth and not has_relationship_confirmed:
+        verdict = "需关注"
+    else:
+        verdict = "证据不足"
+
+    return (
+        f"情感深度={'有' if has_emotional_depth else '未明'}；"
+        f"关系确认={'有' if has_relationship_confirmed else '未明'}；"
+        f"结局交代={'有' if has_ending_note else '未明'}；"
+        f"结论={verdict}"
+    )
 
 
 def _match_female_evidence(name: str, aliases: list, all_female_characters: dict):
@@ -1208,6 +1371,8 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
     for h in heroines:
         name = h.get("name") or "未知"
         prof = _normalize_profile_for_report(profile_cache.get(name, {}))
+        aliases = h.get("aliases") or h.get("other_names") or []
+        evid = _match_female_evidence(name, aliases, all_female_characters) or {}
         p = purity_map.get(name) or purity_map.get(_heroine_name_key(name))
         # 初摸：无非男主接触 => ✅
         virgin = _bool_mark(p.get("is_virgin")) if p else "❓"
@@ -1239,6 +1404,13 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
         llm_spirit_reason = (p.get("llm_spirit_reason") or "").strip() if p else ""
         rule_spirit_status = (p.get("rule_spirit_status") or "\u672a\u77e5") if p else "\u672a\u77e5"
         rule_spirit_reason = (p.get("rule_spirit_reason") or "").strip() if p else ""
+        partner_exempted = bool(p.get("partner_exempted_for_clean", False)) if p else False
+        partner_exemption_reason = (p.get("partner_exemption_reason") or "").strip() if p else ""
+        past_life_status = (p.get("past_life_status") or "未见前世/原故事线洁度线索") if p else "未见前世/原故事线洁度线索"
+        past_life_reason = (p.get("past_life_reason") or "").strip() if p else ""
+        contact_level = (p.get("contact_level") or "L0") if p else "L0"
+        contact_level_label = (p.get("contact_level_label") or "无非男主接触事实") if p else "无非男主接触事实"
+        contact_level_reason = (p.get("contact_level_reason") or "").strip() if p else ""
         missing_desc = "\u672a\u63cf\u8ff0"
         empty_text = "\uff08\u65e0\uff09"
 
@@ -1249,13 +1421,22 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
             f"\u7cbe\u795e\u521d\uff1a{spirit}",
             f"\u521d\u5a5a\uff1a{first_marriage}",
             f"\u521d\u6478\uff1a{first_touch}",
+            f"partner豁免：{_bool_mark(partner_exempted)}",
+            f"partner豁免说明：{partner_exemption_reason or empty_text}",
+            f"接触等级：{contact_level}（{contact_level_label}）",
+            f"接触等级说明：{contact_level_reason or empty_text}",
+            f"前世洁度：{past_life_status}",
+            f"前世洁度说明：{past_life_reason or empty_text}",
             f"\u8eab\u4efd\uff1a{prof.get('identity') or missing_desc}",
             f"\u4e0e\u7537\u4e3b\u5173\u7cfb\uff1a{prof.get('relationship_with_protagonist') or missing_desc}",
             f"\u7279\u70b9\uff1a{prof.get('features') or missing_desc}",
             f"\u5173\u952e\u4e8b\u4ef6\uff1a{prof.get('key_events') or missing_desc}",
+            f"关系结构标签：{_summarize_heroine_relationship_structure(prof, evid)}",
+            f"女主有效性：{_summarize_heroine_effectiveness(h, prof, evid)}",
             f"\u56db\u7ef4\u7eaf\u6d01\u5ea6summary\uff1a{purity_summary or empty_text}",
             f"是否被推倒：{pushed}",
             f"推倒说明：{pushed_reason or empty_text}",
+            f"漏女三层判定：{_summarize_leak_three_layers(p or {}, prof)}",
             f"是否漏女：{leak}",
             f"漏女说明：{leak_reason or empty_text}",
         ]
@@ -1403,39 +1584,76 @@ def _append_general_scan_section(lines: list, general_summary: dict):
 
     field_titles = {
         "historical_logic": "历史制度与时代逻辑",
+        "historical_atmosphere": "历史氛围",
         "power_structure": "权力结构与派系",
+        "warfare_and_intrigue": "战争与权谋",
         "scientific_assumptions": "科学假设",
         "technology_chain": "技术链与工程约束",
         "science_consistency": "科学设定自洽性",
+        "scale_and_wonder": "尺度感与科幻奇观",
+        "social_ethical_impact": "社会与伦理影响",
+        "character_highlights": "角色亮点",
+        "pacing_and_emotion": "节奏与情绪曲线",
         "cultivation_system": "修炼体系",
+        "bloodline_physique": "血脉/体质/天赋",
         "power_scaling": "战力层级",
         "faction_structure": "势力结构",
+        "mythology_elements": "东方神话元素",
         "upgrade_pacing": "升级节奏",
+        "dao_theme": "求道/长生主题",
         "mystery_setup": "谜题设置",
+        "puzzle_fairness": "谜题公平性",
         "clue_fairness": "线索公平性",
+        "narrative_trick": "叙述性诡计",
         "trick_logic": "诡计与逻辑",
+        "detective_method": "侦探方法论",
+        "logic_chain_integrity": "逻辑链完整性",
         "reveal_and_payoff": "真相揭示与回收",
+        "detective_character": "侦探角色",
+        "narrative_structure": "叙事结构",
         "system_rules": "系统规则",
         "progression_balance": "成长与数值平衡",
         "instance_design": "副本/关卡设计",
+        "instance_variety": "副本/世界多样性",
+        "player_interaction": "玩家互动",
         "reward_and_cost": "奖励与代价",
+        "novelty_mechanics": "系统机制创新",
+        "real_world_impact": "现实世界影响",
         "urban_setting": "都市现实背景",
         "power_system": "异能/金手指体系",
         "face_slapping_pacing": "装逼打脸节奏",
+        "relationships": "关系线",
+        "villain_quality": "反派质量",
         "realism_risks": "现实逻辑风险",
+        "war_type_and_scale": "战争类型与规模",
         "strategy_logic": "战略逻辑",
         "tactics_and_operations": "战术与行动",
         "logistics_and_cost": "后勤与战争代价",
         "command_structure": "指挥链与组织",
+        "force_buildup": "部队建设",
+        "equipment_and_tech": "装备与军工科技",
+        "combat_writing": "战斗描写",
+        "political_diplomacy": "政治与外交",
         "apocalypse_cause": "灾变成因与机制",
         "survival_resources": "生存资源",
         "threat_escalation": "威胁升级",
         "shelter_and_order": "据点与秩序",
+        "social_collapse_and_rebuild": "秩序崩塌与重建",
+        "humanity_moral_dilemmas": "人性与道德困境",
+        "power_evolution_system": "能力/进化体系",
+        "exploration_adventure": "探索冒险",
         "anomaly_rules": "异常规则",
+        "sequence_system": "序列/魔药体系",
+        "san_mechanics": "SAN值/理智机制",
+        "rule_based_horror": "规则怪谈",
+        "contamination_levels": "污染等级",
         "investigation_clues": "调查线索",
         "sanity_and_corruption": "理智与污染代价",
         "horror_atmosphere": "恐怖氛围",
         "competition_rules": "竞技规则",
+        "technique_tactics": "专业技战术",
+        "season_structure": "赛事/赛季结构",
+        "rivalry_and_opponents": "对手群像",
         "training_progression": "训练成长",
         "tactical_matchups": "战术对局",
         "career_and_team": "职业线与团队",
@@ -1443,25 +1661,42 @@ def _append_general_scan_section(lines: list, general_summary: dict):
         "industry_resources": "行业资源",
         "public_opinion": "舆论经营",
         "career_growth": "事业成长",
+        "creative_process": "创作过程",
+        "fan_economy": "粉丝经济",
         "business_model": "商业模式",
         "market_competition": "市场竞争",
         "organization_management": "组织管理",
         "career_progression": "职场成长",
+        "corporate_politics": "职场政治",
+        "supply_chain": "供应链/产业链",
         "case_structure": "案件结构",
+        "case_complexity": "案件复杂度",
         "evidence_chain": "证据链",
         "forensic_procedure": "法医与侦查程序",
+        "criminal_psychology": "犯罪心理",
+        "team_dynamics": "团队协作",
+        "social_reflection": "社会映射",
         "legal_realism": "法律现实性",
         "campus_setting": "校园环境",
         "youth_relationships": "青春关系",
         "academic_growth": "学习与竞赛成长",
         "coming_of_age": "成长弧线",
+        "era_atmosphere": "时代氛围",
+        "family_dynamics": "原生家庭/家庭关系",
         "production_chain": "生产链条",
         "resource_management": "资源管理",
+        "technology_progression": "技术升级路径",
+        "civilization_level": "文明/产业层级",
+        "population_management": "人口管理",
         "trade_expansion": "贸易与扩张",
         "community_building": "组织与社区建设",
         "isekai_premise": "异世界前提",
         "adventure_system": "冒险体系",
         "party_dynamics": "队伍互动",
+        "races_culture": "种族与文化生态",
+        "politics_society": "贵族/国家政治",
+        "romance_comedy_balance": "恋爱喜剧平衡",
+        "slice_of_life": "日常/慢生活",
         "lightnovel_pacing": "轻小说节奏",
         "steampunk_setting": "蒸汽西幻底盘",
         "alchemy_industry": "炼金工业",
@@ -1764,6 +1999,13 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         report = build_general_report(book_key, detailed_data, general_summary)
     else:
         report = build_report_v2(book_key, detailed_data, reviewer)
+        harem_plus_summary_path = find_general_summary_json(book_key, profile_name="general") if profile.name == "harem" else None
+        harem_plus_summary = load_json(harem_plus_summary_path) if harem_plus_summary_path else None
+        if harem_plus_summary and _general_summary_matches_novel(harem_plus_summary, novel_path or novel_path_env, "general"):
+            log_report(f"using harem+ general summary: {harem_plus_summary_path or '<not found>'}")
+            harem_plus_lines = ["", "【作品整体评价】"]
+            _append_general_scan_section(harem_plus_lines, harem_plus_summary)
+            report = f"{report}\n" + "\n".join(harem_plus_lines)
     log_report(f"report content built, chars={len(report)}")
 
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')

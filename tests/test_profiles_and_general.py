@@ -6,6 +6,8 @@ import unittest
 import analysis_profiles
 import general_scan
 import main
+import novel_scan
+import novel_reviewer
 import report
 import web_manager
 
@@ -35,74 +37,123 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(harem.name, "harem")
         self.assertTrue(harem.uses_harem_reviewer)
         self.assertFalse(harem.uses_general_scan)
+        self.assertTrue(harem.supports_harem_plus)
+        self.assertEqual(harem.harem_plus.get("general_profile"), "general")
+        self.assertIn("romance_expectation_gap", harem.summary_fields)
 
         self.assertEqual(general.name, "general")
         self.assertFalse(general.uses_harem_reviewer)
         self.assertTrue(general.uses_general_scan)
+        self.assertIn("character_highlights", general.summary_fields)
+        self.assertIn("pacing_and_emotion", general.summary_fields)
 
         self.assertEqual(history.name, "history")
         self.assertTrue(history.uses_general_scan)
         self.assertIn("historical_logic", history.summary_fields)
+        self.assertIn("historical_atmosphere", history.summary_fields)
+        self.assertIn("warfare_and_intrigue", history.summary_fields)
 
         self.assertEqual(hard_sci_fi.name, "hard_sci_fi")
         self.assertTrue(hard_sci_fi.uses_general_scan)
         self.assertIn("science_consistency", hard_sci_fi.summary_fields)
+        self.assertIn("scale_and_wonder", hard_sci_fi.summary_fields)
+        self.assertIn("social_ethical_impact", hard_sci_fi.summary_fields)
 
         self.assertEqual(xianxia_fantasy.name, "xianxia_fantasy")
         self.assertTrue(xianxia_fantasy.uses_general_scan)
         self.assertIn("cultivation_system", xianxia_fantasy.summary_fields)
+        self.assertIn("bloodline_physique", xianxia_fantasy.summary_fields)
+        self.assertIn("mythology_elements", xianxia_fantasy.summary_fields)
+        self.assertIn("dao_theme", xianxia_fantasy.summary_fields)
 
         self.assertEqual(mystery_detective.name, "mystery_detective")
         self.assertTrue(mystery_detective.uses_general_scan)
         self.assertIn("clue_fairness", mystery_detective.summary_fields)
+        self.assertIn("puzzle_fairness", mystery_detective.summary_fields)
+        self.assertIn("narrative_trick", mystery_detective.summary_fields)
+        self.assertIn("logic_chain_integrity", mystery_detective.summary_fields)
 
         self.assertEqual(game_system.name, "game_system")
         self.assertTrue(game_system.uses_general_scan)
         self.assertIn("system_rules", game_system.summary_fields)
+        self.assertIn("instance_variety", game_system.summary_fields)
+        self.assertIn("player_interaction", game_system.summary_fields)
+        self.assertIn("novelty_mechanics", game_system.summary_fields)
+        self.assertIn("real_world_impact", game_system.summary_fields)
 
         self.assertEqual(urban_power.name, "urban_power")
         self.assertTrue(urban_power.uses_general_scan)
         self.assertIn("face_slapping_pacing", urban_power.summary_fields)
+        self.assertIn("relationships", urban_power.summary_fields)
+        self.assertIn("villain_quality", urban_power.summary_fields)
 
         self.assertEqual(military_war.name, "military_war")
         self.assertTrue(military_war.uses_general_scan)
         self.assertIn("logistics_and_cost", military_war.summary_fields)
+        self.assertIn("war_type_and_scale", military_war.summary_fields)
+        self.assertIn("force_buildup", military_war.summary_fields)
+        self.assertIn("equipment_and_tech", military_war.summary_fields)
 
         self.assertEqual(apocalypse_survival.name, "apocalypse_survival")
         self.assertTrue(apocalypse_survival.uses_general_scan)
         self.assertIn("survival_resources", apocalypse_survival.summary_fields)
+        self.assertIn("social_collapse_and_rebuild", apocalypse_survival.summary_fields)
+        self.assertIn("humanity_moral_dilemmas", apocalypse_survival.summary_fields)
+        self.assertIn("power_evolution_system", apocalypse_survival.summary_fields)
 
         self.assertEqual(cosmic_horror.name, "cosmic_horror")
         self.assertTrue(cosmic_horror.uses_general_scan)
         self.assertIn("anomaly_rules", cosmic_horror.summary_fields)
+        self.assertIn("sequence_system", cosmic_horror.summary_fields)
+        self.assertIn("san_mechanics", cosmic_horror.summary_fields)
+        self.assertIn("rule_based_horror", cosmic_horror.summary_fields)
 
         self.assertEqual(sports_competition.name, "sports_competition")
         self.assertTrue(sports_competition.uses_general_scan)
         self.assertIn("tactical_matchups", sports_competition.summary_fields)
+        self.assertIn("technique_tactics", sports_competition.summary_fields)
+        self.assertIn("season_structure", sports_competition.summary_fields)
+        self.assertIn("rivalry_and_opponents", sports_competition.summary_fields)
 
         self.assertEqual(entertainment_industry.name, "entertainment_industry")
         self.assertTrue(entertainment_industry.uses_general_scan)
         self.assertIn("public_opinion", entertainment_industry.summary_fields)
+        self.assertIn("creative_process", entertainment_industry.summary_fields)
+        self.assertIn("fan_economy", entertainment_industry.summary_fields)
 
         self.assertEqual(business_career.name, "business_career")
         self.assertTrue(business_career.uses_general_scan)
         self.assertIn("business_model", business_career.summary_fields)
+        self.assertIn("corporate_politics", business_career.summary_fields)
+        self.assertIn("supply_chain", business_career.summary_fields)
 
         self.assertEqual(crime_forensics.name, "crime_forensics")
         self.assertTrue(crime_forensics.uses_general_scan)
         self.assertIn("evidence_chain", crime_forensics.summary_fields)
+        self.assertIn("case_complexity", crime_forensics.summary_fields)
+        self.assertIn("criminal_psychology", crime_forensics.summary_fields)
+        self.assertIn("team_dynamics", crime_forensics.summary_fields)
 
         self.assertEqual(campus_youth.name, "campus_youth")
         self.assertTrue(campus_youth.uses_general_scan)
         self.assertIn("coming_of_age", campus_youth.summary_fields)
+        self.assertIn("era_atmosphere", campus_youth.summary_fields)
+        self.assertIn("family_dynamics", campus_youth.summary_fields)
 
         self.assertEqual(farming_management.name, "farming_management")
         self.assertTrue(farming_management.uses_general_scan)
         self.assertIn("production_chain", farming_management.summary_fields)
+        self.assertIn("technology_progression", farming_management.summary_fields)
+        self.assertIn("civilization_level", farming_management.summary_fields)
+        self.assertIn("population_management", farming_management.summary_fields)
 
         self.assertEqual(isekai_lightnovel.name, "isekai_lightnovel")
         self.assertTrue(isekai_lightnovel.uses_general_scan)
         self.assertIn("isekai_premise", isekai_lightnovel.summary_fields)
+        self.assertIn("races_culture", isekai_lightnovel.summary_fields)
+        self.assertIn("politics_society", isekai_lightnovel.summary_fields)
+        self.assertIn("romance_comedy_balance", isekai_lightnovel.summary_fields)
+        self.assertIn("slice_of_life", isekai_lightnovel.summary_fields)
 
         self.assertEqual(steampunk_fantasy.name, "steampunk_fantasy")
         self.assertTrue(steampunk_fantasy.uses_general_scan)
@@ -135,9 +186,285 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("isekai_lightnovel", names)
         self.assertIn("steampunk_fantasy", names)
 
+    def test_auto_inference_keywords_are_profile_owned(self):
+        for profile in analysis_profiles.list_available_profiles():
+            if profile.name == "general":
+                continue
+            with self.subTest(profile=profile.name):
+                keywords = analysis_profiles._keywords_from_manifest(profile.name)
+                self.assertTrue(keywords, f"{profile.name} missing inference_keywords")
+
+    def test_history_and_sci_fi_rules_include_kimi_categories(self):
+        with open(os.path.join("profiles", "history", "rules.json"), "r", encoding="utf-8") as f:
+            history_rules = json.load(f)
+        with open(os.path.join("profiles", "hard_sci_fi", "rules.json"), "r", encoding="utf-8") as f:
+            sci_fi_rules = json.load(f)
+
+        history_categories = {item["name"]: item for item in history_rules["categories"]}
+        self.assertIn("制度与时代", history_categories)
+        self.assertIn("权谋与战争", history_categories)
+        self.assertIn("历史氛围与人物", history_categories)
+        history_points = {
+            point["name"]
+            for category in history_rules["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertIn("穿越合理性", history_points)
+        self.assertIn("战争决策", history_points)
+        self.assertIn("时代语言", history_points)
+
+        sci_fi_categories = {item["name"]: item for item in sci_fi_rules["categories"]}
+        self.assertIn("科学设定与技术链", sci_fi_categories)
+        self.assertIn("设定自洽与世界观", sci_fi_categories)
+        self.assertIn("科幻概念与硬伤", sci_fi_categories)
+        sci_fi_points = {
+            point["name"]
+            for category in sci_fi_rules["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertIn("技术链完整性", sci_fi_points)
+        self.assertIn("社会伦理", sci_fi_points)
+        self.assertIn("常见硬伤", sci_fi_points)
+
+        history_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("history"))
+        sci_fi_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("hard_sci_fi"))
+        self.assertIn("穿越合理性", history_text)
+        self.assertIn("社会伦理", sci_fi_text)
+
+    def test_xianxia_isekai_and_game_rules_include_kimi_categories(self):
+        rule_paths = {
+            "xianxia_fantasy": os.path.join("profiles", "xianxia_fantasy", "rules.json"),
+            "isekai_lightnovel": os.path.join("profiles", "isekai_lightnovel", "rules.json"),
+            "game_system": os.path.join("profiles", "game_system", "rules.json"),
+        }
+        rules = {}
+        for name, path in rule_paths.items():
+            with open(path, "r", encoding="utf-8") as f:
+                rules[name] = json.load(f)
+
+        xianxia_points = {
+            point["name"]
+            for category in rules["xianxia_fantasy"]["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertIn("血脉体质", xianxia_points)
+        self.assertIn("多元修炼", xianxia_points)
+        self.assertIn("神话融入", xianxia_points)
+        self.assertIn("求道主题", xianxia_points)
+
+        isekai_categories = {item["name"] for item in rules["isekai_lightnovel"]["categories"]}
+        isekai_points = {
+            point["name"]
+            for category in rules["isekai_lightnovel"]["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertIn("种族文化与政治", isekai_categories)
+        self.assertIn("冒险与叙事", isekai_categories)
+        self.assertIn("种族生态", isekai_points)
+        self.assertIn("政治结构", isekai_points)
+        self.assertIn("日常平衡", isekai_points)
+
+        game_categories = {item["name"] for item in rules["game_system"]["categories"]}
+        game_points = {
+            point["name"]
+            for category in rules["game_system"]["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertIn("玩家互动与世界", game_categories)
+        self.assertIn("流派判定", game_points)
+        self.assertIn("机制创新", game_points)
+        self.assertIn("世界多样性", game_points)
+        self.assertIn("NPC逻辑", game_points)
+        self.assertIn("现实影响", game_points)
+
+        xianxia_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("xianxia_fantasy"))
+        game_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("game_system"))
+        self.assertIn("求道主题", xianxia_text)
+        self.assertIn("玩家互动", game_text)
+
+    def test_military_apocalypse_and_crime_rules_include_kimi_categories(self):
+        rule_paths = {
+            "military_war": os.path.join("profiles", "military_war", "rules.json"),
+            "apocalypse_survival": os.path.join("profiles", "apocalypse_survival", "rules.json"),
+            "crime_forensics": os.path.join("profiles", "crime_forensics", "rules.json"),
+        }
+        rules = {}
+        for name, path in rule_paths.items():
+            with open(path, "r", encoding="utf-8") as f:
+                rules[name] = json.load(f)
+
+        military_categories = {item["name"] for item in rules["military_war"]["categories"]}
+        military_points = {
+            point["name"]
+            for category in rules["military_war"]["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertIn("战争类型与规模", military_categories)
+        self.assertIn("部队建设与军工装备", military_categories)
+        self.assertIn("政治与外交", military_categories)
+        self.assertIn("军工装备", military_points)
+        self.assertIn("战斗描写", military_points)
+        self.assertIn("军事职业线", military_points)
+
+        apocalypse_categories = {item["name"] for item in rules["apocalypse_survival"]["categories"]}
+        apocalypse_points = {
+            point["name"]
+            for category in rules["apocalypse_survival"]["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertIn("人性与道德", apocalypse_categories)
+        self.assertIn("能力体系", apocalypse_categories)
+        self.assertIn("探索冒险", apocalypse_categories)
+        self.assertIn("末世经济", apocalypse_points)
+        self.assertIn("物理威胁边界", apocalypse_points)
+        self.assertIn("搜集行动", apocalypse_points)
+
+        crime_categories = {item["name"] for item in rules["crime_forensics"]["categories"]}
+        crime_points = {
+            point["name"]
+            for category in rules["crime_forensics"]["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertIn("犯罪心理与侧写", crime_categories)
+        self.assertIn("团队群像与社会映射", crime_categories)
+        self.assertIn("案件复杂度", crime_points)
+        self.assertIn("执法身份", crime_points)
+        self.assertIn("社会映射", crime_points)
+
+        military_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("military_war"))
+        apocalypse_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("apocalypse_survival"))
+        crime_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("crime_forensics"))
+        self.assertIn("军工装备", military_text)
+        self.assertIn("能力体系", apocalypse_text)
+        self.assertIn("犯罪心理", crime_text)
+
+    def test_harem_rules_include_kimi_expansions_without_losing_locks(self):
+        rules_path = os.path.join("profiles", "harem", "rules.json")
+        with open(rules_path, "r", encoding="utf-8") as f:
+            rules = json.load(f)
+
+        categories = {item["name"]: item for item in rules["categories"]}
+        poison_points = {item["name"]: item["description"] for item in categories["雷点（严重毒点）"]["points"]}
+        depressing_points = {item["name"]: item["description"] for item in categories["郁闷点"]["points"]}
+        glossary = {item["term"]: item["definition"] for item in rules["glossary"]}
+
+        self.assertIn("群交/多人运动", poison_points)
+        self.assertIn("雌堕/洗脑改造", poison_points)
+        self.assertIn("隐私曝光（直播/录像/拍照）", poison_points)
+        self.assertIn("人格侮辱/公开调教", poison_points)
+
+        self.assertIn("进度条诈骗", depressing_points)
+        self.assertIn("NTR擦边/反复救援", depressing_points)
+        self.assertIn("工具人女主", depressing_points)
+        self.assertIn("后宫内斗/宅斗", depressing_points)
+        self.assertIn("替身/代餐", depressing_points)
+
+        self.assertIn("前世洁度", glossary)
+        self.assertIn("接触等级", glossary)
+        self.assertIn("partner豁免", glossary)
+        self.assertIn("漏女三层判定", glossary)
+        self.assertIn("女主有效性", glossary)
+
+        self.assertIn("仅限男主视角", poison_points["绿帽"])
+        self.assertIn("配角把女性献给男主", poison_points["绿帽"])
+        self.assertIn("男主主动或默许", poison_points["送女"])
+        self.assertIn("反派计划把女性送人", poison_points["送女"])
+
+    def test_harem_scan_prompt_mentions_leak_layers_and_tooling(self):
+        categories = [
+            {
+                "name": "郁闷点",
+                "description": "测试",
+                "points": [
+                    {"name": "漏女", "description": "测试"},
+                    {"name": "工具人女主", "description": "测试"},
+                ],
+            }
+        ]
+        glossary = [
+            {"term": "漏女三层判定", "definition": "测试"},
+            {"term": "女主有效性", "definition": "测试"},
+        ]
+
+        prompt = novel_scan.build_prompt(categories, glossary, ["甲女"], {"name": "男主"})
+
+        self.assertIn("漏女三层判定", prompt)
+        self.assertIn("情感深度", prompt)
+        self.assertIn("关系是否确认", prompt)
+        self.assertIn("结局是否交代", prompt)
+        self.assertIn("工具人女主", prompt)
+        self.assertIn("感情戏缺失", prompt)
+        self.assertIn("经济依附", prompt)
+        self.assertIn("权力关系", prompt)
+        self.assertIn("政治联姻", prompt)
+        self.assertIn("受害/胁迫记录", prompt)
+
+    def test_physical_contact_postprocess_without_partner_relations(self):
+        facts = [
+            {
+                "name": "甲女",
+                "facts": {
+                    "physical_contacts": [
+                        {
+                            "partner": "王公子",
+                            "contact_type": "强抱",
+                            "detail": "王公子强行抱住甲女。",
+                            "evidence": "王公子强行抱住甲女。",
+                        }
+                    ],
+                    "partner_relations": [],
+                },
+            }
+        ]
+
+        cleaned = novel_scan._postprocess_heroine_facts(facts, ["甲女"], {"name": "男主"}, 826)
+
+        contacts = cleaned[0]["facts"]["physical_contacts"]
+        self.assertEqual(len(contacts), 1)
+        self.assertEqual(contacts[0]["partner"], "王公子")
+        self.assertEqual(contacts[0]["chunk_index"], 826)
+
+    def test_rebuild_leak_state_exposes_three_layers(self):
+        data = {
+            "heroine_result": {
+                "heroines": [
+                    {
+                        "name": "甲女",
+                        "aliases": ["阿甲"],
+                        "summaries": ["与男主长期暧昧并喜欢男主，但结局未交代归宿。"],
+                    }
+                ]
+            }
+        }
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+            char_path = f.name
+        try:
+            issues, leak_map = novel_reviewer._rebuild_leak_state_from_pushed_map(
+                female_leads=["甲女"],
+                char_file_path=char_path,
+                novel_tail="尾声里只有男主离开江湖。",
+                finished=True,
+                pushed_map={"甲女": (False, "未见推倒或同房证据")},
+            )
+        finally:
+            os.unlink(char_path)
+
+        self.assertEqual(len(issues), 1)
+        info = leak_map["甲女"]
+        self.assertTrue(info["is_leak_heroine"])
+        self.assertTrue(info["leak_emotional_depth"])
+        self.assertFalse(info["leak_relationship_confirmed"])
+        self.assertFalse(info["leak_ending_accounted"])
+        self.assertIn("喜欢", info["leak_emotional_depth_reason"])
+
     def test_auto_profile_inference(self):
         self.assertEqual(
             analysis_profiles.infer_profile_for_text("大明权臣", "皇帝与朝廷在庙堂上争论边军粮饷。"),
+            "history",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("锦衣卫变法", "现代人穿越古代，卷入宦官、士族、门阀与清君侧风波。"),
             "history",
         )
         self.assertEqual(
@@ -145,7 +472,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "hard_sci_fi",
         )
         self.assertEqual(
+            analysis_profiles.infer_profile_for_text("意识上传", "可控核聚变、脑机接口和太空电梯改变文明等级，引发费米悖论讨论。"),
+            "hard_sci_fi",
+        )
+        self.assertEqual(
             analysis_profiles.infer_profile_for_text("仙路后宫", "男主与道侣双修，红颜和未婚妻都卷入宗门风波。"),
+            "harem",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("多女主日常", "男主收女推倒，和多女主大被同眠，后宫关系持续推进。"),
             "harem",
         )
         self.assertEqual(
@@ -153,7 +488,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "xianxia_fantasy",
         )
         self.assertEqual(
+            analysis_profiles.infer_profile_for_text("洪荒圣体", "主角练气筑基后觉醒圣体武魂，在天庭封神大劫中求道长生。"),
+            "xianxia_fantasy",
+        )
+        self.assertEqual(
             analysis_profiles.infer_profile_for_text("密室谋杀", "侦探调查案件，嫌疑人没有不在场证明，线索指向真正凶手。"),
+            "mystery_detective",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("本格诡计", "暴风雪山庄里出现叙述性诡计、红鲱鱼和时刻表诡计，侦探给出多重解答。"),
             "mystery_detective",
         )
         self.assertEqual(
@@ -161,7 +504,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "game_system",
         )
         self.assertEqual(
+            analysis_profiles.infer_profile_for_text("诸天模拟器", "主神空间开启诸天穿梭，角色用签到加点和NPC兑换能力。"),
+            "game_system",
+        )
+        self.assertEqual(
             analysis_profiles.infer_profile_for_text("都市神医", "赘婿神医在豪门集团商战中扮猪吃虎，连续打脸反派。"),
+            "urban_power",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("神豪下山", "都市神豪靠系统签到、古武和龙王身份连续打脸豪门反派。"),
             "urban_power",
         )
         self.assertEqual(
@@ -169,7 +520,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "military_war",
         )
         self.assertEqual(
+            analysis_profiles.infer_profile_for_text("军营演习", "主角参军入伍，在军校和兵工厂推进军工装备，参与特种兵演习。"),
+            "military_war",
+        )
+        self.assertEqual(
             analysis_profiles.infer_profile_for_text("末世安全区", "丧尸病毒爆发后，幸存者搜集物资并建设避难所。"),
+            "apocalypse_survival",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("灾变基地", "末日秩序崩塌后，基地里人性和异能觉醒共同影响求生规则。"),
             "apocalypse_survival",
         )
         self.assertEqual(
@@ -177,7 +536,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "cosmic_horror",
         )
         self.assertEqual(
+            analysis_profiles.infer_profile_for_text("规则怪谈", "序列和魔药体系带来SAN值下降，精神污染引出旧日外神。"),
+            "cosmic_horror",
+        )
+        self.assertEqual(
             analysis_profiles.infer_profile_for_text("冠军教练", "足球俱乐部在联赛决赛中调整战术，球员训练后夺得冠军。"),
+            "sports_competition",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("奥运MVP", "篮球队在世界杯和奥运会决赛对阵宿敌，教练调整专业技战术。"),
             "sports_competition",
         )
         self.assertEqual(
@@ -185,7 +552,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "entertainment_industry",
         )
         self.assertEqual(
+            analysis_profiles.infer_profile_for_text("选秀明星", "练习生参加选秀，网红和MCN制造饭圈CP营销，最终热搜出圈。"),
+            "entertainment_industry",
+        )
+        self.assertEqual(
             analysis_profiles.infer_profile_for_text("创业时代", "公司完成融资，董事会讨论股权、现金流和市场份额。"),
+            "business_career",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("供应链商战", "合伙人围绕股权、供应链、产业链、裁员和竞业展开职场斗争。"),
             "business_career",
         )
         self.assertEqual(
@@ -193,7 +568,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "crime_forensics",
         )
         self.assertEqual(
+            analysis_profiles.infer_profile_for_text("专案组", "刑侦专案组通过痕检、技侦、网安和犯罪心理分析侦查连环案。"),
+            "crime_forensics",
+        )
+        self.assertEqual(
             analysis_profiles.infer_profile_for_text("同桌的你", "高中转学生和同桌参加月考竞赛，班主任关注高考压力。"),
+            "campus_youth",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("重生校园", "学霸复读后参加艺考，和同桌早恋，毕业季面对原生家庭压力。"),
             "campus_youth",
         )
         self.assertEqual(
@@ -201,7 +584,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "farming_management",
         )
         self.assertEqual(
+            analysis_profiles.infer_profile_for_text("修仙种田", "宗门建设灵田药园，依靠科技树、产业链、人口和民生推进基建。"),
+            "farming_management",
+        )
+        self.assertEqual(
             analysis_profiles.infer_profile_for_text("转生勇者", "主角转生异世界，加入冒险者公会，在地下城挑战魔王。"),
+            "isekai_lightnovel",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("异世界慢生活", "贵族在王国经营料理店，精灵、龙族和亚人围绕美食展开冒险。"),
             "isekai_lightnovel",
         )
         self.assertEqual(
@@ -270,6 +661,53 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(result["profile"], "harem")
         self.assertEqual(result["profiles"], ["harem", "history"])
 
+    def test_harem_plus_general_scan_switches_profile_temporarily(self):
+        harem = analysis_profiles.load_analysis_profile("harem")
+        old_profile = os.environ.get("ANALYSIS_PROFILE")
+        old_rules = os.environ.get("ANALYSIS_RULES_FILE")
+        old_flag = os.environ.get("HAREM_PLUS_GENERAL_SCAN")
+        calls = []
+
+        class FakeGeneralScan:
+            @staticmethod
+            def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
+                calls.append({
+                    "profile": os.environ.get("ANALYSIS_PROFILE"),
+                    "rules": os.environ.get("ANALYSIS_RULES_FILE"),
+                    "novel_path": novel_path,
+                    "book_name": book_name,
+                    "run_id": run_id,
+                    "detail_path": detail_path,
+                })
+
+        try:
+            os.environ["ANALYSIS_PROFILE"] = "harem"
+            os.environ["ANALYSIS_RULES_FILE"] = harem.rules_file
+            os.environ.pop("HAREM_PLUS_GENERAL_SCAN", None)
+            self.assertFalse(main._harem_plus_general_scan_enabled(harem))
+
+            os.environ["HAREM_PLUS_GENERAL_SCAN"] = "1"
+            self.assertTrue(main._harem_plus_general_scan_enabled(harem))
+            main._run_harem_plus_general_scan(FakeGeneralScan, "/tmp/book.txt", "book", "run", "/tmp/detail.json", harem)
+        finally:
+            if old_profile is None:
+                os.environ.pop("ANALYSIS_PROFILE", None)
+            else:
+                os.environ["ANALYSIS_PROFILE"] = old_profile
+            if old_rules is None:
+                os.environ.pop("ANALYSIS_RULES_FILE", None)
+            else:
+                os.environ["ANALYSIS_RULES_FILE"] = old_rules
+            if old_flag is None:
+                os.environ.pop("HAREM_PLUS_GENERAL_SCAN", None)
+            else:
+                os.environ["HAREM_PLUS_GENERAL_SCAN"] = old_flag
+
+        self.assertEqual(calls[0]["profile"], "general")
+        self.assertIn("profiles/general", calls[0]["rules"])
+        self.assertEqual(calls[0]["book_name"], "book")
+        self.assertEqual(os.environ.get("ANALYSIS_PROFILE"), old_profile)
+
     def test_requested_profiles_accepts_manual_multi_select(self):
         self.assertEqual(main._normalize_requested_profiles(["历史", "科幻"]), ["history", "hard_sci_fi"])
         self.assertEqual(main._normalize_requested_profiles("历史,科幻"), ["history", "hard_sci_fi"])
@@ -302,7 +740,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 main.load_configs(tmp, interactive=False)
 
     def test_load_configs_reads_dotenv_before_setting_file(self):
-        keys = ["API_KEY", "API_KEY_POOL", "BASE_URL", "MODEL_NAME", "MAX_WORKERS"]
+        keys = ["API_KEY", "API_KEY_POOL", "BASE_URL", "MODEL_NAME", "MAX_WORKERS", "HAREM_PLUS_GENERAL_SCAN"]
         old_env = {key: os.environ.get(key) for key in keys}
         try:
             for key in keys:
@@ -311,13 +749,40 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 with open(os.path.join(tmp, ".env"), "w", encoding="utf-8") as f:
                     f.write("API_KEY=sk-dotenv\nBASE_URL=https://dotenv.example/v1\nMODEL_NAME=dotenv-model\nMAX_WORKERS=2\n")
                 with open(os.path.join(tmp, "setting.txt"), "w", encoding="utf-8") as f:
-                    f.write("BASE_URL=https://setting.example/v1\nMODEL_NAME=setting-model\nMAX_WORKERS=9\n")
+                    f.write(
+                        "BASE_URL=https://setting.example/v1\n"
+                        "MODEL_NAME=setting-model\n"
+                        "MAX_WORKERS=9\n"
+                        "HAREM_PLUS_GENERAL_SCAN=1\n"
+                    )
 
                 main.load_configs(tmp, interactive=False)
                 self.assertEqual(os.environ["API_KEY"], "sk-dotenv")
                 self.assertEqual(os.environ["BASE_URL"], "https://dotenv.example/v1")
                 self.assertEqual(os.environ["MODEL_NAME"], "dotenv-model")
                 self.assertEqual(os.environ["MAX_WORKERS"], "2")
+                self.assertEqual(os.environ["HAREM_PLUS_GENERAL_SCAN"], "1")
+        finally:
+            for key, value in old_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_load_configs_dotenv_overrides_harem_plus_setting(self):
+        keys = ["API_KEY", "API_KEY_POOL", "HAREM_PLUS_GENERAL_SCAN"]
+        old_env = {key: os.environ.get(key) for key in keys}
+        try:
+            for key in keys:
+                os.environ.pop(key, None)
+            with tempfile.TemporaryDirectory() as tmp:
+                with open(os.path.join(tmp, ".env"), "w", encoding="utf-8") as f:
+                    f.write("API_KEY=sk-dotenv\nHAREM_PLUS_GENERAL_SCAN=0\n")
+                with open(os.path.join(tmp, "setting.txt"), "w", encoding="utf-8") as f:
+                    f.write("HAREM_PLUS_GENERAL_SCAN=1\n")
+
+                main.load_configs(tmp, interactive=False)
+                self.assertEqual(os.environ["HAREM_PLUS_GENERAL_SCAN"], "0")
         finally:
             for key, value in old_env.items():
                 if value is None:
@@ -570,6 +1035,256 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("系统代价有效性", specialty_text)
         self.assertIn("技术跃迁风险", specialty_text)
 
+        kimi_summary = {
+            "profile_display_name": "历史小说专长分析",
+            "summary_fields": [
+                "main_plot",
+                "character_highlights",
+                "pacing_and_emotion",
+                "historical_atmosphere",
+                "warfare_and_intrigue",
+                "scale_and_wonder",
+                "social_ethical_impact",
+            ],
+            "summary": {
+                "story_overview": "作品包含历史、科幻和通用叙事维度。",
+                "character_highlights": ["配角有清晰人物弧光"],
+                "pacing_and_emotion": ["爽点和虐点分布明确"],
+                "historical_atmosphere": ["朝堂语言和礼法形成时代感"],
+                "warfare_and_intrigue": ["战争决策服务于权谋翻盘"],
+                "scale_and_wonder": ["恒星际尺度带来科幻奇观"],
+                "social_ethical_impact": ["技术扩散改变社会伦理边界"],
+            }
+        }
+        kimi_text = report.build_general_report("测试书", {}, kimi_summary)
+        self.assertIn("角色亮点", kimi_text)
+        self.assertIn("节奏与情绪曲线", kimi_text)
+        self.assertIn("历史氛围", kimi_text)
+        self.assertIn("战争与权谋", kimi_text)
+        self.assertIn("尺度感与科幻奇观", kimi_text)
+        self.assertIn("社会与伦理影响", kimi_text)
+
+        genre_summary = {
+            "profile_display_name": "类型专长分析",
+            "summary_fields": [
+                "bloodline_physique",
+                "mythology_elements",
+                "dao_theme",
+                "instance_variety",
+                "player_interaction",
+                "novelty_mechanics",
+                "real_world_impact",
+                "races_culture",
+                "politics_society",
+                "romance_comedy_balance",
+                "slice_of_life",
+            ],
+            "summary": {
+                "story_overview": "作品包含升级、系统和异世界元素。",
+                "bloodline_physique": ["主角体质有成长代价"],
+                "mythology_elements": ["洪荒和天庭设定融入主线"],
+                "dao_theme": ["长生动机清晰"],
+                "instance_variety": ["副本来源差异明确"],
+                "player_interaction": ["玩家交易影响剧情"],
+                "novelty_mechanics": ["模拟器机制有新意"],
+                "real_world_impact": ["游戏能力反向影响现实"],
+                "races_culture": ["精灵和亚人社会结构不同"],
+                "politics_society": ["王国贵族政治推动冲突"],
+                "romance_comedy_balance": ["恋爱喜剧没有压过主线"],
+                "slice_of_life": ["料理店日常提供慢生活节奏"],
+            }
+        }
+        genre_text = report.build_general_report("测试书", {}, genre_summary)
+        self.assertIn("血脉/体质/天赋", genre_text)
+        self.assertIn("东方神话元素", genre_text)
+        self.assertIn("求道/长生主题", genre_text)
+        self.assertIn("副本/世界多样性", genre_text)
+        self.assertIn("玩家互动", genre_text)
+        self.assertIn("系统机制创新", genre_text)
+        self.assertIn("现实世界影响", genre_text)
+        self.assertIn("种族与文化生态", genre_text)
+        self.assertIn("贵族/国家政治", genre_text)
+        self.assertIn("恋爱喜剧平衡", genre_text)
+        self.assertIn("日常/慢生活", genre_text)
+
+        urban_summary = {
+            "profile_display_name": "都市类专长分析",
+            "summary_fields": [
+                "relationships",
+                "villain_quality",
+                "era_atmosphere",
+                "family_dynamics",
+                "creative_process",
+                "fan_economy",
+                "corporate_politics",
+                "supply_chain",
+            ],
+            "summary": {
+                "story_overview": "都市相关分类测试。",
+                "relationships": ["人情关系推动冲突"],
+                "villain_quality": ["反派压迫有明确层级"],
+                "era_atmosphere": ["网络文化和毕业季氛围明确"],
+                "family_dynamics": ["原生家庭压力影响选择"],
+                "creative_process": ["剧本打磨和宣发形成闭环"],
+                "fan_economy": ["饭圈数据影响资源"],
+                "corporate_politics": ["董事会斗争推动职场线"],
+                "supply_chain": ["供应链瓶颈形成商业冲突"],
+            }
+        }
+        urban_text = report.build_general_report("测试书", {}, urban_summary)
+        self.assertIn("关系线", urban_text)
+        self.assertIn("反派质量", urban_text)
+        self.assertIn("时代氛围", urban_text)
+        self.assertIn("原生家庭/家庭关系", urban_text)
+        self.assertIn("创作过程", urban_text)
+        self.assertIn("粉丝经济", urban_text)
+        self.assertIn("职场政治", urban_text)
+        self.assertIn("供应链/产业链", urban_text)
+
+        broad_summary = {
+            "profile_display_name": "扩展分类专长分析",
+            "summary_fields": [
+                "war_type_and_scale",
+                "force_buildup",
+                "equipment_and_tech",
+                "combat_writing",
+                "political_diplomacy",
+                "social_collapse_and_rebuild",
+                "humanity_moral_dilemmas",
+                "power_evolution_system",
+                "exploration_adventure",
+                "case_complexity",
+                "criminal_psychology",
+                "team_dynamics",
+                "social_reflection",
+                "puzzle_fairness",
+                "narrative_trick",
+                "detective_method",
+                "logic_chain_integrity",
+                "sequence_system",
+                "san_mechanics",
+                "rule_based_horror",
+                "contamination_levels",
+                "technique_tactics",
+                "season_structure",
+                "rivalry_and_opponents",
+                "technology_progression",
+                "civilization_level",
+                "population_management",
+            ],
+            "summary": {
+                "story_overview": "多分类字段标题测试。",
+                "war_type_and_scale": ["局部战争升级为全面战争"],
+                "force_buildup": ["部队训练逐步成型"],
+                "equipment_and_tech": ["军工科技形成优势"],
+                "combat_writing": ["战斗场景清晰"],
+                "political_diplomacy": ["外交影响战局"],
+                "social_collapse_and_rebuild": ["旧秩序崩塌后建立基地"],
+                "humanity_moral_dilemmas": ["资源分配制造道德冲突"],
+                "power_evolution_system": ["异能进化有代价"],
+                "exploration_adventure": ["探索未知区域"],
+                "case_complexity": ["连环案结构复杂"],
+                "criminal_psychology": ["动机画像明确"],
+                "team_dynamics": ["专案组分工清晰"],
+                "social_reflection": ["案件映射现实问题"],
+                "puzzle_fairness": ["线索足以推理"],
+                "narrative_trick": ["叙述性诡计成立"],
+                "detective_method": ["侦探方法论稳定"],
+                "logic_chain_integrity": ["逻辑链闭合"],
+                "sequence_system": ["序列晋升清晰"],
+                "san_mechanics": ["理智损耗有规则"],
+                "rule_based_horror": ["规则怪谈文本有效"],
+                "contamination_levels": ["污染等级递进"],
+                "technique_tactics": ["技战术细节可信"],
+                "season_structure": ["赛季节奏明确"],
+                "rivalry_and_opponents": ["宿敌群像稳定"],
+                "technology_progression": ["技术升级路径清楚"],
+                "civilization_level": ["产业层级推进"],
+                "population_management": ["人口管理成为核心资源"],
+            }
+        }
+        broad_text = report.build_general_report("测试书", {}, broad_summary)
+        for title in [
+            "战争类型与规模",
+            "部队建设",
+            "装备与军工科技",
+            "战斗描写",
+            "政治与外交",
+            "秩序崩塌与重建",
+            "人性与道德困境",
+            "能力/进化体系",
+            "探索冒险",
+            "案件复杂度",
+            "犯罪心理",
+            "团队协作",
+            "社会映射",
+            "谜题公平性",
+            "叙述性诡计",
+            "侦探方法论",
+            "逻辑链完整性",
+            "序列/魔药体系",
+            "SAN值/理智机制",
+            "规则怪谈",
+            "污染等级",
+            "专业技战术",
+            "赛事/赛季结构",
+            "对手群像",
+            "技术升级路径",
+            "文明/产业层级",
+            "人口管理",
+        ]:
+            self.assertIn(title, broad_text)
+
+    def test_harem_plus_section_can_append_general_summary(self):
+        lines = ["【作品整体评价】"]
+        report._append_general_scan_section(
+            lines,
+            {
+                "profile_display_name": "通用小说分析",
+                "summary_fields": ["main_plot", "character_highlights", "pacing_and_emotion"],
+                "summary": {
+                    "story_overview": "主角带着多女主线推进主线案件。",
+                    "main_plot": ["主线案件分阶段推进"],
+                    "character_highlights": ["女角色各有功能但塑造偏浅"],
+                    "pacing_and_emotion": ["感情戏偏少，剧情说明文偏多"],
+                    "strengths": ["设定清楚"],
+                    "risks_or_issues": ["主线偏薄"],
+                    "reader_fit": "适合想看设定和案件的读者",
+                    "overall_assessment": "后宫报告外补充剧情评价。",
+                },
+            },
+        )
+
+        text = "\n".join(lines)
+        self.assertIn("【作品整体评价】", text)
+        self.assertIn("主线案件分阶段推进", text)
+        self.assertIn("角色亮点", text)
+        self.assertIn("节奏与情绪曲线", text)
+        self.assertIn("后宫报告外补充剧情评价", text)
+
+    def test_harem_plus_general_summary_requires_current_novel(self):
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
+            f.write("novel")
+            novel_path = f.name
+        try:
+            fresh = {
+                "schema_version": 1,
+                "analysis_profile": "general",
+                "specialty_profile": "general",
+                "novel_path": novel_path,
+                "novel_mtime": os.path.getmtime(novel_path),
+            }
+            stale = dict(fresh)
+            stale["novel_mtime"] = fresh["novel_mtime"] - 1
+            wrong_profile = dict(fresh)
+            wrong_profile["specialty_profile"] = "history"
+
+            self.assertTrue(report._general_summary_matches_novel(fresh, novel_path, "general"))
+            self.assertFalse(report._general_summary_matches_novel(stale, novel_path, "general"))
+            self.assertFalse(report._general_summary_matches_novel(wrong_profile, novel_path, "general"))
+        finally:
+            os.unlink(novel_path)
+
     def test_harem_report_adds_romance_overview_and_past_risk(self):
         old_openai = report.OpenAI
         old_api_key_pool = report.API_KEY_POOL
@@ -587,10 +1302,41 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         "heroines": [{"name": "甲女", "importance_rank": 1}]
                     },
                     "all_female_characters": {
-                        "甲女": {"count": 1, "summaries": ["偶尔出场。"]}
+                        "甲女": {
+                            "count": 1,
+                            "summaries": ["偶尔出场，主要负责召唤物和背景说明。"],
+                            "profile_for_report": {
+                                "identity": "被家族安排政治联姻的召唤物助手",
+                                "features": "工具人倾向明显，经济上依附男主资源",
+                                "relationship_with_protagonist": "与男主暧昧但未确认关系，受男主保护",
+                                "key_events": "喜欢男主，多次被救，曾被反派逼婚和囚禁，结局未交代归宿",
+                            },
+                        }
                     },
                 },
-                {"heroines_purity": [{"name": "甲女", "is_virgin": True, "is_spirit_clean": True, "no_partner": True}]},
+                {
+                    "heroines_purity": [
+                        {
+                            "name": "甲女",
+                            "is_virgin": True,
+                            "is_spirit_clean": True,
+                            "no_partner": True,
+                            "partner_exempted_for_clean": True,
+                            "partner_exemption_reason": "原著前夫：forced=true，has_feelings=false",
+                            "past_life_clean": False,
+                            "past_life_status": "前世/原故事线存在风险线索",
+                            "past_life_reason": "原故事线里曾被安排嫁给非男主。",
+                            "contact_level": "L2",
+                            "contact_level_label": "被迫婚约/伴侣关系线索",
+                            "contact_level_reason": "原故事线里曾被安排嫁给非男主。",
+                            "is_leak_heroine": True,
+                            "leak_reason": "暧昧到结局未收入。",
+                            "leak_emotional_depth": True,
+                            "leak_relationship_confirmed": False,
+                            "leak_ending_accounted": False,
+                        }
+                    ]
+                },
             )
         finally:
             report.OpenAI = old_openai
@@ -601,6 +1347,164 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("女角色存在感", text)
         self.assertIn("男主前史情感雷点", text)
         self.assertIn("前妻/前女友/前世婚恋", text)
+        self.assertIn("前世洁度", text)
+        self.assertIn("原故事线存在风险线索", text)
+        self.assertIn("partner豁免", text)
+        self.assertIn("原著前夫：forced=true，has_feelings=false", text)
+        self.assertIn("接触等级", text)
+        self.assertIn("L2（被迫婚约/伴侣关系线索）", text)
+        self.assertIn("关系结构标签", text)
+        self.assertIn("经济依附", text)
+        self.assertIn("政治联姻/婚约", text)
+        self.assertIn("受害/胁迫记录", text)
+        self.assertIn("女主有效性", text)
+        self.assertIn("有效性存疑", text)
+        self.assertIn("漏女三层判定", text)
+        self.assertIn("情感深度=✅", text)
+        self.assertIn("关系确认=❌", text)
+        self.assertIn("结局交代=❌", text)
+        self.assertIn("结论=疑似漏女", text)
+
+    def test_reviewer_derives_past_life_cleanliness(self):
+        risky = novel_reviewer._derive_past_life_cleanliness(
+            {
+                "partner_relations": [
+                    {
+                        "partner": "原著前夫",
+                        "is_male_lead": False,
+                        "relationship": "前夫",
+                        "evidence": "原故事线里她嫁给原著前夫",
+                    }
+                ]
+            },
+            "",
+        )
+        clean = novel_reviewer._derive_past_life_cleanliness({}, "前世只提到修炼经历，没有婚恋线索。")
+        none = novel_reviewer._derive_past_life_cleanliness({}, "当前线没有前史。")
+
+        self.assertFalse(risky["past_life_clean"])
+        self.assertIn("风险线索", risky["past_life_status"])
+        self.assertTrue(clean["past_life_clean"])
+        self.assertIsNone(none["past_life_clean"])
+
+    def test_reviewer_derives_contact_level(self):
+        level0 = novel_reviewer._derive_contact_level({}, "男主")
+        level3 = novel_reviewer._derive_contact_level(
+            {
+                "physical_contacts": [
+                    {
+                        "partner": "反派",
+                        "is_male_lead": False,
+                        "contact_type": "强吻",
+                        "evidence": "反派强吻了她",
+                    }
+                ]
+            },
+            "男主",
+        )
+        level5 = novel_reviewer._derive_contact_level(
+            {
+                "sexual_relations": [
+                    {
+                        "partner": "前夫",
+                        "is_male_lead": False,
+                        "detail": "前世同房",
+                        "evidence": "前世她与前夫同房",
+                    }
+                ]
+            },
+            "男主",
+        )
+        level1 = novel_reviewer._derive_contact_level(
+            {},
+            "男主",
+            ["反派在宴会上言语调戏她，但没有实际身体接触。"],
+        )
+
+        self.assertEqual(level0["contact_level"], "L0")
+        self.assertEqual(level1["contact_level"], "L1")
+        self.assertIn("言语调戏", level1["contact_level_label"])
+        self.assertEqual(level3["contact_level"], "L3")
+        self.assertIn("强迫亲密", level3["contact_level_label"])
+        self.assertEqual(level5["contact_level"], "L5")
+        self.assertIn("性关系", level5["contact_level_label"])
+
+    def test_spirit_judge_exposes_partner_exemption_notes(self):
+        old_chat = novel_reviewer.chat_completion
+        old_record = novel_reviewer.record_usage
+
+        class FakeMessage:
+            content = json.dumps({
+                "is_spirit_clean": True,
+                "spirit_status": "✅ 精神洁（被迫联姻无感情）",
+                "spirit_reason": "被迫婚约且无感情投入",
+                "loved_others": [],
+            }, ensure_ascii=False)
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+
+        try:
+            novel_reviewer.chat_completion = lambda **kwargs: FakeResponse()
+            novel_reviewer.record_usage = lambda response: None
+            result = novel_reviewer._llm_judge_spirit(
+                "甲女",
+                no_partner=False,
+                partner_list=[{"name": "原著前夫", "relationship": "政治婚约", "forced": True, "has_feelings": False}],
+                has_biological_children=False,
+                biological_children=[],
+                romantic_feelings=[],
+                male_lead="男主",
+                analyzed_partners=[
+                    {
+                        "partner": "原著前夫",
+                        "relationship": "政治婚约",
+                        "forced": True,
+                        "has_feelings": False,
+                        "analysis_reason": "被迫订婚且无感情",
+                    }
+                ],
+                all_partner_relations=[
+                    {
+                        "partner": "原著前夫",
+                        "is_male_lead": False,
+                        "relationship": "政治婚约",
+                        "status": "订婚未圆房",
+                        "forced": True,
+                        "has_feelings": False,
+                        "evidence": "她被迫与原著前夫订婚，未圆房，也从未动心。",
+                    }
+                ],
+                sexual_relations=[],
+            )
+        finally:
+            novel_reviewer.chat_completion = old_chat
+            novel_reviewer.record_usage = old_record
+
+        self.assertTrue(result["is_spirit_clean"])
+        self.assertTrue(result["partner_exempted_for_clean"])
+        self.assertIn("原著前夫", result["partner_exemption_reason"])
+        self.assertIn("forced=true", result["partner_exemption_reason"])
+        self.assertTrue(result["partner_exemption_notes"])
+
+    def test_report_summarizes_heroine_relationship_structure(self):
+        summary = report._summarize_heroine_relationship_structure(
+            {
+                "identity": "被安排和亲的公主",
+                "features": "经济上依附家族资源",
+                "relationship_with_protagonist": "主仆权力关系逐渐转为暧昧",
+                "key_events": "曾被反派下药囚禁",
+            },
+            {},
+        )
+
+        self.assertIn("经济依附", summary)
+        self.assertIn("权力关系", summary)
+        self.assertIn("政治联姻/婚约", summary)
+        self.assertIn("受害/胁迫记录", summary)
 
     def test_harem_report_dedupes_title_variants_with_llm_decision(self):
         old_judge = report._llm_judge_heroine_duplicate_group

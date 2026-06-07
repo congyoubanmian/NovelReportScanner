@@ -1,7 +1,7 @@
 {
   "name": "military_war",
   "display_name": "军事/战争专长分析",
-  "description": "在通用小说分析基础上，重点检查战略目标、战术执行、后勤补给、兵制装备、指挥链和战争代价。",
+  "description": "在通用小说分析基础上，重点检查战争类型与规模、战略目标、战术执行、后勤补给、兵制装备、指挥链、部队建设、军工科技和战争代价。",
   "enabled_stages": [
     "character_analysis",
     "general_scan",
@@ -10,10 +10,16 @@
   "rules_file": "rules.json",
   "report_mode": "general",
   "scan_focus": [
+    "战争类型与时代定位：现代军事、古代争霸、科幻星际还是穿越架空",
     "战争目标、政治目的、战略态势和胜负条件是否清晰",
     "战术行动、兵种配合、火力/阵型/地形使用是否合理",
     "后勤、补给、通信、医疗、士气和战损是否被纳入叙事",
     "兵制、装备、训练、军纪、指挥链和情报体系是否自洽",
+    "部队建设过程：建军、扩编、训练体系、部队成长和军事组织演变",
+    "军工研发、装备体系、科技树升级和武器效能是否自洽且有爽点",
+    "主角军事职业线：军校、演习、晋升、指挥历练和军事专业化成长",
+    "战斗场景的真实感、紧张感、节奏控制和可读性",
+    "政治目的、外交博弈、民心争夺和舆论宣传是否纳入战争叙事",
     "主角军事决策、将领能力、部队成长和战争代价",
     "常见风险：神兵天降、后勤消失、战损无感、地图混乱、敌军降智"
   ],
@@ -21,15 +27,29 @@
     "main_plot",
     "core_conflicts",
     "worldbuilding",
+    "war_type_and_scale",
     "strategy_logic",
     "tactics_and_operations",
     "logistics_and_cost",
     "command_structure",
+    "force_buildup",
+    "equipment_and_tech",
+    "combat_writing",
+    "political_diplomacy",
     "strengths",
-    "risks_or_issues"
+    "risks_or_issues",
+    "reader_fit",
+    "overall_assessment"
   ],
   "inference_keywords": [
     {"word": "战争", "weight": 5},
+    {"word": "军营", "weight": 5},
+    {"word": "参军", "weight": 5},
+    {"word": "入伍", "weight": 5},
+    {"word": "演习", "weight": 5},
+    {"word": "兵工厂", "weight": 5},
+    {"word": "特种兵", "weight": 5},
+    {"word": "抗战", "weight": 5},
     {"word": "军队", "weight": 4},
     {"word": "士兵", "weight": 3},
     {"word": "将军", "weight": 3},
@@ -44,6 +64,19 @@
     {"word": "阵地", "weight": 3},
     {"word": "骑兵", "weight": 3},
     {"word": "步兵", "weight": 3},
-    {"word": "军团", "weight": 4}
+    {"word": "军团", "weight": 4},
+    {"word": "军工", "weight": 4},
+    {"word": "指挥", "weight": 4},
+    {"word": "战区", "weight": 4},
+    {"word": "军校", "weight": 4},
+    {"word": "军备", "weight": 4},
+    {"word": "争霸", "weight": 4},
+    {"word": "建军", "weight": 4},
+    {"word": "战局", "weight": 3},
+    {"word": "兵种", "weight": 3},
+    {"word": "剿匪", "weight": 3},
+    {"word": "兵力", "weight": 3},
+    {"word": "部队", "weight": 3},
+    {"word": "军衔", "weight": 3}
   ]
 }
