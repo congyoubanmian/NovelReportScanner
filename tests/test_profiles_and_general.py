@@ -3454,6 +3454,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(report._has_male_past_romance_risk("男主继承前任队长的职位。"))
         self.assertFalse(report._has_male_past_romance_risk("男主拜入前夫子门下读书。"))
         self.assertFalse(report._has_male_past_romance_risk("男主见过前夫人的遗物。"))
+        self.assertFalse(report._has_male_past_romance_risk("男主研究前妻子的遗物。"))
+        self.assertFalse(report._has_male_past_romance_risk("男主拜访前妻弟。"))
         self.assertTrue(report._has_male_past_romance_risk("男主前世老婆在他绝症后卷光家产跑路。"))
         self.assertTrue(report._has_male_past_romance_risk("男主有前女友但已经分手。"))
         self.assertTrue(report._has_male_past_romance_risk("男主的前夫早已去世。"))

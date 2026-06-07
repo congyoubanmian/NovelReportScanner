@@ -1857,7 +1857,7 @@ def _has_male_past_romance_risk(text: str) -> bool:
 
 
 def _male_past_romance_text_has_only_non_partner_homonyms(text: str) -> bool:
-    non_partner_words = ("前夫子", "前夫人")
+    non_partner_words = ("前夫子", "前夫人", "前妻子", "前妻弟", "前妻兄", "前妻姐", "前妻妹")
     protected = text
     for word in non_partner_words:
         protected = protected.replace(word, "")
