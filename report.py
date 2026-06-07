@@ -1012,6 +1012,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
         "丽", "莉", "琳", "莲", "莎", "丝", "薇", "娜", "妮", "德", "尔", "伦", "蜜", "丽丝", "丽莎",
     )
     non_romantic_emotion_contexts = ("读者", "书友", "粉丝", "作者", "剧情", "副本", "设定", "文笔", "设计", "说明")
+    nonfactual_romance_contexts = ("传言", "传闻", "流言", "谣言", "误会", "误传", "炒作", "营销", "澄清", "伪装")
     for word in keywords:
         start = 0
         while word:
@@ -1035,12 +1036,17 @@ def _contains_positive_signal_text(value, keywords) -> bool:
                 hint in text[max(0, index - 8):index + len(word) + 8]
                 for hint in non_romantic_emotion_contexts
             )
+            nonfactual_romance = word == "暧昧" and any(
+                hint in text[max(0, index - 10):index + len(word) + 12]
+                for hint in nonfactual_romance_contexts
+            )
             if (
                 not any(hint in window or hint in around_window for hint in negative_hints)
                 and not any(hint in roleplay_window for hint in roleplay_hints)
                 and not non_romantic_like
                 and not non_romantic_love
                 and not non_romantic_emotion
+                and not nonfactual_romance
             ):
                 return True
             start = index + len(word)

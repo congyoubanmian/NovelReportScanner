@@ -3617,6 +3617,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(report._contains_positive_signal_text("作者对蒸汽设定很倾心，说明文字很多。", ["倾心"]))
         self.assertTrue(report._contains_positive_signal_text("她对男主动心，并开始吃醋。", ["动心"]))
         self.assertTrue(report._contains_positive_signal_text("她倾心男主，并主动表白。", ["倾心"]))
+        self.assertFalse(report._contains_positive_signal_text("旁人传言她和男主暧昧，但实际只是任务搭档。", ["暧昧"]))
+        self.assertFalse(report._contains_positive_signal_text("营销炒作她和男主暧昧，没有正文互动。", ["暧昧"]))
+        self.assertFalse(report._contains_positive_signal_text("误会她和男主暧昧，后来澄清只是伪装。", ["暧昧"]))
+        self.assertTrue(report._contains_positive_signal_text("她与男主长期暧昧并喜欢男主。", ["暧昧"]))
         self.assertTrue(report._contains_positive_signal_text("她是男主未婚妻，双方感情稳定。", ["未婚妻"]))
         self.assertFalse(report._contains_positive_signal_text("她尚未成为男主妻子。", ["妻子"]))
 
@@ -3686,6 +3690,18 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertIn("情感深度=未明", meta_emotion)
         self.assertIn("结论=证据不足", meta_emotion)
+
+    def test_leak_three_layers_ignores_nonfactual_ambiguous_romance(self):
+        rumor = report._summarize_leak_three_layers(
+            {},
+            {
+                "relationship_with_protagonist": "旁人传言她和男主暧昧，但实际只是任务搭档。",
+                "key_events": "营销炒作她和男主暧昧，后来澄清没有正文互动。",
+            },
+        )
+
+        self.assertIn("情感深度=未明", rumor)
+        self.assertIn("结论=证据不足", rumor)
 
     def test_leak_three_layers_requires_specific_concubine_terms(self):
         generic = report._summarize_leak_three_layers(
