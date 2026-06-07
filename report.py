@@ -998,6 +998,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
         "没有", "没", "无", "未见", "未", "尚未", "并未", "不曾", "不存在", "缺少", "缺乏",
         "无明确", "没有明确", "未确认", "未发生", "未产生", "未建立", "未收入",
     )
+    roleplay_hints = ("假装成", "假扮成", "伪装成", "冒充", "扮作", "装作")
     for word in keywords:
         start = 0
         while word:
@@ -1005,7 +1006,8 @@ def _contains_positive_signal_text(value, keywords) -> bool:
             if index < 0:
                 break
             window = text[max(0, index - 12):index]
-            if not any(hint in window for hint in negative_hints):
+            roleplay_window = text[max(0, index - 8):index]
+            if not any(hint in window for hint in negative_hints) and not any(hint in roleplay_window for hint in roleplay_hints):
                 return True
             start = index + len(word)
     return False

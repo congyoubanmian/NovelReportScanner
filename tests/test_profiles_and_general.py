@@ -3592,6 +3592,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(report._has_positive_heroine_position_signal("女主有效性存疑，存在感很低"))
         self.assertTrue(report._has_positive_heroine_position_signal("主线女主，与男主长期同行"))
         self.assertTrue(report._has_positive_heroine_position_signal("主线女主，但近期有工具人风险"))
+        self.assertFalse(report._contains_positive_signal_text("她假装成男主妻子套取情报。", ["妻子"]))
+        self.assertFalse(report._contains_positive_signal_text("她伪装成男主恋人混入宴会。", ["恋人"]))
+        self.assertTrue(report._contains_positive_signal_text("她假装生气，但实际喜欢男主。", ["喜欢"]))
 
     def test_harem_report_adds_heroine_context_to_issue_lines(self):
         old_openai = report.OpenAI
