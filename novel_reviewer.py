@@ -407,6 +407,13 @@ def _ending_accounted_in_tail(tail: str, name: str, aliases: List[str]) -> Tuple
         "死", "牺牲", "葬", "坟", "墓", "陨落",
     )
     weak_mention_markers = ("想起", "提到", "听说", "传闻", "名字", "名单", "回忆", "梦见", "路过", "问起")
+    strong_ending_markers = (
+        "归宿", "去处", "留下", "留在", "陪在", "跟随", "同行", "同去", "回到", "去了",
+        "嫁", "娶", "婚", "成亲", "大婚", "完婚", "圆房", "同房", "怀孕", "生下", "孩子",
+        "道侣", "伴侣", "妻", "妾", "夫人", "皇后", "王妃", "后宫", "收入", "收了",
+        "在一起", "相伴", "白头", "团聚", "重逢", "守着", "等着", "阵营", "府中", "身边",
+        "死", "牺牲", "葬", "坟", "墓", "陨落",
+    )
 
     for candidate in candidates:
         start = 0
@@ -415,7 +422,11 @@ def _ending_accounted_in_tail(tail: str, name: str, aliases: List[str]) -> Tuple
             if idx < 0:
                 break
             window = tail[max(0, idx - 80): idx + len(candidate) + 120]
-            if any(marker in window for marker in ending_markers):
+            weak_mention_only = (
+                any(marker in window for marker in weak_mention_markers)
+                and not any(marker in window for marker in strong_ending_markers)
+            )
+            if any(marker in window for marker in ending_markers) and not weak_mention_only:
                 return True, f"尾声检索：{candidate} 周边出现明确结局交代"
             start = idx + len(candidate)
 
