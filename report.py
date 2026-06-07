@@ -1640,9 +1640,17 @@ def _fallback_same_heroine_group(group: list) -> dict:
     names = [item["name"] for item in group]
     keys = [_heroine_name_key(name) for name in names]
     non_empty = [x for x in keys if x]
-    same = bool(non_empty and len(set(non_empty)) == 1)
+    unique_keys = set(non_empty)
+    same = bool(non_empty and len(unique_keys) == 1)
+    if not same and unique_keys:
+        longest = max(unique_keys, key=len)
+        same = all(
+            key == longest or (len(key) >= 2 and key in longest and not _is_generic_heroine_anchor_name(key))
+            for key in unique_keys
+        )
     canonical = max(names, key=lambda n: (len(_heroine_name_key(n)), "（" in n or "(" in n, len(n), n)) if names else ""
-    return {"same_person": same, "canonical_name": canonical, "aliases": names, "reason": "称谓归一后相同"}
+    reason = "称谓归一后相同" if len(unique_keys) == 1 else "称谓归一后为核心名包含关系"
+    return {"same_person": same, "canonical_name": canonical, "aliases": names, "reason": reason}
 
 
 def _llm_judge_heroine_duplicate_group(group: list) -> dict:

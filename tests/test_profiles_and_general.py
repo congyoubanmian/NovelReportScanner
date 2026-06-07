@@ -4778,6 +4778,35 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertNotIn("太后沈南歌", names)
         self.assertIn("苏青绮", names)
 
+    def test_harem_report_dedupes_short_core_name_variants_without_llm(self):
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        try:
+            report.OpenAI = None
+            report.API_KEY_POOL = []
+            heroines = report.dedupe_heroines_for_report(
+                [
+                    {"name": "沈南歌", "importance_rank": 1},
+                    {"name": "南歌", "importance_rank": 2},
+                    {"name": "太后沈南歌", "importance_rank": 3},
+                    {"name": "苏青绮", "importance_rank": 4},
+                    {"name": "青绮", "importance_rank": 5},
+                    {"name": "爱琳", "importance_rank": 6},
+                ],
+                {},
+            )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+
+        names = [item["name"] for item in heroines]
+        self.assertEqual(names.count("太后沈南歌"), 1)
+        self.assertNotIn("沈南歌", names)
+        self.assertNotIn("南歌", names)
+        self.assertEqual(names.count("苏青绮"), 1)
+        self.assertNotIn("青绮", names)
+        self.assertIn("爱琳", names)
+
     def test_harem_report_keeps_variants_when_llm_rejects_merge(self):
         old_judge = report._llm_judge_heroine_duplicate_group
         try:
