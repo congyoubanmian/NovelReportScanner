@@ -266,31 +266,43 @@ def _sync_books_from_disk():
             if not filename.lower().endswith(".txt"):
                 continue
             path = os.path.join(root, filename)
-            discovered.append((path, _book_id_from_path(path)))
+            try:
+                signature = _book_suggestion_signature(path)
+            except OSError:
+                continue
+            discovered.append((path, _book_id_from_path(path), signature))
     refresh_jobs = []
+    state_changed = False
     with STATE_LOCK:
-        for path, book_id in discovered:
-            entry = STATE["books"].setdefault(book_id, {})
-            entry.setdefault("id", book_id)
-            entry.setdefault("name", book_id)
-            entry["path"] = path
-            entry.setdefault("profile", "auto")
-            entry.setdefault("status", "idle")
-            entry.setdefault("created_at", time.strftime("%Y-%m-%d %H:%M:%S"))
+        for path, book_id, signature in discovered:
+            entry = STATE["books"].get(book_id)
+            if entry is None:
+                entry = {}
+                STATE["books"][book_id] = entry
+                state_changed = True
+            defaults = {
+                "id": book_id,
+                "name": book_id,
+                "profile": "auto",
+                "status": "idle",
+                "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            for key, value in defaults.items():
+                if key not in entry:
+                    entry[key] = value
+                    state_changed = True
+            if entry.get("path") != path:
+                entry["path"] = path
+                state_changed = True
             if entry.get("status") not in {"queued", "running"}:
-                try:
-                    signature = _book_suggestion_signature(path)
-                except OSError:
-                    continue
                 if entry.get("suggestion_signature") != signature or not entry.get("profile_suggestions"):
                     refresh_jobs.append((book_id, path, entry.get("name", ""), signature))
-        _save_state()
-
     refreshed = []
     for book_id, path, book_name, signature in refresh_jobs:
         refreshed.append((book_id, signature, _profile_suggestions(path, book_name)))
 
     with STATE_LOCK:
+        suggestions_changed = False
         for book_id, signature, suggestions in refreshed:
             entry = STATE["books"].get(book_id)
             if not entry or entry.get("status") in {"queued", "running"}:
@@ -300,9 +312,14 @@ def _sync_books_from_disk():
                     continue
             except (OSError, TypeError):
                 continue
-            entry["profile_suggestions"] = suggestions
-            entry["suggestion_signature"] = signature
-        _save_state()
+            if entry.get("profile_suggestions") != suggestions:
+                entry["profile_suggestions"] = suggestions
+                suggestions_changed = True
+            if entry.get("suggestion_signature") != signature:
+                entry["suggestion_signature"] = signature
+                suggestions_changed = True
+        if state_changed or suggestions_changed:
+            _save_state()
         LAST_BOOK_SYNC_AT = now
 
 

@@ -1953,6 +1953,43 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.LAST_BOOK_SYNC_AT = old_last_sync
             web_manager.SYNC_BOOKS_TTL_SECONDS = old_ttl
 
+    def test_web_manager_sync_does_not_rewrite_unchanged_state(self):
+        old_state = web_manager.STATE
+        old_base_dir = web_manager.get_base_dir
+        old_profile_suggestions = web_manager._profile_suggestions
+        old_save_state = web_manager._save_state
+        old_last_sync = web_manager.LAST_BOOK_SYNC_AT
+        old_ttl = web_manager.SYNC_BOOKS_TTL_SECONDS
+        save_calls = []
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                os.makedirs(os.path.join(tmp, "novels"), exist_ok=True)
+                os.makedirs(os.path.join(tmp, "results"), exist_ok=True)
+                novel_path = os.path.join(tmp, "novels", "book.txt")
+                with open(novel_path, "w", encoding="utf-8") as f:
+                    f.write("蒸汽时代侦探调查异常案件。")
+
+                web_manager.STATE = {"books": {}, "tasks": []}
+                web_manager.get_base_dir = lambda: tmp
+                web_manager._profile_suggestions = lambda _path, _book_name: [{"name": "steampunk_fantasy"}]
+                web_manager._save_state = lambda: save_calls.append(json.dumps(web_manager.STATE, sort_keys=True))
+                web_manager.LAST_BOOK_SYNC_AT = 0.0
+                web_manager.SYNC_BOOKS_TTL_SECONDS = 0.0
+
+                web_manager._sync_books_from_disk()
+                web_manager._sync_books_from_disk()
+
+                self.assertEqual(len(save_calls), 1)
+                self.assertEqual(web_manager.STATE["books"]["book"]["path"], novel_path)
+                self.assertEqual(web_manager.STATE["books"]["book"]["profile_suggestions"], [{"name": "steampunk_fantasy"}])
+        finally:
+            web_manager.STATE = old_state
+            web_manager.get_base_dir = old_base_dir
+            web_manager._profile_suggestions = old_profile_suggestions
+            web_manager._save_state = old_save_state
+            web_manager.LAST_BOOK_SYNC_AT = old_last_sync
+            web_manager.SYNC_BOOKS_TTL_SECONDS = old_ttl
+
     def test_web_manager_recovers_incomplete_tasks_and_queue_positions(self):
         old_state = web_manager.STATE
         old_queue_ids = set(web_manager.TASK_QUEUE_IDS)
