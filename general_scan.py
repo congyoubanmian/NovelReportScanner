@@ -304,7 +304,7 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         "quality_notes": _merge_items(chunk_results, "quality_notes"),
         "specialty_notes": _merge_items(chunk_results, "specialty_notes"),
     }
-    specialty_fields = [x for x in profile.summary_fields if x not in {
+    base_summary_fields = {
         "main_plot",
         "core_conflicts",
         "worldbuilding",
@@ -312,7 +312,11 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         "foreshadowing_and_payoff",
         "strengths",
         "risks_or_issues",
-    }]
+    }
+    specialty_fields = [
+        x for x in profile.summary_fields
+        if not (set(_summary_field_candidates(x)) & base_summary_fields)
+    ]
     specialty_json_hint = ""
     if specialty_fields:
         specialty_json_hint = "\n".join(
@@ -359,7 +363,7 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         "core_conflicts": _safe_list(data.get("core_conflicts"), limit=20),
         "worldbuilding": _safe_list(data.get("worldbuilding"), limit=20),
         "themes": _safe_list(data.get("themes"), limit=20),
-        "foreshadowing_and_payoff": _safe_list(data.get("foreshadowing_and_payoff"), limit=20),
+        "foreshadowing_and_payoff": _summary_field_value(data, "foreshadowing_and_payoff"),
         "strengths": _safe_list(data.get("strengths"), limit=20),
         "risks_or_issues": _safe_list(data.get("risks_or_issues"), limit=20),
         "reader_fit": "；".join(_summary_field_value(data, "reader_fit")),

@@ -169,6 +169,9 @@ SUMMARY_FIELD_ALIASES = {
     "character_moments": "character_highlights",
     "pacing": "pacing_and_emotion",
     "emotion_curve": "pacing_and_emotion",
+    "foreshadowing": "foreshadowing_and_payoff",
+    "plot_threads": "foreshadowing_and_payoff",
+    "payoff": "foreshadowing_and_payoff",
     "humanity_and_morality": "humanity_moral_dilemmas",
     "power_system": "power_evolution_system",
     "exploration_and_adventure": "exploration_adventure",
@@ -198,11 +201,7 @@ def summary_field_label(field: str) -> str:
     return SUMMARY_FIELD_TITLES.get(canonical, field.replace("_", " "))
 
 
-def summary_field_values(summary: dict, field: str):
-    if not isinstance(summary, dict):
-        return []
-    values = []
-    seen = set()
+def summary_field_candidates(field: str):
     canonical = SUMMARY_FIELD_ALIASES.get(field, field)
     candidate_fields = [field]
     if canonical not in candidate_fields:
@@ -212,7 +211,15 @@ def summary_field_values(summary: dict, field: str):
         for alias, target in SUMMARY_FIELD_ALIASES.items()
         if target == canonical and alias not in candidate_fields
     )
-    for candidate in candidate_fields:
+    return candidate_fields
+
+
+def summary_field_values(summary: dict, field: str):
+    if not isinstance(summary, dict):
+        return []
+    values = []
+    seen = set()
+    for candidate in summary_field_candidates(field):
         value = summary.get(candidate)
         if isinstance(value, list):
             items = value
@@ -2433,20 +2440,21 @@ def _append_general_scan_section(lines: list, general_summary: dict):
     add_list("核心冲突", summary.get("core_conflicts"))
     add_list("世界观/设定", summary.get("worldbuilding"))
     add_list("主题表达", summary.get("themes"))
-    add_list("伏笔与回收", summary.get("foreshadowing_and_payoff"))
+    add_list("伏笔与回收", summary_field_values(summary, "foreshadowing_and_payoff"))
+    base_summary_fields = {
+        "main_plot",
+        "core_conflicts",
+        "worldbuilding",
+        "themes",
+        "foreshadowing_and_payoff",
+        "strengths",
+        "risks_or_issues",
+        "reader_fit",
+        "overall_assessment",
+    }
     specialty_fields = [
         x for x in (general_summary or {}).get("summary_fields", [])
-        if x not in {
-            "main_plot",
-            "core_conflicts",
-            "worldbuilding",
-            "themes",
-            "foreshadowing_and_payoff",
-            "strengths",
-            "risks_or_issues",
-            "reader_fit",
-            "overall_assessment",
-        }
+        if not (set(summary_field_candidates(x)) & base_summary_fields)
     ]
     for field in specialty_fields:
         add_list(summary_field_label(field), summary_field_values(summary, field))

@@ -5143,6 +5143,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "core_conflicts": ["冲突"],
                     "worldbuilding": ["设定"],
                     "themes": ["主题"],
+                    "foreshadowing": ["旧字段伏笔内容"],
                     "foreshadowing_and_payoff": ["伏笔"],
                     "tech_feasibility": ["标准字段技术内容"],
                     "technology_feasibility": ["标准字段技术内容", "同义旧字段技术内容"],
@@ -5177,8 +5178,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             summary["tech_plausibility"],
             ["标准字段技术内容", "同义旧字段技术内容"],
         )
+        self.assertEqual(summary["foreshadowing_and_payoff"], ["伏笔", "旧字段伏笔内容"])
 
     def test_general_report_reads_summary_field_alias_values(self):
+        self.assertEqual(report.summary_field_label("foreshadowing"), "伏笔与回收")
         self.assertEqual(report.summary_field_label("power_system"), "异能/金手指体系")
         self.assertEqual(report.summary_field_label("humanity_and_morality"), "人性与道德困境")
         self.assertEqual(report.summary_field_label("tech_plausibility"), "技术可行性")
@@ -5257,6 +5260,26 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("标准字段技术内容", legacy_field_text)
         self.assertIn("同义旧字段技术内容", legacy_field_text)
         self.assertEqual(legacy_field_text.count("标准字段技术内容"), 1)
+
+        foreshadowing_text = report.build_general_report(
+            "伏笔旧字段测试",
+            {"male_protagonist": {"name": "男主"}, "all_female_characters": {}},
+            {
+                "profile_display_name": "通用小说分析",
+                "summary_fields": ["main_plot", "foreshadowing_and_payoff"],
+                "summary": {
+                    "story_overview": "伏笔概览",
+                    "main_plot": ["主线"],
+                    "foreshadowing": ["旧字段伏笔内容"],
+                    "strengths": [],
+                    "risks_or_issues": [],
+                    "reader_fit": "读者",
+                    "overall_assessment": "评价",
+                },
+            },
+        )
+        self.assertIn("【伏笔与回收】", foreshadowing_text)
+        self.assertIn("旧字段伏笔内容", foreshadowing_text)
 
     def test_general_scan_field_labels_cover_profile_summary_fields(self):
         common = {
