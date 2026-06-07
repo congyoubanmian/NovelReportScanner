@@ -1482,14 +1482,40 @@ def _strict_issue_evidence_review_hint(issue: dict) -> str:
     )
     if not text:
         return ""
+    hints = []
+    send_girl_hint = _strict_send_girl_agency_review_hint(issue, text)
+    if send_girl_hint:
+        hints.append(send_girl_hint)
     nonfactual_markers = (
         "传闻", "传言", "流言", "谣言", "据说", "听说", "口嗨", "意淫", "误会", "误传",
         "梦境", "梦见", "梦到", "幻境", "弱暗示", "疑似", "嫌疑", "待复核", "待确认",
         "未来计划", "计划中", "打算", "扬言", "威胁", "未遂", "差点", "险些", "未发生",
     )
-    if not any(marker in text for marker in nonfactual_markers):
+    if any(marker in text for marker in nonfactual_markers):
+        hints.append("证据含传闻/口嗨/误会/未遂/未来计划等非事实或弱证据标记，严格关系雷点需复核事实性。")
+    return "；".join(hints)
+
+
+def _strict_send_girl_agency_review_hint(issue: dict, text: str) -> str:
+    issue_type = str((issue or {}).get("type") or "")
+    if "送女" not in issue_type:
         return ""
-    return "证据含传闻/口嗨/误会/未遂/未来计划等非事实或弱证据标记，严格关系雷点需复核事实性。"
+    passive_or_third_party_markers = (
+        "被安排嫁给", "被迫嫁给", "被逼嫁给", "被赐婚", "被许配", "被迫成婚",
+        "家族逼婚", "家族安排", "父母安排", "师门安排", "皇帝赐婚", "贵族联姻",
+        "政治联姻", "普通政治联姻", "背景婚配", "婚配安排",
+    )
+    if not any(marker in text for marker in passive_or_third_party_markers):
+        return ""
+    male_lead_agency_phrases = (
+        "男主主动", "男主默许", "男主认可", "男主同意", "男主促成", "男主撮合", "男主安排",
+        "男主送给", "男主让给", "男主让渡", "男主明知", "男主角主动", "男主角默许",
+        "主角主动", "主角默许", "主角认可", "主角同意", "主角促成", "主角撮合",
+        "主角安排", "主角送给", "主角让给", "主角让渡", "主角明知",
+    )
+    if any(phrase in text for phrase in male_lead_agency_phrases):
+        return ""
+    return "送女必须有男主主动或默许构成；当前证据更像被动安排/第三方逼婚/政治联姻，需复核是否缺少男主主体。"
 
 
 def _annotate_issue_for_report(issue: dict, heroine_contexts: list) -> dict:

@@ -4382,10 +4382,40 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertEqual(weak_issue["heroine_position_context"], "弱女=弱准女主")
         self.assertIn("当前定位偏弱", weak_issue["definition_review_hint"])
+        self.assertIn("缺少男主主体", weak_issue["definition_review_hint"])
         self.assertNotIn("heroine_position_context", missing_issue)
         self.assertIn("未命中已识别女主名或别名", missing_issue["definition_review_hint"])
         self.assertEqual(normal_issue["heroine_position_context"], "弱女=弱准女主")
         self.assertNotIn("definition_review_hint", normal_issue)
+
+        strong_passive_issue = report._annotate_issue_for_report(
+            {"type": "送女", "content": "强女被家族安排政治联姻，嫁给路人男。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(strong_passive_issue["heroine_position_context"], "强女=强准女主")
+        self.assertIn("送女必须有男主主动或默许构成", strong_passive_issue["definition_review_hint"])
+        self.assertIn("缺少男主主体", strong_passive_issue["definition_review_hint"])
+
+        active_send_issue = report._annotate_issue_for_report(
+            {"type": "送女", "content": "男主主动安排强女嫁给路人男，强女被安排嫁给路人男。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(active_send_issue["heroine_position_context"], "强女=强准女主")
+        self.assertNotIn("definition_review_hint", active_send_issue)
 
         edge_issue = report._annotate_issue_for_report(
             {"type": "绿帽擦边", "content": "弱女差点被反派绑走。"},
@@ -4428,7 +4458,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertNotIn("heroine_position_context", substring_issue)
         self.assertIn("未命中已识别女主名或别名", substring_issue["definition_review_hint"])
         self.assertEqual(named_issue["heroine_position_context"], "琪雅=强准女主")
-        self.assertNotIn("definition_review_hint", named_issue)
+        self.assertIn("缺少男主主体", named_issue["definition_review_hint"])
 
     def test_report_ignores_generic_heroine_anchor_names_for_strict_issues(self):
         generic_contexts = report._build_heroine_position_contexts(
