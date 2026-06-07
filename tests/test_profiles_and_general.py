@@ -3797,6 +3797,18 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(sexual["past_life_severity"], "sexual")
         self.assertEqual(romantic["past_life_severity"], "romantic")
 
+    def test_reviewer_ignores_negated_or_nonfactual_past_life_rumors(self):
+        rumor = novel_reviewer._derive_past_life_cleanliness({}, "前世有人传言她嫁给过别人，但后来证实是误会。")
+        negated_love = novel_reviewer._derive_past_life_cleanliness({}, "前世她没有喜欢过别的男人。")
+        negated_marriage = novel_reviewer._derive_past_life_cleanliness({}, "原故事线里她未嫁给任何人，也没有同房。")
+        real_romance = novel_reviewer._derive_past_life_cleanliness({}, "上一世她喜欢过别的男人。")
+
+        self.assertTrue(rumor["past_life_clean"])
+        self.assertEqual(rumor["past_life_severity"], "clean")
+        self.assertTrue(negated_love["past_life_clean"])
+        self.assertTrue(negated_marriage["past_life_clean"])
+        self.assertEqual(real_romance["past_life_severity"], "romantic")
+
     def test_reviewer_derives_contact_level(self):
         level0 = novel_reviewer._derive_contact_level({}, "男主")
         level3 = novel_reviewer._derive_contact_level(

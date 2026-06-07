@@ -723,6 +723,14 @@ def _derive_past_life_cleanliness(facts: Dict[str, Any], summary: str = "") -> D
             "past_life_status": "未见前世/原故事线洁度线索",
             "past_life_reason": "现有事实未出现前世、原故事线、轮回或穿越前婚恋/接触证据。",
         }
+    if _past_life_blob_is_negated_or_nonfactual(blob):
+        return {
+            "past_life_clean": True,
+            "past_life_severity": "clean",
+            "past_life_severity_label": "前世/原故事线未见不洁事实",
+            "past_life_status": "前世/原故事线未见不洁事实",
+            "past_life_reason": "前世/原故事线材料属于否定、传闻或误会语境，未见可作为风险的明确事实。",
+        }
 
     severe_markers = ("万人骑", "轮奸", "群交", "多人", "强奸", "强暴", "侵犯", "洗脑", "雌堕", "背叛")
     sexual_markers = ("同房", "圆房", "失身", "破身", "怀孕", "生下", "孩子", "性关系")
@@ -765,6 +773,25 @@ def _derive_past_life_cleanliness(facts: Dict[str, Any], summary: str = "") -> D
         "past_life_status": "前世/原故事线未见不洁事实",
         "past_life_reason": "虽出现前世/原故事线线索，但未见明确非男主婚恋、身体接触、情感或受害事实。",
     }
+
+
+def _past_life_blob_is_negated_or_nonfactual(blob: str) -> bool:
+    text = str(blob or "")
+    if not text:
+        return False
+    nonfactual_words = ("传言", "谣言", "误会", "误传", "谣传", "猜测", "怀疑", "疑似")
+    resolved_words = ("证实是误会", "后来证实", "澄清", "不属实", "并非事实", "假的", "假消息")
+    negated_patterns = (
+        "没有婚恋", "没有喜欢过", "没有爱过", "没有动心", "没有嫁",
+        "未嫁", "未曾嫁", "从未嫁", "未婚", "没有成婚", "没有结婚", "未结婚",
+        "没有同房", "未同房", "没有圆房", "未圆房", "没有发生关系", "无性关系",
+        "未发生性关系", "没有孩子", "未生子", "未怀孕",
+    )
+    if any(word in text for word in resolved_words):
+        return True
+    if any(word in text for word in negated_patterns):
+        return True
+    return any(word in text for word in nonfactual_words) and not any(word in text for word in ("确认", "实锤", "明确", "证据"))
 
 
 def _derive_contact_level(
