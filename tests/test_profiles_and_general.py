@@ -166,6 +166,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("politics_society", isekai_lightnovel.summary_fields)
         self.assertIn("romance_comedy_balance", isekai_lightnovel.summary_fields)
         self.assertIn("slice_of_life", isekai_lightnovel.summary_fields)
+        self.assertTrue(any("常见硬伤" in item for item in isekai_lightnovel.scan_focus))
 
         self.assertEqual(steampunk_fantasy.name, "steampunk_fantasy")
         self.assertTrue(steampunk_fantasy.uses_general_scan)
@@ -974,6 +975,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "isekai_lightnovel",
         )
         self.assertEqual(
+            analysis_profiles.infer_profile_for_text("地下城技能书", "转生者在冒险者公会学习技能，依靠职业等级和魔法挑战地下城魔王。"),
+            "isekai_lightnovel",
+        )
+        self.assertEqual(
             analysis_profiles.infer_profile_for_text("蒸汽炼金侦探", "蒸汽时代的教会帝国里，炼金矩阵和差分机卷入神秘复苏案件。"),
             "steampunk_fantasy",
         )
@@ -1140,6 +1145,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(farming_keywords.get("城墙"), 3)
         self.assertEqual(farming_keywords.get("囤积"), 3)
         self.assertEqual(farming_keywords.get("税收"), 2)
+
+        isekai_keywords = dict(analysis_profiles._keywords_from_manifest("isekai_lightnovel"))
+        self.assertEqual(isekai_keywords.get("技能"), 3)
         self.assertEqual(
             analysis_profiles.infer_profile_for_text(
                 "亏成首富从游戏开始",
