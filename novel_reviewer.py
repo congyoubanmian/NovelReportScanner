@@ -782,8 +782,8 @@ def _past_life_blob_is_negated_or_nonfactual(blob: str) -> bool:
         return False
     if _past_life_blob_has_explicit_factual_risk(text):
         return False
-    nonfactual_words = ("传言", "传闻", "谣言", "误会", "误传", "谣传", "猜测", "怀疑", "疑似")
-    resolved_words = ("证实是误会", "后来证实", "澄清", "不属实", "并非事实", "假的", "假消息")
+    nonfactual_words = ("传言", "传闻", "据说", "听说", "流言", "谣言", "误会", "误传", "谣传", "猜测", "怀疑", "疑似")
+    resolved_words = ("证实是误会", "证实不成立", "后来证实", "澄清", "不属实", "并非事实", "假的", "假消息")
     negated_patterns = (
         "没有婚恋", "没有喜欢过", "没有爱过", "没有动心", "没有嫁",
         "未嫁", "未曾嫁", "从未嫁", "未婚", "没有成婚", "没有结婚", "未结婚",
@@ -812,8 +812,8 @@ def _past_life_effective_risk_text(text: str) -> str:
 
 
 def _past_life_clause_is_nonfactual_or_negated(text: str) -> bool:
-    nonfactual_words = ("传言", "传闻", "谣言", "误会", "误传", "谣传", "猜测", "怀疑", "疑似")
-    resolved_words = ("证实是误会", "后来证实", "澄清", "不属实", "并非事实", "假的", "假消息")
+    nonfactual_words = ("传言", "传闻", "据说", "听说", "流言", "谣言", "误会", "误传", "谣传", "猜测", "怀疑", "疑似")
+    resolved_words = ("证实是误会", "证实不成立", "后来证实", "澄清", "不属实", "并非事实", "假的", "假消息")
     negated_patterns = (
         "没有婚恋", "没有喜欢过", "没有爱过", "没有动心", "没有嫁",
         "未嫁", "未曾嫁", "从未嫁", "未婚", "没有成婚", "没有结婚", "未结婚",
@@ -831,10 +831,13 @@ def _past_life_clause_is_nonfactual_or_negated(text: str) -> bool:
 
 def _past_life_blob_has_explicit_factual_risk(text: str) -> bool:
     """Keep mixed past-life text from being fully washed out by rumor/negation words."""
-    factual_anchors = (
-        "确实", "明确", "实锤", "证据显示", "事实是", "实际", "真的", "已确认", "确认了",
+    strong_factual_anchors = (
+        "确实", "明确", "实锤", "证据显示", "事实是", "实际发生", "真的发生", "已确认", "确认了",
+    )
+    narrative_anchors = (
         "原故事线她", "原著里她", "上一世她", "前世她",
     )
+    nonfactual_words = ("传言", "传闻", "据说", "听说", "流言", "谣言", "误会", "误传", "谣传", "猜测", "怀疑", "疑似")
     risk_markers = (
         "爱过", "喜欢过", "动心", "恋慕", "暗恋",
         "前夫", "丈夫", "男友", "恋人", "未婚夫", "嫁给", "成婚", "结婚", "婚约",
@@ -852,7 +855,12 @@ def _past_life_blob_has_explicit_factual_risk(text: str) -> bool:
             protected_text = protected_text.replace(phrase, "")
     else:
         protected_text = text
-    return any(anchor in protected_text for anchor in factual_anchors) and any(marker in protected_text for marker in risk_markers)
+    has_risk = any(marker in protected_text for marker in risk_markers)
+    if not has_risk:
+        return False
+    if any(word in protected_text for word in nonfactual_words):
+        return any(anchor in protected_text for anchor in strong_factual_anchors)
+    return any(anchor in protected_text for anchor in strong_factual_anchors + narrative_anchors)
 
 
 def _derive_contact_level(

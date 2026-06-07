@@ -3799,12 +3799,18 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
     def test_reviewer_ignores_negated_or_nonfactual_past_life_rumors(self):
         rumor = novel_reviewer._derive_past_life_cleanliness({}, "前世有人传言她嫁给过别人，但后来证实是误会。")
+        hearsay = novel_reviewer._derive_past_life_cleanliness({}, "听说前世她曾与别人有婚约，后来澄清是流言，证实不成立。")
+        alleged = novel_reviewer._derive_past_life_cleanliness({}, "据说原故事线她喜欢过别人，但文本没有证据，属于读者猜测。")
         negated_love = novel_reviewer._derive_past_life_cleanliness({}, "前世她没有喜欢过别的男人。")
         negated_marriage = novel_reviewer._derive_past_life_cleanliness({}, "原故事线里她未嫁给任何人，也没有同房。")
         real_romance = novel_reviewer._derive_past_life_cleanliness({}, "上一世她喜欢过别的男人。")
 
         self.assertTrue(rumor["past_life_clean"])
         self.assertEqual(rumor["past_life_severity"], "clean")
+        self.assertTrue(hearsay["past_life_clean"])
+        self.assertEqual(hearsay["past_life_severity"], "clean")
+        self.assertTrue(alleged["past_life_clean"])
+        self.assertEqual(alleged["past_life_severity"], "clean")
         self.assertTrue(negated_love["past_life_clean"])
         self.assertTrue(negated_marriage["past_life_clean"])
         self.assertEqual(real_romance["past_life_severity"], "romantic")
