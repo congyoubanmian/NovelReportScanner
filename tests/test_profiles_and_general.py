@@ -35,6 +35,24 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(compose_vars)
         self.assertEqual(set(), compose_vars - env_sample_vars)
 
+    def test_dockerignore_keeps_frontend_sources_for_builder_stage(self):
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        dockerfile_path = os.path.join(base_dir, "Dockerfile")
+        dockerignore_path = os.path.join(base_dir, ".dockerignore")
+        with open(dockerfile_path, "r", encoding="utf-8") as f:
+            dockerfile_text = f.read()
+        with open(dockerignore_path, "r", encoding="utf-8") as f:
+            dockerignore_lines = [
+                line.strip()
+                for line in f
+                if line.strip() and not line.strip().startswith("#")
+            ]
+
+        if "COPY frontend/ ./" in dockerfile_text:
+            self.assertNotIn("frontend/src/", dockerignore_lines)
+            self.assertNotIn("frontend/src", dockerignore_lines)
+        self.assertNotIn("COPY . .", dockerfile_text)
+
     def test_profile_aliases_and_stages(self):
         harem = analysis_profiles.load_analysis_profile("后宫")
         general = analysis_profiles.load_analysis_profile("通用")

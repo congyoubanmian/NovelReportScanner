@@ -19,6 +19,8 @@ setting.txt
 tests/
 frontend/node_modules/
 frontend/dist/
+# Dockerfile builds the frontend from source in the builder stage, so keep
+# frontend/src in the build context and copy only dist into the runtime image.
 *.command
 *.bat
 *.tar

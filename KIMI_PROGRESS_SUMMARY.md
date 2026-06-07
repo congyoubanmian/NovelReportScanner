@@ -106,6 +106,7 @@
 - Web 书籍目录同步仅在新增/路径变化/分类建议变化时写入状态文件，避免 `/api/state` 和 SSE 周期同步造成无意义磁盘写入。
 - Web 页面支持编辑 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`GENERAL_SCAN_MAX_CHUNKS`、`HAREM_PLUS_GENERAL_SCAN` 等非敏感运行配置；修改只在当前服务进程生效，不写回本地配置文件，也不展示或修改 API Key。
 - Docker 最终运行镜像不再 `COPY . .`，只复制 Python 源码、`profiles/`、`rules2.json` 和前端构建产物，避免把测试、前端源码、文档和本地杂项带入运行层。
+- `.dockerignore` 保留前端源码进入 builder stage，同时最终运行层只接收 `frontend/dist`，避免无缓存构建时缺少源码或运行镜像携带前端源码。
 - Docker/Compose 容器启动时默认要求 `API_KEY` 或 `API_KEY_POOL` 至少存在一个，避免缺少 Key 时 Web 进程正常启动但扫描任务延迟失败；确需只启动 Web UI 时可用 `NOVEL_REPORT_SCANNER_REQUIRE_API_KEY=0` 跳过。
 - Web 运行信息条展示容器 Key 启动校验是否开启，方便确认 Docker/Compose 部署是否允许跳过 Key 校验。
 - `docker-compose.yml` 显式透传后宫增强、上传限制、JSON 限制、文件流式块大小、目录同步 TTL、输出缓存 TTL 和 SSE 推送间隔等 `.env` 运行参数，避免只写在 `.env` 但容器内未生效。
