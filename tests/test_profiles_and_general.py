@@ -1439,7 +1439,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.Handler.end_headers(handler)
             self.assertIn(("Access-Control-Allow-Origin", "https://example.test"), handler.headers_sent)
             self.assertIn(("Access-Control-Allow-Methods", "GET, POST, OPTIONS"), handler.headers_sent)
-            self.assertIn(("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID"), handler.headers_sent)
+            self.assertIn(("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID, Authorization, X-Web-Access-Token"), handler.headers_sent)
 
             options_handler = FakeHandler()
             web_manager.Handler.do_OPTIONS(options_handler)
@@ -1450,6 +1450,61 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 os.environ.pop("WEB_CORS_ALLOW_ORIGIN", None)
             else:
                 os.environ["WEB_CORS_ALLOW_ORIGIN"] = old_origin
+
+    def test_web_manager_access_token_auth_is_optional_and_secret(self):
+        old_token = os.environ.get("WEB_ACCESS_TOKEN")
+        try:
+            os.environ.pop("WEB_ACCESS_TOKEN", None)
+            self.assertTrue(web_manager._is_authorized_request({}, ""))
+            summary = web_manager._runtime_config_summary()
+            self.assertFalse(summary["web"]["auth_enabled"])
+
+            os.environ["WEB_ACCESS_TOKEN"] = "secret-token"
+            self.assertFalse(web_manager._is_authorized_request({}, ""))
+            self.assertFalse(web_manager._is_authorized_request({"Authorization": "Bearer wrong"}, ""))
+            self.assertTrue(web_manager._is_authorized_request({"Authorization": "Bearer secret-token"}, ""))
+            self.assertTrue(web_manager._is_authorized_request({"X-Web-Access-Token": "secret-token"}, ""))
+            self.assertTrue(web_manager._is_authorized_request({}, "token=secret-token"))
+
+            protected_summary = web_manager._runtime_config_summary()
+            self.assertTrue(protected_summary["web"]["auth_enabled"])
+            self.assertNotIn("secret-token", json.dumps(protected_summary, ensure_ascii=False))
+        finally:
+            if old_token is None:
+                os.environ.pop("WEB_ACCESS_TOKEN", None)
+            else:
+                os.environ["WEB_ACCESS_TOKEN"] = old_token
+
+    def test_web_manager_handler_rejects_unauthorized_api_requests(self):
+        class FakeHandler(web_manager.Handler):
+            def __init__(self, path="/api/state", headers=None):
+                self.path = path
+                self.headers = headers or {}
+                self.sent = []
+
+            def _send_json(self, data, status=200):
+                self.sent.append((status, data))
+
+        old_token = os.environ.get("WEB_ACCESS_TOKEN")
+        old_sync = web_manager._sync_books_from_disk
+        try:
+            os.environ["WEB_ACCESS_TOKEN"] = "secret-token"
+            web_manager._sync_books_from_disk = lambda: None
+
+            denied = FakeHandler()
+            web_manager.Handler.do_GET(denied)
+            self.assertEqual(denied.sent[0], (401, {"error": "unauthorized"}))
+
+            allowed = FakeHandler(headers={"Authorization": "Bearer secret-token"})
+            web_manager.Handler.do_GET(allowed)
+            self.assertEqual(allowed.sent[0][0], 200)
+            self.assertIn("books", allowed.sent[0][1])
+        finally:
+            web_manager._sync_books_from_disk = old_sync
+            if old_token is None:
+                os.environ.pop("WEB_ACCESS_TOKEN", None)
+            else:
+                os.environ["WEB_ACCESS_TOKEN"] = old_token
 
     def test_web_manager_sse_state_stream_sends_state_event(self):
         class OneShotWFile:

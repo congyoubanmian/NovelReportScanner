@@ -7,7 +7,7 @@ import { useToast } from './composables/useToast.js'
 import { useTheme } from './composables/useTheme.js'
 import { usePolling } from './composables/usePolling.js'
 import { useStateEvents } from './composables/useStateEvents.js'
-import { getState, getBookDetail, setProfile, enqueueBook, enqueueBooks, cancelQueuedBook, prioritizeQueuedBook, moveQueuedBook, deleteBook, deleteBooks } from './api.js'
+import { getState, getBookDetail, setProfile, enqueueBook, enqueueBooks, cancelQueuedBook, prioritizeQueuedBook, moveQueuedBook, deleteBook, deleteBooks, getAccessToken, setAccessToken } from './api.js'
 
 const { toast, success: toastSuccess, error: toastError } = useToast()
 const { theme, toggle: toggleTheme } = useTheme()
@@ -19,6 +19,14 @@ const configReady = ref(false)
 const selectedBook = ref(null)
 const selectedBookId = ref(null)
 const loading = ref(true)
+const initialUrlToken = new URLSearchParams(window.location.search).get('token') || ''
+if (initialUrlToken) {
+  setAccessToken(initialUrlToken)
+  const cleanUrl = new URL(window.location.href)
+  cleanUrl.searchParams.delete('token')
+  window.history.replaceState({}, '', cleanUrl.toString())
+}
+const accessTokenInput = ref(getAccessToken())
 
 // Race-condition guard for detail loading
 let detailRequestId = 0
@@ -46,9 +54,18 @@ async function refresh() {
     await applyState(data)
   } catch (e) {
     console.error('刷新失败:', e)
+    if (String(e.message || '').includes('unauthorized')) {
+      toastError('访问令牌无效或缺失')
+    }
   } finally {
     loading.value = false
   }
+}
+
+async function saveAccessToken() {
+  setAccessToken(accessTokenInput.value)
+  toastSuccess(accessTokenInput.value.trim() ? '访问令牌已保存' : '访问令牌已清除')
+  await refresh()
 }
 
 async function loadDetail(bookId) {
@@ -209,6 +226,18 @@ useStateEvents(applyState, {
       <span class="runtime-item"><b>限流</b>{{ runtimeConfig.rpm_limit || '—' }} RPM / {{ runtimeConfig.tpm_limit || '—' }} TPM</span>
       <span class="runtime-item"><b>Key</b>{{ runtimeConfig.api_key_configured ? `${runtimeConfig.api_key_count || 1} 个` : '未配置' }}</span>
       <span class="runtime-item"><b>上传上限</b>{{ Math.round((runtimeConfig.web?.max_upload_size || 0) / 1024 / 1024) || '—' }} MB</span>
+      <span class="runtime-item"><b>访问保护</b>{{ runtimeConfig.web?.auth_enabled ? '已开启' : '未开启' }}</span>
+    </div>
+
+    <div class="access-token-row" v-if="!runtimeConfig || runtimeConfig.web?.auth_enabled">
+      <input
+        v-model="accessTokenInput"
+        type="password"
+        autocomplete="current-password"
+        placeholder="Web 访问令牌"
+        @keyup.enter="saveAccessToken"
+      />
+      <button class="token-save" @click="saveAccessToken">保存</button>
     </div>
 
     <BookUpload
@@ -349,8 +378,43 @@ header p { margin: 6px 0 0; opacity: 0.85; font-size: 0.95rem; }
   font-weight: 600;
 }
 
+.access-token-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 16px;
+  max-width: 520px;
+}
+.access-token-row input {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.88rem;
+}
+.token-save {
+  height: 38px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: var(--primary);
+  color: white;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.88rem;
+}
+.token-save:hover {
+  background: var(--primary-hover);
+}
+
 @media (max-width: 768px) {
   header { padding: 28px 16px 40px; }
   header h1 { font-size: 1.35rem; }
+  .access-token-row { align-items: stretch; }
 }
 </style>

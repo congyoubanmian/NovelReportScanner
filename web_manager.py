@@ -1,6 +1,7 @@
 import json
 import os
 import queue
+import secrets
 import subprocess
 import threading
 import time
@@ -332,8 +333,45 @@ def _runtime_config_summary():
             "sync_books_ttl_seconds": SYNC_BOOKS_TTL_SECONDS,
             "outputs_cache_ttl_seconds": OUTPUTS_CACHE_TTL_SECONDS,
             "sse_state_interval_seconds": SSE_STATE_INTERVAL_SECONDS,
+            "auth_enabled": _web_auth_enabled(),
         },
     }
+
+
+def _web_access_token():
+    return os.environ.get("WEB_ACCESS_TOKEN", "").strip()
+
+
+def _web_auth_enabled():
+    return bool(_web_access_token())
+
+
+def _extract_bearer_token(value):
+    if not value:
+        return ""
+    parts = value.strip().split(None, 1)
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1].strip()
+    return value.strip()
+
+
+def _request_access_token(headers, query=""):
+    header_token = _extract_bearer_token(headers.get("Authorization", "") if headers else "")
+    if header_token:
+        return header_token
+    fallback_header = headers.get("X-Web-Access-Token", "") if headers else ""
+    if fallback_header:
+        return fallback_header.strip()
+    params = parse_qs(query or "")
+    return (params.get("token") or [""])[0].strip()
+
+
+def _is_authorized_request(headers, query=""):
+    expected = _web_access_token()
+    if not expected:
+        return True
+    provided = _request_access_token(headers, query)
+    return bool(provided) and secrets.compare_digest(provided, expected)
 
 
 def _put_task_queue(task_id):
@@ -930,7 +968,7 @@ class Handler(BaseHTTPRequestHandler):
     def end_headers(self):
         self.send_header("Access-Control-Allow-Origin", os.environ.get("WEB_CORS_ALLOW_ORIGIN", "*"))
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID, Authorization, X-Web-Access-Token")
         super().end_headers()
 
     def _send_json(self, data, status=200):
@@ -976,6 +1014,13 @@ class Handler(BaseHTTPRequestHandler):
             ".woff": "font/woff",
             ".ttf": "font/ttf",
         }.get(ext, "application/octet-stream")
+
+    def _require_auth(self, parsed=None):
+        parsed = parsed or urlparse(self.path)
+        if _is_authorized_request(self.headers, parsed.query):
+            return True
+        self._send_json({"error": "unauthorized"}, 401)
+        return False
 
     def _serve_static(self, path):
         file_path = _static_file_path(path)
@@ -1059,13 +1104,19 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": True, "config_ready": CONFIG_READY})
             return
         if parsed.path == "/api/state":
+            if not self._require_auth(parsed):
+                return
             _sync_books_from_disk()
             self._send_json(_public_state())
             return
         if parsed.path == "/api/events":
+            if not self._require_auth(parsed):
+                return
             self._send_sse_state_stream()
             return
         if parsed.path == "/api/book":
+            if not self._require_auth(parsed):
+                return
             params = parse_qs(parsed.query)
             book_id = (params.get("id") or [""])[0]
             detail = _book_detail(book_id)
@@ -1075,6 +1126,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(detail)
             return
         if parsed.path == "/files":
+            if not self._require_auth(parsed):
+                return
             params = parse_qs(parsed.query)
             path = unquote((params.get("path") or [""])[0])
             self._send_public_file(path)
@@ -1084,6 +1137,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         if parsed.path == "/api/profile":
+            if not self._require_auth(parsed):
+                return
             payload = self._read_json_payload()
             if payload is None:
                 return
@@ -1105,6 +1160,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": True})
             return
         if parsed.path == "/api/enqueue":
+            if not self._require_auth(parsed):
+                return
             payload = self._read_json_payload()
             if payload is None:
                 return
@@ -1112,6 +1169,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
             return
         if parsed.path == "/api/enqueue-batch":
+            if not self._require_auth(parsed):
+                return
             payload = self._read_json_payload()
             if payload is None:
                 return
@@ -1123,6 +1182,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": bool(result["queued"]), "result": result}, 200)
             return
         if parsed.path == "/api/cancel":
+            if not self._require_auth(parsed):
+                return
             payload = self._read_json_payload()
             if payload is None:
                 return
@@ -1130,6 +1191,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
             return
         if parsed.path == "/api/prioritize":
+            if not self._require_auth(parsed):
+                return
             payload = self._read_json_payload()
             if payload is None:
                 return
@@ -1137,6 +1200,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
             return
         if parsed.path == "/api/move-queue":
+            if not self._require_auth(parsed):
+                return
             payload = self._read_json_payload()
             if payload is None:
                 return
@@ -1144,6 +1209,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
             return
         if parsed.path == "/api/delete":
+            if not self._require_auth(parsed):
+                return
             payload = self._read_json_payload()
             if payload is None:
                 return
@@ -1151,6 +1218,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
             return
         if parsed.path == "/api/delete-batch":
+            if not self._require_auth(parsed):
+                return
             payload = self._read_json_payload()
             if payload is None:
                 return
@@ -1162,6 +1231,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": bool(result["deleted"]), "result": result}, 200)
             return
         if parsed.path == "/upload":
+            if not self._require_auth(parsed):
+                return
             try:
                 content_length = int(self.headers.get("Content-Length", "0"))
             except ValueError:

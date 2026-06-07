@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import StatusTag from './StatusTag.vue'
-import { getTextFile } from '../api.js'
+import { getTextFile, withAccessToken } from '../api.js'
 
 const props = defineProps({ book: Object, profiles: Array })
 
@@ -72,6 +72,10 @@ let previewRequestId = 0
 function canPreview(name) {
   const lower = (name || '').toLowerCase()
   return lower.endsWith('.txt') || lower.endsWith('.md') || lower.endsWith('.json') || lower.endsWith('.log')
+}
+
+function fileHref(url) {
+  return withAccessToken(url || '')
 }
 
 async function previewFile(file) {
@@ -189,7 +193,7 @@ watch(() => props.book?.id, () => {
         <div class="section-title">📁 输出文件</div>
         <ul class="file-list" v-if="outputs.length">
           <li v-for="f in outputs" :key="f.path">
-            <a :href="f.url" target="_blank">{{ f.name }}</a>
+            <a :href="fileHref(f.url)" target="_blank">{{ f.name }}</a>
             <button
               v-if="canPreview(f.name)"
               class="preview-btn"
@@ -206,7 +210,7 @@ watch(() => props.book?.id, () => {
         <div class="preview-header">
           <span class="preview-title">📄 {{ preview.name }}</span>
           <div class="preview-actions">
-            <a :href="preview.url" target="_blank" class="log-link">下载</a>
+            <a :href="fileHref(preview.url)" target="_blank" class="log-link">下载</a>
             <button class="preview-close" @click="closePreview">✕</button>
           </div>
         </div>
@@ -239,7 +243,7 @@ watch(() => props.book?.id, () => {
                 <td class="mono nowrap">{{ t.created_at || '—' }}</td>
                 <td class="muted">{{ t.finished_at || t.error || '—' }}</td>
                 <td style="text-align:center">
-                  <a v-if="t.log_file" :href="t.log_file.url" target="_blank" class="log-link">📋 日志</a>
+                  <a v-if="t.log_file" :href="fileHref(t.log_file.url)" target="_blank" class="log-link">📋 日志</a>
                   <span v-else>—</span>
                 </td>
               </tr>

@@ -1,6 +1,35 @@
 const API_BASE = ''
 const REQUEST_TIMEOUT_MS = 15000
 const UPLOAD_TIMEOUT_MS = 120000
+const ACCESS_TOKEN_STORAGE_KEY = 'novel_report_scanner_access_token'
+
+export function getAccessToken() {
+  try {
+    return window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
+export function setAccessToken(token) {
+  try {
+    const value = (token || '').trim()
+    if (value) {
+      window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, value)
+    } else {
+      window.localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY)
+    }
+  } catch {
+    // localStorage 不可用时只跳过持久化。
+  }
+}
+
+export function withAccessToken(path) {
+  const token = getAccessToken()
+  if (!token || !path.startsWith('/')) return path
+  const joiner = path.includes('?') ? '&' : '?'
+  return `${path}${joiner}token=${encodeURIComponent(token)}`
+}
 
 async function _api(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
   const res = await _request(path, options, timeoutMs)
@@ -13,6 +42,7 @@ async function _request(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       ...options,
+      headers: _requestHeaders(options.headers),
       signal: options.signal || controller.signal
     })
     if (!res.ok) {
@@ -30,6 +60,14 @@ async function _request(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
   }
 }
 
+function _requestHeaders(headers = {}) {
+  const token = getAccessToken()
+  if (!token) return headers
+  const merged = new Headers(headers)
+  merged.set('Authorization', `Bearer ${token}`)
+  return merged
+}
+
 export function getState() {
   return _api('/api/state')
 }
@@ -39,7 +77,7 @@ export function getBookDetail(bookId) {
 }
 
 export async function getTextFile(url, timeoutMs = REQUEST_TIMEOUT_MS) {
-  const res = await _request(url, {}, timeoutMs)
+  const res = await _request(withAccessToken(url), {}, timeoutMs)
   return res.text()
 }
 

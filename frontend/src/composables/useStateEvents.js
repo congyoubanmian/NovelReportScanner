@@ -1,4 +1,5 @@
 import { onMounted, onUnmounted } from 'vue'
+import { withAccessToken } from '../api.js'
 
 export function useStateEvents(onState, options = {}) {
   const eventsPath = options.eventsPath || '/api/events'
@@ -27,7 +28,7 @@ export function useStateEvents(onState, options = {}) {
       return
     }
     clearRetry()
-    source = new EventSource(eventsPath)
+    source = new EventSource(withAccessToken(eventsPath))
     source.addEventListener('open', onOpen)
     source.addEventListener('state', (event) => {
       try {
