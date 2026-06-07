@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import StatusTag from './StatusTag.vue'
 
 const props = defineProps({ books: Array, profiles: Array })
-const emit = defineEmits(['scan', 'batchScan', 'cancel', 'prioritize', 'moveQueued', 'delete', 'detail', 'profileChange'])
+const emit = defineEmits(['scan', 'batchScan', 'cancel', 'prioritize', 'moveQueued', 'delete', 'batchDelete', 'detail', 'profileChange'])
 const selectedIds = ref([])
 
 const manualProfiles = computed(() => (props.profiles || []).filter(p => p.name !== 'auto'))
@@ -88,6 +88,14 @@ function emitBatchScan() {
   selectedIds.value = []
 }
 
+function confirmBatchDelete() {
+  const ids = selectedReadyIds.value
+  if (!ids.length) return
+  if (!window.confirm(`确定删除选中的 ${ids.length} 本书吗？这会删除上传的小说文件，历史报告会保留。`)) return
+  emit('batchDelete', ids)
+  selectedIds.value = []
+}
+
 function confirmDelete(book) {
   if (isBusy(book)) return
   if (!window.confirm(`确定删除《${book.name}》吗？这会删除上传的小说文件，历史报告会保留。`)) return
@@ -99,11 +107,18 @@ function confirmDelete(book) {
   <div class="card">
     <div class="card-title book-list-title">
       <span><span class="icon">📖</span> 书籍列表</span>
-      <button
-        class="btn btn-sm"
-        :disabled="!selectedReadyIds.length"
-        @click="emitBatchScan"
-      >批量加入队列<span v-if="selectedReadyIds.length">({{ selectedReadyIds.length }})</span></button>
+      <div class="batch-actions">
+        <button
+          class="btn btn-sm"
+          :disabled="!selectedReadyIds.length"
+          @click="emitBatchScan"
+        >批量加入队列<span v-if="selectedReadyIds.length">({{ selectedReadyIds.length }})</span></button>
+        <button
+          class="btn btn-sm btn-danger"
+          :disabled="!selectedReadyIds.length"
+          @click="confirmBatchDelete"
+        >批量删除<span v-if="selectedReadyIds.length">({{ selectedReadyIds.length }})</span></button>
+      </div>
     </div>
     <div class="table-wrap">
       <table>
@@ -237,6 +252,12 @@ function confirmDelete(book) {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+}
+.batch-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 .select-col {
   width: 42px;

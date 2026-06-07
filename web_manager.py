@@ -751,6 +751,24 @@ def _delete_book(book_id):
     return True, book_id
 
 
+def _delete_many_books(book_ids):
+    requested = []
+    for book_id in book_ids or []:
+        if not book_id or book_id in requested:
+            continue
+        requested.append(book_id)
+
+    deleted = []
+    skipped = []
+    for book_id in requested:
+        ok, result = _delete_book(book_id)
+        if ok:
+            deleted.append({"book_id": book_id})
+        else:
+            skipped.append({"book_id": book_id, "reason": result})
+    return {"deleted": deleted, "skipped": skipped}
+
+
 def _web_scan_command(book_path, profile_name, run_id):
     task_args = [
         "--web-scan-task",
@@ -1131,6 +1149,17 @@ class Handler(BaseHTTPRequestHandler):
                 return
             ok, result = _delete_book(payload.get("book_id"))
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
+            return
+        if parsed.path == "/api/delete-batch":
+            payload = self._read_json_payload()
+            if payload is None:
+                return
+            book_ids = payload.get("book_ids")
+            if not isinstance(book_ids, list):
+                self._send_json({"error": "book_ids must be a list"}, 400)
+                return
+            result = _delete_many_books(book_ids)
+            self._send_json({"ok": bool(result["deleted"]), "result": result}, 200)
             return
         if parsed.path == "/upload":
             try:

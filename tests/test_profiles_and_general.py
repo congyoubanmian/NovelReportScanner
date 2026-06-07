@@ -2020,6 +2020,45 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.OUTPUTS_CACHE.clear()
             web_manager.OUTPUTS_CACHE.update(old_cache)
 
+    def test_web_manager_delete_many_books_reports_deleted_and_skipped(self):
+        old_state = web_manager.STATE
+        old_base_dir = web_manager.get_base_dir
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                novels_dir = os.path.join(tmp, "novels")
+                os.makedirs(novels_dir, exist_ok=True)
+                paths = {}
+                for book_id in ("one", "two", "busy"):
+                    path = os.path.join(novels_dir, f"{book_id}.txt")
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write(book_id)
+                    paths[book_id] = path
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.STATE = {
+                    "books": {
+                        "one": {"id": "one", "name": "one", "path": paths["one"], "profile": "general", "status": "idle"},
+                        "two": {"id": "two", "name": "two", "path": paths["two"], "profile": "general", "status": "idle"},
+                        "busy": {"id": "busy", "name": "busy", "path": paths["busy"], "profile": "general", "status": "queued"},
+                    },
+                    "tasks": [],
+                }
+
+                result = web_manager._delete_many_books(["one", "one", "busy", "missing", "two"])
+
+                self.assertEqual([item["book_id"] for item in result["deleted"]], ["one", "two"])
+                skipped = {item["book_id"]: item["reason"] for item in result["skipped"]}
+                self.assertEqual(skipped["busy"], "book is queued or running")
+                self.assertEqual(skipped["missing"], "book not found")
+                self.assertFalse(os.path.exists(paths["one"]))
+                self.assertFalse(os.path.exists(paths["two"]))
+                self.assertTrue(os.path.exists(paths["busy"]))
+                self.assertNotIn("one", web_manager.STATE["books"])
+                self.assertNotIn("two", web_manager.STATE["books"])
+                self.assertIn("busy", web_manager.STATE["books"])
+        finally:
+            web_manager.STATE = old_state
+            web_manager.get_base_dir = old_base_dir
+
     def test_web_manager_delete_book_rejects_busy_or_external_path(self):
         old_state = web_manager.STATE
         old_base_dir = web_manager.get_base_dir

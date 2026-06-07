@@ -99,6 +99,14 @@ export function deleteBook(bookId) {
   })
 }
 
+export function deleteBooks(bookIds) {
+  return _api('/api/delete-batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ book_ids: bookIds })
+  })
+}
+
 export function uploadBook(formData) {
   return _api('/upload', {
     method: 'POST',

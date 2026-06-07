@@ -7,7 +7,7 @@ import { useToast } from './composables/useToast.js'
 import { useTheme } from './composables/useTheme.js'
 import { usePolling } from './composables/usePolling.js'
 import { useStateEvents } from './composables/useStateEvents.js'
-import { getState, getBookDetail, setProfile, enqueueBook, enqueueBooks, cancelQueuedBook, prioritizeQueuedBook, moveQueuedBook, deleteBook } from './api.js'
+import { getState, getBookDetail, setProfile, enqueueBook, enqueueBooks, cancelQueuedBook, prioritizeQueuedBook, moveQueuedBook, deleteBook, deleteBooks } from './api.js'
 
 const { toast, success: toastSuccess, error: toastError } = useToast()
 const { theme, toggle: toggleTheme } = useTheme()
@@ -138,6 +138,26 @@ async function handleDelete(bookId) {
   }
 }
 
+async function handleBatchDelete(bookIds) {
+  try {
+    const response = await deleteBooks(bookIds)
+    const deleted = response.result?.deleted?.length || 0
+    const skipped = response.result?.skipped?.length || 0
+    if (deleted) {
+      toastSuccess(skipped ? `已删除 ${deleted} 本，跳过 ${skipped} 本` : `已删除 ${deleted} 本`)
+    } else {
+      toastError(skipped ? `没有可删除的书籍，跳过 ${skipped} 本` : '没有可删除的书籍')
+    }
+    if ((response.result?.deleted || []).some(item => item.book_id === selectedBookId.value)) {
+      selectedBookId.value = null
+      selectedBook.value = null
+    }
+    await refresh()
+  } catch (e) {
+    toastError('批量删除失败: ' + e.message)
+  }
+}
+
 async function handleProfileChange(bookId, profile) {
   try {
     await setProfile(bookId, profile)
@@ -211,6 +231,7 @@ useStateEvents(applyState, {
       @prioritize="handlePrioritize"
       @moveQueued="handleMoveQueued"
       @delete="handleDelete"
+      @batchDelete="handleBatchDelete"
       @detail="loadDetail"
       @profileChange="handleProfileChange"
     />
