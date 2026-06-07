@@ -289,10 +289,15 @@ API_KEY=sk-your-key
 
 WEB_HOST=0.0.0.0
 WEB_PORT=8765
+WEB_CORS_ALLOW_ORIGIN=*
+WEB_ACCESS_TOKEN=
 WEB_REQUEST_TIMEOUT=60
 MAX_UPLOAD_SIZE=104857600
 MAX_JSON_BODY_SIZE=65536
 FILE_RESPONSE_CHUNK_SIZE=1048576
+SYNC_BOOKS_TTL_SECONDS=5
+OUTPUTS_CACHE_TTL_SECONDS=5
+SSE_STATE_INTERVAL_SECONDS=3
 ```
 
 配置加载优先级是：进程环境变量 / `.env` > `setting.txt` > 默认值。API Key 优先读取 `API_KEY_POOL` 或 `API_KEY`；如果没有设置，才会回退读取根目录 `api.txt`。
@@ -325,6 +330,17 @@ Web 管理端常用配置：
 - `SYNC_BOOKS_TTL_SECONDS`：同步 `novels/` 目录的最短间隔，默认 `5` 秒。
 - `OUTPUTS_CACHE_TTL_SECONDS`：书籍输出文件列表缓存时间，默认 `5` 秒。
 - `SSE_STATE_INTERVAL_SECONDS`：SSE 状态推送间隔，默认 `3` 秒。
+
+前端开发检查：
+
+```bash
+cd frontend
+npm run lint
+npm run format:check
+npm run build
+```
+
+`npm run lint` 使用 ESLint 检查 Vue/JS 代码，并设置为零 warning 通过；`npm run format:check` 使用 Prettier 校验格式。
 
 ### 分析模式
 

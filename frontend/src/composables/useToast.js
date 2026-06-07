@@ -7,7 +7,9 @@ export function useToast() {
   function show(message, type = 'info') {
     if (toastTimer) clearTimeout(toastTimer)
     toast.value = { message, type }
-    toastTimer = setTimeout(() => { toast.value = null }, 3000)
+    toastTimer = setTimeout(() => {
+      toast.value = null
+    }, 3000)
   }
 
   return {
@@ -15,6 +17,6 @@ export function useToast() {
     show,
     success: (msg) => show(msg, 'success'),
     error: (msg) => show(msg, 'error'),
-    info: (msg) => show(msg, 'info'),
+    info: (msg) => show(msg, 'info')
   }
 }

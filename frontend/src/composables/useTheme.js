@@ -34,6 +34,6 @@ export function useTheme() {
   return {
     theme,
     toggle,
-    isDark: () => theme.value === 'dark',
+    isDark: () => theme.value === 'dark'
   }
 }

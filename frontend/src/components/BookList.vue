@@ -3,15 +3,25 @@ import { computed, ref, watch } from 'vue'
 import StatusTag from './StatusTag.vue'
 
 const props = defineProps({ books: Array, profiles: Array })
-const emit = defineEmits(['scan', 'batchScan', 'cancel', 'prioritize', 'moveQueued', 'delete', 'batchDelete', 'detail', 'profileChange'])
+const emit = defineEmits([
+  'scan',
+  'batchScan',
+  'cancel',
+  'prioritize',
+  'moveQueued',
+  'delete',
+  'batchDelete',
+  'detail',
+  'profileChange'
+])
 const selectedIds = ref([])
 
-const manualProfiles = computed(() => (props.profiles || []).filter(p => p.name !== 'auto'))
+const manualProfiles = computed(() => (props.profiles || []).filter((p) => p.name !== 'auto'))
 
 function renderSuggestions(book) {
   const suggestions = book.profile_suggestions || []
   if (!suggestions.length) return null
-  return suggestions.map(s => {
+  return suggestions.map((s) => {
     const words = (s.matched_keywords || []).slice(0, 5).join('、')
     return {
       name: s.display_name || s.name,
@@ -49,32 +59,43 @@ function toggleAuto(book) {
 }
 
 function toggleManualProfile(book, profileName, checked) {
-  const current = profileValues(book).filter(name => name !== 'auto')
+  const current = profileValues(book).filter((name) => name !== 'auto')
   const next = checked
     ? Array.from(new Set([...current, profileName]))
-    : current.filter(name => name !== profileName)
+    : current.filter((name) => name !== profileName)
   emit('profileChange', book.id, next.length ? next : 'auto')
 }
 
-const displayBooks = computed(() => (props.books || []).map(book => ({
-  ...book,
-  suggestions: renderSuggestions(book) || []
-})))
+const displayBooks = computed(() =>
+  (props.books || []).map((book) => ({
+    ...book,
+    suggestions: renderSuggestions(book) || []
+  }))
+)
 
-const selectableBooks = computed(() => displayBooks.value.filter(book => !isBusy(book)))
-const selectableIds = computed(() => selectableBooks.value.map(book => book.id))
-const selectedReadyIds = computed(() => selectedIds.value.filter(id => selectableIds.value.includes(id)))
-const allReadySelected = computed(() => selectableIds.value.length > 0 && selectedReadyIds.value.length === selectableIds.value.length)
+const selectableBooks = computed(() => displayBooks.value.filter((book) => !isBusy(book)))
+const selectableIds = computed(() => selectableBooks.value.map((book) => book.id))
+const selectedReadyIds = computed(() =>
+  selectedIds.value.filter((id) => selectableIds.value.includes(id))
+)
+const allReadySelected = computed(
+  () =>
+    selectableIds.value.length > 0 && selectedReadyIds.value.length === selectableIds.value.length
+)
 
-watch(() => props.books, () => {
-  selectedIds.value = selectedReadyIds.value
-}, { deep: true })
+watch(
+  () => props.books,
+  () => {
+    selectedIds.value = selectedReadyIds.value
+  },
+  { deep: true }
+)
 
 function toggleBookSelection(book, checked) {
   if (isBusy(book)) return
   selectedIds.value = checked
     ? Array.from(new Set([...selectedIds.value, book.id]))
-    : selectedIds.value.filter(id => id !== book.id)
+    : selectedIds.value.filter((id) => id !== book.id)
 }
 
 function toggleAllReady(checked) {
@@ -91,14 +112,18 @@ function emitBatchScan() {
 function confirmBatchDelete() {
   const ids = selectedReadyIds.value
   if (!ids.length) return
-  if (!window.confirm(`确定删除选中的 ${ids.length} 本书吗？这会删除上传的小说文件，历史报告会保留。`)) return
+  if (
+    !window.confirm(`确定删除选中的 ${ids.length} 本书吗？这会删除上传的小说文件，历史报告会保留。`)
+  )
+    return
   emit('batchDelete', ids)
   selectedIds.value = []
 }
 
 function confirmDelete(book) {
   if (isBusy(book)) return
-  if (!window.confirm(`确定删除《${book.name}》吗？这会删除上传的小说文件，历史报告会保留。`)) return
+  if (!window.confirm(`确定删除《${book.name}》吗？这会删除上传的小说文件，历史报告会保留。`))
+    return
   emit('delete', book.id)
 }
 </script>
@@ -108,16 +133,16 @@ function confirmDelete(book) {
     <div class="card-title book-list-title">
       <span><span class="icon">📖</span> 书籍列表</span>
       <div class="batch-actions">
-        <button
-          class="btn btn-sm"
-          :disabled="!selectedReadyIds.length"
-          @click="emitBatchScan"
-        >批量加入队列<span v-if="selectedReadyIds.length">({{ selectedReadyIds.length }})</span></button>
+        <button class="btn btn-sm" :disabled="!selectedReadyIds.length" @click="emitBatchScan">
+          批量加入队列<span v-if="selectedReadyIds.length">({{ selectedReadyIds.length }})</span>
+        </button>
         <button
           class="btn btn-sm btn-danger"
           :disabled="!selectedReadyIds.length"
           @click="confirmBatchDelete"
-        >批量删除<span v-if="selectedReadyIds.length">({{ selectedReadyIds.length }})</span></button>
+        >
+          批量删除<span v-if="selectedReadyIds.length">({{ selectedReadyIds.length }})</span>
+        </button>
       </div>
     </div>
     <div class="table-wrap">
@@ -137,7 +162,7 @@ function confirmDelete(book) {
             <th>自动建议</th>
             <th>状态</th>
             <th>消息</th>
-            <th style="text-align:right">操作</th>
+            <th style="text-align: right">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -185,12 +210,7 @@ function confirmDelete(book) {
             </td>
             <td>
               <div class="suggestion-chips" v-if="book.suggestions.length">
-                <span
-                  v-for="(s, i) in book.suggestions"
-                  :key="i"
-                  class="chip"
-                  :title="s.title"
-                >
+                <span v-for="(s, i) in book.suggestions" :key="i" class="chip" :title="s.title">
                   {{ s.name }} <span class="score">{{ s.score }}</span>
                 </span>
               </div>
@@ -198,42 +218,49 @@ function confirmDelete(book) {
             </td>
             <td><StatusTag :status="book.status || 'idle'" /></td>
             <td class="col-msg">{{ book.message || '' }}</td>
-            <td style="text-align:right">
+            <td style="text-align: right">
               <div class="actions">
-                <button
-                  class="btn btn-sm"
-                  @click="emit('scan', book.id)"
-                  :disabled="isBusy(book)"
-                >加入队列</button>
+                <button class="btn btn-sm" @click="emit('scan', book.id)" :disabled="isBusy(book)">
+                  加入队列
+                </button>
                 <button
                   v-if="isQueued(book)"
                   class="btn btn-sm btn-secondary"
                   @click="emit('cancel', book.id)"
-                >取消排队</button>
+                >
+                  取消排队
+                </button>
                 <button
                   v-if="isQueued(book)"
                   class="btn btn-sm btn-secondary"
                   @click="emit('moveQueued', book.id, 'up')"
-                >上移</button>
+                >
+                  上移
+                </button>
                 <button
                   v-if="isQueued(book)"
                   class="btn btn-sm btn-secondary"
                   @click="emit('moveQueued', book.id, 'down')"
-                >下移</button>
+                >
+                  下移
+                </button>
                 <button
                   v-if="isQueued(book)"
                   class="btn btn-sm btn-secondary"
                   @click="emit('prioritize', book.id)"
-                >置顶</button>
-                <button
-                  class="btn btn-sm btn-secondary"
-                  @click="emit('detail', book.id)"
-                >详情</button>
+                >
+                  置顶
+                </button>
+                <button class="btn btn-sm btn-secondary" @click="emit('detail', book.id)">
+                  详情
+                </button>
                 <button
                   class="btn btn-sm btn-danger"
                   @click="confirmDelete(book)"
                   :disabled="isBusy(book)"
-                >删除</button>
+                >
+                  删除
+                </button>
               </div>
             </td>
           </tr>

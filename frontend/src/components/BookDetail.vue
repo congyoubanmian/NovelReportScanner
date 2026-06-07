@@ -9,7 +9,7 @@ const outputs = computed(() => props.book?.outputs || [])
 const tokenUsage = computed(() => props.book?.token_usage || null)
 const tasks = computed(() => {
   const list = props.book?.tasks || []
-  return list.map(t => ({
+  return list.map((t) => ({
     ...t,
     displayStatus: t.queue_position ? `${t.status} #${t.queue_position}` : t.status
   }))
@@ -17,7 +17,7 @@ const tasks = computed(() => {
 
 const suggestions = computed(() => {
   const list = props.book?.profile_suggestions || []
-  return list.map(s => ({
+  return list.map((s) => ({
     name: s.display_name || s.name,
     score: s.score,
     words: (s.matched_keywords || []).slice(0, 5).join('、')
@@ -25,13 +25,13 @@ const suggestions = computed(() => {
 })
 
 const profileNameMap = computed(() => {
-  const entries = (props.profiles || []).map(p => [p.name, p.display_name || p.name])
+  const entries = (props.profiles || []).map((p) => [p.name, p.display_name || p.name])
   return Object.fromEntries(entries)
 })
 
 function formatProfileValue(value) {
   if (Array.isArray(value)) {
-    return value.map(name => profileNameMap.value[name] || name).join('、') || '—'
+    return value.map((name) => profileNameMap.value[name] || name).join('、') || '—'
   }
   return profileNameMap.value[value] || value || '—'
 }
@@ -63,7 +63,7 @@ const preview = ref({
   content: '',
   loading: false,
   error: '',
-  isJson: false,
+  isJson: false
 })
 
 const PREVIEW_MAX_CHARS = 50000
@@ -71,7 +71,12 @@ let previewRequestId = 0
 
 function canPreview(name) {
   const lower = (name || '').toLowerCase()
-  return lower.endsWith('.txt') || lower.endsWith('.md') || lower.endsWith('.json') || lower.endsWith('.log')
+  return (
+    lower.endsWith('.txt') ||
+    lower.endsWith('.md') ||
+    lower.endsWith('.json') ||
+    lower.endsWith('.log')
+  )
 }
 
 function fileHref(url) {
@@ -111,18 +116,19 @@ function closePreview() {
 }
 
 // Auto-close preview when switching books
-watch(() => props.book?.id, () => {
-  closePreview()
-})
+watch(
+  () => props.book?.id,
+  () => {
+    closePreview()
+  }
+)
 </script>
 
 <template>
   <div class="card">
     <div class="card-title"><span class="icon">🔍</span> 书籍详情</div>
 
-    <div v-if="!book" class="detail-empty">
-      点击书籍列表中的「详情」查看任务历史和输出文件。
-    </div>
+    <div v-if="!book" class="detail-empty">点击书籍列表中的「详情」查看任务历史和输出文件。</div>
 
     <template v-else>
       <div class="detail-header">
@@ -172,7 +178,12 @@ watch(() => props.book?.id, () => {
           <table>
             <thead>
               <tr>
-                <th>运行ID</th><th>输入</th><th>输出</th><th>总量</th><th>脚本数</th><th>更新时间</th>
+                <th>运行ID</th>
+                <th>输入</th>
+                <th>输出</th>
+                <th>总量</th>
+                <th>脚本数</th>
+                <th>更新时间</th>
               </tr>
             </thead>
             <tbody>
@@ -199,7 +210,9 @@ watch(() => props.book?.id, () => {
               class="preview-btn"
               :class="{ active: preview.url === f.url }"
               @click="previewFile(f)"
-            >👁️ 预览</button>
+            >
+              👁️ 预览
+            </button>
           </li>
         </ul>
         <p v-else class="muted">暂无输出文件</p>
@@ -217,7 +230,9 @@ watch(() => props.book?.id, () => {
         <div class="preview-body">
           <div v-if="preview.loading" class="preview-loading">加载中...</div>
           <div v-else-if="preview.error" class="preview-error">加载失败: {{ preview.error }}</div>
-          <pre v-else :class="['preview-content', { 'preview-json': preview.isJson }]">{{ preview.content }}</pre>
+          <pre v-else :class="['preview-content', { 'preview-json': preview.isJson }]">{{
+            preview.content
+          }}</pre>
         </div>
       </div>
 
@@ -227,8 +242,13 @@ watch(() => props.book?.id, () => {
           <table>
             <thead>
               <tr>
-                <th>任务ID</th><th>分类</th><th>实际分类</th><th>状态</th>
-                <th>创建时间</th><th>结束/错误</th><th style="text-align:center">日志</th>
+                <th>任务ID</th>
+                <th>分类</th>
+                <th>实际分类</th>
+                <th>状态</th>
+                <th>创建时间</th>
+                <th>结束/错误</th>
+                <th style="text-align: center">日志</th>
               </tr>
             </thead>
             <tbody>
@@ -242,8 +262,14 @@ watch(() => props.book?.id, () => {
                 <td><StatusTag :status="t.displayStatus" /></td>
                 <td class="mono nowrap">{{ t.created_at || '—' }}</td>
                 <td class="muted">{{ t.finished_at || t.error || '—' }}</td>
-                <td style="text-align:center">
-                  <a v-if="t.log_file" :href="fileHref(t.log_file.url)" target="_blank" class="log-link">📋 日志</a>
+                <td style="text-align: center">
+                  <a
+                    v-if="t.log_file"
+                    :href="fileHref(t.log_file.url)"
+                    target="_blank"
+                    class="log-link"
+                    >📋 日志</a
+                  >
                   <span v-else>—</span>
                 </td>
               </tr>

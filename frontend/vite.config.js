@@ -1,8 +1,10 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
+import { fileURLToPath } from 'url'
 
 const PROXY_TARGET = process.env.API_PROXY || 'http://localhost:8765'
+const ROOT_DIR = fileURLToPath(new URL('.', import.meta.url))
 
 export default defineConfig({
   plugins: [vue()],
@@ -12,7 +14,7 @@ export default defineConfig({
     emptyOutDir: true,
     assetsDir: 'assets',
     rollupOptions: {
-      input: resolve(__dirname, 'index.html')
+      input: resolve(ROOT_DIR, 'index.html')
     }
   },
   server: {

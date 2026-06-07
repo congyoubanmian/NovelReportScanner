@@ -12,8 +12,8 @@ const uploading = ref(false)
 const dragover = ref(false)
 const overwriteExisting = ref(false)
 
-const fileNames = computed(() => files.value.map(f => f.name).join(', '))
-const manualProfiles = computed(() => (props.profiles || []).filter(p => p.name !== 'auto'))
+const fileNames = computed(() => files.value.map((f) => f.name).join(', '))
+const manualProfiles = computed(() => (props.profiles || []).filter((p) => p.name !== 'auto'))
 
 function toggleAuto() {
   autoProfile.value = true
@@ -25,7 +25,7 @@ function toggleProfile(profileName, checked) {
   if (checked) {
     selectedProfiles.value = Array.from(new Set([...selectedProfiles.value, profileName]))
   } else {
-    selectedProfiles.value = selectedProfiles.value.filter(name => name !== profileName)
+    selectedProfiles.value = selectedProfiles.value.filter((name) => name !== profileName)
   }
   if (!selectedProfiles.value.length) {
     autoProfile.value = true
@@ -34,14 +34,15 @@ function toggleProfile(profileName, checked) {
 
 function onFileChange(e) {
   if (e.target.files?.length) {
-    files.value = Array.from(e.target.files).filter(f => f.name.toLowerCase().endsWith('.txt'))
+    files.value = Array.from(e.target.files).filter((f) => f.name.toLowerCase().endsWith('.txt'))
   }
 }
 
 function onDrop(e) {
   dragover.value = false
-  const dropped = Array.from(e.dataTransfer.files || [])
-    .filter(f => f.name.toLowerCase().endsWith('.txt'))
+  const dropped = Array.from(e.dataTransfer.files || []).filter((f) =>
+    f.name.toLowerCase().endsWith('.txt')
+  )
   if (dropped.length) {
     files.value = dropped
   }
@@ -61,7 +62,7 @@ async function submit() {
     if (autoProfile.value || !selectedProfiles.value.length) {
       fd.append('profile', 'auto')
     } else {
-      selectedProfiles.value.forEach(name => fd.append('profile', name))
+      selectedProfiles.value.forEach((name) => fd.append('profile', name))
     }
     try {
       await uploadBook(fd)
@@ -96,9 +97,7 @@ async function submit() {
           <template v-if="fileNames">
             <strong>{{ fileNames }}</strong>
           </template>
-          <template v-else>
-            点击或拖拽上传 <strong>.txt</strong> 小说文件（支持多选）
-          </template>
+          <template v-else> 点击或拖拽上传 <strong>.txt</strong> 小说文件（支持多选） </template>
         </div>
       </div>
       <div class="profile-picker">
@@ -144,10 +143,12 @@ async function submit() {
   padding: 20px;
   text-align: center;
   cursor: pointer;
-  transition: border-color 0.2s, background 0.2s;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
   background: var(--bg-upload);
 }
-[data-theme="dark"] .file-input-wrapper {
+[data-theme='dark'] .file-input-wrapper {
   border-color: #4b5563;
 }
 .file-input-wrapper:hover,
@@ -155,7 +156,7 @@ async function submit() {
   border-color: var(--primary);
   background: var(--primary-light);
 }
-.file-input-wrapper input[type="file"] {
+.file-input-wrapper input[type='file'] {
   position: absolute;
   inset: 0;
   opacity: 0;

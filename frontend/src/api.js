@@ -52,7 +52,10 @@ async function _request(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
     return res
   } catch (e) {
     if (e.name === 'AbortError') {
-      throw new Error(timeoutMs >= UPLOAD_TIMEOUT_MS ? '上传超时，请检查网络或减小文件大小' : '请求超时')
+      throw new Error(
+        timeoutMs >= UPLOAD_TIMEOUT_MS ? '上传超时，请检查网络或减小文件大小' : '请求超时',
+        { cause: e }
+      )
     }
     throw e
   } finally {
@@ -146,8 +149,12 @@ export function deleteBooks(bookIds) {
 }
 
 export function uploadBook(formData) {
-  return _api('/upload', {
-    method: 'POST',
-    body: formData
-  }, UPLOAD_TIMEOUT_MS)
+  return _api(
+    '/upload',
+    {
+      method: 'POST',
+      body: formData
+    },
+    UPLOAD_TIMEOUT_MS
+  )
 }

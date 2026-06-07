@@ -51,9 +51,9 @@
   --tag-interrupted-text: #4b5563;
 
   /* Shadows */
-  --shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
-  --shadow-card-hover: 0 10px 25px rgba(0,0,0,0.08), 0 4px 10px rgba(0,0,0,0.04);
-  --shadow-toast: 0 10px 25px rgba(0,0,0,0.1), 0 4px 10px rgba(0,0,0,0.06);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.04);
+  --shadow-card-hover: 0 10px 25px rgba(0, 0, 0, 0.08), 0 4px 10px rgba(0, 0, 0, 0.04);
+  --shadow-toast: 0 10px 25px rgba(0, 0, 0, 0.1), 0 4px 10px rgba(0, 0, 0, 0.06);
 
   /* Radius */
   --radius: 14px;
@@ -62,7 +62,7 @@
   --radius-pill: 999px;
 }
 
-[data-theme="dark"] {
+[data-theme='dark'] {
   --bg-body: #0b0d12;
   --bg-card: #151821;
   --bg-hover: #1e212b;
@@ -87,32 +87,48 @@
 
   --primary: #6366f1;
   --primary-hover: #818cf8;
-  --primary-light: rgba(99,102,241,0.12);
-  --primary-lighter: rgba(99,102,241,0.2);
+  --primary-light: rgba(99, 102, 241, 0.12);
+  --primary-lighter: rgba(99, 102, 241, 0.2);
 
-  --success-bg: rgba(16,185,129,0.12);
+  --success-bg: rgba(16, 185, 129, 0.12);
   --success-text: #34d399;
-  --warning-bg: rgba(245,158,11,0.12);
+  --warning-bg: rgba(245, 158, 11, 0.12);
   --warning-text: #fbbf24;
-  --danger-bg: rgba(239,68,68,0.12);
+  --danger-bg: rgba(239, 68, 68, 0.12);
   --danger-text: #f87171;
-  --info-bg: rgba(59,130,246,0.12);
+  --info-bg: rgba(59, 130, 246, 0.12);
   --info-text: #60a5fa;
   --tag-idle-bg: #1f2937;
   --tag-idle-text: #9ca3af;
   --tag-interrupted-bg: #1f2937;
   --tag-interrupted-text: #9ca3af;
 
-  --shadow-card: 0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2);
-  --shadow-card-hover: 0 10px 25px rgba(0,0,0,0.4), 0 4px 10px rgba(0,0,0,0.3);
-  --shadow-toast: 0 10px 25px rgba(0,0,0,0.4), 0 4px 10px rgba(0,0,0,0.3);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.2);
+  --shadow-card-hover: 0 10px 25px rgba(0, 0, 0, 0.4), 0 4px 10px rgba(0, 0, 0, 0.3);
+  --shadow-toast: 0 10px 25px rgba(0, 0, 0, 0.4), 0 4px 10px rgba(0, 0, 0, 0.3);
 }
 
 /* Smooth theme transition */
-body, .card, .btn, select, .chip, .file-list li a,
-.table-wrap, table, th, td, .banner, .toast,
-.file-input-wrapper, code, .log-link {
-  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease;
+body,
+.card,
+.btn,
+select,
+.chip,
+.file-list li a,
+.table-wrap,
+table,
+th,
+td,
+.banner,
+.toast,
+.file-input-wrapper,
+code,
+.log-link {
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease,
+    color 0.25s ease,
+    box-shadow 0.25s ease;
 }
 
 body {

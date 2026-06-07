@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import BookUpload from './components/BookUpload.vue'
 import BookList from './components/BookList.vue'
 import BookDetail from './components/BookDetail.vue'
@@ -7,7 +7,20 @@ import { useToast } from './composables/useToast.js'
 import { useTheme } from './composables/useTheme.js'
 import { usePolling } from './composables/usePolling.js'
 import { useStateEvents } from './composables/useStateEvents.js'
-import { getState, getBookDetail, setProfile, enqueueBook, enqueueBooks, cancelQueuedBook, prioritizeQueuedBook, moveQueuedBook, deleteBook, deleteBooks, getAccessToken, setAccessToken } from './api.js'
+import {
+  getState,
+  getBookDetail,
+  setProfile,
+  enqueueBook,
+  enqueueBooks,
+  cancelQueuedBook,
+  prioritizeQueuedBook,
+  moveQueuedBook,
+  deleteBook,
+  deleteBooks,
+  getAccessToken,
+  setAccessToken
+} from './api.js'
 
 const { toast, success: toastSuccess, error: toastError } = useToast()
 const { theme, toggle: toggleTheme } = useTheme()
@@ -37,7 +50,7 @@ async function applyState(data) {
   runtimeConfig.value = data.config || runtimeConfig.value
   configReady.value = data.config_ready
   if (selectedBookId.value) {
-    const found = (books.value || []).find(b => b.id === selectedBookId.value)
+    const found = (books.value || []).find((b) => b.id === selectedBookId.value)
     if (found) {
       await loadDetail(selectedBookId.value)
     } else {
@@ -165,7 +178,7 @@ async function handleBatchDelete(bookIds) {
     } else {
       toastError(skipped ? `没有可删除的书籍，跳过 ${skipped} 本` : '没有可删除的书籍')
     }
-    if ((response.result?.deleted || []).some(item => item.book_id === selectedBookId.value)) {
+    if ((response.result?.deleted || []).some((item) => item.book_id === selectedBookId.value)) {
       selectedBookId.value = null
       selectedBook.value = null
     }
@@ -208,7 +221,11 @@ useStateEvents(applyState, {
         <div class="badge" :class="{ ready: configReady }">
           {{ configReady ? '✅ 配置就绪' : '⚠️ 配置未就绪' }}
         </div>
-        <button class="theme-toggle" @click="toggleTheme" :title="theme === 'dark' ? '切换亮色模式' : '切换暗色模式'">
+        <button
+          class="theme-toggle"
+          @click="toggleTheme"
+          :title="theme === 'dark' ? '切换亮色模式' : '切换暗色模式'"
+        >
           {{ theme === 'dark' ? '☀️' : '🌙' }}
         </button>
       </div>
@@ -217,16 +234,30 @@ useStateEvents(applyState, {
 
   <div class="container card-wrap">
     <div class="banner warn" v-if="!configReady">
-      <span>⚠️</span> API 配置未就绪：可以先上传和排队，但开始扫描前需要在 .env 或环境变量中配置 API_KEY/API_KEY_POOL。
+      <span>⚠️</span> API 配置未就绪：可以先上传和排队，但开始扫描前需要在 .env 或环境变量中配置
+      API_KEY/API_KEY_POOL。
     </div>
 
     <div class="runtime-strip" v-if="runtimeConfig">
       <span class="runtime-item"><b>模型</b>{{ runtimeConfig.model_name || '—' }}</span>
       <span class="runtime-item"><b>并发</b>{{ runtimeConfig.max_workers || '—' }}</span>
-      <span class="runtime-item"><b>限流</b>{{ runtimeConfig.rpm_limit || '—' }} RPM / {{ runtimeConfig.tpm_limit || '—' }} TPM</span>
-      <span class="runtime-item"><b>Key</b>{{ runtimeConfig.api_key_configured ? `${runtimeConfig.api_key_count || 1} 个` : '未配置' }}</span>
-      <span class="runtime-item"><b>上传上限</b>{{ Math.round((runtimeConfig.web?.max_upload_size || 0) / 1024 / 1024) || '—' }} MB</span>
-      <span class="runtime-item"><b>访问保护</b>{{ runtimeConfig.web?.auth_enabled ? '已开启' : '未开启' }}</span>
+      <span class="runtime-item"
+        ><b>限流</b>{{ runtimeConfig.rpm_limit || '—' }} RPM /
+        {{ runtimeConfig.tpm_limit || '—' }} TPM</span
+      >
+      <span class="runtime-item"
+        ><b>Key</b
+        >{{
+          runtimeConfig.api_key_configured ? `${runtimeConfig.api_key_count || 1} 个` : '未配置'
+        }}</span
+      >
+      <span class="runtime-item"
+        ><b>上传上限</b
+        >{{ Math.round((runtimeConfig.web?.max_upload_size || 0) / 1024 / 1024) || '—' }} MB</span
+      >
+      <span class="runtime-item"
+        ><b>访问保护</b>{{ runtimeConfig.web?.auth_enabled ? '已开启' : '未开启' }}</span
+      >
     </div>
 
     <div class="access-token-row" v-if="!runtimeConfig || runtimeConfig.web?.auth_enabled">
@@ -240,14 +271,10 @@ useStateEvents(applyState, {
       <button class="token-save" @click="saveAccessToken">保存</button>
     </div>
 
-    <BookUpload
-      :profiles="profiles"
-      @uploaded="handleUploaded"
-      @error="toastError"
-    />
+    <BookUpload :profiles="profiles" @uploaded="handleUploaded" @error="toastError" />
 
     <div v-if="loading" class="skeleton-card">
-      <div class="skeleton" style="height:200px"></div>
+      <div class="skeleton" style="height: 200px"></div>
     </div>
 
     <BookList
@@ -277,9 +304,19 @@ useStateEvents(applyState, {
 
 <style>
 /* Global layout */
-* { box-sizing: border-box; margin: 0; padding: 0; }
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
   line-height: 1.6;
   min-height: 100vh;
 }
@@ -300,7 +337,7 @@ header::before {
   right: -10%;
   width: 600px;
   height: 600px;
-  background: rgba(255,255,255,0.04);
+  background: rgba(255, 255, 255, 0.04);
   border-radius: 50%;
   pointer-events: none;
 }
@@ -313,8 +350,16 @@ header .container {
   position: relative;
   z-index: 1;
 }
-header h1 { font-size: 1.9rem; font-weight: 700; letter-spacing: -0.8px; }
-header p { margin: 6px 0 0; opacity: 0.85; font-size: 0.95rem; }
+header h1 {
+  font-size: 1.9rem;
+  font-weight: 700;
+  letter-spacing: -0.8px;
+}
+header p {
+  margin: 6px 0 0;
+  opacity: 0.85;
+  font-size: 0.95rem;
+}
 
 .header-actions {
   display: flex;
@@ -330,11 +375,13 @@ header p { margin: 6px 0 0; opacity: 0.85; font-size: 0.95rem; }
   border-radius: 999px;
   font-size: 0.78rem;
   font-weight: 600;
-  background: rgba(255,255,255,0.18);
+  background: rgba(255, 255, 255, 0.18);
   color: white;
   backdrop-filter: blur(4px);
 }
-.badge.ready { background: rgba(16,185,129,0.25); }
+.badge.ready {
+  background: rgba(16, 185, 129, 0.25);
+}
 
 .theme-toggle {
   display: inline-flex;
@@ -343,17 +390,21 @@ header p { margin: 6px 0 0; opacity: 0.85; font-size: 0.95rem; }
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: rgba(255,255,255,0.15);
+  background: rgba(255, 255, 255, 0.15);
   border: none;
   cursor: pointer;
   font-size: 1.1rem;
   color: white;
   transition: background 0.15s;
 }
-.theme-toggle:hover { background: rgba(255,255,255,0.25); }
+.theme-toggle:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
 
 /* Card wrap */
-.card-wrap { padding-bottom: 32px; }
+.card-wrap {
+  padding-bottom: 32px;
+}
 
 .runtime-strip {
   display: flex;
@@ -413,8 +464,14 @@ header p { margin: 6px 0 0; opacity: 0.85; font-size: 0.95rem; }
 }
 
 @media (max-width: 768px) {
-  header { padding: 28px 16px 40px; }
-  header h1 { font-size: 1.35rem; }
-  .access-token-row { align-items: stretch; }
+  header {
+    padding: 28px 16px 40px;
+  }
+  header h1 {
+    font-size: 1.35rem;
+  }
+  .access-token-row {
+    align-items: stretch;
+  }
 }
 </style>

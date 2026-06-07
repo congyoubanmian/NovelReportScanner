@@ -216,7 +216,7 @@ tbody tr:last-child td {
   transform: translateX(2px);
 }
 .file-list li a::before {
-  content: "📄";
+  content: '📄';
 }
 
 /* Detail panel */
@@ -333,7 +333,7 @@ select {
 }
 select:focus {
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px rgba(79,70,229,0.12);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
 }
 select:disabled {
   background: var(--bg-hover);
@@ -350,14 +350,23 @@ select:disabled {
   border: 1px solid var(--border-color);
 }
 .skeleton {
-  background: linear-gradient(90deg, var(--bg-skeleton) 25%, var(--bg-skeleton-shine) 50%, var(--bg-skeleton) 75%);
+  background: linear-gradient(
+    90deg,
+    var(--bg-skeleton) 25%,
+    var(--bg-skeleton-shine) 50%,
+    var(--bg-skeleton) 75%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
   border-radius: 8px;
 }
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /* Banner */
@@ -399,12 +408,24 @@ select:disabled {
   animation: slideIn 0.3s ease;
   max-width: 360px;
 }
-.toast.success { border-left: 4px solid var(--success); }
-.toast.error { border-left: 4px solid var(--danger); }
-.toast.info { border-left: 4px solid var(--info); }
+.toast.success {
+  border-left: 4px solid var(--success);
+}
+.toast.error {
+  border-left: 4px solid var(--danger);
+}
+.toast.info {
+  border-left: 4px solid var(--info);
+}
 @keyframes slideIn {
-  from { transform: translateX(100%); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 /* Theme toggle button */
@@ -415,7 +436,7 @@ select:disabled {
   width: 36px;
   height: 36px;
   border-radius: var(--radius-xs);
-  background: rgba(255,255,255,0.15);
+  background: rgba(255, 255, 255, 0.15);
   border: none;
   cursor: pointer;
   font-size: 1.1rem;
@@ -423,16 +444,34 @@ select:disabled {
   transition: background 0.15s;
 }
 .theme-toggle:hover {
-  background: rgba(255,255,255,0.25);
+  background: rgba(255, 255, 255, 0.25);
 }
 
 /* Responsive */
 @media (max-width: 768px) {
-  .container { padding: 0 16px; }
-  .card { padding: 18px; border-radius: 12px; }
-  th, td { padding: 10px 12px; }
-  .actions { justify-content: flex-start; }
-  .detail-meta { gap: 10px; }
-  .toast-container { left: 16px; right: 16px; bottom: 16px; }
-  .toast { max-width: 100%; }
+  .container {
+    padding: 0 16px;
+  }
+  .card {
+    padding: 18px;
+    border-radius: 12px;
+  }
+  th,
+  td {
+    padding: 10px 12px;
+  }
+  .actions {
+    justify-content: flex-start;
+  }
+  .detail-meta {
+    gap: 10px;
+  }
+  .toast-container {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+  }
+  .toast {
+    max-width: 100%;
+  }
 }
