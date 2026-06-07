@@ -29,6 +29,11 @@ TASK_QUEUE_IDS = set()
 WORKER_STARTED = False
 STATE = {"books": {}, "tasks": []}
 CONFIG_READY = False
+MAX_UPLOAD_SIZE = int(os.environ.get("MAX_UPLOAD_SIZE", str(100 * 1024 * 1024)))
+SYNC_BOOKS_TTL_SECONDS = float(os.environ.get("SYNC_BOOKS_TTL_SECONDS", "5"))
+OUTPUTS_CACHE_TTL_SECONDS = float(os.environ.get("OUTPUTS_CACHE_TTL_SECONDS", "5"))
+LAST_BOOK_SYNC_AT = 0.0
+OUTPUTS_CACHE = {}
 
 
 class _Tee:
@@ -102,6 +107,27 @@ def _safe_filename(name):
     return "".join(ch if ch not in '\\/:*?"<>|' else "_" for ch in base)
 
 
+def _save_upload_file(file_item, dest_path):
+    size = 0
+    try:
+        with open(dest_path, "wb") as f:
+            while True:
+                chunk = file_item.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > MAX_UPLOAD_SIZE:
+                    raise ValueError(f"file too large, max {MAX_UPLOAD_SIZE} bytes")
+                f.write(chunk)
+    except Exception:
+        try:
+            os.remove(dest_path)
+        except OSError:
+            pass
+        raise
+    return size
+
+
 def _load_state():
     global STATE
     path = _state_path()
@@ -118,9 +144,14 @@ def _load_state():
 
 
 def _save_state():
-    os.makedirs(os.path.dirname(_state_path()), exist_ok=True)
-    with open(_state_path(), "w", encoding="utf-8") as f:
+    path = _state_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp_path = f"{path}.{os.getpid()}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(STATE, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, path)
 
 
 def _recover_incomplete_tasks():
@@ -182,22 +213,29 @@ def _refresh_book_suggestions(book):
 
 
 def _sync_books_from_disk():
+    global LAST_BOOK_SYNC_AT
+    now = time.monotonic()
+    if LAST_BOOK_SYNC_AT and now - LAST_BOOK_SYNC_AT < SYNC_BOOKS_TTL_SECONDS:
+        return
+    discovered = []
+    for root, _dirs, files in os.walk(_novels_dir()):
+        for filename in files:
+            if not filename.lower().endswith(".txt"):
+                continue
+            path = os.path.join(root, filename)
+            discovered.append((path, _book_id_from_path(path)))
     with STATE_LOCK:
-        for root, _dirs, files in os.walk(_novels_dir()):
-            for filename in files:
-                if not filename.lower().endswith(".txt"):
-                    continue
-                path = os.path.join(root, filename)
-                book_id = _book_id_from_path(path)
-                entry = STATE["books"].setdefault(book_id, {})
-                entry.setdefault("id", book_id)
-                entry.setdefault("name", book_id)
-                entry["path"] = path
-                entry.setdefault("profile", "auto")
-                entry.setdefault("status", "idle")
-                entry.setdefault("created_at", time.strftime("%Y-%m-%d %H:%M:%S"))
-                _refresh_book_suggestions(entry)
+        for path, book_id in discovered:
+            entry = STATE["books"].setdefault(book_id, {})
+            entry.setdefault("id", book_id)
+            entry.setdefault("name", book_id)
+            entry["path"] = path
+            entry.setdefault("profile", "auto")
+            entry.setdefault("status", "idle")
+            entry.setdefault("created_at", time.strftime("%Y-%m-%d %H:%M:%S"))
+            _refresh_book_suggestions(entry)
         _save_state()
+        LAST_BOOK_SYNC_AT = now
 
 
 def _public_state():
@@ -300,9 +338,16 @@ def _checkpoint_report_outputs(book_id):
 
 
 def _find_book_outputs(book_id):
+    now = time.monotonic()
     results_dir = os.path.join(get_base_dir(), "results")
+    cache_key = (os.path.abspath(results_dir), book_id)
+    cached = OUTPUTS_CACHE.get(cache_key)
+    if cached and now - cached["time"] < OUTPUTS_CACHE_TTL_SECONDS:
+        return cached["outputs"]
+
     outputs_by_path = {}
     if not os.path.isdir(results_dir):
+        OUTPUTS_CACHE.pop(cache_key, None)
         return []
 
     for path in _checkpoint_report_outputs(book_id):
@@ -338,7 +383,12 @@ def _find_book_outputs(book_id):
 
     outputs = list(outputs_by_path.values())
     outputs.sort(key=lambda x: x.get("mtime", 0), reverse=True)
-    return outputs[:100]
+    outputs = outputs[:100]
+    if outputs:
+        OUTPUTS_CACHE[cache_key] = {"time": now, "outputs": outputs}
+    else:
+        OUTPUTS_CACHE.pop(cache_key, None)
+    return outputs
 
 
 def _book_detail(book_id):
@@ -609,6 +659,14 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
             return
         if parsed.path == "/upload":
+            try:
+                content_length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                self.send_error(400, "invalid content length")
+                return
+            if content_length > MAX_UPLOAD_SIZE + 1024 * 1024:
+                self.send_error(413, f"file too large, max {MAX_UPLOAD_SIZE} bytes")
+                return
             form = cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": self.headers.get("Content-Type")})
             file_item = form["file"] if "file" in form else None
             if file_item is None or not getattr(file_item, "filename", ""):
@@ -616,10 +674,14 @@ class Handler(BaseHTTPRequestHandler):
                 return
             filename = _safe_filename(file_item.filename)
             path = os.path.join(_novels_dir(), filename)
-            with open(path, "wb") as f:
-                f.write(file_item.file.read())
+            try:
+                uploaded_size = _save_upload_file(file_item, path)
+            except ValueError as exc:
+                self.send_error(413, str(exc))
+                return
             profile = _normalize_web_profile(form.getfirst("profile", "auto")) or "auto"
             book_id = _book_id_from_path(path)
+            OUTPUTS_CACHE.pop((os.path.abspath(os.path.join(get_base_dir(), "results")), book_id), None)
             suggestions = _profile_suggestions(path, book_id)
             with STATE_LOCK:
                 STATE["books"][book_id] = {
@@ -630,7 +692,7 @@ class Handler(BaseHTTPRequestHandler):
                     "profile_suggestions": suggestions,
                     "suggestion_signature": f"{os.path.getmtime(path)}:{os.path.getsize(path)}",
                     "status": "idle",
-                    "message": "已上传",
+                    "message": f"已上传（{uploaded_size} 字节）",
                     "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                 }
                 _save_state()

@@ -1,5 +1,6 @@
 .git
 .gitignore
+.dockerignore
 .env
 .env.*
 !.env.sample
@@ -14,3 +15,11 @@ novels/
 api.txt
 setting.txt
 *.log
+*.md
+tests/
+frontend/node_modules/
+frontend/dist/
+*.command
+*.bat
+*.tar
+*.tar.gz

@@ -3,7 +3,6 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import BookUpload from './components/BookUpload.vue'
 import BookList from './components/BookList.vue'
 import BookDetail from './components/BookDetail.vue'
-import StatusTag from './components/StatusTag.vue'
 import { getState, getBookDetail, setProfile, enqueueBook } from './api.js'
 
 const books = ref([])
@@ -80,13 +79,35 @@ async function handleUploaded() {
   await refresh()
 }
 
+function startPolling() {
+  if (timer || document.hidden) return
+  timer = setInterval(refresh, 3000)
+}
+
+function stopPolling() {
+  if (!timer) return
+  clearInterval(timer)
+  timer = null
+}
+
+function handleVisibilityChange() {
+  if (document.hidden) {
+    stopPolling()
+  } else {
+    refresh()
+    startPolling()
+  }
+}
+
 onMounted(() => {
   refresh()
-  timer = setInterval(refresh, 3000)
+  startPolling()
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
 onUnmounted(() => {
-  if (timer) clearInterval(timer)
+  stopPolling()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
 
@@ -108,7 +129,11 @@ onUnmounted(() => {
       <span>⚠️</span> API 配置未就绪：可以先上传和排队，但开始扫描前需要在 api.txt 中写入可用 API Key。
     </div>
 
-    <BookUpload :profiles="profiles" @uploaded="handleUploaded" />
+    <BookUpload
+      :profiles="profiles"
+      @uploaded="handleUploaded"
+      @error="showToast($event, 'error')"
+    />
 
     <div v-if="loading" class="skeleton-card">
       <div class="skeleton" style="height:200px"></div>

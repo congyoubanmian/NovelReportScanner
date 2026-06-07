@@ -1,12 +1,27 @@
 const API_BASE = ''
+const REQUEST_TIMEOUT_MS = 15000
 
 async function api(path, options = {}) {
-  const res = await fetch(`${API_BASE}${path}`, options)
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(text || `HTTP ${res.status}`)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      signal: options.signal || controller.signal
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(text || `HTTP ${res.status}`)
+    }
+    return res.json()
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      throw new Error('请求超时')
+    }
+    throw e
+  } finally {
+    clearTimeout(timeout)
   }
-  return res.json()
 }
 
 export function getState() {

@@ -5,10 +5,6 @@ import StatusTag from './StatusTag.vue'
 const props = defineProps({ books: Array, profiles: Array })
 const emit = defineEmits(['scan', 'detail', 'profileChange'])
 
-function profileOptions(selected) {
-  return props.profiles || []
-}
-
 function renderSuggestions(book) {
   const suggestions = book.profile_suggestions || []
   if (!suggestions.length) return null
@@ -26,6 +22,11 @@ function renderSuggestions(book) {
 function isBusy(book) {
   return book.status === 'queued' || book.status === 'running'
 }
+
+const displayBooks = computed(() => (props.books || []).map(book => ({
+  ...book,
+  suggestions: renderSuggestions(book) || []
+})))
 </script>
 
 <template>
@@ -52,7 +53,7 @@ function isBusy(book) {
               </div>
             </td>
           </tr>
-          <tr v-for="book in books" :key="book.id">
+          <tr v-for="book in displayBooks" :key="book.id">
             <td class="col-name">{{ book.name }}</td>
             <td>
               <select
@@ -66,9 +67,9 @@ function isBusy(book) {
               </select>
             </td>
             <td>
-              <div class="suggestion-chips" v-if="renderSuggestions(book)?.length">
+              <div class="suggestion-chips" v-if="book.suggestions.length">
                 <span
-                  v-for="(s, i) in renderSuggestions(book)"
+                  v-for="(s, i) in book.suggestions"
                   :key="i"
                   class="chip"
                   :title="s.title"

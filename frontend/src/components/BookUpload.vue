@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { uploadBook } from '../api.js'
 
 const props = defineProps({ profiles: Array })
-const emit = defineEmits(['uploaded'])
+const emit = defineEmits(['uploaded', 'error'])
 
 const file = ref(null)
 const profile = ref('auto')
@@ -33,7 +33,7 @@ async function submit() {
     file.value = null
     emit('uploaded')
   } catch (e) {
-    alert('上传失败: ' + e.message)
+    emit('error', '上传失败: ' + e.message)
   } finally {
     uploading.value = false
   }
