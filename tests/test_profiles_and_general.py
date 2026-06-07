@@ -933,6 +933,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "crime_forensics",
         )
         self.assertEqual(
+            analysis_profiles.infer_profile_for_text("禁毒卧底", "刑警卧底接近毒贩，依靠线人和专案组追捕内鬼，扫黑禁毒行动收网。"),
+            "crime_forensics",
+        )
+        self.assertEqual(
             analysis_profiles.infer_profile_for_text("同桌的你", "高中转学生和同桌参加月考竞赛，班主任关注高考压力。"),
             "campus_youth",
         )
@@ -1054,6 +1058,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertEqual(
             analysis_profiles.infer_profile_for_text(
+                "冷案追凶",
+                "调查组重启冷案，审讯室里核对凶器、弹道、指纹和DNA，最终让通缉凶手落网。",
+            ),
+            "crime_forensics",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
+                "法医档案",
+                "法医通过毒理、尸检和现场勘查还原作案过程，犯罪心理侧写锁定连环杀人嫌疑人。",
+            ),
+            "crime_forensics",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
                 "全职高手",
                 "电竞职业赛季开始，战队训练，季后赛决赛中选手完成翻盘。",
             ),
@@ -1085,6 +1103,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(apocalypse_keywords.get("幸存者"), 5)
         self.assertEqual(apocalypse_keywords.get("晶核"), 5)
         self.assertEqual(apocalypse_keywords.get("物资"), 4)
+
+        crime_keywords = dict(analysis_profiles._keywords_from_manifest("crime_forensics"))
+        self.assertEqual(crime_keywords.get("破案"), 5)
+        self.assertEqual(crime_keywords.get("侧写"), 5)
+        self.assertEqual(crime_keywords.get("禁毒"), 5)
+        self.assertEqual(crime_keywords.get("DNA"), 4)
 
         sports_keywords = dict(analysis_profiles._keywords_from_manifest("sports_competition"))
         self.assertEqual(sports_keywords.get("格斗"), 5)
