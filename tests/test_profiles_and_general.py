@@ -1022,6 +1022,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertEqual(
             analysis_profiles.infer_profile_for_text(
+                "模因收容档案",
+                "调查员窥视深渊，听见旧日呢喃后锚点失效，模因污染导致认知崩溃和失控。",
+            ),
+            "cosmic_horror",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
                 "大奉打更人探案",
                 "主角调查密室案件，通过线索、动机和诡计推理真相，没有法医程序。",
             ),
@@ -1034,6 +1041,32 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             ),
             "sports_competition",
         )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
+                "围棋冠军",
+                "围棋选手在世锦赛和亚运会连续比赛，逆风对决后刷新纪录夺得金牌。",
+            ),
+            "sports_competition",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
+                "格斗之王",
+                "拳击和格斗训练强调体能、技术动作、伤病管理，决赛最后一回合绝杀翻盘。",
+            ),
+            "sports_competition",
+        )
+
+        horror_keywords = dict(analysis_profiles._keywords_from_manifest("cosmic_horror"))
+        self.assertEqual(horror_keywords.get("扮演法"), 5)
+        self.assertEqual(horror_keywords.get("收容物"), 5)
+        self.assertEqual(horror_keywords.get("认知崩溃"), 5)
+        self.assertEqual(horror_keywords.get("理智"), 5)
+
+        sports_keywords = dict(analysis_profiles._keywords_from_manifest("sports_competition"))
+        self.assertEqual(sports_keywords.get("格斗"), 5)
+        self.assertEqual(sports_keywords.get("围棋"), 5)
+        self.assertEqual(sports_keywords.get("绝杀"), 4)
+        self.assertEqual(sports_keywords.get("训练"), 3)
         self.assertEqual(
             analysis_profiles.infer_profile_for_text(
                 "亏成首富从游戏开始",
