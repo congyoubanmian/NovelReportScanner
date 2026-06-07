@@ -5142,8 +5142,16 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "core_conflicts": ["冲突"],
                     "worldbuilding": ["设定"],
                     "themes": ["主题"],
+                    "characters": ["旧字段角色内容"],
+                    "pacing_emotion": ["旧字段节奏情绪内容"],
+                    "historical_accuracy": ["旧字段史实逻辑内容"],
+                    "political_structure": ["旧字段权力结构内容"],
+                    "war_intrigue": ["旧字段战争权谋内容"],
                     "foreshadowing": ["旧字段伏笔内容"],
                     "foreshadowing_and_payoff": ["伏笔"],
+                    "tech_chain": ["旧字段技术链内容"],
+                    "science_logic": ["旧字段科学逻辑内容"],
+                    "sense_of_wonder": ["旧字段科幻奇观内容"],
                     "tech_feasibility": ["标准字段技术内容"],
                     "technology_feasibility": ["标准字段技术内容", "同义旧字段技术内容"],
                     "strengths": ["优点"],
@@ -5161,7 +5169,18 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 rules_file="",
                 report_mode="general",
                 scan_focus=[],
-                summary_fields=["main_plot", "tech_plausibility"],
+                summary_fields=[
+                    "main_plot",
+                    "character_highlights",
+                    "pacing_and_emotion",
+                    "historical_logic",
+                    "power_structure",
+                    "warfare_and_intrigue",
+                    "technology_chain",
+                    "science_consistency",
+                    "scale_and_wonder",
+                    "tech_plausibility",
+                ],
                 harem_plus={},
                 cross_profile_rules={},
             )
@@ -5177,10 +5196,26 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             summary["tech_plausibility"],
             ["标准字段技术内容", "同义旧字段技术内容"],
         )
+        self.assertEqual(summary["character_highlights"], ["旧字段角色内容"])
+        self.assertEqual(summary["pacing_and_emotion"], ["旧字段节奏情绪内容"])
+        self.assertEqual(summary["historical_logic"], ["旧字段史实逻辑内容"])
+        self.assertEqual(summary["power_structure"], ["旧字段权力结构内容"])
+        self.assertEqual(summary["warfare_and_intrigue"], ["旧字段战争权谋内容"])
+        self.assertEqual(summary["technology_chain"], ["旧字段技术链内容"])
+        self.assertEqual(summary["science_consistency"], ["旧字段科学逻辑内容"])
+        self.assertEqual(summary["scale_and_wonder"], ["旧字段科幻奇观内容"])
         self.assertEqual(summary["foreshadowing_and_payoff"], ["伏笔", "旧字段伏笔内容"])
 
     def test_general_report_reads_summary_field_alias_values(self):
         self.assertEqual(report.summary_field_label("foreshadowing"), "伏笔与回收")
+        self.assertEqual(report.summary_field_label("characters"), "角色亮点")
+        self.assertEqual(report.summary_field_label("pacing_emotion"), "节奏与情绪曲线")
+        self.assertEqual(report.summary_field_label("historical_accuracy"), "历史制度与时代逻辑")
+        self.assertEqual(report.summary_field_label("political_structure"), "权力结构与派系")
+        self.assertEqual(report.summary_field_label("war_intrigue"), "战争与权谋")
+        self.assertEqual(report.summary_field_label("tech_chain"), "技术链与工程约束")
+        self.assertEqual(report.summary_field_label("science_logic"), "科学设定自洽性")
+        self.assertEqual(report.summary_field_label("sense_of_wonder"), "尺度感与科幻奇观")
         self.assertEqual(report.summary_field_label("power_system"), "异能/金手指体系")
         self.assertEqual(report.summary_field_label("humanity_and_morality"), "人性与道德困境")
         self.assertEqual(report.summary_field_label("tech_plausibility"), "技术可行性")
@@ -5236,6 +5271,48 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("旧字段案件结构内容", specialty_text)
         self.assertIn("【恋爱喜剧平衡】", specialty_text)
         self.assertIn("旧字段恋爱支线内容", specialty_text)
+
+        kimi_alias_text = report.build_general_report(
+            "Kimi旧字段别名测试",
+            {"male_protagonist": {"name": "男主"}, "all_female_characters": {}},
+            {
+                "profile_display_name": "历史科幻混合分析",
+                "summary_fields": [
+                    "character_highlights",
+                    "pacing_and_emotion",
+                    "historical_logic",
+                    "power_structure",
+                    "warfare_and_intrigue",
+                    "technology_chain",
+                    "science_consistency",
+                    "scale_and_wonder",
+                ],
+                "summary": {
+                    "story_overview": "Kimi旧字段概览",
+                    "characters": ["旧字段角色内容"],
+                    "pacing_emotion": ["旧字段节奏情绪内容"],
+                    "historical_accuracy": ["旧字段史实逻辑内容"],
+                    "political_structure": ["旧字段权力结构内容"],
+                    "war_intrigue": ["旧字段战争权谋内容"],
+                    "tech_chain": ["旧字段技术链内容"],
+                    "science_logic": ["旧字段科学逻辑内容"],
+                    "sense_of_wonder": ["旧字段科幻奇观内容"],
+                    "strengths": [],
+                    "risks_or_issues": [],
+                    "reader_fit": "读者",
+                    "overall_assessment": "评价",
+                },
+            },
+        )
+
+        self.assertIn("旧字段角色内容", kimi_alias_text)
+        self.assertIn("旧字段节奏情绪内容", kimi_alias_text)
+        self.assertIn("旧字段史实逻辑内容", kimi_alias_text)
+        self.assertIn("旧字段权力结构内容", kimi_alias_text)
+        self.assertIn("旧字段战争权谋内容", kimi_alias_text)
+        self.assertIn("旧字段技术链内容", kimi_alias_text)
+        self.assertIn("旧字段科学逻辑内容", kimi_alias_text)
+        self.assertIn("旧字段科幻奇观内容", kimi_alias_text)
 
         legacy_field_text = report.build_general_report(
             "旧请求字段别名测试",
