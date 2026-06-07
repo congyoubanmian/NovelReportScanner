@@ -2298,6 +2298,11 @@ def _male_past_romance_blob_is_nonfactual_or_negated(text: str) -> bool:
         "只是称呼", "只是个称呼", "只是外号", "只是绰号", "只是玩笑", "开玩笑",
         "玩笑称呼", "调侃称呼", "口头称呼",
     )
+    roleplay_or_setting_patterns = (
+        "剧本里", "剧本设定", "副本设定", "游戏设定", "系统设定", "角色设定",
+        "身份设定", "背景设定", "人设", "扮演", "假扮", "伪装成", "模拟",
+        "梦境副本", "幻境副本",
+    )
     nominal_relation_patterns = (
         "只是政治婚约", "仅是政治婚约", "只是名义婚约", "仅是名义婚约",
         "有名无实", "名义夫妻", "名义婚约",
@@ -2308,6 +2313,8 @@ def _male_past_romance_blob_is_nonfactual_or_negated(text: str) -> bool:
     if any(pattern in text for pattern in negated_patterns):
         return True
     if any(pattern in text for pattern in nickname_or_joke_patterns):
+        return True
+    if any(pattern in text for pattern in roleplay_or_setting_patterns):
         return True
     if any(pattern in text for pattern in nominal_relation_patterns):
         return True
