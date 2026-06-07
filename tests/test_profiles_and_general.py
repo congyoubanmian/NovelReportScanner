@@ -84,6 +84,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(urban_power.name, "urban_power")
         self.assertTrue(urban_power.uses_general_scan)
         self.assertIn("face_slapping_pacing", urban_power.summary_fields)
+        self.assertIn("golden_finger_system", urban_power.summary_fields)
+        self.assertNotIn("power_system", urban_power.summary_fields)
         self.assertIn("relationships", urban_power.summary_fields)
         self.assertIn("villain_quality", urban_power.summary_fields)
 
@@ -1454,6 +1456,21 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("案件结构", more_text)
         self.assertIn("证据链", more_text)
         self.assertIn("法医与侦查程序", more_text)
+
+        urban_summary = {
+            "profile_display_name": "都市异能/爽文专长分析",
+            "summary_fields": ["urban_setting", "golden_finger_system", "face_slapping_pacing"],
+            "summary": {
+                "story_overview": "都市神豪依靠系统打脸豪门。",
+                "urban_setting": ["豪门和公司构成主要现实场景"],
+                "golden_finger_system": ["系统、神豪和签到奖励构成升级逻辑"],
+                "face_slapping_pacing": ["压扬反转形成主要爽点"],
+            }
+        }
+        urban_text = report.build_general_report("测试书", {}, urban_summary)
+        self.assertIn("都市现实背景", urban_text)
+        self.assertIn("异能/金手指体系", urban_text)
+        self.assertIn("系统、神豪和签到奖励构成升级逻辑", urban_text)
 
         specialty_summary = {
             "profile_display_name": "西幻/蒸汽朋克/炼金工业专长分析",

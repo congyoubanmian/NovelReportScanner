@@ -1630,6 +1630,7 @@ def _append_general_scan_section(lines: list, general_summary: dict):
         "novelty_mechanics": "系统机制创新",
         "real_world_impact": "现实世界影响",
         "urban_setting": "都市现实背景",
+        "golden_finger_system": "异能/金手指体系",
         "power_system": "异能/金手指体系",
         "face_slapping_pacing": "装逼打脸节奏",
         "relationships": "关系线",
