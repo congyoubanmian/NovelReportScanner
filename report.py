@@ -1489,6 +1489,12 @@ def _strict_issue_evidence_review_hint(issue: dict) -> str:
     ntr_victim_hint = _strict_ntr_victim_only_review_hint(issue, text)
     if ntr_victim_hint:
         hints.append(ntr_victim_hint)
+    ntr_male_lead_expansion_hint = _strict_ntr_male_lead_expansion_review_hint(issue, text)
+    if ntr_male_lead_expansion_hint:
+        hints.append(ntr_male_lead_expansion_hint)
+    send_girl_to_male_lead_hint = _strict_send_girl_to_male_lead_review_hint(issue, text)
+    if send_girl_to_male_lead_hint:
+        hints.append(send_girl_to_male_lead_hint)
     nonfactual_markers = (
         "传闻", "传言", "流言", "谣言", "据说", "听说", "口嗨", "意淫", "误会", "误传",
         "梦境", "梦见", "梦到", "幻境", "弱暗示", "疑似", "嫌疑", "待复核", "待确认",
@@ -1546,6 +1552,37 @@ def _strict_ntr_victim_only_review_hint(issue: dict, text: str) -> str:
     if has_relationship_fact and not has_negated_relationship:
         return ""
     return "绿帽必须有明确暧昧/恋爱/性关系或实质情感背叛；当前证据更像强迫、调戏、绑走或未遂受害，应复核是否应降为亵女/虐女/NTR擦边。"
+
+
+def _strict_ntr_male_lead_expansion_review_hint(issue: dict, text: str) -> str:
+    issue_type = str((issue or {}).get("type") or "")
+    upper_type = issue_type.upper()
+    if "绿帽" not in issue_type and "NTR" not in upper_type and "牛头人" not in issue_type:
+        return ""
+    male_lead_relation_markers = (
+        "男主与", "男主和", "男主睡", "男主推倒", "男主收", "男主纳", "主角与", "主角和",
+        "主角睡", "主角推倒", "主角收", "主角纳",
+    )
+    female_relative_markers = ("闺蜜", "姐妹", "姐姐", "妹妹", "母亲", "妈妈", "娘亲", "女儿", "亲友", "侍女", "丫鬟")
+    if not any(marker in text for marker in male_lead_relation_markers):
+        return ""
+    if not any(marker in text for marker in female_relative_markers):
+        return ""
+    return "绿帽排除男主与女主亲友或其他女性发生关系；当前证据更像后宫扩张/推土机情节，需复核是否误标绿帽。"
+
+
+def _strict_send_girl_to_male_lead_review_hint(issue: dict, text: str) -> str:
+    issue_type = str((issue or {}).get("type") or "")
+    if "送女" not in issue_type:
+        return ""
+    to_male_lead_markers = (
+        "献给男主", "献给主角", "送给男主", "送给主角", "安排给男主", "安排给主角",
+        "交给男主", "交给主角", "嫁给男主", "嫁给主角", "收入后宫", "收进后宫",
+        "接收", "救下", "纳入后宫", "纳为妾", "纳妾",
+    )
+    if not any(marker in text for marker in to_male_lead_markers):
+        return ""
+    return "送女排除配角/家族/反派把女性献给男主或男主接收女性；当前证据更像收女/献女/后宫扩张，需复核是否误标送女。"
 
 
 def _annotate_issue_for_report(issue: dict, heroine_contexts: list) -> dict:

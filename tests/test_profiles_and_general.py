@@ -4446,6 +4446,50 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(factual_ntr_issue["heroine_position_context"], "强女=强准女主")
         self.assertNotIn("definition_review_hint", factual_ntr_issue)
 
+        male_lead_expansion_issue = report._annotate_issue_for_report(
+            {"type": "绿帽", "content": "男主与强女的闺蜜发生关系，强女吃醋。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(male_lead_expansion_issue["heroine_position_context"], "强女=强准女主")
+        self.assertIn("绿帽排除男主与女主亲友或其他女性发生关系", male_lead_expansion_issue["definition_review_hint"])
+        self.assertIn("后宫扩张/推土机情节", male_lead_expansion_issue["definition_review_hint"])
+
+        sent_to_male_lead_issue = report._annotate_issue_for_report(
+            {"type": "送女", "content": "配角把强女献给男主，男主接收强女入后宫。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(sent_to_male_lead_issue["heroine_position_context"], "强女=强准女主")
+        self.assertIn("送女排除配角/家族/反派把女性献给男主", sent_to_male_lead_issue["definition_review_hint"])
+        self.assertIn("收女/献女/后宫扩张", sent_to_male_lead_issue["definition_review_hint"])
+
+        active_send_to_other_issue = report._annotate_issue_for_report(
+            {"type": "送女", "content": "男主主动把强女送给路人男。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(active_send_to_other_issue["heroine_position_context"], "强女=强准女主")
+        self.assertNotIn("definition_review_hint", active_send_to_other_issue)
+
         edge_issue = report._annotate_issue_for_report(
             {"type": "绿帽擦边", "content": "弱女差点被反派绑走。"},
             contexts,
