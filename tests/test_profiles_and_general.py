@@ -1647,6 +1647,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                             "partner_exempted_for_clean": True,
                             "partner_exemption_reason": "原著前夫：forced=true，has_feelings=false",
                             "past_life_clean": False,
+                            "past_life_severity": "partner",
+                            "past_life_severity_label": "前世/原故事线伴侣或婚约风险",
                             "past_life_status": "前世/原故事线存在风险线索",
                             "past_life_reason": "原故事线里曾被安排嫁给非男主。",
                             "contact_level": "L2",
@@ -1671,6 +1673,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("男主前史情感雷点", text)
         self.assertIn("前妻/前女友/前世婚恋", text)
         self.assertIn("前世洁度", text)
+        self.assertIn("前世风险等级", text)
+        self.assertIn("partner（前世/原故事线伴侣或婚约风险）", text)
         self.assertIn("原故事线存在风险线索", text)
         self.assertIn("partner豁免", text)
         self.assertIn("原著前夫：forced=true，has_feelings=false", text)
@@ -1706,9 +1710,25 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         none = novel_reviewer._derive_past_life_cleanliness({}, "当前线没有前史。")
 
         self.assertFalse(risky["past_life_clean"])
+        self.assertEqual(risky["past_life_severity"], "partner")
         self.assertIn("风险线索", risky["past_life_status"])
         self.assertTrue(clean["past_life_clean"])
+        self.assertEqual(clean["past_life_severity"], "clean")
         self.assertIsNone(none["past_life_clean"])
+        self.assertEqual(none["past_life_severity"], "none")
+
+        severe = novel_reviewer._derive_past_life_cleanliness(
+            {"sexual_relations": [{"partner": "反派", "is_male_lead": False, "evidence": "前世她被反派强暴侵犯。"}]},
+            "",
+        )
+        sexual = novel_reviewer._derive_past_life_cleanliness(
+            {"sexual_relations": [{"partner": "前夫", "is_male_lead": False, "evidence": "原故事线里她与前夫圆房。"}]},
+            "",
+        )
+        romantic = novel_reviewer._derive_past_life_cleanliness({}, "上一世她喜欢过别的男人但没有关系。")
+        self.assertEqual(severe["past_life_severity"], "severe")
+        self.assertEqual(sexual["past_life_severity"], "sexual")
+        self.assertEqual(romantic["past_life_severity"], "romantic")
 
     def test_reviewer_derives_contact_level(self):
         level0 = novel_reviewer._derive_contact_level({}, "男主")

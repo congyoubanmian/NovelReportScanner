@@ -683,6 +683,8 @@ def build_purity_map(reviewer: dict) -> dict:
             "partner_exemption_notes": item.get("partner_exemption_notes", []),
             "partner_exemption_reason": item.get("partner_exemption_reason", ""),
             "past_life_clean": item.get("past_life_clean"),
+            "past_life_severity": item.get("past_life_severity", ""),
+            "past_life_severity_label": item.get("past_life_severity_label", ""),
             "past_life_status": item.get("past_life_status", ""),
             "past_life_reason": item.get("past_life_reason", ""),
             "contact_level": item.get("contact_level", ""),
@@ -1406,6 +1408,8 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
         rule_spirit_reason = (p.get("rule_spirit_reason") or "").strip() if p else ""
         partner_exempted = bool(p.get("partner_exempted_for_clean", False)) if p else False
         partner_exemption_reason = (p.get("partner_exemption_reason") or "").strip() if p else ""
+        past_life_severity = (p.get("past_life_severity") or "none") if p else "none"
+        past_life_severity_label = (p.get("past_life_severity_label") or "") if p else ""
         past_life_status = (p.get("past_life_status") or "未见前世/原故事线洁度线索") if p else "未见前世/原故事线洁度线索"
         past_life_reason = (p.get("past_life_reason") or "").strip() if p else ""
         contact_level = (p.get("contact_level") or "L0") if p else "L0"
@@ -1426,6 +1430,7 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
             f"接触等级：{contact_level}（{contact_level_label}）",
             f"接触等级说明：{contact_level_reason or empty_text}",
             f"前世洁度：{past_life_status}",
+            f"前世风险等级：{past_life_severity}（{past_life_severity_label or empty_text}）",
             f"前世洁度说明：{past_life_reason or empty_text}",
             f"\u8eab\u4efd\uff1a{prof.get('identity') or missing_desc}",
             f"\u4e0e\u7537\u4e3b\u5173\u7cfb\uff1a{prof.get('relationship_with_protagonist') or missing_desc}",

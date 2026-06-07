@@ -602,24 +602,50 @@ def _derive_past_life_cleanliness(facts: Dict[str, Any], summary: str = "") -> D
     if not any(marker in blob for marker in past_markers):
         return {
             "past_life_clean": None,
+            "past_life_severity": "none",
+            "past_life_severity_label": "无前世/原故事线线索",
             "past_life_status": "未见前世/原故事线洁度线索",
             "past_life_reason": "现有事实未出现前世、原故事线、轮回或穿越前婚恋/接触证据。",
         }
 
-    risk_markers = (
-        "非男主", "前夫", "丈夫", "男友", "恋人", "未婚夫", "嫁给", "成婚",
-        "同房", "圆房", "失身", "破身", "怀孕", "孩子", "爱过", "喜欢过",
-        "被迫", "强迫", "侵犯", "万人骑", "背叛",
-    )
-    has_risk = any(marker in blob for marker in risk_markers)
-    if has_risk:
+    severe_markers = ("万人骑", "轮奸", "群交", "多人", "强奸", "强暴", "侵犯", "洗脑", "雌堕", "背叛")
+    sexual_markers = ("同房", "圆房", "失身", "破身", "怀孕", "生下", "孩子", "性关系")
+    partner_markers = ("前夫", "丈夫", "男友", "恋人", "未婚夫", "嫁给", "成婚", "结婚", "婚约")
+    romantic_markers = ("爱过", "喜欢过", "动心", "恋慕", "暗恋")
+    forced_markers = ("被迫", "强迫", "逼婚", "包办", "受害")
+    non_ml_markers = ("非男主", "其他男人", "别的男人", "他人")
+
+    if any(marker in blob for marker in severe_markers):
+        severity = "severe"
+        severity_label = "严重前世雷点/受害风险"
+    elif any(marker in blob for marker in sexual_markers):
+        severity = "sexual"
+        severity_label = "前世/原故事线性关系或子女风险"
+    elif any(marker in blob for marker in partner_markers):
+        severity = "partner"
+        severity_label = "前世/原故事线伴侣或婚约风险"
+    elif any(marker in blob for marker in romantic_markers):
+        severity = "romantic"
+        severity_label = "前世/原故事线情感经历风险"
+    elif any(marker in blob for marker in forced_markers) and any(marker in blob for marker in non_ml_markers):
+        severity = "forced"
+        severity_label = "前世/原故事线被迫关系风险"
+    else:
+        severity = "clean"
+        severity_label = "前世/原故事线未见不洁事实"
+
+    if severity != "clean":
         return {
             "past_life_clean": False,
+            "past_life_severity": severity,
+            "past_life_severity_label": severity_label,
             "past_life_status": "前世/原故事线存在风险线索",
-            "past_life_reason": "现有事实出现前世/原故事线相关的非男主婚恋、身体接触、情感或受害线索，需单独提示。",
+            "past_life_reason": f"现有事实出现前世/原故事线相关线索：{severity_label}，需单独提示。",
         }
     return {
         "past_life_clean": True,
+        "past_life_severity": "clean",
+        "past_life_severity_label": "前世/原故事线未见不洁事实",
         "past_life_status": "前世/原故事线未见不洁事实",
         "past_life_reason": "虽出现前世/原故事线线索，但未见明确非男主婚恋、身体接触、情感或受害事实。",
     }
@@ -7573,6 +7599,8 @@ def judge_purity_by_llm_stepwise(
         "partner_exemption_notes": partner_exemption_notes,
         "partner_exemption_reason": partner_exemption_reason,
         "past_life_clean": past_life.get("past_life_clean"),
+        "past_life_severity": past_life.get("past_life_severity"),
+        "past_life_severity_label": past_life.get("past_life_severity_label"),
         "past_life_status": past_life.get("past_life_status"),
         "past_life_reason": past_life.get("past_life_reason"),
         "contact_level": contact_level.get("contact_level"),
@@ -7729,6 +7757,8 @@ def judge_character_purity_llm(name, evidence_list, male_lead):
   "is_spirit_clean": true/false,     // 精神是否洁
   "spirit_status": "简短结论",        // 精神状态说明
   "past_life_clean": true/false/null, // 前世/原故事线洁度；无相关线索用 null
+  "past_life_severity": "none/clean/romantic/partner/sexual/forced/severe", // 前世/原故事线风险等级
+  "past_life_severity_label": "简短等级说明",
   "past_life_status": "简短结论",      // 如"未见前世线索""前世有前夫风险"
   "past_life_reason": "简短理由",      // 单独说明前世/原故事线/轮回/穿越前婚恋或接触线索
   "contact_level": "L0/L1/L2/L3/L4/L5", // 非男主接触等级，无接触为L0
@@ -7791,6 +7821,8 @@ def judge_character_purity_llm(name, evidence_list, male_lead):
         "is_spirit_clean": True,
         "spirit_status": "❓ 未知",
         "past_life_clean": None,
+        "past_life_severity": "none",
+        "past_life_severity_label": "无前世/原故事线线索",
         "past_life_status": "未见前世/原故事线洁度线索",
         "past_life_reason": "API调用失败，未能判断前世/原故事线洁度。",
         "contact_level": "L0",
@@ -8645,6 +8677,8 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
             "partner_exemption_notes": info.get("partner_exemption_notes", []),
             "partner_exemption_reason": info.get("partner_exemption_reason", ""),
             "past_life_clean": info.get("past_life_clean"),
+            "past_life_severity": info.get("past_life_severity"),
+            "past_life_severity_label": info.get("past_life_severity_label"),
             "past_life_status": info.get("past_life_status", "未见前世/原故事线洁度线索"),
             "past_life_reason": info.get("past_life_reason", ""),
             "contact_level": info.get("contact_level", "L0"),
