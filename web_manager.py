@@ -330,6 +330,14 @@ def _is_safe_public_file(path):
     return any(ap == root or ap.startswith(root + os.sep) for root in allowed) and os.path.isfile(ap)
 
 
+def _is_safe_novel_file(path):
+    if not path:
+        return False
+    root = os.path.abspath(_novels_dir())
+    ap = os.path.abspath(path)
+    return (ap == root or ap.startswith(root + os.sep)) and os.path.isfile(ap)
+
+
 def _file_link(path):
     if not _is_safe_public_file(path):
         return None
@@ -527,6 +535,31 @@ def _cancel_queued_book(book_id):
         TASK_QUEUE_IDS.discard(task_id)
         _save_state()
     return True, task_id
+
+
+def _delete_book(book_id):
+    with STATE_LOCK:
+        book = STATE["books"].get(book_id)
+        if not book:
+            return False, "book not found"
+        if book.get("status") in {"queued", "running"}:
+            return False, "book is queued or running"
+        path = book.get("path")
+        if not _is_safe_novel_file(path):
+            return False, "novel file is not allowed"
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            return False, str(exc)
+        STATE["books"].pop(book_id, None)
+        for task in STATE.get("tasks", []):
+            if task.get("book_id") == book_id:
+                task["book_deleted"] = True
+        _invalidate_book_outputs(book_id)
+        _save_state()
+    return True, book_id
 
 
 def _find_task(task_id):
@@ -790,6 +823,12 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
             ok, result = _cancel_queued_book(payload.get("book_id"))
+            self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
+            return
+        if parsed.path == "/api/delete":
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+            ok, result = _delete_book(payload.get("book_id"))
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
             return
         if parsed.path == "/upload":

@@ -1685,6 +1685,70 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         finally:
             web_manager.STATE = old_state
 
+    def test_web_manager_delete_book_removes_novel_and_state(self):
+        old_state = web_manager.STATE
+        old_base_dir = web_manager.get_base_dir
+        old_cache = dict(web_manager.OUTPUTS_CACHE)
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                novels_dir = os.path.join(tmp, "novels")
+                results_dir = os.path.join(tmp, "results")
+                os.makedirs(novels_dir, exist_ok=True)
+                os.makedirs(results_dir, exist_ok=True)
+                novel_path = os.path.join(novels_dir, "book.txt")
+                with open(novel_path, "w", encoding="utf-8") as f:
+                    f.write("正文")
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.OUTPUTS_CACHE[web_manager._outputs_cache_key("book")] = {"time": time.monotonic(), "outputs": []}
+                web_manager.STATE = {
+                    "books": {"book": {"id": "book", "name": "book", "path": novel_path, "profile": "general", "status": "idle"}},
+                    "tasks": [{"id": "task", "book_id": "book", "status": "completed"}],
+                }
+
+                ok, result = web_manager._delete_book("book")
+
+                self.assertTrue(ok)
+                self.assertEqual(result, "book")
+                self.assertFalse(os.path.exists(novel_path))
+                self.assertNotIn("book", web_manager.STATE["books"])
+                self.assertTrue(web_manager.STATE["tasks"][0]["book_deleted"])
+                self.assertNotIn(web_manager._outputs_cache_key("book"), web_manager.OUTPUTS_CACHE)
+        finally:
+            web_manager.STATE = old_state
+            web_manager.get_base_dir = old_base_dir
+            web_manager.OUTPUTS_CACHE.clear()
+            web_manager.OUTPUTS_CACHE.update(old_cache)
+
+    def test_web_manager_delete_book_rejects_busy_or_external_path(self):
+        old_state = web_manager.STATE
+        old_base_dir = web_manager.get_base_dir
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                novels_dir = os.path.join(tmp, "novels")
+                os.makedirs(novels_dir, exist_ok=True)
+                safe_path = os.path.join(novels_dir, "busy.txt")
+                outside_path = os.path.join(tmp, "outside.txt")
+                with open(safe_path, "w", encoding="utf-8") as f:
+                    f.write("忙碌")
+                with open(outside_path, "w", encoding="utf-8") as f:
+                    f.write("外部")
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.STATE = {
+                    "books": {
+                        "queued": {"id": "queued", "name": "queued", "path": safe_path, "profile": "general", "status": "queued"},
+                        "external": {"id": "external", "name": "external", "path": outside_path, "profile": "general", "status": "idle"},
+                    },
+                    "tasks": [],
+                }
+
+                self.assertEqual(web_manager._delete_book("queued"), (False, "book is queued or running"))
+                self.assertEqual(web_manager._delete_book("external"), (False, "novel file is not allowed"))
+                self.assertTrue(os.path.exists(safe_path))
+                self.assertTrue(os.path.exists(outside_path))
+        finally:
+            web_manager.STATE = old_state
+            web_manager.get_base_dir = old_base_dir
+
     def test_web_manager_finds_dynamic_profile_outputs(self):
         results_dir = os.path.join(main.get_base_dir(), "results")
         os.makedirs(results_dir, exist_ok=True)

@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import StatusTag from './StatusTag.vue'
 
 const props = defineProps({ books: Array, profiles: Array })
-const emit = defineEmits(['scan', 'batchScan', 'cancel', 'detail', 'profileChange'])
+const emit = defineEmits(['scan', 'batchScan', 'cancel', 'delete', 'detail', 'profileChange'])
 const selectedIds = ref([])
 
 const manualProfiles = computed(() => (props.profiles || []).filter(p => p.name !== 'auto'))
@@ -86,6 +86,12 @@ function emitBatchScan() {
   if (!ids.length) return
   emit('batchScan', ids)
   selectedIds.value = []
+}
+
+function confirmDelete(book) {
+  if (isBusy(book)) return
+  if (!window.confirm(`确定删除《${book.name}》吗？这会删除上传的小说文件，历史报告会保留。`)) return
+  emit('delete', book.id)
 }
 </script>
 
@@ -193,6 +199,11 @@ function emitBatchScan() {
                   class="btn btn-sm btn-secondary"
                   @click="emit('detail', book.id)"
                 >详情</button>
+                <button
+                  class="btn btn-sm btn-danger"
+                  @click="confirmDelete(book)"
+                  :disabled="isBusy(book)"
+                >删除</button>
               </div>
             </td>
           </tr>
