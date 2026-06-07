@@ -3744,6 +3744,26 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("结局交代=未明", generic)
         self.assertIn("关系确认=有", confirmed)
 
+    def test_leak_three_layers_ignores_nonfactual_death_or_tomb_endings(self):
+        dream_or_setting = report._summarize_leak_three_layers(
+            {},
+            {
+                "relationship_with_protagonist": "与男主暧昧并喜欢男主。",
+                "key_events": "男主梦见她死亡，醒来后发现只是幻境；她负责讲解墓葬制度和坟墓结构。",
+            },
+        )
+        accounted = report._summarize_leak_three_layers(
+            {},
+            {
+                "relationship_with_protagonist": "与男主暧昧并喜欢男主。",
+                "key_events": "结局她战死牺牲，葬在宗门后山。",
+            },
+        )
+
+        self.assertIn("结局交代=未明", dream_or_setting)
+        self.assertIn("结论=需关注", dream_or_setting)
+        self.assertIn("结局交代=有", accounted)
+
     def test_leak_three_layers_requires_specific_concubine_terms(self):
         generic = report._summarize_leak_three_layers(
             {},
