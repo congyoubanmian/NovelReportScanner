@@ -1033,6 +1033,30 @@ def _contains_positive_signal_text(value, keywords) -> bool:
     return False
 
 
+def _has_positive_leak_relationship_confirmation(text: str) -> bool:
+    return _contains_positive_signal_text(
+        text,
+        [
+            "推倒", "同房", "双修", "成婚", "成亲", "完婚", "大婚", "纳妾",
+            "妾室", "小妾", "为妾", "收妾", "通房", "侧室", "道侣", "恋人",
+            "情侣", "伴侣", "确认关系", "收入后宫", "收进后宫", "在一起",
+        ],
+    )
+
+
+def _has_positive_leak_ending_account(text: str) -> bool:
+    return _contains_positive_signal_text(
+        text,
+        [
+            "归宿明确", "去向明确", "留在", "留下", "陪在", "跟随", "同行",
+            "同去", "回到", "去了", "相伴", "在一起", "白头", "团聚", "重逢",
+            "成婚", "成亲", "完婚", "大婚", "同居", "同房", "怀孕", "生下",
+            "后宫", "道侣", "伴侣", "妻子", "妾室", "死亡", "死去", "牺牲",
+            "陨落", "葬", "坟", "墓",
+        ],
+    )
+
+
 def _has_positive_heroine_position_signal(text: str) -> bool:
     text = str(text or "")
     if not text:
@@ -1398,14 +1422,8 @@ def _summarize_leak_three_layers(purity_info: dict, profile: dict) -> str:
     )
     pushed = purity_info.get("pushed_by_male_lead")
     leak = purity_info.get("is_leak_heroine")
-    has_relationship_confirmed = bool(pushed) or _contains_any_text(
-        profile_text,
-        ["推倒", "同房", "双修", "成婚", "纳妾", "妾室", "小妾", "为妾", "收妾", "通房", "侧室", "道侣", "恋人", "确认关系", "收入后宫"],
-    )
-    has_ending_note = _contains_any_text(
-        profile_text,
-        ["结局", "最终", "最后", "归宿", "留在", "成婚", "同居", "后宫", "道侣"],
-    )
+    has_relationship_confirmed = bool(pushed) or _has_positive_leak_relationship_confirmation(profile_text)
+    has_ending_note = _has_positive_leak_ending_account(profile_text)
 
     if leak is True:
         verdict = "疑似漏女"

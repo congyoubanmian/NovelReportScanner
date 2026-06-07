@@ -3632,6 +3632,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("情感深度=未明", clean)
         self.assertIn("结论=证据不足", clean)
         self.assertIn("情感深度=有", risky)
+        self.assertIn("结局交代=未明", risky)
         self.assertIn("结论=需关注", risky)
         self.assertIn("情感深度=未明", promise_only)
         self.assertIn("结论=证据不足", promise_only)
@@ -3655,6 +3656,27 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("关系确认=未明", generic)
         self.assertIn("结论=需关注", generic)
         self.assertIn("关系确认=有", confirmed)
+
+    def test_leak_three_layers_ignores_negated_relationship_and_ending_terms(self):
+        negated = report._summarize_leak_three_layers(
+            {},
+            {
+                "relationship_with_protagonist": "与男主暧昧并喜欢男主，但尚未成婚，也没有确认关系。",
+                "key_events": "结局未交代归宿，最终没有留在男主身边。",
+            },
+        )
+        accounted = report._summarize_leak_three_layers(
+            {},
+            {
+                "relationship_with_protagonist": "与男主暧昧并喜欢男主。",
+                "key_events": "番外多年后留在男主身边，与他相伴余生。",
+            },
+        )
+
+        self.assertIn("关系确认=未明", negated)
+        self.assertIn("结局交代=未明", negated)
+        self.assertIn("结论=需关注", negated)
+        self.assertIn("结局交代=有", accounted)
 
     def test_harem_report_adds_heroine_context_to_issue_lines(self):
         old_openai = report.OpenAI
