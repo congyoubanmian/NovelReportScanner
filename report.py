@@ -1214,7 +1214,15 @@ def _is_generic_heroine_anchor_name(name: str) -> bool:
     if not text:
         return True
     normalized = _heroine_name_key(text)
-    return text in _GENERIC_HEROINE_ANCHOR_NAMES or normalized in _GENERIC_HEROINE_ANCHOR_NAMES
+    if text in _GENERIC_HEROINE_ANCHOR_NAMES or normalized in _GENERIC_HEROINE_ANCHOR_NAMES:
+        return True
+    generic_title_suffixes = ("公主", "王妃", "皇后", "贵妃", "妃子", "圣女", "修女", "女仆", "侍女", "丫鬟", "丫环")
+    generic_title_prefixes = ("帝国", "王国", "王室", "皇室", "教会", "皇帝", "国王", "某国", "邻国", "异国", "敌国")
+    return (
+        2 < len(text) <= 6
+        and any(text.endswith(suffix) for suffix in generic_title_suffixes)
+        and any(text.startswith(prefix) for prefix in generic_title_prefixes)
+    )
 
 
 def _is_valid_issue_heroine_anchor_alias(alias: str) -> bool:
@@ -1415,6 +1423,8 @@ def _build_heroine_position_contexts(
             continue
         name = str(h.get("name") or "").strip()
         if not name:
+            continue
+        if _is_generic_heroine_anchor_name(name):
             continue
         aliases = [
             str(x).strip()

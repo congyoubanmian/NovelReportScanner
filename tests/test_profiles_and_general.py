@@ -5008,6 +5008,31 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertEqual(named_contexts[0]["aliases"], ["琪雅"])
 
+        title_contexts = report._build_heroine_position_contexts(
+            [{"name": "帝国公主", "importance_rank": 1}],
+            {
+                "帝国公主": {
+                    "count": 6,
+                    "profile_for_report": {
+                        "identity": "王室成员",
+                        "relationship_with_protagonist": "未描述",
+                        "features": "政治联姻称号",
+                    },
+                }
+            },
+            {"帝国公主": {"identity": "王室成员"}},
+            {},
+        )
+        self.assertEqual(title_contexts, [])
+
+        named_with_title_alias = report._build_heroine_position_contexts(
+            [{"name": "琪雅", "aliases": ["帝国公主"], "importance_rank": 1}],
+            {"琪雅": {"count": 6, "profile_for_report": {"identity": "主线女主"}}},
+            {"琪雅": {"identity": "主线女主"}},
+            {},
+        )
+        self.assertEqual(named_with_title_alias[0]["aliases"], ["琪雅"])
+
     def test_reviewer_derives_past_life_cleanliness(self):
         risky = novel_reviewer._derive_past_life_cleanliness(
             {
