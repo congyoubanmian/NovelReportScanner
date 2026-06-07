@@ -403,6 +403,70 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("名场面", sports_text)
         self.assertIn("科技树", farming_text)
 
+    def test_urban_campus_entertainment_and_business_rules_include_kimi_categories(self):
+        rule_paths = {
+            "urban_power": os.path.join("profiles", "urban_power", "rules.json"),
+            "campus_youth": os.path.join("profiles", "campus_youth", "rules.json"),
+            "entertainment_industry": os.path.join("profiles", "entertainment_industry", "rules.json"),
+            "business_career": os.path.join("profiles", "business_career", "rules.json"),
+        }
+        rules = {}
+        for name, path in rule_paths.items():
+            with open(path, "r", encoding="utf-8") as f:
+                rules[name] = json.load(f)
+
+        urban_points = {
+            point["name"]
+            for category in rules["urban_power"]["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertIn("升级机制", urban_points)
+        self.assertIn("压扬循环", urban_points)
+        self.assertIn("势力层级", urban_points)
+        self.assertIn("女性角色与感情模式", urban_points)
+
+        campus_categories = {item["name"] for item in rules["campus_youth"]["categories"]}
+        campus_points = {
+            point["name"]
+            for category in rules["campus_youth"]["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertIn("时代与亚文化", campus_categories)
+        self.assertIn("重生校园", campus_points)
+        self.assertIn("毕业过渡", campus_points)
+        self.assertIn("网络文化", campus_points)
+
+        entertainment_points = {
+            point["name"]
+            for category in rules["entertainment_industry"]["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertIn("IP改编", entertainment_points)
+        self.assertIn("选秀练习生", entertainment_points)
+        self.assertIn("网红短视频", entertainment_points)
+        self.assertIn("CP营业", entertainment_points)
+        self.assertIn("艺人日常", entertainment_points)
+
+        business_points = {
+            point["name"]
+            for category in rules["business_career"]["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertIn("产品与用户", business_points)
+        self.assertIn("技术路线", business_points)
+        self.assertIn("供应链产业链", business_points)
+        self.assertIn("办公室政治", business_points)
+        self.assertIn("主角专业度", business_points)
+
+        urban_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("urban_power"))
+        campus_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("campus_youth"))
+        entertainment_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("entertainment_industry"))
+        business_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("business_career"))
+        self.assertIn("升级机制", urban_text)
+        self.assertIn("网络文化", campus_text)
+        self.assertIn("选秀练习生", entertainment_text)
+        self.assertIn("供应链", business_text)
+
     def test_harem_rules_include_kimi_expansions_without_losing_locks(self):
         rules_path = os.path.join("profiles", "harem", "rules.json")
         with open(rules_path, "r", encoding="utf-8") as f:
