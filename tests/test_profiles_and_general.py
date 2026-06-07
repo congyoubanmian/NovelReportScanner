@@ -1338,6 +1338,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "尾声里丁女不知去了哪里，男主独自离开江湖。",
             "结局中丁女去向未知，再无音讯。",
             "多年后众人不知道丁女的去处，只偶尔提起她。",
+            "尾声里男主梦见丁女死亡，醒来后发现只是幻境。",
+            "结局传闻丁女战死，但后来证实是假消息。",
+            "尾声里丁女讨论墓葬制度，并未交代归宿。",
         ]
         for tail in negated_tails:
             with self.subTest(tail=tail):
