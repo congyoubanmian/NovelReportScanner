@@ -3605,6 +3605,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(report._contains_positive_signal_text("她性格活泼可爱，是搞笑担当。", ["爱"]))
         self.assertFalse(report._contains_positive_signal_text("她爱吃点心，经常提供笑料。", ["爱"]))
         self.assertTrue(report._contains_positive_signal_text("她爱男主，并主动告白。", ["爱"]))
+        self.assertTrue(report._contains_positive_signal_text("她是男主未婚妻，双方感情稳定。", ["未婚妻"]))
+        self.assertFalse(report._contains_positive_signal_text("她尚未成为男主妻子。", ["妻子"]))
 
     def test_leak_three_layers_ignores_non_romantic_love_words(self):
         clean = report._summarize_leak_three_layers(
@@ -3677,6 +3679,19 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("结局交代=未明", negated)
         self.assertIn("结论=需关注", negated)
         self.assertIn("结局交代=有", accounted)
+
+    def test_leak_three_layers_treats_fiancee_as_positive_signal(self):
+        fiancee = report._summarize_leak_three_layers(
+            {},
+            {
+                "relationship_with_protagonist": "男主未婚妻，双方感情稳定。",
+                "key_events": "结局未交代归宿。",
+            },
+        )
+
+        self.assertIn("情感深度=有", fiancee)
+        self.assertIn("关系确认=有", fiancee)
+        self.assertIn("结局交代=未明", fiancee)
 
     def test_harem_report_adds_heroine_context_to_issue_lines(self):
         old_openai = report.OpenAI
