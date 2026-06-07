@@ -777,6 +777,71 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             ["general"],
         )
 
+    def test_kimi_recommended_auto_profile_boundary_samples(self):
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
+                "诡秘之主",
+                "序列魔药扮演法带来精神污染，主角面对旧日和外神，理智值不断下降。",
+            ),
+            "cosmic_horror",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
+                "规则怪谈：我能完美利用规则",
+                "规则怪谈要求遵守规则，违反规则会被收容物追杀，SAN值下降。",
+            ),
+            "cosmic_horror",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
+                "大奉打更人探案",
+                "主角调查密室案件，通过线索、动机和诡计推理真相，没有法医程序。",
+            ),
+            "mystery_detective",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
+                "全职高手",
+                "电竞职业赛季开始，战队训练，季后赛决赛中选手完成翻盘。",
+            ),
+            "sports_competition",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
+                "亏成首富从游戏开始",
+                "主角经营公司，打造产品和工厂，围绕产业链、供应链、利润与用户口碑扩张。",
+            ),
+            "farming_management",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
+                "修真聊天群",
+                "修士聊天群里讨论金丹元婴、宗门功法和求道长生，没有经营灵田或基建。",
+            ),
+            "xianxia_fantasy",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
+                "娱乐公司资本运作",
+                "经纪公司安排明星通告、剧组片场、热搜公关和选秀出道，处理粉丝对家。",
+            ),
+            "entertainment_industry",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
+                "纯商战",
+                "创业公司CEO和合伙人融资，董事会讨论股权、上市、现金流、供应链和竞业协议。",
+            ),
+            "business_career",
+        )
+
+        mixed = analysis_profiles.infer_profiles_for_text(
+            "修仙种田聊天群",
+            "修士聊天群里讨论金丹元婴，也长期经营灵田药园和宗门产业链。",
+        )
+        self.assertIn("xianxia_fantasy", mixed)
+        self.assertIn("farming_management", mixed)
+
     def test_merge_profile_results_preserves_all_profiles(self):
         result = main._merge_profile_results(
             "book",
