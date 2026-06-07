@@ -59,6 +59,10 @@ _PROFILE_ORDER = {
     "game_system": 70,
     "urban_power": 80,
     "military_war": 90,
+    "apocalypse_survival": 100,
+    "cosmic_horror": 110,
+    "sports_competition": 120,
+    "entertainment_industry": 130,
 }
 
 
@@ -118,6 +122,24 @@ def normalize_profile_name(value: str) -> str:
         "军事": "military_war",
         "战争": "military_war",
         "军事战争": "military_war",
+        "末世": "apocalypse_survival",
+        "末日": "apocalypse_survival",
+        "灾变": "apocalypse_survival",
+        "生存": "apocalypse_survival",
+        "末世生存": "apocalypse_survival",
+        "克苏鲁": "cosmic_horror",
+        "诡秘": "cosmic_horror",
+        "怪谈": "cosmic_horror",
+        "诡异": "cosmic_horror",
+        "克系": "cosmic_horror",
+        "体育": "sports_competition",
+        "竞技": "sports_competition",
+        "体育竞技": "sports_competition",
+        "电竞": "sports_competition",
+        "娱乐圈": "entertainment_industry",
+        "文娱": "entertainment_industry",
+        "明星": "entertainment_industry",
+        "娱乐文": "entertainment_industry",
     }
     return aliases.get(name, name)
 

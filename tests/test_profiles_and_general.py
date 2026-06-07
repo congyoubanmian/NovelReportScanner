@@ -21,6 +21,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         game_system = analysis_profiles.load_analysis_profile("无限流")
         urban_power = analysis_profiles.load_analysis_profile("都市异能")
         military_war = analysis_profiles.load_analysis_profile("军事战争")
+        apocalypse_survival = analysis_profiles.load_analysis_profile("末世生存")
+        cosmic_horror = analysis_profiles.load_analysis_profile("克苏鲁")
+        sports_competition = analysis_profiles.load_analysis_profile("体育竞技")
+        entertainment_industry = analysis_profiles.load_analysis_profile("文娱")
 
         self.assertEqual(harem.name, "harem")
         self.assertTrue(harem.uses_harem_reviewer)
@@ -58,6 +62,22 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(military_war.uses_general_scan)
         self.assertIn("logistics_and_cost", military_war.summary_fields)
 
+        self.assertEqual(apocalypse_survival.name, "apocalypse_survival")
+        self.assertTrue(apocalypse_survival.uses_general_scan)
+        self.assertIn("survival_resources", apocalypse_survival.summary_fields)
+
+        self.assertEqual(cosmic_horror.name, "cosmic_horror")
+        self.assertTrue(cosmic_horror.uses_general_scan)
+        self.assertIn("anomaly_rules", cosmic_horror.summary_fields)
+
+        self.assertEqual(sports_competition.name, "sports_competition")
+        self.assertTrue(sports_competition.uses_general_scan)
+        self.assertIn("tactical_matchups", sports_competition.summary_fields)
+
+        self.assertEqual(entertainment_industry.name, "entertainment_industry")
+        self.assertTrue(entertainment_industry.uses_general_scan)
+        self.assertIn("public_opinion", entertainment_industry.summary_fields)
+
         self.assertEqual(analysis_profiles.resolve_profile_name("自动"), "auto")
 
     def test_profile_options_are_discovered(self):
@@ -74,6 +94,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("game_system", names)
         self.assertIn("urban_power", names)
         self.assertIn("military_war", names)
+        self.assertIn("apocalypse_survival", names)
+        self.assertIn("cosmic_horror", names)
+        self.assertIn("sports_competition", names)
+        self.assertIn("entertainment_industry", names)
 
     def test_auto_profile_inference(self):
         self.assertEqual(
@@ -109,6 +133,22 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "military_war",
         )
         self.assertEqual(
+            analysis_profiles.infer_profile_for_text("末世安全区", "丧尸病毒爆发后，幸存者搜集物资并建设避难所。"),
+            "apocalypse_survival",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("诡秘档案", "调查员追查克苏鲁仪式，理智受到污染，怪谈规则逐步显露。"),
+            "cosmic_horror",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("冠军教练", "足球俱乐部在联赛决赛中调整战术，球员训练后夺得冠军。"),
+            "sports_competition",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("顶流归来", "娱乐圈顶流进剧组拍戏，经纪人处理热搜黑粉和公关危机。"),
+            "entertainment_industry",
+        )
+        self.assertEqual(
             analysis_profiles.infer_profile_for_text("小镇旧事", "他回到故乡，重新面对童年的朋友。"),
             "general",
         )
@@ -134,6 +174,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("history", profiles)
         self.assertIn("harem", profiles)
         self.assertIn("hard_sci_fi", profiles)
+
+        crossed = analysis_profiles.infer_profiles_for_text(
+            "末世诡秘娱乐圈",
+            "丧尸病毒爆发后，顶流在避难所拍摄综艺，调查员发现克苏鲁仪式和污染规则。",
+        )
+        self.assertIn("apocalypse_survival", crossed)
+        self.assertIn("cosmic_horror", crossed)
+        self.assertIn("entertainment_industry", crossed)
 
         self.assertEqual(
             analysis_profiles.infer_profiles_for_text("小镇旧事", "他回到故乡，重新面对童年的朋友。"),
@@ -384,6 +432,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("系统规则", text)
         self.assertIn("副本/关卡设计", text)
         self.assertIn("系统面板稳定展示属性和技能", text)
+
+        extra_summary = {
+            "profile_display_name": "末世/灾变/生存专长分析",
+            "summary_fields": ["main_plot", "apocalypse_cause", "survival_resources"],
+            "summary": {
+                "story_overview": "灾变爆发后主角搜集物资建立避难所。",
+                "apocalypse_cause": ["病毒感染引发尸潮"],
+                "survival_resources": ["食物、药品和燃料形成主要压力"],
+            }
+        }
+        extra_text = report.build_general_report("测试书", {}, extra_summary)
+        self.assertIn("灾变成因与机制", extra_text)
+        self.assertIn("生存资源", extra_text)
+        self.assertIn("病毒感染引发尸潮", extra_text)
 
     def test_report_suffix_distinguishes_general_specialties(self):
         general = analysis_profiles.load_analysis_profile("general")

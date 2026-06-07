@@ -1,0 +1,44 @@
+{
+  "display_name": "娱乐圈/文娱专长分析",
+  "description": "关注作品创作、资源博弈、舆论营销、人设经营和事业成长线。",
+  "enabled_stages": ["character_analysis", "general_scan", "general_report"],
+  "rules_file": "rules.json",
+  "report_mode": "general",
+  "scan_focus": [
+    "影视、音乐、综艺、网文、直播或游戏等文娱赛道",
+    "剧本、歌曲、演技、导演、制作和作品质量",
+    "经纪公司、资本、平台、奖项、资源置换和合同风险",
+    "粉丝、黑粉、热搜、公关、营销和舆论反转",
+    "事业爽点、人设经营、塌房风险和行业现实逻辑"
+  ],
+  "summary_fields": [
+    "main_plot",
+    "core_conflicts",
+    "worldbuilding",
+    "creative_works",
+    "industry_resources",
+    "public_opinion",
+    "career_growth",
+    "strengths",
+    "risks_or_issues",
+    "reader_fit",
+    "overall_assessment"
+  ],
+  "inference_keywords": [
+    {"word": "娱乐圈", "weight": 5},
+    {"word": "影帝", "weight": 4},
+    {"word": "影后", "weight": 4},
+    {"word": "导演", "weight": 3},
+    {"word": "剧组", "weight": 4},
+    {"word": "经纪人", "weight": 4},
+    {"word": "综艺", "weight": 4},
+    {"word": "热搜", "weight": 4},
+    {"word": "粉丝", "weight": 3},
+    {"word": "黑粉", "weight": 3},
+    {"word": "公关", "weight": 3},
+    {"word": "票房", "weight": 4},
+    {"word": "专辑", "weight": 4},
+    {"word": "顶流", "weight": 4},
+    {"word": "塌房", "weight": 4}
+  ]
+}

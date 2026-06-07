@@ -1150,6 +1150,22 @@ def _append_general_scan_section(lines: list, general_summary: dict):
         "tactics_and_operations": "战术与行动",
         "logistics_and_cost": "后勤与战争代价",
         "command_structure": "指挥链与组织",
+        "apocalypse_cause": "灾变成因与机制",
+        "survival_resources": "生存资源",
+        "threat_escalation": "威胁升级",
+        "shelter_and_order": "据点与秩序",
+        "anomaly_rules": "异常规则",
+        "investigation_clues": "调查线索",
+        "sanity_and_corruption": "理智与污染代价",
+        "horror_atmosphere": "恐怖氛围",
+        "competition_rules": "竞技规则",
+        "training_progression": "训练成长",
+        "tactical_matchups": "战术对局",
+        "career_and_team": "职业线与团队",
+        "creative_works": "作品创作",
+        "industry_resources": "行业资源",
+        "public_opinion": "舆论经营",
+        "career_growth": "事业成长",
     }
 
     def add_list(title, items):

@@ -1,0 +1,44 @@
+{
+  "display_name": "末世/灾变/生存专长分析",
+  "description": "关注灾变成因、生存资源、秩序崩塌、避难组织和危机升级是否自洽。",
+  "enabled_stages": ["character_analysis", "general_scan", "general_report"],
+  "rules_file": "rules.json",
+  "report_mode": "general",
+  "scan_focus": [
+    "灾变类型、成因、传播机制和升级路径",
+    "食物、药品、武器、能源、避难所等生存资源",
+    "团队分工、据点建设、社会秩序和外部势力",
+    "丧尸、怪物、病毒、天灾或末日环境的威胁强度",
+    "主角能力、金手指、道德选择与生存代价"
+  ],
+  "summary_fields": [
+    "main_plot",
+    "core_conflicts",
+    "worldbuilding",
+    "apocalypse_cause",
+    "survival_resources",
+    "threat_escalation",
+    "shelter_and_order",
+    "strengths",
+    "risks_or_issues",
+    "reader_fit",
+    "overall_assessment"
+  ],
+  "inference_keywords": [
+    {"word": "末世", "weight": 5},
+    {"word": "末日", "weight": 5},
+    {"word": "灾变", "weight": 5},
+    {"word": "丧尸", "weight": 5},
+    {"word": "尸潮", "weight": 4},
+    {"word": "病毒", "weight": 3},
+    {"word": "感染", "weight": 3},
+    {"word": "避难所", "weight": 4},
+    {"word": "庇护所", "weight": 4},
+    {"word": "物资", "weight": 3},
+    {"word": "求生", "weight": 3},
+    {"word": "天灾", "weight": 3},
+    {"word": "基地车", "weight": 3},
+    {"word": "安全区", "weight": 3},
+    {"word": "变异兽", "weight": 3}
+  ]
+}
