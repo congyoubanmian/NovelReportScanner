@@ -8,6 +8,7 @@ from shared_utils import get_base_dir, read_file_safely
 
 DEFAULT_PROFILE = "harem"
 AUTO_PROFILE = "auto"
+AUTO_PROFILE_MIN_SCORE = 6
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,10 @@ _PROFILE_ORDER = {
     "history": 30,
     "hard_sci_fi": 40,
     "xianxia_fantasy": 50,
+    "mystery_detective": 60,
+    "game_system": 70,
+    "urban_power": 80,
+    "military_war": 90,
 }
 
 
@@ -98,6 +103,21 @@ def normalize_profile_name(value: str) -> str:
         "玄幻": "xianxia_fantasy",
         "修仙": "xianxia_fantasy",
         "仙侠玄幻": "xianxia_fantasy",
+        "悬疑": "mystery_detective",
+        "推理": "mystery_detective",
+        "侦探": "mystery_detective",
+        "悬疑推理": "mystery_detective",
+        "游戏": "game_system",
+        "系统": "game_system",
+        "无限流": "game_system",
+        "游戏系统": "game_system",
+        "都市": "urban_power",
+        "都市异能": "urban_power",
+        "都市爽文": "urban_power",
+        "爽文": "urban_power",
+        "军事": "military_war",
+        "战争": "military_war",
+        "军事战争": "military_war",
     }
     return aliases.get(name, name)
 
@@ -299,7 +319,7 @@ def _read_text_prefix_safely(path: str, char_limit: int = 20000) -> str:
 def infer_profile_for_text(title: str, text: str) -> str:
     candidates = infer_profile_candidates_for_text(title, text, min_score=1)
     best = candidates[0] if candidates else {"name": "general", "score": 0}
-    if best["name"] != "general" and best["score"] >= 6:
+    if best["name"] != "general" and best["score"] >= AUTO_PROFILE_MIN_SCORE:
         return best["name"]
     return "general"
 
@@ -307,6 +327,24 @@ def infer_profile_for_text(title: str, text: str) -> str:
 def infer_profile_for_novel(novel_path: str, book_name: str = "") -> str:
     candidates = infer_profile_candidates_for_novel(novel_path, book_name, min_score=1)
     best = candidates[0] if candidates else {"name": "general", "score": 0}
-    if best["name"] != "general" and best["score"] >= 6:
+    if best["name"] != "general" and best["score"] >= AUTO_PROFILE_MIN_SCORE:
         return best["name"]
     return "general"
+
+
+def infer_profiles_for_text(title: str, text: str, min_score: int = AUTO_PROFILE_MIN_SCORE) -> List[str]:
+    names = [
+        item["name"]
+        for item in infer_profile_candidates_for_text(title, text, min_score=1)
+        if item.get("name") != "general" and int(item.get("score") or 0) >= min_score
+    ]
+    return names or ["general"]
+
+
+def infer_profiles_for_novel(novel_path: str, book_name: str = "", min_score: int = AUTO_PROFILE_MIN_SCORE) -> List[str]:
+    try:
+        text = _read_text_prefix_safely(novel_path, char_limit=20000)
+    except Exception:
+        text = ""
+    title = book_name or os.path.splitext(os.path.basename(novel_path))[0]
+    return infer_profiles_for_text(title, text, min_score=min_score)

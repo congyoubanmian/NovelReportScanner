@@ -1,0 +1,49 @@
+{
+  "name": "military_war",
+  "display_name": "军事/战争专长分析",
+  "description": "在通用小说分析基础上，重点检查战略目标、战术执行、后勤补给、兵制装备、指挥链和战争代价。",
+  "enabled_stages": [
+    "character_analysis",
+    "general_scan",
+    "general_report"
+  ],
+  "rules_file": "rules.json",
+  "report_mode": "general",
+  "scan_focus": [
+    "战争目标、政治目的、战略态势和胜负条件是否清晰",
+    "战术行动、兵种配合、火力/阵型/地形使用是否合理",
+    "后勤、补给、通信、医疗、士气和战损是否被纳入叙事",
+    "兵制、装备、训练、军纪、指挥链和情报体系是否自洽",
+    "主角军事决策、将领能力、部队成长和战争代价",
+    "常见风险：神兵天降、后勤消失、战损无感、地图混乱、敌军降智"
+  ],
+  "summary_fields": [
+    "main_plot",
+    "core_conflicts",
+    "worldbuilding",
+    "strategy_logic",
+    "tactics_and_operations",
+    "logistics_and_cost",
+    "command_structure",
+    "strengths",
+    "risks_or_issues"
+  ],
+  "inference_keywords": [
+    {"word": "战争", "weight": 5},
+    {"word": "军队", "weight": 4},
+    {"word": "士兵", "weight": 3},
+    {"word": "将军", "weight": 3},
+    {"word": "战役", "weight": 5},
+    {"word": "战术", "weight": 4},
+    {"word": "战略", "weight": 4},
+    {"word": "后勤", "weight": 5},
+    {"word": "补给", "weight": 4},
+    {"word": "火炮", "weight": 4},
+    {"word": "舰队", "weight": 4},
+    {"word": "坦克", "weight": 4},
+    {"word": "阵地", "weight": 3},
+    {"word": "骑兵", "weight": 3},
+    {"word": "步兵", "weight": 3},
+    {"word": "军团", "weight": 4}
+  ]
+}

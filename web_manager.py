@@ -15,12 +15,12 @@ import sys
 
 from analysis_profiles import (
     infer_profile_candidates_for_novel,
-    infer_profile_for_novel,
+    infer_profiles_for_novel,
     list_available_profiles,
     normalize_profile_name,
     profile_options,
 )
-from main import _generate_run_id, get_base_dir, load_configs, process_single_novel
+from main import _generate_run_id, get_base_dir, load_configs, process_novel_with_profiles
 
 
 STATE_LOCK = threading.RLock()
@@ -183,7 +183,7 @@ def _book_id_from_path(path):
 
 def _profile_suggestions(path, book_name):
     try:
-        return infer_profile_candidates_for_novel(path, book_name, min_score=1)[:4]
+        return infer_profile_candidates_for_novel(path, book_name, min_score=1)[:8]
     except Exception as exc:
         return [{"name": "general", "display_name": "通用小说分析", "score": 0, "confidence": 1.0, "matched_keywords": [], "error": str(exc)}]
 
@@ -479,15 +479,17 @@ def _worker_loop():
                     if profile_name == "auto":
                         suggestions = infer_profile_candidates_for_novel(book["path"], book.get("name", ""), min_score=1)
                         task["profile_suggestions"] = suggestions
-                        profile_name = infer_profile_for_novel(book["path"], book.get("name", ""))
-                        task["resolved_profile"] = profile_name
-                    result = process_single_novel(book["path"], profile_name=profile_name, run_id=_generate_run_id(), skip_fresh=True)
+                        resolved_profiles = infer_profiles_for_novel(book["path"], book.get("name", ""))
+                        task["resolved_profiles"] = resolved_profiles
+                        task["resolved_profile"] = "、".join(resolved_profiles)
+                    result = process_novel_with_profiles(book["path"], profile_name=profile_name, run_id=_generate_run_id(), skip_fresh=True)
             with STATE_LOCK:
                 task["status"] = "completed" if result.get("status") in {"ok", "skipped"} else "failed"
                 task["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
                 task["result"] = result
                 book["status"] = task["status"]
                 book["active_profile"] = result.get("profile", profile_name)
+                book["active_profiles"] = result.get("profiles") or [result.get("profile", profile_name)]
                 book["profile_suggestions"] = task.get("profile_suggestions", book.get("profile_suggestions", []))
                 book["message"] = "完成" if task["status"] == "completed" else result.get("error", "失败")
                 _save_state()

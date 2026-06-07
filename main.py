@@ -425,6 +425,43 @@ def process_single_novel(novel_path, profile_name=None, run_id=None, skip_fresh=
     return {"status": status, "book_name": book_name, "profile": active_profile.name, "error": error}
 
 
+def _merge_profile_results(book_name, results):
+    statuses = [result.get("status") for result in results if isinstance(result, dict)]
+    if statuses and all(status == "skipped" for status in statuses):
+        status = "skipped"
+    elif statuses and all(status in {"ok", "skipped"} for status in statuses):
+        status = "ok"
+    else:
+        status = "fail"
+    profiles = [result.get("profile") for result in results if result.get("profile")]
+    errors = [result.get("error") for result in results if result.get("error")]
+    return {
+        "status": status,
+        "book_name": book_name,
+        "profile": profiles[0] if profiles else "",
+        "profiles": profiles,
+        "results": results,
+        "error": "；".join(errors),
+    }
+
+
+def process_novel_with_profiles(novel_path, profile_name=None, run_id=None, skip_fresh=True):
+    from analysis_profiles import AUTO_PROFILE, infer_profiles_for_novel, normalize_profile_name
+
+    requested = normalize_profile_name(profile_name or os.environ.get("ANALYSIS_PROFILE"))
+    book_name = os.path.splitext(os.path.basename(novel_path))[0]
+    if requested != AUTO_PROFILE:
+        return process_single_novel(novel_path, profile_name=requested, run_id=run_id, skip_fresh=skip_fresh)
+
+    profiles = infer_profiles_for_novel(novel_path, book_name)
+    print(f"自动识别命中 {len(profiles)} 个分类: {', '.join(profiles)}")
+    results = []
+    for profile in profiles:
+        profile_run_id = run_id or _generate_run_id()
+        results.append(process_single_novel(novel_path, profile_name=profile, run_id=profile_run_id, skip_fresh=skip_fresh))
+    return _merge_profile_results(book_name, results)
+
+
 def run():
     base_dir = get_base_dir()
     run_id = _generate_run_id()
@@ -458,8 +495,8 @@ def run():
         print(f"扫描 novels 目录下所有 txt，共 {total} 本，分析模式：{profile.display_name} ({profile.name})")
     print("  1) protagonist.py   - 角色识别")
     if requested_profile_name == AUTO_PROFILE:
-        print("  2) 自动选择 harem/general/history/hard_sci_fi 后执行对应扫描")
-        print("  3) report.py        - 生成对应报告")
+        print("  2) 自动识别一个或多个分类后分别执行对应扫描")
+        print("  3) report.py        - 分别生成对应报告")
     elif profile.uses_harem_reviewer:
         print("  2) novel_scan.py    - 后宫/排雷深度扫描")
         print("  3) novel_reviewer.py - 后宫毒点二审与洁度鉴定")
@@ -472,7 +509,7 @@ def run():
     for novel_path in novel_files:
         book_name = os.path.splitext(os.path.basename(novel_path))[0]
         time.sleep(5)
-        result = process_single_novel(novel_path, profile_name=requested_profile_name, run_id=run_id, skip_fresh=True)
+        result = process_novel_with_profiles(novel_path, profile_name=requested_profile_name, run_id=run_id, skip_fresh=True)
         if result.get("status") == "skipped":
             skipped += 1
         elif result.get("status") == "ok":

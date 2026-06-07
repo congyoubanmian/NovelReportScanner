@@ -274,6 +274,19 @@ def sanitize_book_key(key: str) -> str:
     return re.sub(r"[^\w\-\.\u4e00-\u9fa5]+", "_", key)
 
 
+def sanitize_filename_part(value: str) -> str:
+    text = str(value or "").strip()
+    return re.sub(r'[\\/:*?"<>|\s]+', "_", text).strip("_") or "报告"
+
+
+def report_suffix_for_profile(profile) -> str:
+    if profile.report_mode != "general":
+        return "扫书报告"
+    if profile.name == "general":
+        return "通用小说报告"
+    return f"{sanitize_filename_part(profile.display_name)}报告"
+
+
 def format_book_title_for_filename(book_key: str) -> str:
     """
     生成用于文件名展示的“书名标题”：
@@ -1121,6 +1134,22 @@ def _append_general_scan_section(lines: list, general_summary: dict):
         "power_scaling": "战力层级",
         "faction_structure": "势力结构",
         "upgrade_pacing": "升级节奏",
+        "mystery_setup": "谜题设置",
+        "clue_fairness": "线索公平性",
+        "trick_logic": "诡计与逻辑",
+        "reveal_and_payoff": "真相揭示与回收",
+        "system_rules": "系统规则",
+        "progression_balance": "成长与数值平衡",
+        "instance_design": "副本/关卡设计",
+        "reward_and_cost": "奖励与代价",
+        "urban_setting": "都市现实背景",
+        "power_system": "异能/金手指体系",
+        "face_slapping_pacing": "装逼打脸节奏",
+        "realism_risks": "现实逻辑风险",
+        "strategy_logic": "战略逻辑",
+        "tactics_and_operations": "战术与行动",
+        "logistics_and_cost": "后勤与战争代价",
+        "command_structure": "指挥链与组织",
     }
 
     def add_list(title, items):
@@ -1381,7 +1410,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         # 兼容旧命名和新命名
         title_for_file = format_book_title_for_filename(book_key)
         title_wrapped = f"《{book_key}》" if book_key else ""
-        report_suffix = "通用小说报告" if profile.report_mode == "general" else "扫书报告"
+        report_suffix = report_suffix_for_profile(profile)
         patterns = [
             os.path.join(RESULTS_DIR, f"AGGREGATED_REPORT_{book_key_safe}_*.txt"),
             # 旧：总是外层包《》
@@ -1411,7 +1440,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     if book_key:
         # 新命名： <书名>扫书报告_时间戳.txt（避免《《书名》...》双层括号）
         title_for_file = format_book_title_for_filename(book_key)
-        suffix = "通用小说报告" if profile.report_mode == "general" else "扫书报告"
+        suffix = report_suffix_for_profile(profile)
         out_file = os.path.join(RESULTS_DIR, f"{title_for_file}{suffix}_{ts}.txt")
     else:
         out_file = os.path.join(RESULTS_DIR, f"AGGREGATED_REPORT_{ts}.txt")

@@ -1,0 +1,49 @@
+{
+  "name": "game_system",
+  "display_name": "游戏/系统/无限流专长分析",
+  "description": "在通用小说分析基础上，重点检查系统规则、副本机制、数值成长、奖励惩罚、任务约束和无限流关卡设计。",
+  "enabled_stages": [
+    "character_analysis",
+    "general_scan",
+    "general_report"
+  ],
+  "rules_file": "rules.json",
+  "report_mode": "general",
+  "scan_focus": [
+    "系统、面板、任务、技能、属性和奖励机制是否稳定",
+    "副本、关卡、轮回、无限世界和游戏规则是否清晰",
+    "数值成长、装备掉落、技能组合和资源消耗是否平衡",
+    "任务惩罚、失败代价、隐藏规则和玩家行为边界",
+    "主角外挂、系统偏爱、信息差和规则利用是否影响爽点",
+    "常见风险：规则临时改写、数值崩坏、副本重复、奖励通胀、无代价开挂"
+  ],
+  "summary_fields": [
+    "main_plot",
+    "core_conflicts",
+    "worldbuilding",
+    "system_rules",
+    "progression_balance",
+    "instance_design",
+    "reward_and_cost",
+    "strengths",
+    "risks_or_issues"
+  ],
+  "inference_keywords": [
+    {"word": "系统", "weight": 5},
+    {"word": "面板", "weight": 5},
+    {"word": "属性", "weight": 3},
+    {"word": "技能", "weight": 3},
+    {"word": "任务", "weight": 3},
+    {"word": "奖励", "weight": 3},
+    {"word": "副本", "weight": 5},
+    {"word": "无限流", "weight": 5},
+    {"word": "轮回", "weight": 4},
+    {"word": "玩家", "weight": 4},
+    {"word": "游戏", "weight": 4},
+    {"word": "等级", "weight": 3},
+    {"word": "经验值", "weight": 4},
+    {"word": "装备", "weight": 3},
+    {"word": "主神", "weight": 4},
+    {"word": "天赋", "weight": 3}
+  ]
+}

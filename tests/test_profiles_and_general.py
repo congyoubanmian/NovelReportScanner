@@ -17,6 +17,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         history = analysis_profiles.load_analysis_profile("历史")
         hard_sci_fi = analysis_profiles.load_analysis_profile("硬科幻")
         xianxia_fantasy = analysis_profiles.load_analysis_profile("仙侠")
+        mystery_detective = analysis_profiles.load_analysis_profile("悬疑推理")
+        game_system = analysis_profiles.load_analysis_profile("无限流")
+        urban_power = analysis_profiles.load_analysis_profile("都市异能")
+        military_war = analysis_profiles.load_analysis_profile("军事战争")
 
         self.assertEqual(harem.name, "harem")
         self.assertTrue(harem.uses_harem_reviewer)
@@ -38,6 +42,22 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(xianxia_fantasy.uses_general_scan)
         self.assertIn("cultivation_system", xianxia_fantasy.summary_fields)
 
+        self.assertEqual(mystery_detective.name, "mystery_detective")
+        self.assertTrue(mystery_detective.uses_general_scan)
+        self.assertIn("clue_fairness", mystery_detective.summary_fields)
+
+        self.assertEqual(game_system.name, "game_system")
+        self.assertTrue(game_system.uses_general_scan)
+        self.assertIn("system_rules", game_system.summary_fields)
+
+        self.assertEqual(urban_power.name, "urban_power")
+        self.assertTrue(urban_power.uses_general_scan)
+        self.assertIn("face_slapping_pacing", urban_power.summary_fields)
+
+        self.assertEqual(military_war.name, "military_war")
+        self.assertTrue(military_war.uses_general_scan)
+        self.assertIn("logistics_and_cost", military_war.summary_fields)
+
         self.assertEqual(analysis_profiles.resolve_profile_name("自动"), "auto")
 
     def test_profile_options_are_discovered(self):
@@ -50,6 +70,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("history", names)
         self.assertIn("hard_sci_fi", names)
         self.assertIn("xianxia_fantasy", names)
+        self.assertIn("mystery_detective", names)
+        self.assertIn("game_system", names)
+        self.assertIn("urban_power", names)
+        self.assertIn("military_war", names)
 
     def test_auto_profile_inference(self):
         self.assertEqual(
@@ -69,6 +93,22 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "xianxia_fantasy",
         )
         self.assertEqual(
+            analysis_profiles.infer_profile_for_text("密室谋杀", "侦探调查案件，嫌疑人没有不在场证明，线索指向真正凶手。"),
+            "mystery_detective",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("无限副本", "主神发布任务，玩家查看系统面板、技能和装备奖励。"),
+            "game_system",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("都市神医", "赘婿神医在豪门集团商战中扮猪吃虎，连续打脸反派。"),
+            "urban_power",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("钢铁战役", "将军调度军团步兵火炮，依靠后勤补给完成战略包围。"),
+            "military_war",
+        )
+        self.assertEqual(
             analysis_profiles.infer_profile_for_text("小镇旧事", "他回到故乡，重新面对童年的朋友。"),
             "general",
         )
@@ -84,6 +124,34 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("harem", names)
         self.assertGreater(candidates[0]["score"], 0)
         self.assertTrue(candidates[0]["matched_keywords"])
+
+    def test_auto_profile_multi_label_inference(self):
+        profiles = analysis_profiles.infer_profiles_for_text(
+            "大明星际后宫",
+            "皇帝与朝廷在庙堂争论边军粮饷，男主和道侣双修，又驾驶星舰启动曲率引擎穿过虫洞。",
+        )
+
+        self.assertIn("history", profiles)
+        self.assertIn("harem", profiles)
+        self.assertIn("hard_sci_fi", profiles)
+
+        self.assertEqual(
+            analysis_profiles.infer_profiles_for_text("小镇旧事", "他回到故乡，重新面对童年的朋友。"),
+            ["general"],
+        )
+
+    def test_merge_profile_results_preserves_all_profiles(self):
+        result = main._merge_profile_results(
+            "book",
+            [
+                {"status": "ok", "profile": "harem", "error": ""},
+                {"status": "skipped", "profile": "history", "error": ""},
+            ],
+        )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["profile"], "harem")
+        self.assertEqual(result["profiles"], ["harem", "history"])
 
     def test_specialty_profiles_use_general_character_mode(self):
         old_profile = os.environ.get("ANALYSIS_PROFILE")
@@ -298,6 +366,33 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("真相与代价", text)
         self.assertIn("沈砚", text)
         self.assertIn("阵营/势力：沈家", text)
+
+    def test_general_report_uses_specialty_field_titles(self):
+        general_summary = {
+            "profile_display_name": "游戏/系统/无限流专长分析",
+            "summary_fields": ["main_plot", "system_rules", "instance_design"],
+            "summary": {
+                "story_overview": "主角进入副本，通过系统任务成长。",
+                "main_plot": ["进入主神副本"],
+                "system_rules": ["系统面板稳定展示属性和技能"],
+                "instance_design": ["副本目标与隐藏规则清晰"],
+            }
+        }
+
+        text = report.build_general_report("测试书", {}, general_summary)
+
+        self.assertIn("系统规则", text)
+        self.assertIn("副本/关卡设计", text)
+        self.assertIn("系统面板稳定展示属性和技能", text)
+
+    def test_report_suffix_distinguishes_general_specialties(self):
+        general = analysis_profiles.load_analysis_profile("general")
+        history = analysis_profiles.load_analysis_profile("history")
+        harem = analysis_profiles.load_analysis_profile("harem")
+
+        self.assertEqual(report.report_suffix_for_profile(general), "通用小说报告")
+        self.assertIn("历史小说专长分析报告", report.report_suffix_for_profile(history))
+        self.assertEqual(report.report_suffix_for_profile(harem), "扫书报告")
 
     def test_general_scan_uses_profile_rules_and_specialty_notes(self):
         profile = analysis_profiles.load_analysis_profile("xianxia_fantasy")

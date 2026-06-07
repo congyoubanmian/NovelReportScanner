@@ -1,0 +1,49 @@
+{
+  "name": "urban_power",
+  "display_name": "都市异能/爽文专长分析",
+  "description": "在通用小说分析基础上，重点检查都市背景、身份反转、异能金手指、装逼打脸、商战家族和现实逻辑。",
+  "enabled_stages": [
+    "character_analysis",
+    "general_scan",
+    "general_report"
+  ],
+  "rules_file": "rules.json",
+  "report_mode": "general",
+  "scan_focus": [
+    "都市现实背景、职业、行业、学校、商业和家族势力是否可信",
+    "异能、医术、鉴宝、武道、重生、系统等金手指边界",
+    "装逼打脸、身份反转、扮猪吃虎和爽点节奏",
+    "反派挑衅、家族压迫、商战博弈和人情关系逻辑",
+    "感情线、社交关系、权力资源和现实约束是否协调",
+    "常见风险：降智反派、法治缺失、商业常识错误、爽点重复、身份套娃"
+  ],
+  "summary_fields": [
+    "main_plot",
+    "core_conflicts",
+    "worldbuilding",
+    "urban_setting",
+    "power_system",
+    "face_slapping_pacing",
+    "realism_risks",
+    "strengths",
+    "risks_or_issues"
+  ],
+  "inference_keywords": [
+    {"word": "都市", "weight": 5},
+    {"word": "异能", "weight": 5},
+    {"word": "神医", "weight": 4},
+    {"word": "鉴宝", "weight": 4},
+    {"word": "赘婿", "weight": 4},
+    {"word": "总裁", "weight": 3},
+    {"word": "校花", "weight": 3},
+    {"word": "豪门", "weight": 3},
+    {"word": "家族", "weight": 2},
+    {"word": "集团", "weight": 2},
+    {"word": "商战", "weight": 4},
+    {"word": "打脸", "weight": 5},
+    {"word": "扮猪吃虎", "weight": 5},
+    {"word": "兵王", "weight": 4},
+    {"word": "保镖", "weight": 3},
+    {"word": "重生都市", "weight": 5}
+  ]
+}

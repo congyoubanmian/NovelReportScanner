@@ -22,6 +22,18 @@ const suggestions = computed(() => {
   }))
 })
 
+const activeProfilesText = computed(() => {
+  const profiles = props.book?.active_profiles || []
+  if (profiles.length) return profiles.join('、')
+  return props.book?.active_profile || '—'
+})
+
+function resolvedProfilesText(task) {
+  const profiles = task.resolved_profiles || []
+  if (profiles.length) return profiles.join('、')
+  return task.resolved_profile || '—'
+}
+
 const preview = ref({
   url: '',
   name: '',
@@ -90,7 +102,7 @@ watch(() => props.book?.id, () => {
 
       <div class="detail-meta">
         <span><span class="label">当前分类:</span> {{ book.profile }}</span>
-        <span><span class="label">实际扫描:</span> {{ book.active_profile || '—' }}</span>
+        <span><span class="label">实际扫描:</span> {{ activeProfilesText }}</span>
         <span>
           <span class="label">路径:</span>
           <code>{{ book.path }}</code>
@@ -155,7 +167,7 @@ watch(() => props.book?.id, () => {
               <tr v-for="t in tasks" :key="t.id">
                 <td class="mono">{{ t.id }}</td>
                 <td>{{ t.profile }}</td>
-                <td>{{ t.resolved_profile || '—' }}</td>
+                <td>{{ resolvedProfilesText(t) }}</td>
                 <td><StatusTag :status="t.displayStatus" /></td>
                 <td class="mono nowrap">{{ t.created_at || '—' }}</td>
                 <td class="muted">{{ t.finished_at || t.error || '—' }}</td>
