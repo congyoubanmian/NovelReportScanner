@@ -494,6 +494,21 @@ def _add_output_link(outputs_by_path, path, kind=None):
     outputs_by_path[ap] = link
 
 
+def _merge_output_links(*output_lists):
+    outputs_by_path = {}
+    for outputs in output_lists:
+        for item in outputs or []:
+            if not isinstance(item, dict):
+                continue
+            path = item.get("path")
+            if not path:
+                continue
+            _add_output_link(outputs_by_path, path, item.get("kind"))
+    outputs = list(outputs_by_path.values())
+    outputs.sort(key=lambda x: x.get("mtime", 0), reverse=True)
+    return outputs
+
+
 def _checkpoint_report_outputs(book_id):
     checkpoint_path = os.path.join(get_base_dir(), "results", "report_checkpoint.json")
     data = _read_json_file(checkpoint_path)
@@ -526,6 +541,62 @@ def _invalidate_book_outputs(book_id):
     OUTPUTS_CACHE.pop(_outputs_cache_key(book_id), None)
 
 
+def _book_output_index(book_id):
+    with STATE_LOCK:
+        book = STATE.get("books", {}).get(book_id) or {}
+        indexed = list(book.get("output_index") or [])
+    return _merge_output_links(indexed)[:100]
+
+
+def _extract_result_output_paths(result):
+    paths = []
+    if not isinstance(result, dict):
+        return paths
+    out_file = result.get("out_file")
+    if out_file:
+        paths.append({"path": out_file, "kind": "final_report"})
+    for item in result.get("results") or []:
+        paths.extend(_extract_result_output_paths(item))
+    return paths
+
+
+def _candidate_latest_summary_paths(book_id, profiles=None):
+    results_dir = os.path.join(get_base_dir(), "results")
+    profile_names = []
+    for profile_name in profiles or []:
+        if profile_name and profile_name not in profile_names:
+            profile_names.append(profile_name)
+
+    paths = [os.path.join(results_dir, f"{book_id}_GENERAL_SUMMARY_latest.json")]
+    for profile_name in profile_names:
+        if profile_name != "general":
+            paths.append(os.path.join(results_dir, f"{book_id}_{profile_name}_GENERAL_SUMMARY_latest.json"))
+    return paths
+
+
+def _record_book_outputs_from_result(book_id, result, profiles=None):
+    if not book_id:
+        return []
+    outputs = _collect_book_outputs_from_result(book_id, result, profiles)
+    if not outputs:
+        return []
+    with STATE_LOCK:
+        book = STATE.get("books", {}).get(book_id)
+        if not book:
+            return []
+        book["output_index"] = outputs
+    _invalidate_book_outputs(book_id)
+    return outputs
+
+
+def _collect_book_outputs_from_result(book_id, result, profiles=None):
+    candidates = []
+    candidates.extend(_extract_result_output_paths(result))
+    candidates.extend({"path": path, "kind": "summary"} for path in _candidate_latest_summary_paths(book_id, profiles))
+    candidates.extend({"path": path, "kind": "final_report"} for path in _checkpoint_report_outputs(book_id))
+    return _merge_output_links(candidates)[:100]
+
+
 def _find_book_outputs(book_id):
     now = time.monotonic()
     results_dir = os.path.join(get_base_dir(), "results")
@@ -533,6 +604,11 @@ def _find_book_outputs(book_id):
     cached = OUTPUTS_CACHE.get(cache_key)
     if cached and now - cached["time"] < OUTPUTS_CACHE_TTL_SECONDS:
         return cached["outputs"]
+
+    indexed_outputs = _book_output_index(book_id)
+    if indexed_outputs:
+        OUTPUTS_CACHE[cache_key] = {"time": now, "outputs": indexed_outputs}
+        return indexed_outputs
 
     outputs_by_path = {}
     if not os.path.isdir(results_dir):
@@ -909,6 +985,14 @@ def _worker_loop():
                     task["resolved_profiles"] = profile_name
                     task["resolved_profile"] = "、".join(profile_name)
                 result = _run_scan_subprocess(book["path"], profile_name, _generate_run_id(), log_file)
+            output_index = []
+            if result.get("status") in {"ok", "skipped"}:
+                result_profiles = result.get("profiles")
+                if not result_profiles:
+                    fallback_profile = result.get("profile") or task.get("profile", "auto")
+                    result_profiles = fallback_profile if isinstance(fallback_profile, list) else [fallback_profile]
+                output_index = _collect_book_outputs_from_result(task.get("book_id"), result, result_profiles)
+
             with STATE_LOCK:
                 task["status"] = "completed" if result.get("status") in {"ok", "skipped"} else "failed"
                 task["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -922,6 +1006,8 @@ def _worker_loop():
                 book["active_profiles"] = active_profiles
                 book["profile_suggestions"] = task.get("profile_suggestions", book.get("profile_suggestions", []))
                 book["message"] = "完成" if task["status"] == "completed" else result.get("error", "失败")
+                if task["status"] == "completed" and output_index:
+                    book["output_index"] = output_index
                 _invalidate_book_outputs(task.get("book_id"))
                 _save_state()
         except Exception as exc:

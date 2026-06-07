@@ -2199,6 +2199,97 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 with open(checkpoint_path, "w", encoding="utf-8") as f:
                     f.write(old_checkpoint)
 
+    def test_web_manager_uses_persisted_output_index_without_walking_results(self):
+        old_state = web_manager.STATE
+        old_base_dir = web_manager.get_base_dir
+        old_os_walk = web_manager.os.walk
+        old_cache = dict(web_manager.OUTPUTS_CACHE)
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                results_dir = os.path.join(tmp, "results")
+                os.makedirs(results_dir, exist_ok=True)
+                report_path = os.path.join(results_dir, "book_report.txt")
+                with open(report_path, "w", encoding="utf-8") as f:
+                    f.write("report")
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.STATE = {
+                    "books": {
+                        "book": {
+                            "id": "book",
+                            "name": "book",
+                            "profile": "general",
+                            "status": "completed",
+                            "output_index": [{"path": report_path, "kind": "final_report"}],
+                        }
+                    },
+                    "tasks": [],
+                }
+                web_manager.OUTPUTS_CACHE.clear()
+
+                def fail_walk(*_args, **_kwargs):
+                    raise AssertionError("results directory should not be walked when output_index is valid")
+
+                web_manager.os.walk = fail_walk
+
+                outputs = web_manager._find_book_outputs("book")
+
+                self.assertEqual([item["path"] for item in outputs], [report_path])
+                self.assertEqual(outputs[0]["kind"], "final_report")
+        finally:
+            web_manager.STATE = old_state
+            web_manager.get_base_dir = old_base_dir
+            web_manager.os.walk = old_os_walk
+            web_manager.OUTPUTS_CACHE.clear()
+            web_manager.OUTPUTS_CACHE.update(old_cache)
+
+    def test_web_manager_records_output_index_from_scan_result(self):
+        old_state = web_manager.STATE
+        old_base_dir = web_manager.get_base_dir
+        old_cache = dict(web_manager.OUTPUTS_CACHE)
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                results_dir = os.path.join(tmp, "results")
+                os.makedirs(results_dir, exist_ok=True)
+                final_path = os.path.join(results_dir, "《book》扫书报告_20260607_010203.txt")
+                summary_path = os.path.join(results_dir, "book_history_GENERAL_SUMMARY_latest.json")
+                missing_path = os.path.join(results_dir, "missing.txt")
+                for path, content in ((final_path, "report"), (summary_path, "{}")):
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write(content)
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.STATE = {
+                    "books": {"book": {"id": "book", "name": "book", "profile": ["harem", "history"], "status": "completed"}},
+                    "tasks": [],
+                }
+                web_manager.OUTPUTS_CACHE[web_manager._outputs_cache_key("book")] = {"time": time.monotonic(), "outputs": []}
+
+                outputs = web_manager._record_book_outputs_from_result(
+                    "book",
+                    {
+                        "status": "ok",
+                        "profiles": ["harem", "history"],
+                        "results": [
+                            {"status": "ok", "profile": "harem", "out_file": final_path},
+                            {"status": "ok", "profile": "history", "out_file": missing_path},
+                        ],
+                    },
+                    ["harem", "history"],
+                )
+
+                names = {item["name"]: item for item in outputs}
+                self.assertIn("《book》扫书报告_20260607_010203.txt", names)
+                self.assertIn("book_history_GENERAL_SUMMARY_latest.json", names)
+                self.assertNotIn("missing.txt", names)
+                self.assertEqual(names["《book》扫书报告_20260607_010203.txt"]["kind"], "final_report")
+                self.assertEqual(names["book_history_GENERAL_SUMMARY_latest.json"]["kind"], "summary")
+                self.assertEqual(web_manager.STATE["books"]["book"]["output_index"], outputs)
+                self.assertNotIn(web_manager._outputs_cache_key("book"), web_manager.OUTPUTS_CACHE)
+        finally:
+            web_manager.STATE = old_state
+            web_manager.get_base_dir = old_base_dir
+            web_manager.OUTPUTS_CACHE.clear()
+            web_manager.OUTPUTS_CACHE.update(old_cache)
+
     def test_web_manager_caches_empty_outputs_and_invalidates_by_book(self):
         old_base_dir = web_manager.get_base_dir
         old_ttl = web_manager.OUTPUTS_CACHE_TTL_SECONDS
