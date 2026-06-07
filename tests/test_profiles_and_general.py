@@ -298,6 +298,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         for profile_name in [
             "xianxia_fantasy",
             "history",
+            "hard_sci_fi",
             "urban_power",
             "game_system",
             "isekai_lightnovel",
@@ -1142,14 +1143,18 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         harem = analysis_profiles.load_analysis_profile("harem")
         overrides = harem.harem_plus.get("secondary_focus_overrides", {})
 
+        self.assertIn("hard_sci_fi", overrides)
         self.assertIn("isekai_lightnovel", overrides)
         self.assertIn("steampunk_fantasy", overrides)
 
+        sci_fi = analysis_profiles.load_analysis_profile("hard_sci_fi")
         isekai = analysis_profiles.load_analysis_profile("isekai_lightnovel")
         steampunk = analysis_profiles.load_analysis_profile("steampunk_fantasy")
+        sci_fi_override = main._with_harem_plus_secondary_focus(sci_fi, harem)
         isekai_override = main._with_harem_plus_secondary_focus(isekai, harem)
         steampunk_override = main._with_harem_plus_secondary_focus(steampunk, harem)
 
+        self.assertTrue(any("意识上传" in item and "洁度" in item for item in sci_fi_override.scan_focus))
         self.assertTrue(any("勇者" in item and "送女" in item for item in isekai_override.scan_focus))
         self.assertTrue(any("神秘复苏" in item and "亵女" in item for item in steampunk_override.scan_focus))
 
