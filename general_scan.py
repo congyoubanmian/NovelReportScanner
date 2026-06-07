@@ -47,8 +47,15 @@ def _summary_field_candidates(field: str) -> List[str]:
 
 def _summary_field_value(data: Dict[str, Any], field: str) -> List[str]:
     values = []
+    seen = set()
     for candidate in _summary_field_candidates(field):
-        values.extend(_safe_list(data.get(candidate), limit=20))
+        for value in _safe_list(data.get(candidate), limit=20):
+            if value in seen:
+                continue
+            seen.add(value)
+            values.append(value)
+            if len(values) >= 20:
+                return values
     return values[:20]
 
 

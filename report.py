@@ -202,6 +202,7 @@ def summary_field_values(summary: dict, field: str):
     if not isinstance(summary, dict):
         return []
     values = []
+    seen = set()
     canonical = SUMMARY_FIELD_ALIASES.get(field, field)
     candidate_fields = [field]
     if canonical not in candidate_fields:
@@ -214,9 +215,17 @@ def summary_field_values(summary: dict, field: str):
     for candidate in candidate_fields:
         value = summary.get(candidate)
         if isinstance(value, list):
-            values.extend(value)
+            items = value
         elif value:
-            values.append(value)
+            items = [value]
+        else:
+            items = []
+        for item in items:
+            text = str(item).strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            values.append(item)
     return values
 
 

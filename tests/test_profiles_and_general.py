@@ -5064,7 +5064,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "themes": ["主题"],
                     "foreshadowing_and_payoff": ["伏笔"],
                     "tech_feasibility": ["标准字段技术内容"],
-                    "technology_feasibility": ["同义旧字段技术内容"],
+                    "technology_feasibility": ["标准字段技术内容", "同义旧字段技术内容"],
                     "strengths": ["优点"],
                     "risks_or_issues": ["问题"],
                     "reader_fit": "读者",
@@ -5175,6 +5175,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("【技术可行性】", legacy_field_text)
         self.assertIn("标准字段技术内容", legacy_field_text)
         self.assertIn("同义旧字段技术内容", legacy_field_text)
+        self.assertEqual(legacy_field_text.count("标准字段技术内容"), 1)
 
     def test_general_scan_field_labels_cover_profile_summary_fields(self):
         common = {
