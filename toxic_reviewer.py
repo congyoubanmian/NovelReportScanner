@@ -12,7 +12,7 @@ from shared_utils import MODEL, RULES_FILE, _safe_json_loads_maybe, chat_complet
 
 STRICT_HAREM_ISSUE_TYPES = ("绿帽", "送女")
 STRICT_NTR_ALIASES = ("NTR", "牛头人")
-STRICT_ISSUE_EXCLUSION_HINTS = ("擦边", "反复救援", "未遂", "风险")
+STRICT_ISSUE_EXCLUSION_HINTS = ("擦边", "反复救援", "未遂", "风险", "疑似", "嫌疑", "待确认", "待复核")
 
 
 def is_strict_harem_issue_type(issue_type: str) -> bool:

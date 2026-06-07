@@ -803,6 +803,42 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertNotIn("送女/绿帽锁定定义", gift_attempt_prompt)
 
+        suspicious_prompt, _ = toxic_reviewer.build_review_prompts(
+            {
+                "category": "郁闷点",
+                "type": "疑似绿帽",
+                "content": "旁人传言甲女和路人男有暧昧。",
+            },
+            "疑似绿帽定义",
+            "男主",
+            ["甲女"],
+        )
+        self.assertNotIn("送女/绿帽锁定定义", suspicious_prompt)
+
+        gift_suspect_prompt, _ = toxic_reviewer.build_review_prompts(
+            {
+                "category": "郁闷点",
+                "type": "送女嫌疑",
+                "content": "有读者怀疑男主是否默许甲女联姻。",
+            },
+            "送女嫌疑定义",
+            "男主",
+            ["甲女"],
+        )
+        self.assertNotIn("送女/绿帽锁定定义", gift_suspect_prompt)
+
+        ntr_review_prompt, _ = toxic_reviewer.build_review_prompts(
+            {
+                "category": "郁闷点",
+                "type": "NTR待复核",
+                "content": "传闻甲女与路人男关系不明。",
+            },
+            "NTR待复核定义",
+            "男主",
+            ["甲女"],
+        )
+        self.assertNotIn("送女/绿帽锁定定义", ntr_review_prompt)
+
     def test_toxic_reviewer_prompt_keeps_general_issue_review_short(self):
         system_prompt, _ = toxic_reviewer.build_review_prompts(
             {
