@@ -1464,13 +1464,17 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
     def test_web_manager_access_token_auth_is_optional_and_secret(self):
         old_token = os.environ.get("WEB_ACCESS_TOKEN")
+        old_key_required = os.environ.get("NOVEL_REPORT_SCANNER_REQUIRE_API_KEY")
         try:
             os.environ.pop("WEB_ACCESS_TOKEN", None)
+            os.environ["NOVEL_REPORT_SCANNER_REQUIRE_API_KEY"] = "0"
             self.assertTrue(web_manager._is_authorized_request({}, ""))
             summary = web_manager._runtime_config_summary()
             self.assertFalse(summary["web"]["auth_enabled"])
+            self.assertFalse(summary["web"]["api_key_required_on_start"])
 
             os.environ["WEB_ACCESS_TOKEN"] = "secret-token"
+            os.environ["NOVEL_REPORT_SCANNER_REQUIRE_API_KEY"] = "1"
             self.assertFalse(web_manager._is_authorized_request({}, ""))
             self.assertFalse(web_manager._is_authorized_request({"Authorization": "Bearer wrong"}, ""))
             self.assertTrue(web_manager._is_authorized_request({"Authorization": "Bearer secret-token"}, ""))
@@ -1479,12 +1483,17 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
             protected_summary = web_manager._runtime_config_summary()
             self.assertTrue(protected_summary["web"]["auth_enabled"])
+            self.assertTrue(protected_summary["web"]["api_key_required_on_start"])
             self.assertNotIn("secret-token", json.dumps(protected_summary, ensure_ascii=False))
         finally:
             if old_token is None:
                 os.environ.pop("WEB_ACCESS_TOKEN", None)
             else:
                 os.environ["WEB_ACCESS_TOKEN"] = old_token
+            if old_key_required is None:
+                os.environ.pop("NOVEL_REPORT_SCANNER_REQUIRE_API_KEY", None)
+            else:
+                os.environ["NOVEL_REPORT_SCANNER_REQUIRE_API_KEY"] = old_key_required
 
     def test_web_manager_runtime_config_update_allows_only_safe_fields(self):
         keys = [

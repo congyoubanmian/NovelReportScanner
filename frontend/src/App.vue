@@ -307,6 +307,10 @@ useStateEvents(applyState, {
       <span class="runtime-item"
         ><b>访问保护</b>{{ runtimeConfig.web?.auth_enabled ? '已开启' : '未开启' }}</span
       >
+      <span class="runtime-item"
+        ><b>Key校验</b
+        >{{ runtimeConfig.web?.api_key_required_on_start ? '启动必需' : '允许跳过' }}</span
+      >
     </div>
 
     <div class="access-token-row" v-if="!runtimeConfig || runtimeConfig.web?.auth_enabled">

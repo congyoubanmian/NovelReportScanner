@@ -90,7 +90,7 @@
 ### 5. Web 和部署工程项
 
 - 前后端分离后，Web 端支持书籍列表、详情、报告预览、扫描队列、批量加入队列、取消排队、置顶、上移/下移、删除和批量删除。
-- `/api/state` 增加非敏感配置摘要，前端展示模型、并发、限速、Key 数量、上传限制等运行信息。
+- `/api/state` 增加非敏感配置摘要，前端展示模型、并发、限速、Key 数量、上传限制、容器 Key 启动校验状态等运行信息。
 - 增加 SSE 实时状态推送，并保留轮询作为兼容兜底。
 - 上传侧增加重复文件防覆盖、请求体大小限制和 JSON body 限制。
 - `/files` 改为流式输出，降低大报告文件读取压力。
@@ -105,6 +105,7 @@
 - Web 页面支持编辑 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`GENERAL_SCAN_MAX_CHUNKS`、`HAREM_PLUS_GENERAL_SCAN` 等非敏感运行配置；修改只在当前服务进程生效，不写回本地配置文件，也不展示或修改 API Key。
 - Docker 最终运行镜像不再 `COPY . .`，只复制 Python 源码、`profiles/`、`rules2.json` 和前端构建产物，避免把测试、前端源码、文档和本地杂项带入运行层。
 - Docker/Compose 容器启动时默认要求 `API_KEY` 或 `API_KEY_POOL` 至少存在一个，避免缺少 Key 时 Web 进程正常启动但扫描任务延迟失败；确需只启动 Web UI 时可用 `NOVEL_REPORT_SCANNER_REQUIRE_API_KEY=0` 跳过。
+- Web 运行信息条展示容器 Key 启动校验是否开启，方便确认 Docker/Compose 部署是否允许跳过 Key 校验。
 
 ### 6. 测试覆盖
 

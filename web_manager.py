@@ -346,6 +346,7 @@ def _runtime_config_summary():
             "outputs_cache_ttl_seconds": OUTPUTS_CACHE_TTL_SECONDS,
             "sse_state_interval_seconds": SSE_STATE_INTERVAL_SECONDS,
             "auth_enabled": _web_auth_enabled(),
+            "api_key_required_on_start": _env_bool_value(os.environ.get("NOVEL_REPORT_SCANNER_REQUIRE_API_KEY", "1")),
         },
     }
 
