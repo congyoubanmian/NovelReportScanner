@@ -203,7 +203,7 @@ CONTAINER_MEMORY_LIMIT=4g
 CONTAINER_MEMORY_RESERVATION=1g
 ```
 
-推送到 GitHub `main` 分支或 `v*` 版本 tag 后，GitHub Actions 会自动构建并推送镜像到 GHCR。服务器只需要准备 `.env`、`novels/`、`results/` 和 `docker-compose.yml`。例如：
+推送到 GitHub `main` 分支后，CI 会先运行后端单测、前端 audit/lint/format/build；Docker 发布工作流会自动构建并推送镜像到 GHCR 和 Docker Hub。推送 `v*` 版本 tag 或手动触发 Docker 发布工作流时，也会发布对应镜像标签。服务器只需要准备 `.env`、`novels/`、`results/` 和 `docker-compose.yml`。例如：
 
 ```bash
 export NOVEL_REPORT_SCANNER_IMAGE=ghcr.io/congyoubanmian/novel-report-scanner:main
@@ -341,6 +341,14 @@ npm run build
 ```
 
 `npm run lint` 使用 ESLint 检查 Vue/JS 代码，并设置为零 warning 通过；`npm run format:check` 使用 Prettier 校验格式。
+
+仓库 CI 也会执行：
+
+- `python -m unittest discover -s tests -v`
+- `npm audit --audit-level=moderate`
+- `npm run lint`
+- `npm run format:check`
+- `npm run build`
 
 ### 分析模式
 

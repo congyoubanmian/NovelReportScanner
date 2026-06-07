@@ -12,7 +12,7 @@
 - **后宫/男性向排雷专项**：约 **82% - 86%**。核心定义、五维洁度、接触等级、partner 豁免、漏女三层判断、女主事实扩展、重复女主大模型合并等关键项已落地；仍需要更多真实书籍报告校准误判。
 - **多标签/混合类型扫描**：约 **85% - 88%**。已支持自动多标签、手动多选、后宫+其他类型补扫，并对历史、科幻、仙侠、都市、游戏、异世界、蒸汽西幻等做了后宫交叉规则。
 - **报告输出和字段标题**：约 **90%**。通用报告、专项报告、后宫报告的字段标题和收尾字段已多轮补齐，新增了统一中文标签映射测试。
-- **Web/部署/GitHub Actions/Docker**：约 **93% - 95%**。前后端分离、SSE 实时状态、队列管理、删除/批量删除、Token 展示、配置摘要、可选访问令牌、Docker/GHCR/DockerHub 流程、请求体限制、文件流式输出、任务日志隔离、前端 ESLint/Prettier 检查等工程项已完成；剩余主要是可选配置编辑 UI 和进一步生产化部署细节。
+- **Web/部署/GitHub Actions/Docker**：约 **94% - 96%**。前后端分离、SSE 实时状态、队列管理、删除/批量删除、Token 展示、配置摘要、可选访问令牌、Docker/GHCR/DockerHub 流程、请求体限制、文件流式输出、任务日志隔离、前端 ESLint/Prettier 检查、CI 自动验证等工程项已完成；剩余主要是可选配置编辑 UI 和进一步生产化部署细节。
 
 ## 已完成的主要工作
 
@@ -98,6 +98,7 @@
 - Docker 相关流程已支持 GHCR 和 DockerHub 自动构建推送；本地 `docker-compose.yaml` 可改用远程镜像。
 - 补充 `.env.sample`、`setting.txt.sample` 和 README 配置说明，真实 `.env`、`setting.txt`、`api.txt` 保持本地忽略。
 - 前端增加 ESLint/Prettier 配置与 `lint`、`format:check` 脚本，建立零 warning 静态检查和统一格式基线。
+- GitHub Actions 增加 CI 工作流，覆盖后端 unittest、前端 audit/lint/format/build；Docker 发布工作流继续负责 GHCR 和 Docker Hub 镜像推送。
 
 ### 6. 测试覆盖
 
