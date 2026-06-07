@@ -182,6 +182,12 @@ SUMMARY_FIELD_ALIASES = {
     "companions": "party_dynamics",
     "romance_subplot": "romance_comedy_balance",
     "daily_life": "slice_of_life",
+    "target_readers": "reader_fit",
+    "reader_suitability": "reader_fit",
+    "suitable_readers": "reader_fit",
+    "final_assessment": "overall_assessment",
+    "overall_evaluation": "overall_assessment",
+    "final_verdict": "overall_assessment",
 }
 
 
@@ -212,6 +218,13 @@ def summary_field_values(summary: dict, field: str):
         elif value:
             values.append(value)
     return values
+
+
+def summary_field_text(summary: dict, field: str, default: str = "未描述") -> str:
+    values = summary_field_values(summary, field)
+    if not values:
+        return default
+    return "；".join(str(x).strip() for x in values if str(x).strip()) or default
 
 
 def init_token_tracker(book_name, run_id=None):
@@ -2400,8 +2413,8 @@ def _append_general_scan_section(lines: list, general_summary: dict):
         add_list(summary_field_label(field), summary_field_values(summary, field))
     add_list("优点", summary.get("strengths"))
     add_list("问题与阅读门槛", summary.get("risks_or_issues"))
-    lines.extend(["", "【适合读者】", summary.get("reader_fit") or "未描述"])
-    lines.extend(["", "【总体评价】", summary.get("overall_assessment") or "未描述"])
+    lines.extend(["", "【适合读者】", summary_field_text(summary, "reader_fit")])
+    lines.extend(["", "【总体评价】", summary_field_text(summary, "overall_assessment")])
 
 
 def build_general_report(book_key: str, detailed_data: dict, general_summary: dict = None) -> str:

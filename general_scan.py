@@ -355,8 +355,8 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         "foreshadowing_and_payoff": _safe_list(data.get("foreshadowing_and_payoff"), limit=20),
         "strengths": _safe_list(data.get("strengths"), limit=20),
         "risks_or_issues": _safe_list(data.get("risks_or_issues"), limit=20),
-        "reader_fit": str(data.get("reader_fit", "") or "").strip(),
-        "overall_assessment": str(data.get("overall_assessment", "") or "").strip(),
+        "reader_fit": "；".join(_summary_field_value(data, "reader_fit")),
+        "overall_assessment": "；".join(_summary_field_value(data, "overall_assessment")),
     }
     for field in specialty_fields:
         summary[field] = _summary_field_value(data, field)
