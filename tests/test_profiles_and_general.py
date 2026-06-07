@@ -889,6 +889,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "apocalypse_survival",
         )
         self.assertEqual(
+            analysis_profiles.infer_profile_for_text("废土迁徙", "幸存者在辐射废土建立据点，搜寻资源和物资，抵御感染者与兽潮。"),
+            "apocalypse_survival",
+        )
+        self.assertEqual(
             analysis_profiles.infer_profile_for_text("诡秘档案", "调查员追查克苏鲁仪式，理智受到污染，怪谈规则逐步显露。"),
             "cosmic_horror",
         )
@@ -1029,6 +1033,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertEqual(
             analysis_profiles.infer_profile_for_text(
+                "极寒废土",
+                "冰封天灾后，幸存者迁徙到安全区，搜集物资并重建领地秩序。",
+            ),
+            "apocalypse_survival",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
+                "晶核进化",
+                "丧尸病毒导致感染者变异，主角靠晶核进化异能，在基地外对抗异兽和虫族。",
+            ),
+            "apocalypse_survival",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
                 "大奉打更人探案",
                 "主角调查密室案件，通过线索、动机和诡计推理真相，没有法医程序。",
             ),
@@ -1061,6 +1079,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(horror_keywords.get("收容物"), 5)
         self.assertEqual(horror_keywords.get("认知崩溃"), 5)
         self.assertEqual(horror_keywords.get("理智"), 5)
+
+        apocalypse_keywords = dict(analysis_profiles._keywords_from_manifest("apocalypse_survival"))
+        self.assertEqual(apocalypse_keywords.get("废土"), 5)
+        self.assertEqual(apocalypse_keywords.get("幸存者"), 5)
+        self.assertEqual(apocalypse_keywords.get("晶核"), 5)
+        self.assertEqual(apocalypse_keywords.get("物资"), 4)
 
         sports_keywords = dict(analysis_profiles._keywords_from_manifest("sports_competition"))
         self.assertEqual(sports_keywords.get("格斗"), 5)
