@@ -1320,6 +1320,44 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(info["leak_ending_accounted"])
         self.assertIn("可能只是提及", info["leak_ending_reason"])
 
+    def test_rebuild_leak_state_ignores_negated_tail_ending_account(self):
+        data = {
+            "heroine_result": {
+                "heroines": [
+                    {
+                        "name": "丁女",
+                        "summaries": ["与男主长期暧昧并喜欢男主，但结局未交代归宿。"],
+                    }
+                ]
+            }
+        }
+        negated_tails = [
+            "尾声提到丁女未交代归宿，男主独自离开江湖。",
+            "尾声里丁女没有留在男主身边，也没有去向说明。",
+            "尾声说明丁女最终没有同行，归宿不明。",
+        ]
+        for tail in negated_tails:
+            with self.subTest(tail=tail):
+                with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False)
+                    char_path = f.name
+                try:
+                    issues, leak_map = novel_reviewer._rebuild_leak_state_from_pushed_map(
+                        female_leads=["丁女"],
+                        char_file_path=char_path,
+                        novel_tail=tail,
+                        finished=True,
+                        pushed_map={"丁女": (False, "未见推倒或同房证据")},
+                    )
+                finally:
+                    os.unlink(char_path)
+
+                self.assertEqual(len(issues), 1)
+                info = leak_map["丁女"]
+                self.assertTrue(info["is_leak_heroine"])
+                self.assertFalse(info["leak_ending_accounted"])
+                self.assertIn("缺少归宿", info["leak_ending_reason"])
+
     def test_rebuild_leak_state_accepts_explicit_ending_account(self):
         data = {
             "heroine_result": {
