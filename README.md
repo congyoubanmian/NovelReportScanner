@@ -215,6 +215,8 @@ docker compose pull
 docker compose up -d
 ```
 
+Compose 会把 `.env` 中的模型、限流、后宫增强、上传限制、SSE 间隔、输出缓存等运行参数显式传入容器。改动 `.env` 后需要重新执行 `docker compose up -d` 让容器重建并读取新环境变量。
+
 没有 Compose 的环境也可以直接拉镜像运行：
 
 ```bash
