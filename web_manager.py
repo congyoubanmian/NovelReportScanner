@@ -383,10 +383,21 @@ def _checkpoint_report_outputs(book_id):
     return paths
 
 
+def _outputs_cache_key(book_id):
+    results_dir = os.path.join(get_base_dir(), "results")
+    return (os.path.abspath(results_dir), book_id)
+
+
+def _invalidate_book_outputs(book_id):
+    if not book_id:
+        return
+    OUTPUTS_CACHE.pop(_outputs_cache_key(book_id), None)
+
+
 def _find_book_outputs(book_id):
     now = time.monotonic()
     results_dir = os.path.join(get_base_dir(), "results")
-    cache_key = (os.path.abspath(results_dir), book_id)
+    cache_key = _outputs_cache_key(book_id)
     cached = OUTPUTS_CACHE.get(cache_key)
     if cached and now - cached["time"] < OUTPUTS_CACHE_TTL_SECONDS:
         return cached["outputs"]
@@ -430,10 +441,7 @@ def _find_book_outputs(book_id):
     outputs = list(outputs_by_path.values())
     outputs.sort(key=lambda x: x.get("mtime", 0), reverse=True)
     outputs = outputs[:100]
-    if outputs:
-        OUTPUTS_CACHE[cache_key] = {"time": now, "outputs": outputs}
-    else:
-        OUTPUTS_CACHE.pop(cache_key, None)
+    OUTPUTS_CACHE[cache_key] = {"time": now, "outputs": outputs}
     return outputs
 
 
@@ -545,6 +553,7 @@ def _worker_loop():
                 book["active_profiles"] = active_profiles
                 book["profile_suggestions"] = task.get("profile_suggestions", book.get("profile_suggestions", []))
                 book["message"] = "完成" if task["status"] == "completed" else result.get("error", "失败")
+                _invalidate_book_outputs(task.get("book_id"))
                 _save_state()
         except Exception as exc:
             try:
@@ -558,6 +567,7 @@ def _worker_loop():
                 task["error"] = str(exc)
                 book["status"] = "failed"
                 book["message"] = str(exc)
+                _invalidate_book_outputs(task.get("book_id"))
                 _save_state()
         finally:
             TASK_QUEUE.task_done()
@@ -749,7 +759,7 @@ class Handler(BaseHTTPRequestHandler):
                 profile_values = [form.getfirst("profile", "auto")]
             profile = _normalize_web_profile(profile_values if len(profile_values) > 1 else profile_values[0]) or "auto"
             book_id = _book_id_from_path(path)
-            OUTPUTS_CACHE.pop((os.path.abspath(os.path.join(get_base_dir(), "results")), book_id), None)
+            _invalidate_book_outputs(book_id)
             suggestions = _profile_suggestions(path, book_id)
             with STATE_LOCK:
                 STATE["books"][book_id] = {
