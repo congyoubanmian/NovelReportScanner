@@ -1166,6 +1166,11 @@ def _is_generic_heroine_anchor_name(name: str) -> bool:
     return text in _GENERIC_HEROINE_ANCHOR_NAMES or normalized in _GENERIC_HEROINE_ANCHOR_NAMES
 
 
+def _is_valid_issue_heroine_anchor_alias(alias: str) -> bool:
+    text = str(alias or "").strip()
+    return len(text) >= 2 and not _is_generic_heroine_anchor_name(text)
+
+
 def _summarize_heroine_effectiveness(heroine_meta: dict, profile: dict, evidence: dict = None) -> str:
     heroine_meta = heroine_meta or {}
     profile = profile or {}
@@ -1342,9 +1347,7 @@ def _build_heroine_position_contexts(
         normalized_names = []
         for candidate in names:
             candidate = str(candidate or "").strip()
-            if len(candidate) < 2:
-                continue
-            if _is_generic_heroine_anchor_name(candidate):
+            if not _is_valid_issue_heroine_anchor_alias(candidate):
                 continue
             key = (name, candidate)
             if key in seen:
@@ -1370,7 +1373,11 @@ def _matched_issue_heroine_contexts(issue: dict, heroine_contexts: list) -> list
     matches = []
     for ctx in heroine_contexts:
         aliases = ctx.get("aliases") or []
-        matched_aliases = [alias for alias in aliases if alias and alias in haystack]
+        matched_aliases = [
+            alias
+            for alias in aliases
+            if _is_valid_issue_heroine_anchor_alias(alias) and alias in haystack
+        ]
         if not matched_aliases:
             continue
         best_alias = max(matched_aliases, key=len)

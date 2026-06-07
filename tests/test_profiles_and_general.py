@@ -4310,6 +4310,42 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(edge_issue["heroine_position_context"], "弱女=弱准女主")
         self.assertNotIn("definition_review_hint", edge_issue)
 
+    def test_report_ignores_unsafe_manual_issue_anchor_aliases(self):
+        contexts = [
+            {
+                "name": "安",
+                "aliases": ["安", "公主"],
+                "label": "目标女主",
+                "level": "目标女主：确认关系",
+            },
+            {
+                "name": "琪雅",
+                "aliases": ["琪雅"],
+                "label": "强准女主",
+                "level": "强准女主：感情推进",
+            },
+        ]
+
+        short_alias_issue = report._annotate_issue_for_report(
+            {"type": "送女", "content": "有人传言公主被安排嫁给路人男。"},
+            contexts,
+        )
+        substring_issue = report._annotate_issue_for_report(
+            {"type": "送女", "content": "安妮被安排嫁给路人男。"},
+            contexts,
+        )
+        named_issue = report._annotate_issue_for_report(
+            {"type": "送女", "content": "琪雅被安排嫁给路人男。"},
+            contexts,
+        )
+
+        self.assertNotIn("heroine_position_context", short_alias_issue)
+        self.assertIn("未命中已识别女主名或别名", short_alias_issue["definition_review_hint"])
+        self.assertNotIn("heroine_position_context", substring_issue)
+        self.assertIn("未命中已识别女主名或别名", substring_issue["definition_review_hint"])
+        self.assertEqual(named_issue["heroine_position_context"], "琪雅=强准女主")
+        self.assertNotIn("definition_review_hint", named_issue)
+
     def test_report_ignores_generic_heroine_anchor_names_for_strict_issues(self):
         generic_contexts = report._build_heroine_position_contexts(
             [{"name": "公主", "importance_rank": 1}],
