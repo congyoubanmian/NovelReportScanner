@@ -1597,6 +1597,7 @@ def _append_general_scan_section(lines: list, general_summary: dict):
         "historical_atmosphere": "历史氛围",
         "power_structure": "权力结构与派系",
         "warfare_and_intrigue": "战争与权谋",
+        "foreshadowing_and_payoff": "伏笔与回收",
         "scientific_assumptions": "科学假设",
         "technology_chain": "技术链与工程约束",
         "science_consistency": "科学设定自洽性",

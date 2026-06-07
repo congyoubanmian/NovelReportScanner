@@ -1430,6 +1430,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("主线剧情", text)
         self.assertIn("历史小说专长分析", text)
         self.assertIn("历史制度与时代逻辑", text)
+        self.assertIn("伏笔与回收", text)
         self.assertIn("官制与地方治理形成冲突", text)
         self.assertIn("真相与代价", text)
         self.assertIn("沈砚", text)
