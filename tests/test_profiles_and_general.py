@@ -3360,6 +3360,35 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("明显感情戏缺失风险", overview["romance_expectation_gap"])
         self.assertIn("工具人女主", overview["female_tooling_risk"])
 
+    def test_harem_romance_overview_avoids_current_wife_as_past_risk(self):
+        self.assertFalse(report._has_male_past_romance_risk("男主与妻子一起经营家族。"))
+        self.assertTrue(report._has_male_past_romance_risk("男主前世老婆在他绝症后卷光家产跑路。"))
+        self.assertTrue(report._has_male_past_romance_risk("男主有前女友但已经分手。"))
+
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        try:
+            report.OpenAI = None
+            report.API_KEY_POOL = []
+            clean = report._summarize_harem_romance_overview(
+                {"all_female_characters": {}},
+                {},
+                [],
+                {"summaries": ["男主与妻子一起经营家族。"]},
+            )
+            risky = report._summarize_harem_romance_overview(
+                {"all_female_characters": {}},
+                {},
+                [],
+                {"summaries": ["男主前世老婆在他绝症后卷光家产跑路。"]},
+            )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+
+        self.assertEqual(clean["male_past_romance_risk"], "未见明确男主前史情感雷点。")
+        self.assertIn("前妻/前女友/前世婚恋", risky["male_past_romance_risk"])
+
     def test_report_classifies_heroine_position_level(self):
         target = report._heroine_position_level(
             {"importance_rank": 1},

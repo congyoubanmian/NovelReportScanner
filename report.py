@@ -1766,8 +1766,7 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
         "romance_expectation_gap": expectation_gap,
         "male_past_romance_risk": "未见明确男主前史情感雷点。",
     }
-    past_words = ("前妻", "前女友", "前世老婆", "老婆", "妻子", "卷走", "卷光", "跑路", "离婚", "绝症")
-    if any(word in male_blob for word in past_words):
+    if _has_male_past_romance_risk(male_blob):
         fallback["male_past_romance_risk"] = "男主材料中出现前妻/前女友/前世婚恋等前史线索，需人工关注是否构成情感背景雷点。"
 
     if not OpenAI or not API_KEY_POOL:
@@ -1808,6 +1807,29 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
     except Exception as exc:
         log_report(f"后宫感情概览生成失败，使用保守兜底: {exc}")
         return fallback
+
+
+def _has_male_past_romance_risk(text: str) -> bool:
+    text = str(text or "")
+    if not text:
+        return False
+    explicit_past_partner_words = (
+        "前妻", "前女友", "前任", "前夫", "前未婚妻", "前世老婆", "前世妻子", "前世爱人",
+        "上一世老婆", "上一世妻子", "原配", "亡妻",
+    )
+    if any(word in text for word in explicit_past_partner_words):
+        return True
+
+    past_context_words = ("前世", "上一世", "前史", "过往", "过去", "穿越前", "重生前", "原世界", "原故事线")
+    partner_words = ("老婆", "妻子", "女友", "爱人", "未婚妻", "恋人", "婚姻", "结婚", "离婚", "丧偶")
+    negative_words = ("卷走", "卷光", "跑路", "背叛", "抛弃", "离婚", "分手", "绝症", "丧偶", "去世", "死亡")
+    return (
+        any(word in text for word in past_context_words)
+        and any(word in text for word in partner_words)
+    ) or (
+        any(word in text for word in partner_words)
+        and any(word in text for word in negative_words)
+    )
 
 
 def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
