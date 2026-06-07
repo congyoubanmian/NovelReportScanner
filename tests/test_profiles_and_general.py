@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import unittest
@@ -196,13 +197,36 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         results_dir = os.path.join(main.get_base_dir(), "results")
         os.makedirs(results_dir, exist_ok=True)
         out_path = os.path.join(results_dir, "book_history_GENERAL_SUMMARY_latest.json")
+        final_path = os.path.join(results_dir, "《book》扫书报告_20260607_010203.txt")
+        checkpoint_path = os.path.join(results_dir, "report_checkpoint.json")
+        old_checkpoint = None
+        if os.path.exists(checkpoint_path):
+            with open(checkpoint_path, "r", encoding="utf-8") as f:
+                old_checkpoint = f.read()
         with open(out_path, "w", encoding="utf-8") as f:
             f.write("{}")
+        with open(final_path, "w", encoding="utf-8") as f:
+            f.write("report")
+        with open(checkpoint_path, "w", encoding="utf-8") as f:
+            json.dump({"jobs": {"harem::book": {"book_key": "book", "out_file": final_path}}}, f)
         try:
             outputs = web_manager._find_book_outputs("book")
             self.assertTrue(any(item["name"] == "book_history_GENERAL_SUMMARY_latest.json" for item in outputs))
+            self.assertTrue(any(item["name"] == "《book》扫书报告_20260607_010203.txt" for item in outputs))
+            self.assertEqual(
+                next(item for item in outputs if item["name"] == "《book》扫书报告_20260607_010203.txt").get("kind"),
+                "final_report",
+            )
         finally:
-            os.unlink(out_path)
+            for path in (out_path, final_path):
+                if os.path.exists(path):
+                    os.unlink(path)
+            if old_checkpoint is None:
+                if os.path.exists(checkpoint_path):
+                    os.unlink(checkpoint_path)
+            else:
+                with open(checkpoint_path, "w", encoding="utf-8") as f:
+                    f.write(old_checkpoint)
 
     def test_web_manager_book_detail_adds_log_link(self):
         task_id = "testtask"

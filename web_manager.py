@@ -222,29 +222,93 @@ def _file_link(path):
     return {"path": path, "name": os.path.basename(path), "url": f"/files?path={quote(path)}"}
 
 
+def _read_json_file(path):
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _add_output_link(outputs_by_path, path, kind=None):
+    link = _file_link(path)
+    if not link:
+        return
+    try:
+        link["mtime"] = os.path.getmtime(path)
+    except OSError:
+        return
+    ap = os.path.abspath(path)
+    if kind:
+        link["kind"] = kind
+    elif ap in outputs_by_path and outputs_by_path[ap].get("kind"):
+        link["kind"] = outputs_by_path[ap]["kind"]
+    outputs_by_path[ap] = link
+
+
+def _checkpoint_report_outputs(book_id):
+    checkpoint_path = os.path.join(get_base_dir(), "results", "report_checkpoint.json")
+    data = _read_json_file(checkpoint_path)
+    if not isinstance(data, dict):
+        return []
+    jobs = data.get("jobs", {})
+    if not isinstance(jobs, dict):
+        return []
+
+    paths = []
+    for job_key, job in jobs.items():
+        if not isinstance(job, dict):
+            continue
+        if job.get("book_key") != book_id and not str(job_key).endswith(f"::{book_id}") and job_key != book_id:
+            continue
+        out_file = job.get("out_file")
+        if out_file:
+            paths.append(out_file)
+    return paths
+
+
 def _find_book_outputs(book_id):
     results_dir = os.path.join(get_base_dir(), "results")
-    outputs = []
+    outputs_by_path = {}
     if not os.path.isdir(results_dir):
-        return outputs
+        return []
+
+    for path in _checkpoint_report_outputs(book_id):
+        _add_output_link(outputs_by_path, path, "final_report")
+
     profile_names = [profile.name for profile in list_available_profiles()]
-    patterns = [
+    filename_patterns = [
         f"{book_id}扫书报告",
+        f"《{book_id}》扫书报告",
         f"{book_id}通用小说报告",
+        f"《{book_id}》通用小说报告",
         f"{book_id}_GENERAL_SUMMARY_latest.json",
     ]
-    patterns.extend(f"{book_id}_{name}_GENERAL_SUMMARY_latest.json" for name in profile_names if name != "general")
+    filename_patterns.extend(f"{book_id}_{name}_GENERAL_SUMMARY_latest.json" for name in profile_names if name != "general")
+    scan_dir_outputs = {"GENERAL_SUMMARY.json", "VERIFIED_REPORT.txt", "FULL_REPORT.txt"}
+    output_exts = {".txt", ".json", ".log", ".md", ".csv"}
+
     for root, _dirs, files in os.walk(results_dir):
+        parent = os.path.basename(root)
+        in_book_dir = book_id in parent
         for filename in files:
+            ext = os.path.splitext(filename)[1].lower()
+            if ext not in output_exts:
+                continue
             path = os.path.join(root, filename)
-            parent = os.path.basename(root)
-            if any(p in filename for p in patterns) or book_id in parent and filename in {"GENERAL_SUMMARY.json", "VERIFIED_REPORT.txt", "FULL_REPORT.txt"}:
-                link = _file_link(path)
-                if link:
-                    link["mtime"] = os.path.getmtime(path)
-                    outputs.append(link)
+            matched = (
+                any(pattern in filename for pattern in filename_patterns)
+                or book_id in filename
+                or (in_book_dir and (filename in scan_dir_outputs or ext in {".txt", ".json"}))
+            )
+            if matched:
+                _add_output_link(outputs_by_path, path)
+
+    outputs = list(outputs_by_path.values())
     outputs.sort(key=lambda x: x.get("mtime", 0), reverse=True)
-    return outputs[:20]
+    return outputs[:100]
 
 
 def _book_detail(book_id):
