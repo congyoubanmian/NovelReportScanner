@@ -3587,6 +3587,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(report._has_male_past_romance_risk("有人传言男主有前女友，但实际没有恋爱经历。"))
         self.assertFalse(report._has_male_past_romance_risk("男主梦见自己前世有妻子背叛。"))
         self.assertTrue(report._has_male_past_romance_risk("证据显示男主前世老婆在他绝症后卷光家产跑路。"))
+        self.assertTrue(report._has_male_past_romance_risk("男主听说前世老婆卷光家产跑路，后来证实是误会；但证据显示男主有前女友且已经分手。"))
+        self.assertTrue(report._has_male_past_romance_risk("男主前世老婆卷钱跑路的传言是误会，但事实是男主前妻已经去世。"))
 
         old_openai = report.OpenAI
         old_api_key_pool = report.API_KEY_POOL

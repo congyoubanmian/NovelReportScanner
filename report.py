@@ -2003,7 +2003,8 @@ def _has_male_past_romance_risk(text: str) -> bool:
     text = str(text or "")
     if not text:
         return False
-    if _male_past_romance_blob_is_nonfactual_or_negated(text):
+    text = _male_past_romance_effective_risk_text(text)
+    if not text:
         return False
     if _male_past_romance_text_has_only_non_partner_homonyms(text):
         return False
@@ -2096,6 +2097,19 @@ def _has_male_romantic_ex_partner_context(text: str) -> bool:
         "恋爱", "感情", "分手", "复合", "结婚", "离婚", "婚姻",
     )
     return any(word in text for word in romantic_context_words)
+
+
+def _male_past_romance_effective_risk_text(text: str) -> str:
+    chunks = re.split(r"[\n，,。；;！？!?]+", str(text or ""))
+    effective: list[str] = []
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if _male_past_romance_blob_is_nonfactual_or_negated(chunk):
+            continue
+        effective.append(chunk)
+    return "\n".join(effective)
 
 
 def _male_past_romance_blob_is_nonfactual_or_negated(text: str) -> bool:
