@@ -8,7 +8,9 @@ import multiprocessing
 import os
 import sys
 import time
+import traceback
 import uuid
+import argparse
 from dataclasses import replace
 
 
@@ -48,6 +50,7 @@ _VALIDATED_NON_NEGATIVE_INT_KEYS = {
 _VALIDATED_NON_NEGATIVE_FLOAT_KEYS = {
     "RESCAN_PRE_FILTER_THRESHOLD": _DEFAULT_ENV_SETTINGS["RESCAN_PRE_FILTER_THRESHOLD"],
 }
+_WEB_SCAN_RESULT_PREFIX = "__NOVEL_REPORT_SCANNER_RESULT__="
 
 
 def get_base_dir():
@@ -593,6 +596,40 @@ def process_novel_with_profiles(novel_path, profile_name=None, run_id=None, skip
     return _merge_profile_results(book_name, results)
 
 
+def _run_web_scan_task(argv=None):
+    parser = argparse.ArgumentParser(description="Run one web-managed novel scan task.")
+    parser.add_argument("--novel-path", required=True)
+    parser.add_argument("--profile-json", default='"auto"')
+    parser.add_argument("--run-id", default=None)
+    parser.add_argument("--skip-fresh", action="store_true")
+    args = parser.parse_args(argv)
+
+    try:
+        profile_name = json.loads(args.profile_json)
+    except json.JSONDecodeError:
+        profile_name = args.profile_json
+
+    try:
+        load_configs(get_base_dir(), interactive=False)
+        result = process_novel_with_profiles(
+            args.novel_path,
+            profile_name=profile_name,
+            run_id=args.run_id,
+            skip_fresh=args.skip_fresh,
+        )
+    except BaseException as exc:
+        traceback.print_exc()
+        result = {
+            "status": "fail",
+            "book_name": os.path.splitext(os.path.basename(args.novel_path))[0],
+            "profile": profile_name,
+            "error": str(exc),
+        }
+
+    print(_WEB_SCAN_RESULT_PREFIX + json.dumps(result, ensure_ascii=False))
+    return 0 if result.get("status") in {"ok", "skipped"} else 1
+
+
 def run():
     base_dir = get_base_dir()
     run_id = _generate_run_id()
@@ -662,4 +699,6 @@ def run():
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
+    if len(sys.argv) > 1 and sys.argv[1] == "--web-scan-task":
+        sys.exit(_run_web_scan_task(sys.argv[2:]))
     run()

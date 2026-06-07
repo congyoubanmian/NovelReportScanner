@@ -1531,6 +1531,38 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         finally:
             web_manager.MAX_JSON_BODY_SIZE = old_limit
 
+    def test_web_manager_scan_subprocess_parses_result_and_logs_output(self):
+        class FakeProcess:
+            def __init__(self):
+                self.stdout = iter([
+                    "scan started\n",
+                    web_manager._WEB_SCAN_RESULT_PREFIX + '{"status":"ok","book_name":"book","profile":"general"}\n',
+                ])
+
+            def wait(self):
+                return 0
+
+        old_popen = web_manager.subprocess.Popen
+        try:
+            calls = []
+
+            def fake_popen(cmd, **kwargs):
+                calls.append((cmd, kwargs))
+                return FakeProcess()
+
+            web_manager.subprocess.Popen = fake_popen
+            log_file = io.StringIO()
+            result = web_manager._run_scan_subprocess("/tmp/book.txt", ["general"], "run1", log_file)
+
+            self.assertEqual(result["status"], "ok")
+            self.assertEqual(result["profile"], "general")
+            self.assertIn("scan started", log_file.getvalue())
+            self.assertNotIn(web_manager._WEB_SCAN_RESULT_PREFIX, log_file.getvalue())
+            self.assertIn("--web-scan-task", calls[0][0])
+            self.assertIn("--profile-json", calls[0][0])
+        finally:
+            web_manager.subprocess.Popen = old_popen
+
     def test_web_manager_public_state_includes_profiles_and_suggestions(self):
         old_state = web_manager.STATE
         with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as f:

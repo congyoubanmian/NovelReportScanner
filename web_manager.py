@@ -1,6 +1,7 @@
 import json
 import os
 import queue
+import subprocess
 import threading
 import time
 import uuid
@@ -10,7 +11,6 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 warnings.filterwarnings("ignore", category=DeprecationWarning, message="'cgi' is deprecated*")
 import cgi
-import contextlib
 import sys
 
 from analysis_profiles import (
@@ -20,7 +20,7 @@ from analysis_profiles import (
     normalize_profile_name,
     profile_options,
 )
-from main import _generate_run_id, get_base_dir, load_configs, process_novel_with_profiles
+from main import _WEB_SCAN_RESULT_PREFIX, _generate_run_id, get_base_dir, load_configs
 
 
 STATE_LOCK = threading.RLock()
@@ -36,20 +36,6 @@ OUTPUTS_CACHE_TTL_SECONDS = float(os.environ.get("OUTPUTS_CACHE_TTL_SECONDS", "5
 SSE_STATE_INTERVAL_SECONDS = float(os.environ.get("SSE_STATE_INTERVAL_SECONDS", "3"))
 LAST_BOOK_SYNC_AT = 0.0
 OUTPUTS_CACHE = {}
-
-
-class _Tee:
-    def __init__(self, *streams):
-        self.streams = streams
-
-    def write(self, data):
-        for stream in self.streams:
-            stream.write(data)
-            stream.flush()
-
-    def flush(self):
-        for stream in self.streams:
-            stream.flush()
 
 
 def _state_path():
@@ -623,6 +609,56 @@ def _delete_book(book_id):
     return True, book_id
 
 
+def _web_scan_command(book_path, profile_name, run_id):
+    task_args = [
+        "--web-scan-task",
+        "--novel-path",
+        book_path,
+        "--profile-json",
+        json.dumps(profile_name, ensure_ascii=False),
+        "--run-id",
+        run_id,
+        "--skip-fresh",
+    ]
+    if getattr(sys, "frozen", False):
+        return [sys.executable, *task_args]
+    return [sys.executable, os.path.join(get_base_dir(), "main.py"), *task_args]
+
+
+def _run_scan_subprocess(book_path, profile_name, run_id, log_file):
+    cmd = _web_scan_command(book_path, profile_name, run_id)
+    proc = subprocess.Popen(
+        cmd,
+        cwd=get_base_dir(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+    )
+    result = None
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        if line.startswith(_WEB_SCAN_RESULT_PREFIX):
+            payload = line[len(_WEB_SCAN_RESULT_PREFIX):].strip()
+            try:
+                result = json.loads(payload)
+            except json.JSONDecodeError as exc:
+                result = {"status": "fail", "error": f"invalid scan result: {exc}"}
+            continue
+        log_file.write(line)
+        log_file.flush()
+    return_code = proc.wait()
+    if result is None:
+        result = {"status": "fail", "error": f"scan process exited without result (code {return_code})"}
+    elif return_code != 0 and result.get("status") in {"ok", "skipped"}:
+        result = dict(result)
+        result["status"] = "fail"
+        result["error"] = f"scan process exited with code {return_code}"
+    return result
+
+
 def _find_task(task_id):
     for task in STATE["tasks"]:
         if task.get("id") == task_id:
@@ -660,23 +696,21 @@ def _worker_loop():
         try:
             with open(task["log_path"], "a", encoding="utf-8") as log_file:
                 log_file.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] task {task_id} started\n")
-                tee_out = _Tee(sys.stdout, log_file)
-                tee_err = _Tee(sys.stderr, log_file)
-                with contextlib.redirect_stdout(tee_out), contextlib.redirect_stderr(tee_err):
-                    ok, config_error = _try_load_runtime_config("scan")
-                    if not ok:
-                        raise RuntimeError(config_error)
-                    profile_name = task.get("profile", "auto")
-                    if profile_name == "auto":
-                        suggestions = infer_profile_candidates_for_novel(book["path"], book.get("name", ""), min_score=1)
-                        task["profile_suggestions"] = suggestions
-                        resolved_profiles = infer_profiles_for_novel(book["path"], book.get("name", ""))
-                        task["resolved_profiles"] = resolved_profiles
-                        task["resolved_profile"] = "、".join(resolved_profiles)
-                    elif isinstance(profile_name, list):
-                        task["resolved_profiles"] = profile_name
-                        task["resolved_profile"] = "、".join(profile_name)
-                    result = process_novel_with_profiles(book["path"], profile_name=profile_name, run_id=_generate_run_id(), skip_fresh=True)
+                log_file.flush()
+                ok, config_error = _try_load_runtime_config("scan")
+                if not ok:
+                    raise RuntimeError(config_error)
+                profile_name = task.get("profile", "auto")
+                if profile_name == "auto":
+                    suggestions = infer_profile_candidates_for_novel(book["path"], book.get("name", ""), min_score=1)
+                    task["profile_suggestions"] = suggestions
+                    resolved_profiles = infer_profiles_for_novel(book["path"], book.get("name", ""))
+                    task["resolved_profiles"] = resolved_profiles
+                    task["resolved_profile"] = "、".join(resolved_profiles)
+                elif isinstance(profile_name, list):
+                    task["resolved_profiles"] = profile_name
+                    task["resolved_profile"] = "、".join(profile_name)
+                result = _run_scan_subprocess(book["path"], profile_name, _generate_run_id(), log_file)
             with STATE_LOCK:
                 task["status"] = "completed" if result.get("status") in {"ok", "skipped"} else "failed"
                 task["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
