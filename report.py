@@ -1019,6 +1019,14 @@ def _contains_positive_signal_text(value, keywords) -> bool:
         "功法", "理论", "设定", "制度", "体系", "流派", "知识", "丫鬟", "女仆", "安排",
         "规则", "规矩", "桥段", "写法", "模板", "套路",
     )
+    non_romantic_intimacy_followers = (
+        "度", "等级", "系统", "规则", "设定", "模板", "术语", "说明", "接触史", "接触等级",
+    )
+    non_romantic_intimacy_contexts = (
+        "亲密度", "亲密等级", "亲密系统", "亲密规则", "亲密设定", "亲密模板",
+        "亲密术语", "亲密说明", "亲密接触史", "亲密接触等级",
+        "讲解", "规则", "设定", "模板", "术语", "指标", "数值",
+    )
     nonfactual_ending_contexts = ("梦见", "梦到", "梦境", "幻境", "假死", "制度", "结构", "讲解", "研究", "传说", "故事")
     non_ending_action_followers = ("线索", "证据", "伏笔", "案件", "调查", "评审", "报告", "评价", "评论", "后", "时", "期间", "过程")
     non_romantic_jealousy_contexts = ("厨房", "拌菜", "醋坛", "米醋", "陈醋", "香醋", "调料", "做菜", "事故")
@@ -1054,6 +1062,13 @@ def _contains_positive_signal_text(value, keywords) -> bool:
             system_or_setting_relation = word in ("双修", "同房", "道侣", "恋人", "情侣", "伴侣", "未婚妻") and any(
                 next_text.startswith(hint) for hint in system_or_setting_followers
             )
+            non_romantic_intimacy = word == "亲密" and (
+                any(next_text.startswith(hint) for hint in non_romantic_intimacy_followers)
+                or any(
+                    hint in text[max(0, index - 4):index + len(word) + 12]
+                    for hint in non_romantic_intimacy_contexts
+                )
+            )
             nonfactual_ending = word in ("死亡", "死去", "牺牲", "陨落", "葬", "坟", "墓") and any(
                 hint in text[max(0, index - 8):index + len(word) + 8]
                 for hint in nonfactual_ending_contexts
@@ -1079,6 +1094,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
                 and not non_romantic_emotion
                 and not nonfactual_romance
                 and not system_or_setting_relation
+                and not non_romantic_intimacy
                 and not nonfactual_ending
                 and not non_ending_action
                 and not non_romantic_jealousy

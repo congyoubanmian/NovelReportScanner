@@ -3641,6 +3641,17 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(report._contains_positive_signal_text("她讨论未婚妻模板和退婚套路。", ["未婚妻"]))
         self.assertTrue(report._contains_positive_signal_text("她是男主未婚妻，双方感情稳定。", ["未婚妻"]))
         self.assertFalse(report._contains_positive_signal_text("她尚未成为男主妻子。", ["妻子"]))
+        self.assertFalse(report._contains_positive_signal_text("她负责整理亲密接触史和接触等级说明。", ["亲密"]))
+        self.assertFalse(report._contains_positive_signal_text("游戏里有亲密度系统，她只是讲解规则。", ["亲密"]))
+        self.assertTrue(report._contains_positive_signal_text("她与男主亲密互动并逐渐动心。", ["亲密"]))
+
+        level = report._heroine_position_level(
+            {},
+            {"relationship_with_protagonist": "她负责整理亲密接触史和接触等级说明。", "key_events": "多次出场"},
+            {"count": 3},
+            {},
+        )
+        self.assertNotIn("感情/亲密推进", level)
 
     def test_leak_three_layers_ignores_non_romantic_love_words(self):
         clean = report._summarize_leak_three_layers(
