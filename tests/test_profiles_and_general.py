@@ -83,6 +83,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("player_interaction", game_system.summary_fields)
         self.assertIn("novelty_mechanics", game_system.summary_fields)
         self.assertIn("real_world_impact", game_system.summary_fields)
+        self.assertTrue(any("来源世界观" in item for item in game_system.scan_focus))
 
         self.assertEqual(urban_power.name, "urban_power")
         self.assertTrue(urban_power.uses_general_scan)
