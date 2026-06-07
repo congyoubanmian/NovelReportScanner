@@ -1498,6 +1498,39 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager._sync_books_from_disk = old_sync
             web_manager.SSE_STATE_INTERVAL_SECONDS = old_interval
 
+    def test_web_manager_read_json_payload_limits_size_and_validates_json(self):
+        class FakeHandler(web_manager.Handler):
+            def __init__(self, body, content_length=None):
+                self.rfile = io.BytesIO(body)
+                self.wfile = io.BytesIO()
+                self.headers = {"Content-Length": str(len(body) if content_length is None else content_length)}
+                self.sent = []
+
+            def _send_json(self, data, status=200):
+                self.sent.append((status, data))
+
+        old_limit = web_manager.MAX_JSON_BODY_SIZE
+        try:
+            web_manager.MAX_JSON_BODY_SIZE = 16
+
+            ok_handler = FakeHandler(b'{"book_id":"x"}')
+            self.assertEqual(web_manager.Handler._read_json_payload(ok_handler), {"book_id": "x"})
+            self.assertEqual(ok_handler.sent, [])
+
+            large_handler = FakeHandler(b'{"book_id":"too-large"}')
+            self.assertIsNone(web_manager.Handler._read_json_payload(large_handler))
+            self.assertEqual(large_handler.sent[0][0], 413)
+
+            invalid_json_handler = FakeHandler(b'{"book_id"')
+            self.assertIsNone(web_manager.Handler._read_json_payload(invalid_json_handler))
+            self.assertEqual(invalid_json_handler.sent[0], (400, {"error": "invalid json"}))
+
+            invalid_length_handler = FakeHandler(b"{}", content_length="bad")
+            self.assertIsNone(web_manager.Handler._read_json_payload(invalid_length_handler))
+            self.assertEqual(invalid_length_handler.sent[0], (400, {"error": "invalid content length"}))
+        finally:
+            web_manager.MAX_JSON_BODY_SIZE = old_limit
+
     def test_web_manager_public_state_includes_profiles_and_suggestions(self):
         old_state = web_manager.STATE
         with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as f:

@@ -30,6 +30,7 @@ WORKER_STARTED = False
 STATE = {"books": {}, "tasks": []}
 CONFIG_READY = False
 MAX_UPLOAD_SIZE = int(os.environ.get("MAX_UPLOAD_SIZE", str(100 * 1024 * 1024)))
+MAX_JSON_BODY_SIZE = int(os.environ.get("MAX_JSON_BODY_SIZE", str(64 * 1024)))
 SYNC_BOOKS_TTL_SECONDS = float(os.environ.get("SYNC_BOOKS_TTL_SECONDS", "5"))
 OUTPUTS_CACHE_TTL_SECONDS = float(os.environ.get("OUTPUTS_CACHE_TTL_SECONDS", "5"))
 SSE_STATE_INTERVAL_SECONDS = float(os.environ.get("SSE_STATE_INTERVAL_SECONDS", "3"))
@@ -746,6 +747,24 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _read_json_payload(self):
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self._send_json({"error": "invalid content length"}, 400)
+            return None
+        if length < 0:
+            self._send_json({"error": "invalid content length"}, 400)
+            return None
+        if length > MAX_JSON_BODY_SIZE:
+            self._send_json({"error": f"json body too large, max {MAX_JSON_BODY_SIZE} bytes"}, 413)
+            return None
+        try:
+            return json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+        except json.JSONDecodeError:
+            self._send_json({"error": "invalid json"}, 400)
+            return None
+
     def _guess_mime(self, path):
         ext = os.path.splitext(path)[1].lower()
         return {
@@ -865,8 +884,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         if parsed.path == "/api/profile":
-            length = int(self.headers.get("Content-Length", "0"))
-            payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+            payload = self._read_json_payload()
+            if payload is None:
+                return
             with STATE_LOCK:
                 book = STATE["books"].get(payload.get("book_id"))
                 if not book:
@@ -885,14 +905,16 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": True})
             return
         if parsed.path == "/api/enqueue":
-            length = int(self.headers.get("Content-Length", "0"))
-            payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+            payload = self._read_json_payload()
+            if payload is None:
+                return
             ok, result = _enqueue(payload.get("book_id"))
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
             return
         if parsed.path == "/api/enqueue-batch":
-            length = int(self.headers.get("Content-Length", "0"))
-            payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+            payload = self._read_json_payload()
+            if payload is None:
+                return
             book_ids = payload.get("book_ids")
             if not isinstance(book_ids, list):
                 self._send_json({"error": "book_ids must be a list"}, 400)
@@ -901,14 +923,16 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": bool(result["queued"]), "result": result}, 200)
             return
         if parsed.path == "/api/cancel":
-            length = int(self.headers.get("Content-Length", "0"))
-            payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+            payload = self._read_json_payload()
+            if payload is None:
+                return
             ok, result = _cancel_queued_book(payload.get("book_id"))
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
             return
         if parsed.path == "/api/delete":
-            length = int(self.headers.get("Content-Length", "0"))
-            payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+            payload = self._read_json_payload()
+            if payload is None:
+                return
             ok, result = _delete_book(payload.get("book_id"))
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
             return
