@@ -2,6 +2,7 @@ import json
 import io
 import os
 import re
+import subprocess
 import tempfile
 import time
 import unittest
@@ -75,6 +76,30 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("setting.txt", gitignore_lines)
         self.assertIn("*.tar", gitignore_lines)
         self.assertIn("*.log", gitignore_lines)
+
+    def test_git_does_not_track_runtime_inputs_or_build_artifacts(self):
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        proc = subprocess.run(
+            ["git", "ls-files"],
+            cwd=base_dir,
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        tracked = set(proc.stdout.splitlines())
+
+        forbidden_exact = {"api.txt", "setting.txt", ".env", "novel-report-scanner_latest.tar"}
+        for path in forbidden_exact:
+            self.assertNotIn(path, tracked)
+        self.assertFalse(any(path.startswith("novels/") for path in tracked))
+        self.assertFalse(any(path.endswith(".tar") or path.endswith(".tar.gz") for path in tracked))
+        self.assertFalse(
+            any(
+                path.startswith("results/")
+                and path not in {"results/learned_keywords/seed.json"}
+                for path in tracked
+            )
+        )
 
     def test_readme_documents_public_proxy_tls_deployment(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
