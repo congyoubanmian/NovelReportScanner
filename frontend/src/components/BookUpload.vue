@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
+import { uploadBook } from '../api.js'
 
 const props = defineProps({ profiles: Array })
 const emit = defineEmits(['uploaded'])
@@ -28,7 +29,7 @@ async function submit() {
   fd.append('file', file.value)
   fd.append('profile', profile.value)
   try {
-    await fetch('/upload', { method: 'POST', body: fd })
+    await uploadBook(fd)
     file.value = null
     emit('uploaded')
   } catch (e) {

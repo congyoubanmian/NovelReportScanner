@@ -30,9 +30,11 @@ async function refresh() {
     configReady.value = data.config_ready
     if (selectedBookId.value) {
       const found = books.value.find(b => b.id === selectedBookId.value)
-      if (found && found.status !== selectedBook.value?.status) {
-        // 状态变化时刷新详情
+      if (found) {
         await loadDetail(selectedBookId.value)
+      } else {
+        selectedBookId.value = null
+        selectedBook.value = null
       }
     }
   } catch (e) {

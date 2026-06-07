@@ -34,7 +34,7 @@ export function enqueueBook(bookId) {
 }
 
 export function uploadBook(formData) {
-  return fetch(`${API_BASE}/upload`, {
+  return api('/upload', {
     method: 'POST',
     body: formData
   })

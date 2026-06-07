@@ -1,4 +1,6 @@
 <script setup>
+import { computed } from 'vue'
+
 const props = defineProps({ status: String })
 
 const map = {
@@ -9,7 +11,7 @@ const map = {
   interrupted: { cls: 'tag-interrupted', icon: '⏸️', label: '中断' },
   idle: { cls: 'tag-idle', icon: '💤', label: '空闲' },
 }
-const m = map[props.status] || { cls: 'tag-idle', icon: '', label: props.status || '未知' }
+const m = computed(() => map[props.status] || { cls: 'tag-idle', icon: '', label: props.status || '未知' })
 </script>
 
 <template>
