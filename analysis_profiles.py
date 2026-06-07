@@ -63,6 +63,11 @@ _PROFILE_ORDER = {
     "cosmic_horror": 110,
     "sports_competition": 120,
     "entertainment_industry": 130,
+    "business_career": 140,
+    "crime_forensics": 150,
+    "campus_youth": 160,
+    "farming_management": 170,
+    "isekai_lightnovel": 180,
 }
 
 
@@ -140,6 +145,29 @@ def normalize_profile_name(value: str) -> str:
         "文娱": "entertainment_industry",
         "明星": "entertainment_industry",
         "娱乐文": "entertainment_industry",
+        "职场": "business_career",
+        "商战": "business_career",
+        "创业": "business_career",
+        "商业": "business_career",
+        "职场商战": "business_career",
+        "刑侦": "crime_forensics",
+        "法医": "crime_forensics",
+        "案件": "crime_forensics",
+        "刑侦法医": "crime_forensics",
+        "破案": "crime_forensics",
+        "校园": "campus_youth",
+        "青春": "campus_youth",
+        "校园青春": "campus_youth",
+        "青春成长": "campus_youth",
+        "种田": "farming_management",
+        "经营": "farming_management",
+        "基建": "farming_management",
+        "种田经营": "farming_management",
+        "异世界": "isekai_lightnovel",
+        "轻小说": "isekai_lightnovel",
+        "转生": "isekai_lightnovel",
+        "穿越异世界": "isekai_lightnovel",
+        "日轻": "isekai_lightnovel",
     }
     return aliases.get(name, name)
 

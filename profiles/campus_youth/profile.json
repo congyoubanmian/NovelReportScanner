@@ -1,0 +1,44 @@
+{
+  "display_name": "校园/青春成长专长分析",
+  "description": "关注校园环境、学习竞赛、同伴关系、家庭压力和青春成长弧线。",
+  "enabled_stages": ["character_analysis", "general_scan", "general_report"],
+  "rules_file": "rules.json",
+  "report_mode": "general",
+  "scan_focus": [
+    "学校、班级、社团、宿舍、考试和升学环境",
+    "学习、竞赛、艺体活动、社交关系和师生互动",
+    "友情、暗恋、恋爱、家庭矛盾和自我认同",
+    "校园霸凌、压力、误会、和解和成长代价",
+    "青春氛围、时代细节、日常节奏和情绪表达"
+  ],
+  "summary_fields": [
+    "main_plot",
+    "core_conflicts",
+    "worldbuilding",
+    "campus_setting",
+    "youth_relationships",
+    "academic_growth",
+    "coming_of_age",
+    "strengths",
+    "risks_or_issues",
+    "reader_fit",
+    "overall_assessment"
+  ],
+  "inference_keywords": [
+    {"word": "校园", "weight": 5},
+    {"word": "高中", "weight": 4},
+    {"word": "大学", "weight": 3},
+    {"word": "同桌", "weight": 4},
+    {"word": "班主任", "weight": 4},
+    {"word": "高考", "weight": 5},
+    {"word": "月考", "weight": 4},
+    {"word": "社团", "weight": 3},
+    {"word": "宿舍", "weight": 3},
+    {"word": "校花", "weight": 3},
+    {"word": "校草", "weight": 3},
+    {"word": "竞赛", "weight": 3},
+    {"word": "青春", "weight": 4},
+    {"word": "暗恋", "weight": 3},
+    {"word": "转学生", "weight": 4}
+  ]
+}

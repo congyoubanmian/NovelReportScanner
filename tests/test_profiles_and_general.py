@@ -25,6 +25,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         cosmic_horror = analysis_profiles.load_analysis_profile("克苏鲁")
         sports_competition = analysis_profiles.load_analysis_profile("体育竞技")
         entertainment_industry = analysis_profiles.load_analysis_profile("文娱")
+        business_career = analysis_profiles.load_analysis_profile("职场商战")
+        crime_forensics = analysis_profiles.load_analysis_profile("刑侦法医")
+        campus_youth = analysis_profiles.load_analysis_profile("校园青春")
+        farming_management = analysis_profiles.load_analysis_profile("种田经营")
+        isekai_lightnovel = analysis_profiles.load_analysis_profile("异世界")
 
         self.assertEqual(harem.name, "harem")
         self.assertTrue(harem.uses_harem_reviewer)
@@ -78,6 +83,26 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(entertainment_industry.uses_general_scan)
         self.assertIn("public_opinion", entertainment_industry.summary_fields)
 
+        self.assertEqual(business_career.name, "business_career")
+        self.assertTrue(business_career.uses_general_scan)
+        self.assertIn("business_model", business_career.summary_fields)
+
+        self.assertEqual(crime_forensics.name, "crime_forensics")
+        self.assertTrue(crime_forensics.uses_general_scan)
+        self.assertIn("evidence_chain", crime_forensics.summary_fields)
+
+        self.assertEqual(campus_youth.name, "campus_youth")
+        self.assertTrue(campus_youth.uses_general_scan)
+        self.assertIn("coming_of_age", campus_youth.summary_fields)
+
+        self.assertEqual(farming_management.name, "farming_management")
+        self.assertTrue(farming_management.uses_general_scan)
+        self.assertIn("production_chain", farming_management.summary_fields)
+
+        self.assertEqual(isekai_lightnovel.name, "isekai_lightnovel")
+        self.assertTrue(isekai_lightnovel.uses_general_scan)
+        self.assertIn("isekai_premise", isekai_lightnovel.summary_fields)
+
         self.assertEqual(analysis_profiles.resolve_profile_name("自动"), "auto")
 
     def test_profile_options_are_discovered(self):
@@ -98,6 +123,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("cosmic_horror", names)
         self.assertIn("sports_competition", names)
         self.assertIn("entertainment_industry", names)
+        self.assertIn("business_career", names)
+        self.assertIn("crime_forensics", names)
+        self.assertIn("campus_youth", names)
+        self.assertIn("farming_management", names)
+        self.assertIn("isekai_lightnovel", names)
 
     def test_auto_profile_inference(self):
         self.assertEqual(
@@ -149,6 +179,26 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "entertainment_industry",
         )
         self.assertEqual(
+            analysis_profiles.infer_profile_for_text("创业时代", "公司完成融资，董事会讨论股权、现金流和市场份额。"),
+            "business_career",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("法医现场", "刑警在案发现场勘查，法医尸检后串起证据链锁定嫌疑人。"),
+            "crime_forensics",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("同桌的你", "高中转学生和同桌参加月考竞赛，班主任关注高考压力。"),
+            "campus_youth",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("领地种田记", "主角经营领地，开垦农田和作坊，通过贸易建设城镇。"),
+            "farming_management",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("转生勇者", "主角转生异世界，加入冒险者公会，在地下城挑战魔王。"),
+            "isekai_lightnovel",
+        )
+        self.assertEqual(
             analysis_profiles.infer_profile_for_text("小镇旧事", "他回到故乡，重新面对童年的朋友。"),
             "general",
         )
@@ -182,6 +232,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("apocalypse_survival", crossed)
         self.assertIn("cosmic_horror", crossed)
         self.assertIn("entertainment_industry", crossed)
+
+        mixed = analysis_profiles.infer_profiles_for_text(
+            "异世界种田创业",
+            "主角转生异世界，在领地经营农田和作坊，靠贸易融资扩张公司。",
+        )
+        self.assertIn("isekai_lightnovel", mixed)
+        self.assertIn("farming_management", mixed)
+        self.assertIn("business_career", mixed)
 
         self.assertEqual(
             analysis_profiles.infer_profiles_for_text("小镇旧事", "他回到故乡，重新面对童年的朋友。"),
@@ -446,6 +504,21 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("灾变成因与机制", extra_text)
         self.assertIn("生存资源", extra_text)
         self.assertIn("病毒感染引发尸潮", extra_text)
+
+        more_summary = {
+            "profile_display_name": "刑侦/法医/案件专长分析",
+            "summary_fields": ["case_structure", "evidence_chain", "forensic_procedure"],
+            "summary": {
+                "story_overview": "刑警和法医围绕命案展开侦查。",
+                "case_structure": ["案发现场和嫌疑关系清晰"],
+                "evidence_chain": ["指纹、DNA和监控串联成证据链"],
+                "forensic_procedure": ["尸检结果推动侦查方向"],
+            }
+        }
+        more_text = report.build_general_report("测试书", {}, more_summary)
+        self.assertIn("案件结构", more_text)
+        self.assertIn("证据链", more_text)
+        self.assertIn("法医与侦查程序", more_text)
 
     def test_report_suffix_distinguishes_general_specialties(self):
         general = analysis_profiles.load_analysis_profile("general")

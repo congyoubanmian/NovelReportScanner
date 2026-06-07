@@ -1,0 +1,44 @@
+{
+  "display_name": "异世界/轻小说专长分析",
+  "description": "关注穿越转生、异世界规则、冒险队伍、轻小说节奏和成长爽点。",
+  "enabled_stages": ["character_analysis", "general_scan", "general_report"],
+  "rules_file": "rules.json",
+  "report_mode": "general",
+  "scan_focus": [
+    "穿越、转生、召唤、异世界或轻小说式开局",
+    "魔法、职业、种族、冒险者公会和任务体系",
+    "队伍配置、伙伴关系、日常冒险和阶段 Boss",
+    "外挂能力、成长路线、任务奖励和代价平衡",
+    "轻小说叙事节奏、萌点、吐槽、日常与主线推进"
+  ],
+  "summary_fields": [
+    "main_plot",
+    "core_conflicts",
+    "worldbuilding",
+    "isekai_premise",
+    "adventure_system",
+    "party_dynamics",
+    "lightnovel_pacing",
+    "strengths",
+    "risks_or_issues",
+    "reader_fit",
+    "overall_assessment"
+  ],
+  "inference_keywords": [
+    {"word": "异世界", "weight": 5},
+    {"word": "轻小说", "weight": 5},
+    {"word": "转生", "weight": 5},
+    {"word": "穿越", "weight": 4},
+    {"word": "召唤", "weight": 3},
+    {"word": "勇者", "weight": 5},
+    {"word": "魔王", "weight": 5},
+    {"word": "冒险者公会", "weight": 5},
+    {"word": "地下城", "weight": 4},
+    {"word": "队伍", "weight": 2},
+    {"word": "职业等级", "weight": 4},
+    {"word": "魔法师", "weight": 3},
+    {"word": "精灵", "weight": 3},
+    {"word": "兽人", "weight": 3},
+    {"word": "史莱姆", "weight": 4}
+  ]
+}

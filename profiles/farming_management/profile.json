@@ -1,0 +1,44 @@
+{
+  "display_name": "种田/经营/基建专长分析",
+  "description": "关注资源生产、经营闭环、组织建设、贸易扩张和长期发展节奏。",
+  "enabled_stages": ["character_analysis", "general_scan", "general_report"],
+  "rules_file": "rules.json",
+  "report_mode": "general",
+  "scan_focus": [
+    "土地、产业、技术、人口、物流和资源产出",
+    "农业、店铺、领地、工坊、基地或城市经营",
+    "生产、库存、交易、利润、扩张和风险控制",
+    "组织分工、制度建设、人才招募和民生反馈",
+    "慢节奏爽点、建设成就、外部威胁和长期目标"
+  ],
+  "summary_fields": [
+    "main_plot",
+    "core_conflicts",
+    "worldbuilding",
+    "production_chain",
+    "resource_management",
+    "trade_expansion",
+    "community_building",
+    "strengths",
+    "risks_or_issues",
+    "reader_fit",
+    "overall_assessment"
+  ],
+  "inference_keywords": [
+    {"word": "种田", "weight": 5},
+    {"word": "经营", "weight": 4},
+    {"word": "基建", "weight": 5},
+    {"word": "领地", "weight": 4},
+    {"word": "庄园", "weight": 4},
+    {"word": "农田", "weight": 4},
+    {"word": "作坊", "weight": 4},
+    {"word": "工坊", "weight": 4},
+    {"word": "开店", "weight": 4},
+    {"word": "商铺", "weight": 3},
+    {"word": "贸易", "weight": 3},
+    {"word": "粮食", "weight": 3},
+    {"word": "税收", "weight": 3},
+    {"word": "人口", "weight": 2},
+    {"word": "城镇", "weight": 3}
+  ]
+}

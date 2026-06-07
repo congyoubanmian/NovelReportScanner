@@ -1,0 +1,44 @@
+{
+  "display_name": "职场/商战/创业专长分析",
+  "description": "关注行业赛道、商业模式、组织管理、资本博弈和职场成长线是否可信。",
+  "enabled_stages": ["character_analysis", "general_scan", "general_report"],
+  "rules_file": "rules.json",
+  "report_mode": "general",
+  "scan_focus": [
+    "公司、行业、产品、市场和商业模式",
+    "创业、融资、并购、竞争、渠道和现金流",
+    "职场晋升、组织架构、管理冲突和权责边界",
+    "合同、股权、法务、财税、舆论和合规风险",
+    "主角能力、资源来源、决策代价和事业成长"
+  ],
+  "summary_fields": [
+    "main_plot",
+    "core_conflicts",
+    "worldbuilding",
+    "business_model",
+    "market_competition",
+    "organization_management",
+    "career_progression",
+    "strengths",
+    "risks_or_issues",
+    "reader_fit",
+    "overall_assessment"
+  ],
+  "inference_keywords": [
+    {"word": "创业", "weight": 5},
+    {"word": "融资", "weight": 5},
+    {"word": "股权", "weight": 4},
+    {"word": "董事会", "weight": 4},
+    {"word": "上市", "weight": 4},
+    {"word": "并购", "weight": 4},
+    {"word": "商战", "weight": 5},
+    {"word": "职场", "weight": 4},
+    {"word": "老板", "weight": 2},
+    {"word": "公司", "weight": 2},
+    {"word": "项目", "weight": 2},
+    {"word": "合同", "weight": 3},
+    {"word": "现金流", "weight": 4},
+    {"word": "市场份额", "weight": 4},
+    {"word": "投资人", "weight": 4}
+  ]
+}

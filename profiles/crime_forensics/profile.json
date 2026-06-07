@@ -1,0 +1,44 @@
+{
+  "display_name": "刑侦/法医/案件专长分析",
+  "description": "关注案件结构、侦查流程、证据链、法医技术和司法程序。",
+  "enabled_stages": ["character_analysis", "general_scan", "general_report"],
+  "rules_file": "rules.json",
+  "report_mode": "general",
+  "scan_focus": [
+    "案件类型、被害人、嫌疑人、动机和作案过程",
+    "现场勘查、尸检、物证、监控、走访和审讯",
+    "证据链、推理路径、误导线索和破案节点",
+    "刑警、法医、检察、法院和媒体舆论的程序关系",
+    "案件尺度、伦理冲突、法律边界和现实风险"
+  ],
+  "summary_fields": [
+    "main_plot",
+    "core_conflicts",
+    "worldbuilding",
+    "case_structure",
+    "evidence_chain",
+    "forensic_procedure",
+    "legal_realism",
+    "strengths",
+    "risks_or_issues",
+    "reader_fit",
+    "overall_assessment"
+  ],
+  "inference_keywords": [
+    {"word": "刑侦", "weight": 5},
+    {"word": "法医", "weight": 5},
+    {"word": "尸检", "weight": 5},
+    {"word": "命案", "weight": 4},
+    {"word": "凶案", "weight": 4},
+    {"word": "嫌疑人", "weight": 4},
+    {"word": "证据链", "weight": 5},
+    {"word": "现场勘查", "weight": 5},
+    {"word": "审讯", "weight": 4},
+    {"word": "刑警", "weight": 4},
+    {"word": "DNA", "weight": 3},
+    {"word": "指纹", "weight": 3},
+    {"word": "检察官", "weight": 3},
+    {"word": "案发现场", "weight": 4},
+    {"word": "犯罪嫌疑人", "weight": 4}
+  ]
+}
