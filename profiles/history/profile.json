@@ -9,6 +9,12 @@
   ],
   "rules_file": "rules.json",
   "report_mode": "general",
+  "cross_profile_rules": {
+    "harem": {
+      "import_categories": ["雷点（严重毒点）", "郁闷点"],
+      "import_points": ["绿帽", "死女", "送女", "前世雷", "破鞋/非处/非初", "漏女", "亵女"]
+    }
+  },
   "scan_focus": [
     "历史时代背景、制度、官职、礼法、经济和军事组织是否自洽",
     "战争、权谋、朝堂、地方治理和派系博弈的逻辑",

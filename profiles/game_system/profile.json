@@ -9,6 +9,12 @@
   ],
   "rules_file": "rules.json",
   "report_mode": "general",
+  "cross_profile_rules": {
+    "harem": {
+      "import_categories": ["雷点（严重毒点）", "郁闷点"],
+      "import_points": ["绿帽", "死女", "送女", "前世雷", "破鞋/非处/非初", "漏女", "亵女"]
+    }
+  },
   "scan_focus": [
     "系统机制：面板显示、任务发布、技能获取、属性成长、奖励惩罚体系是否稳定可预期",
     "流派判定：诸天流（自由穿梭）vs 无限流（规则约束）vs 单机系统流，各自的驱动机制",

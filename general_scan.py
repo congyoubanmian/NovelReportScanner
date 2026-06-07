@@ -83,26 +83,61 @@ def _safe_list(value: Any, limit: int = 20) -> List[str]:
     return out
 
 
-def _profile_rules_text(profile) -> str:
-    rules_file = getattr(profile, "rules_file", "") or ""
+def _rules_lines_from_file(rules_file: str, import_categories=None, import_points=None) -> List[str]:
     data = _read_json(rules_file)
     if not isinstance(data, dict):
-        return "（无专项规则）"
+        return []
+    category_filter = {str(x) for x in (import_categories or []) if str(x).strip()}
+    point_filter = {str(x) for x in (import_points or []) if str(x).strip()}
     lines = []
     for category in data.get("categories", []) or []:
         if not isinstance(category, dict):
             continue
         name = str(category.get("name") or "").strip()
         description = str(category.get("description") or "").strip()
-        if name:
-            lines.append(f"【{name}】{description}")
+        include_category = not category_filter or name in category_filter
+        point_lines = []
         for point in category.get("points", []) or []:
             if not isinstance(point, dict):
                 continue
             point_name = str(point.get("name") or "").strip()
             point_desc = str(point.get("description") or "").strip()
+            if point_filter and point_name not in point_filter:
+                continue
             if point_name:
-                lines.append(f"- {point_name}: {point_desc}")
+                point_lines.append(f"- {point_name}: {point_desc}")
+        if not include_category and not point_lines:
+            continue
+        if name:
+            lines.append(f"【{name}】{description}")
+        lines.extend(point_lines)
+    return lines
+
+
+def _cross_profile_rules_text(profile) -> str:
+    cross_rules = getattr(profile, "cross_profile_rules", {}) or {}
+    if not isinstance(cross_rules, dict):
+        return ""
+    sections = []
+    for source_name, config in cross_rules.items():
+        if not isinstance(config, dict):
+            continue
+        source_profile = load_analysis_profile(str(source_name))
+        lines = _rules_lines_from_file(
+            getattr(source_profile, "rules_file", "") or "",
+            import_categories=config.get("import_categories") if isinstance(config.get("import_categories"), list) else None,
+            import_points=config.get("import_points") if isinstance(config.get("import_points"), list) else None,
+        )
+        if lines:
+            sections.append(f"【跨类型导入：{source_profile.display_name}】\n" + "\n".join(lines))
+    return "\n\n".join(sections)
+
+
+def _profile_rules_text(profile) -> str:
+    lines = _rules_lines_from_file(getattr(profile, "rules_file", "") or "")
+    cross_text = _cross_profile_rules_text(profile)
+    if cross_text:
+        lines.append(cross_text)
     return "\n".join(lines) if lines else "（无专项规则）"
 
 

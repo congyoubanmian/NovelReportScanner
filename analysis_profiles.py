@@ -23,6 +23,7 @@ class AnalysisProfile:
     scan_focus: List[str]
     summary_fields: List[str]
     harem_plus: Dict[str, Any]
+    cross_profile_rules: Dict[str, Any]
 
     @property
     def uses_harem_reviewer(self) -> bool:
@@ -228,6 +229,7 @@ def load_analysis_profile(profile_name: str = None) -> AnalysisProfile:
         scan_focus=[str(x) for x in manifest.get("scan_focus", []) if str(x).strip()],
         summary_fields=[str(x) for x in manifest.get("summary_fields", []) if str(x).strip()],
         harem_plus=manifest.get("harem_plus") if isinstance(manifest.get("harem_plus"), dict) else {},
+        cross_profile_rules=manifest.get("cross_profile_rules") if isinstance(manifest.get("cross_profile_rules"), dict) else {},
     )
 
 

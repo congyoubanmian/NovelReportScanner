@@ -282,6 +282,18 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("求道主题", xianxia_text)
         self.assertIn("玩家互动", game_text)
 
+    def test_specialty_profiles_import_harem_cross_rules(self):
+        for profile_name in ["xianxia_fantasy", "history", "urban_power", "game_system"]:
+            profile = analysis_profiles.load_analysis_profile(profile_name)
+            rules_text = general_scan._profile_rules_text(profile)
+
+            self.assertIn("harem", profile.cross_profile_rules)
+            self.assertIn("跨类型导入：后宫/男性向排雷分析", rules_text)
+            self.assertIn("绿帽", rules_text)
+            self.assertIn("送女", rules_text)
+            self.assertIn("漏女", rules_text)
+            self.assertNotIn("- 万人骑:", rules_text)
+
     def test_military_apocalypse_and_crime_rules_include_kimi_categories(self):
         rule_paths = {
             "military_war": os.path.join("profiles", "military_war", "rules.json"),

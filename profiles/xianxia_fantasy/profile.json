@@ -9,6 +9,12 @@
   ],
   "rules_file": "rules.json",
   "report_mode": "general",
+  "cross_profile_rules": {
+    "harem": {
+      "import_categories": ["雷点（严重毒点）", "郁闷点"],
+      "import_points": ["绿帽", "死女", "送女", "前世雷", "破鞋/非处/非初", "漏女", "亵女"]
+    }
+  },
   "scan_focus": [
     "境界、修炼体系、功法、灵根、血脉、体质和战力层级是否稳定",
     "宗门、家族、王朝、仙界/魔界等势力结构和资源分配逻辑",
