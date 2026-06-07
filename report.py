@@ -1815,9 +1815,15 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
     heroine_material = []
     intimacy_words = ("亲吻", "拥抱", "牵手", "同床", "双修", "成亲", "表白", "吃醋", "暧昧", "喜欢", "爱慕", "私通", "推倒")
     romance_gap_words = ("感情戏缺失", "预期落差", "进度条诈骗", "恋爱推进停滞", "感情描写缺失")
+    explicit_romance_gap_words = (
+        "没有感情描写", "无感情描写", "完全没有感情描写", "没有任何感情描写", "感情描写缺失",
+        "感情戏缺失", "没有感情戏", "无感情戏", "没有感情线", "无感情线",
+        "没有恋爱线", "无恋爱线", "没有恋爱", "没有暧昧", "恋爱推进缺失", "感情推进缺失",
+    )
     tooling_words = ("工具人女主", "工具人", "捧哏", "召唤物", "背景说明", "客串", "神隐")
     presence_low = 0
     intimacy_hits = 0
+    explicit_romance_gap_hits = 0
     for h in heroines or []:
         name = str((h or {}).get("name") or "").strip()
         if not name:
@@ -1839,6 +1845,8 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
         )
         if _contains_positive_signal_text(blob, intimacy_words):
             intimacy_hits += 1
+        if _contains_any_text(blob, explicit_romance_gap_words):
+            explicit_romance_gap_hits += 1
         count = int(evid.get("count") or h.get("count") or 0)
         if count <= 2 and len(blob) < 120:
             presence_low += 1
@@ -1870,6 +1878,10 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
         romance_density = "极低：识别到女角色但未见明确恋爱/暧昧/亲密推进材料。"
         romance_progression = "未见明确恋爱推进，疑似长期停留在工具、案件、战斗或背景功能。"
         expectation_gap = "若作品标题、标签或读者期待包含后宫/恋爱，本报告材料显示存在明显感情戏缺失风险。"
+    elif explicit_romance_gap_hits:
+        romance_density = "偏低：材料虽出现亲密/关系事件，但同时明确提示感情描写缺失。"
+        romance_progression = "存在行为或关系节点，但缺少可确认的恋爱/情绪推进。"
+        expectation_gap = "若作品标题、标签或读者期待包含后宫/恋爱，本报告材料显示存在感情戏兑现不足风险。"
     elif has_romance_gap_issue:
         romance_density = "偏低：二审已命中感情戏缺失/预期落差类郁闷点。"
         romance_progression = "存在感情线推进不足风险，需结合郁闷点条目复核。"

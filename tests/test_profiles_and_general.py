@@ -3461,6 +3461,40 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("未见明确恋爱推进", negated["romance_progression"])
         self.assertIn("中等或以上", positive["romance_density"])
 
+    def test_harem_romance_overview_keeps_physical_event_from_inflating_romance(self):
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        try:
+            report.OpenAI = None
+            report.API_KEY_POOL = []
+            overview = report._summarize_harem_romance_overview(
+                {
+                    "all_female_characters": {
+                        "甲女": {
+                            "count": 4,
+                            "summaries": ["她传授男主双修之法并实践，但完全没有任何感情描写。"],
+                        }
+                    }
+                },
+                {},
+                [
+                    {
+                        "name": "甲女",
+                        "relationship_type": "短暂双修对象",
+                        "summary": "与男主双修，但没有感情戏，没有恋爱线。",
+                    }
+                ],
+                {},
+            )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+
+        self.assertIn("偏低", overview["romance_density"])
+        self.assertIn("感情描写缺失", overview["romance_density"])
+        self.assertIn("缺少可确认的恋爱/情绪推进", overview["romance_progression"])
+        self.assertIn("感情戏兑现不足风险", overview["romance_expectation_gap"])
+
     def test_harem_romance_overview_avoids_current_wife_as_past_risk(self):
         self.assertFalse(report._has_male_past_romance_risk("男主与妻子一起经营家族。"))
         self.assertFalse(report._has_male_past_romance_risk("男主是前任掌门留下的弟子。"))
