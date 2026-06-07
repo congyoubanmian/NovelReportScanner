@@ -3639,6 +3639,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(ex_wife_vibe.startswith("目标女主"), ex_wife_vibe)
         self.assertIn("缺少感情/后宫定位证据", ex_wife_vibe)
 
+        no_romance_functional = report._heroine_position_level(
+            {"importance_rank": 1},
+            {
+                "identity": "经营助手",
+                "relationship_with_protagonist": "帮男主管理领地和账本",
+                "features": "工具人功能明显",
+                "key_events": "高频参与种田经营，但没有感情戏，没有恋爱线。",
+            },
+            {"count": 30, "summaries": ["负责账本、税收、供应链说明。"]},
+            {},
+        )
+        self.assertTrue(no_romance_functional.startswith("低证据女角色"), no_romance_functional)
+        self.assertIn("明确缺少恋爱/后宫推进", no_romance_functional)
+
     def test_report_does_not_promote_functional_character_without_romance_signal(self):
         level = report._heroine_position_level(
             {"importance_rank": 2},

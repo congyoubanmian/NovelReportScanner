@@ -1260,7 +1260,11 @@ def _heroine_position_level(heroine_meta: dict, profile: dict, evidence: dict = 
     if _contains_any_text(text, ["工具", "召唤", "捧哏", "背景", "说明", "偶尔", "客串", "存在感", "神隐"]):
         score -= 2
         risks.append("低存在感/工具人线索")
-    has_romance_gap_signal = _contains_any_text(text, ["没有恋爱", "没有暧昧", "没有感情描写", "无感情描写", "感情戏缺失", "缺少感情", "没有后宫关系确认", "未确认后宫关系", "无后宫关系确认"])
+    has_romance_gap_signal = _contains_any_text(text, [
+        "没有恋爱", "没有恋爱线", "无恋爱线", "没有暧昧", "没有感情描写", "无感情描写",
+        "没有感情戏", "无感情戏", "没有感情线", "无感情线", "感情戏缺失", "缺少感情",
+        "没有后宫关系确认", "未确认后宫关系", "无后宫关系确认",
+    ])
     if has_romance_gap_signal:
         score -= 1
         risks.append("明确缺少恋爱/后宫推进")
