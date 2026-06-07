@@ -1,3 +1,14 @@
+# ========== Stage 1: Build frontend ==========
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /app/frontend
+COPY frontend/package.json ./
+RUN npm install
+
+COPY frontend/ ./
+RUN npm run build
+
+# ========== Stage 2: Python runtime ==========
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -14,7 +25,11 @@ ARG PIP_INDEX_URL=https://pypi.org/simple
 COPY requirements.txt .
 RUN pip install --no-cache-dir --timeout 120 --retries 5 -i "$PIP_INDEX_URL" -r requirements.txt
 
+# Copy Python source code
 COPY . .
+
+# Copy frontend build artifacts from stage 1
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 RUN mkdir -p /app/novels /app/results
 

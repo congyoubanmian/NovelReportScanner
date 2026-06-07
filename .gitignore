@@ -10,3 +10,5 @@ results/
 !.env.sample
 *.tar
 *.tar.gz
+frontend/node_modules/
+frontend/dist/

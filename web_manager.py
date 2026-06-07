@@ -49,6 +49,37 @@ def _state_path():
     return os.path.join(get_base_dir(), "results", "web_manager_state.json")
 
 
+def _static_dir():
+    """前端构建产物目录"""
+    return os.path.join(get_base_dir(), "frontend", "dist")
+
+
+def _static_file_path(path):
+    """安全解析静态文件路径，防止目录穿越"""
+    base = os.path.abspath(_static_dir())
+    if not os.path.isdir(base):
+        return None
+    # 去掉开头的 /
+    rel = path.lstrip("/")
+    target = os.path.abspath(os.path.join(base, rel))
+    # 安全检查：确保在 base 目录内
+    if not target.startswith(base + os.sep) and target != base:
+        return None
+    if os.path.isfile(target):
+        return target
+    return None
+
+
+def _serve_index_html():
+    """返回前端入口 HTML"""
+    index_path = os.path.join(_static_dir(), "index.html")
+    if os.path.isfile(index_path):
+        with open(index_path, "rb") as f:
+            return f.read()
+    # fallback：如果构建产物不存在，返回内联 HTML
+    return HTML.encode("utf-8") if HTML else b"Frontend not built"
+
+
 def _task_log_dir():
     path = os.path.join(get_base_dir(), "results", "web_logs")
     os.makedirs(path, exist_ok=True)
@@ -823,15 +854,56 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Location", path)
         self.end_headers()
 
+    def _guess_mime(self, path):
+        ext = os.path.splitext(path)[1].lower()
+        return {
+            ".html": "text/html; charset=utf-8",
+            ".js": "application/javascript; charset=utf-8",
+            ".css": "text/css; charset=utf-8",
+            ".json": "application/json; charset=utf-8",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".svg": "image/svg+xml",
+            ".ico": "image/x-icon",
+            ".woff2": "font/woff2",
+            ".woff": "font/woff",
+            ".ttf": "font/ttf",
+        }.get(ext, "application/octet-stream")
+
+    def _serve_static(self, path):
+        file_path = _static_file_path(path)
+        if not file_path:
+            return False
+        try:
+            with open(file_path, "rb") as f:
+                body = f.read()
+        except OSError:
+            return False
+        self.send_response(200)
+        self.send_header("Content-Type", self._guess_mime(file_path))
+        self.send_header("Content-Length", str(len(body)))
+        # 静态资源可加缓存
+        if "/assets/" in path:
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        self.end_headers()
+        self.wfile.write(body)
+        return True
+
     def do_GET(self):
         parsed = urlparse(self.path)
+        # 静态文件和前端入口
         if parsed.path == "/":
-            body = HTML.encode("utf-8")
+            body = _serve_index_html()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+            return
+        # 尝试作为静态文件服务（前端构建产物中的 js/css 等）
+        if self._serve_static(parsed.path):
             return
         if parsed.path == "/healthz":
             self._send_json({"ok": True, "config_ready": CONFIG_READY})
