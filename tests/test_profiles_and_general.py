@@ -7411,14 +7411,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         finally:
             os.unlink(novel_path)
 
-    def test_find_detailed_json_strict_does_not_fallback_to_other_book(self):
+    def test_find_detailed_json_with_book_key_does_not_fallback_to_other_book(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             other_path = os.path.join(tmpdir, "乙书_detailed_20260609.json")
             with open(other_path, "w", encoding="utf-8") as f:
                 json.dump({"book": "乙书"}, f)
 
             self.assertIsNone(report.find_detailed_json("甲书", base_dir=tmpdir, strict=True))
-            self.assertEqual(report.find_detailed_json("甲书", base_dir=tmpdir, strict=False), other_path)
+            self.assertIsNone(report.find_detailed_json("甲书", base_dir=tmpdir, strict=False))
+            self.assertEqual(report.find_detailed_json("", base_dir=tmpdir, strict=False), other_path)
 
     def test_report_main_with_novel_path_does_not_use_other_book_detail(self):
         old_results_dir = report.RESULTS_DIR

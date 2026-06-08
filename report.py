@@ -563,7 +563,7 @@ def find_latest(pattern: str, base_dir: str = RESULTS_DIR):
 def find_detailed_json(book_key: str, base_dir: str = RESULTS_DIR, detail_path: str = None, strict: bool = False):
     """
     根据书名 key 查找对应的 *_detailed_*.json 文件
-    优先匹配同名书籍的文件
+    优先匹配同名书籍的文件；有明确书名时禁止降级读取其他书的 latest detailed。
     """
     if detail_path:
         return detail_path
@@ -576,11 +576,7 @@ def find_detailed_json(book_key: str, base_dir: str = RESULTS_DIR, detail_path: 
     if paths:
         return max(paths, key=os.path.getmtime)
 
-    if strict:
-        return None
-
-    # 降级：查找任意 detailed 文件
-    return find_latest("*_detailed_*.json", base_dir)
+    return None
 
 
 def find_general_summary_json(book_key: str, base_dir: str = RESULTS_DIR, profile_name: str = "general"):
