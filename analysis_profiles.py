@@ -95,6 +95,13 @@ COMBO_BONUSES = {
         ({"收容物", "模因", "认知崩溃"}, 8),
         ({"SAN值", "理智", "精神污染"}, 8),
     ],
+    "chinese_weird": [
+        ({"规则怪谈", "隐藏规则"}, 8),
+        ({"规则怪谈", "违反规则", "逃生"}, 8),
+        ({"中式诡异", "民俗", "禁忌"}, 8),
+        ({"祠堂", "纸人", "红白喜事"}, 8),
+        ({"怪谈副本", "通关规则"}, 8),
+    ],
     "xianxia_fantasy": [
         ({"修仙", "灵根", "筑基"}, 8),
         ({"金丹", "元婴", "化神"}, 10),
@@ -186,6 +193,7 @@ NEGATIVE_KEYWORDS = {
     "entertainment_industry": [("经营农田", -3), ("领地", -3), ("宗门", -3), ("丧尸", -3)],
     "simulator": [("副本", -4), ("主神空间", -4), ("轮回空间", -4), ("玩家", -3), ("NBA", -3)],
     "nation_fate": [("公司", -3), ("校园", -3), ("娱乐圈", -3), ("操作系统", -4)],
+    "chinese_weird": [("克苏鲁", -5), ("旧日", -5), ("外神", -5), ("魔药", -4), ("序列", -4), ("扮演法", -4), ("篮球", -3)],
 }
 
 
@@ -224,6 +232,7 @@ PROFILE_MIN_SCORE_OVERRIDES = {
     "steampunk_fantasy": 5,
     "nation_fate": 5,
     "simulator": 5,
+    "chinese_weird": 5,
     "urban_power": 7,
     "game_system": 7,
 }
@@ -289,9 +298,13 @@ def normalize_profile_name(value: str) -> str:
         "末世生存": "apocalypse_survival",
         "克苏鲁": "cosmic_horror",
         "诡秘": "cosmic_horror",
-        "怪谈": "cosmic_horror",
-        "诡异": "cosmic_horror",
         "克系": "cosmic_horror",
+        "中式诡异": "chinese_weird",
+        "规则怪谈": "chinese_weird",
+        "民俗怪谈": "chinese_weird",
+        "怪谈": "chinese_weird",
+        "诡异": "chinese_weird",
+        "诡异复苏": "chinese_weird",
         "体育": "sports_competition",
         "竞技": "sports_competition",
         "体育竞技": "sports_competition",

@@ -141,6 +141,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         steampunk_fantasy = analysis_profiles.load_analysis_profile("蒸汽西幻")
         nation_fate = analysis_profiles.load_analysis_profile("国运")
         simulator = analysis_profiles.load_analysis_profile("人生模拟")
+        chinese_weird = analysis_profiles.load_analysis_profile("中式诡异")
 
         self.assertEqual(harem.name, "harem")
         self.assertTrue(harem.uses_harem_reviewer)
@@ -311,6 +312,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("simulation_reality_loop", simulator.summary_fields)
         self.assertTrue(any("推演-验证循环" in item for item in simulator.scan_focus))
 
+        self.assertEqual(chinese_weird.name, "chinese_weird")
+        self.assertTrue(chinese_weird.uses_general_scan)
+        self.assertIn("weird_rules", chinese_weird.summary_fields)
+        self.assertIn("folk_taboo_system", chinese_weird.summary_fields)
+        self.assertTrue(any("中式民俗底盘" in item for item in chinese_weird.scan_focus))
+        self.assertTrue(any("现实侵蚀" in item for item in chinese_weird.scan_focus))
+
         for profile in [
             general,
             history,
@@ -332,6 +340,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             steampunk_fantasy,
             nation_fate,
             simulator,
+            chinese_weird,
         ]:
             self.assertIn("reader_fit", profile.summary_fields, profile.name)
             self.assertIn("overall_assessment", profile.summary_fields, profile.name)
@@ -376,6 +385,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("steampunk_fantasy", names)
         self.assertIn("nation_fate", names)
         self.assertIn("simulator", names)
+        self.assertIn("chinese_weird", names)
 
     def test_profile_manifests_name_matches_directory(self):
         profiles_root = os.path.join(os.path.dirname(os.path.dirname(__file__)), "profiles")
@@ -671,6 +681,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "sports_competition",
             "nation_fate",
             "simulator",
+            "chinese_weird",
         ]:
             profile = analysis_profiles.load_analysis_profile(profile_name)
             rules_text = general_scan._profile_rules_text(profile)
@@ -742,6 +753,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         rule_paths = {
             "mystery_detective": os.path.join("profiles", "mystery_detective", "rules.json"),
             "cosmic_horror": os.path.join("profiles", "cosmic_horror", "rules.json"),
+            "chinese_weird": os.path.join("profiles", "chinese_weird", "rules.json"),
             "sports_competition": os.path.join("profiles", "sports_competition", "rules.json"),
             "farming_management": os.path.join("profiles", "farming_management", "rules.json"),
         }
@@ -772,6 +784,19 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("力量边界", horror_points)
         self.assertIn("组织两面性", horror_points)
 
+        chinese_weird_categories = {item["name"] for item in rules["chinese_weird"]["categories"]}
+        chinese_weird_points = {
+            point["name"]
+            for category in rules["chinese_weird"]["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertIn("规则机制与验证", chinese_weird_categories)
+        self.assertIn("中式民俗与禁忌", chinese_weird_categories)
+        self.assertIn("副本逃生与现实侵蚀", chinese_weird_categories)
+        self.assertIn("隐藏规则", chinese_weird_points)
+        self.assertIn("民俗底盘", chinese_weird_points)
+        self.assertIn("现实侵蚀", chinese_weird_points)
+
         sports_categories = {item["name"] for item in rules["sports_competition"]["categories"]}
         sports_points = {
             point["name"]
@@ -796,10 +821,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         mystery_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("mystery_detective"))
         horror_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("cosmic_horror"))
+        chinese_weird_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("chinese_weird"))
         sports_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("sports_competition"))
         farming_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("farming_management"))
         self.assertIn("侦探魅力", mystery_text)
         self.assertIn("规则怪谈", horror_text)
+        self.assertIn("民俗底盘", chinese_weird_text)
         self.assertIn("名场面", sports_text)
         self.assertIn("科技树", farming_text)
 
@@ -2683,7 +2710,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "cosmic_horror",
         )
         self.assertEqual(
-            analysis_profiles.infer_profile_for_text("规则怪谈", "序列和魔药体系带来SAN值下降，精神污染引出旧日外神。"),
+            analysis_profiles.infer_profile_for_text("规则怪谈", "规则怪谈要求遵守隐藏规则，违反规则会被纸人替换，必须找到祠堂里的通关规则逃生。"),
+            "chinese_weird",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("旧日规则", "序列和魔药体系带来SAN值下降，精神污染引出旧日外神。"),
             "cosmic_horror",
         )
         self.assertEqual(
@@ -2946,9 +2977,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(
             analysis_profiles.infer_profile_for_text(
                 "规则怪谈：我能完美利用规则",
-                "规则怪谈要求遵守规则，违反规则会被收容物追杀，SAN值下降。",
+                "规则怪谈要求遵守隐藏规则，违反规则会被纸人追杀，祠堂村规和红白喜事暗示通关规则。",
             ),
-            "cosmic_horror",
+            "chinese_weird",
         )
         self.assertEqual(
             analysis_profiles.infer_profile_for_text(
@@ -2956,6 +2987,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "调查员窥视深渊，听见旧日呢喃后锚点失效，模因污染导致认知崩溃和失控。",
             ),
             "cosmic_horror",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
+                "中式诡异：祠堂守则",
+                "村规写着夜里不能回头，纸人会替换违规者，红白喜事和阴婚禁忌构成怪谈副本。",
+            ),
+            "chinese_weird",
         )
         self.assertEqual(
             analysis_profiles.infer_profile_for_text(
@@ -3271,6 +3309,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "sports_competition",
             "nation_fate",
             "simulator",
+            "chinese_weird",
         ]:
             self.assertIn(profile_name, overrides)
             self.assertTrue(overrides[profile_name], profile_name)
@@ -3283,6 +3322,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         crime = analysis_profiles.load_analysis_profile("crime_forensics")
         nation_fate = analysis_profiles.load_analysis_profile("nation_fate")
         simulator = analysis_profiles.load_analysis_profile("simulator")
+        chinese_weird = analysis_profiles.load_analysis_profile("chinese_weird")
         sci_fi_override = main._with_harem_plus_secondary_focus(sci_fi, harem)
         isekai_override = main._with_harem_plus_secondary_focus(isekai, harem)
         steampunk_override = main._with_harem_plus_secondary_focus(steampunk, harem)
@@ -3291,6 +3331,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         crime_override = main._with_harem_plus_secondary_focus(crime, harem)
         nation_fate_override = main._with_harem_plus_secondary_focus(nation_fate, harem)
         simulator_override = main._with_harem_plus_secondary_focus(simulator, harem)
+        chinese_weird_override = main._with_harem_plus_secondary_focus(chinese_weird, harem)
 
         self.assertTrue(any("意识上传" in item and "洁度" in item for item in sci_fi_override.scan_focus))
         self.assertTrue(any("勇者" in item and "送女" in item for item in isekai_override.scan_focus))
@@ -3300,6 +3341,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(any("受害未遂" in item and "绿帽" in item for item in crime_override.scan_focus))
         self.assertTrue(any("国运绑定" in item and "送女" in item for item in nation_fate_override.scan_focus))
         self.assertTrue(any("读档" in item and "前世雷" in item for item in simulator_override.scan_focus))
+        self.assertTrue(any("阴婚" in item and "送女" in item for item in chinese_weird_override.scan_focus))
 
     def test_requested_profiles_accepts_manual_multi_select(self):
         self.assertEqual(main._normalize_requested_profiles(["历史", "科幻"]), ["history", "hard_sci_fi"])
@@ -5149,6 +5191,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "san_mechanics",
                 "rule_based_horror",
                 "contamination_levels",
+                "weird_rules",
+                "folk_taboo_system",
+                "instance_escape_loop",
+                "reality_intrusion",
                 "technique_tactics",
                 "season_structure",
                 "rivalry_and_opponents",
@@ -5179,6 +5225,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "san_mechanics": ["理智损耗有规则"],
                 "rule_based_horror": ["规则怪谈文本有效"],
                 "contamination_levels": ["污染等级递进"],
+                "weird_rules": ["隐藏规则需要验证"],
+                "folk_taboo_system": ["祠堂村规与阴婚禁忌形成体系"],
+                "instance_escape_loop": ["怪谈副本有通关闭环"],
+                "reality_intrusion": ["现实生活被怪谈侵蚀"],
                 "technique_tactics": ["技战术细节可信"],
                 "season_structure": ["赛季节奏明确"],
                 "rivalry_and_opponents": ["宿敌群像稳定"],
@@ -5210,6 +5260,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "SAN值/理智机制",
             "规则怪谈",
             "污染等级",
+            "规则机制",
+            "民俗禁忌体系",
+            "副本逃生闭环",
+            "现实侵蚀",
             "专业技战术",
             "赛事/赛季结构",
             "对手群像",
@@ -8125,6 +8179,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(report.summary_field_label("tech_plausibility"), "技术可行性")
         self.assertEqual(report.summary_field_label("case_design"), "案件结构")
         self.assertEqual(report.summary_field_label("romance_subplot"), "恋爱喜剧平衡")
+        self.assertEqual(report.summary_field_label("weird_rules"), "规则机制")
+        self.assertEqual(report.summary_field_label("folk_taboo_system"), "民俗禁忌体系")
 
         text = report.build_general_report(
             "字段别名测试",
