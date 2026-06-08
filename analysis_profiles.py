@@ -46,6 +46,7 @@ class ProfileInference:
     score: int
     confidence: float
     matched_keywords: List[str]
+    confidence_level: str = "medium"
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -53,6 +54,7 @@ class ProfileInference:
             "display_name": self.display_name,
             "score": self.score,
             "confidence": round(self.confidence, 3),
+            "confidence_level": self.confidence_level,
             "matched_keywords": self.matched_keywords,
         }
 
@@ -578,6 +580,33 @@ def _profile_match_guard(profile_name: str, matches: List[str]) -> bool:
     return True
 
 
+def _calibrated_confidence(
+    profile_name: str,
+    score: int,
+    nearest_competitor_score: int = 0,
+    evidence_count: int = 0,
+) -> Tuple[float, str]:
+    threshold = max(1, _min_score_for_profile(profile_name, AUTO_PROFILE_MIN_SCORE))
+    strength = min(1.0, max(0.0, (score - threshold) / max(threshold * 2.0, 1)))
+    margin = (score - nearest_competitor_score) / max(score, 1)
+    margin = max(-1.0, min(1.0, margin))
+    confidence = 0.35 + 0.45 * strength + 0.20 * max(0.0, margin)
+    if score < threshold:
+        confidence = min(confidence, 0.45)
+    if evidence_count <= 1:
+        confidence = min(confidence, 0.6)
+    elif evidence_count == 2:
+        confidence = min(confidence, 0.72)
+    confidence = max(0.05, min(0.95, confidence))
+    if confidence >= 0.75:
+        level = "high"
+    elif confidence >= 0.55:
+        level = "medium"
+    else:
+        level = "low"
+    return confidence, level
+
+
 def infer_profile_candidates_for_text(title: str, text: str, min_score: int = 1) -> List[Dict[str, Any]]:
     title_text = str(title or "")
     body_text = str(text or "")[:20000]
@@ -594,22 +623,38 @@ def infer_profile_candidates_for_text(title: str, text: str, min_score: int = 1)
         if score >= min_score and _profile_match_guard(profile.name, all_matches):
             raw.append((profile, score, all_matches))
 
-    total_score = sum(score for _profile, score, _matches in raw)
-    candidates = [
-        ProfileInference(
-            name=profile.name,
-            display_name=profile.display_name,
-            score=score,
-            confidence=(score / total_score) if total_score else 0.0,
-            matched_keywords=matches[:12],
-        ).to_dict()
-        for profile, score, matches in raw
-    ]
-    candidates.sort(key=lambda item: (-item["score"], _PROFILE_ORDER.get(item["name"], 1000), item["name"]))
+    raw.sort(key=lambda item: (-item[1], _PROFILE_ORDER.get(item[0].name, 1000), item[0].name))
+    candidates = []
+    for index, (profile, score, matches) in enumerate(raw):
+        if index == 0:
+            nearest_competitor_score = raw[1][1] if len(raw) > 1 else 0
+        else:
+            nearest_competitor_score = raw[0][1]
+        evidence_count = len([
+            match
+            for match in matches
+            if match and not str(match).startswith("负向:")
+        ])
+        confidence, confidence_level = _calibrated_confidence(
+            profile.name,
+            score,
+            nearest_competitor_score,
+            evidence_count,
+        )
+        candidates.append(
+            ProfileInference(
+                name=profile.name,
+                display_name=profile.display_name,
+                score=score,
+                confidence=confidence,
+                matched_keywords=matches[:12],
+                confidence_level=confidence_level,
+            ).to_dict()
+        )
 
     if not candidates:
         general = load_analysis_profile("general")
-        return [ProfileInference(general.name, general.display_name, 0, 1.0, []).to_dict()]
+        return [ProfileInference(general.name, general.display_name, 0, 1.0, [], "high").to_dict()]
     return candidates
 
 

@@ -2049,6 +2049,23 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             ["general"],
         )
 
+    def test_auto_profile_confidence_is_calibrated_by_score_margin_and_evidence(self):
+        title_only = analysis_profiles.infer_profile_candidates_for_text("大明1937", "")
+        self.assertEqual(title_only[0]["name"], "history")
+        self.assertLess(title_only[0]["confidence"], 0.75)
+        self.assertEqual(title_only[0]["confidence_level"], "medium")
+
+        mixed = analysis_profiles.infer_profile_candidates_for_text(
+            "末世之修仙系统",
+            "丧尸病毒爆发后，主角获得系统面板，在基地外搜集晶核，同时修仙升级对抗异兽。",
+        )
+        apocalypse = next(item for item in mixed if item["name"] == "apocalypse_survival")
+        game_system = next(item for item in mixed if item["name"] == "game_system")
+        self.assertEqual(apocalypse["confidence_level"], "high")
+        self.assertGreater(apocalypse["confidence"], 0.75)
+        self.assertEqual(game_system["confidence_level"], "medium")
+        self.assertLess(game_system["confidence"], apocalypse["confidence"])
+
     def test_kimi_recommended_auto_profile_boundary_samples(self):
         self.assertEqual(
             analysis_profiles.infer_profile_for_text(
