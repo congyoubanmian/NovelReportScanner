@@ -100,17 +100,31 @@ def _openai_client_factory(api_key: str, base_url: str, timeout: int):
         )
 
 
-chat_completion = make_chat_completion(
-    openai_client_factory=_openai_client_factory,
-    api_key_pool=API_KEY_POOL,
-    base_url=BASE_URL,
-    request_timeout=REQUEST_TIMEOUT,
-    max_retries=5,
-    max_403_retries=MAX_403_RETRIES,
-    max_timeout_retries=MAX_TIMEOUT_RETRIES,
-    base_delay=2,
-    logger=logger,
-)
+def create_chat_completion(
+    *,
+    api_key_pool=None,
+    base_url: str = None,
+    request_timeout: int = REQUEST_TIMEOUT,
+    max_retries: int = 5,
+    max_403_retries: int = MAX_403_RETRIES,
+    max_timeout_retries: int = MAX_TIMEOUT_RETRIES,
+    base_delay: int = 2,
+    logger=None,
+):
+    return make_chat_completion(
+        openai_client_factory=_openai_client_factory,
+        api_key_pool=api_key_pool if api_key_pool is not None else API_KEY_POOL,
+        base_url=base_url or BASE_URL,
+        request_timeout=request_timeout,
+        max_retries=max_retries,
+        max_403_retries=max_403_retries,
+        max_timeout_retries=max_timeout_retries,
+        base_delay=base_delay,
+        logger=logger,
+    )
+
+
+chat_completion = create_chat_completion(logger=logger)
 
 token_tracker = None
 

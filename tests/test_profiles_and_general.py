@@ -384,6 +384,24 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     manifest = json.load(f)
                 self.assertEqual(manifest.get("name"), profile.name)
 
+    def test_api_client_factory_is_shared(self):
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        shared_path = os.path.join(base_dir, "shared_utils.py")
+        with open(shared_path, "r", encoding="utf-8") as f:
+            shared_text = f.read()
+
+        self.assertIn("def _openai_client_factory", shared_text)
+        self.assertIn("def create_chat_completion", shared_text)
+
+        for filename in ["novel_scan.py", "protagonist.py", "report.py"]:
+            with self.subTest(module=filename):
+                with open(os.path.join(base_dir, filename), "r", encoding="utf-8") as f:
+                    text = f.read()
+                self.assertNotIn("def _openai_client_factory", text)
+                self.assertNotIn("from Timerror import make_chat_completion", text)
+                self.assertIn("from shared_utils import create_chat_completion", text)
+                self.assertIn('BASE_URL = os.environ.get("BASE_URL", "https://api.deepseek.com")', text)
+
     def test_auto_inference_keywords_are_profile_owned(self):
         for profile in analysis_profiles.list_available_profiles():
             if profile.name == "general":

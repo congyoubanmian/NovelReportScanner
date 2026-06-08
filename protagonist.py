@@ -7,7 +7,6 @@ import sys
 import logging
 import glob
 from datetime import datetime
-from openai import OpenAI
 try:
     from openai import APIStatusError
 except Exception:
@@ -15,11 +14,10 @@ except Exception:
 from tqdm import tqdm
 import concurrent.futures
 import threading
-from Timerror import make_chat_completion
 from token_tracker import create_default_tracker
-from shared_utils import get_base_dir, read_file_safely
+from shared_utils import create_chat_completion, get_base_dir, read_file_safely
 
-BASE_URL = os.environ.get("BASE_URL", "https://tb.api.mkeai.com/v1")
+BASE_URL = os.environ.get("BASE_URL", "https://api.deepseek.com")
 MODEL = os.environ.get("MODEL_NAME", "deepseek-chat")
 MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "6"))
 
@@ -105,44 +103,6 @@ def get_latest_report_files(prefix: str = None):
 MAX_403_RETRIES = 3
 MAX_TIMEOUT_RETRIES = 5  # 连续超时 3 次则标记 key 不可用
 REQUEST_TIMEOUT = 150  # 请求超时时间（秒）
-
-def _openai_client_factory(api_key: str, base_url: str, timeout: int):
-    """
-    创建 OpenAI 客户端，关闭 SDK 暗重试并使用细粒度 timeout。
-    
-    【关键】max_retries=0 关闭 SDK 自动重试：
-    - SDK 默认会重试 2 次，每次都有 timeout
-    - 外层 Timerror.py 再重试 5 次
-    - 不关闭的话，总耗时可能达到 120s * 3 * 5 = 1800s
-    
-    【关键】使用 httpx.Timeout 细粒度配置：
-    - connect: 连接超时（10s）
-    - read: 读取超时（根据请求规模动态调整）
-    - write: 写入超时（30s）
-    - pool: 连接池超时（10s）
-    """
-    try:
-        import httpx
-        http_timeout = httpx.Timeout(
-            connect=10.0,
-            read=float(timeout),
-            write=30.0,
-            pool=10.0,
-        )
-        return OpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            timeout=http_timeout,
-            max_retries=0,  # 关闭 SDK 自动重试
-        )
-    except ImportError:
-        # 没有 httpx 时使用简单 timeout
-        return OpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            timeout=timeout,
-            max_retries=0,  # 关闭 SDK 自动重试
-        )
 
 def _normalize_person_name(name: str) -> str:
     """
@@ -627,8 +587,7 @@ def _compute_evidence_profile(char_stats, all_merged_stats):
     }
 
 
-chat_completion = make_chat_completion(
-    openai_client_factory=_openai_client_factory,
+chat_completion = create_chat_completion(
     api_key_pool=API_KEY_POOL,
     base_url=BASE_URL,
     request_timeout=REQUEST_TIMEOUT,
