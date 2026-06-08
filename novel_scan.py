@@ -119,6 +119,61 @@ def _sanitize_chunk_preview(text, max_chars=220):
     )
 
 
+def _diagnose_json_response_text(content):
+    text = "" if content is None else str(content)
+    stripped = text.strip()
+    flags = []
+    if content is None:
+        flags.append("content_none")
+    if not stripped:
+        flags.append("content_empty")
+    if stripped.startswith("```") and not stripped.endswith("```"):
+        flags.append("code_fence_unclosed")
+    if stripped.startswith("```"):
+        flags.append("code_fence_wrapped")
+
+    in_str = False
+    escape = False
+    brace_depth = 0
+    bracket_depth = 0
+    for ch in stripped:
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == "\"":
+                in_str = False
+            continue
+        if ch == "\"":
+            in_str = True
+        elif ch == "{":
+            brace_depth += 1
+        elif ch == "}":
+            brace_depth -= 1
+        elif ch == "[":
+            bracket_depth += 1
+        elif ch == "]":
+            bracket_depth -= 1
+
+    if in_str:
+        flags.append("json_string_unclosed")
+    if brace_depth != 0 or bracket_depth != 0:
+        flags.append("json_unbalanced")
+    if stripped and stripped[-1] not in ("}", "]", "`") and (brace_depth > 0 or bracket_depth > 0 or in_str):
+        flags.append("likely_truncated")
+    if len(stripped) >= 5500 and (brace_depth > 0 or bracket_depth > 0):
+        flags.append("near_max_tokens_truncated")
+
+    return {
+        "length": len(stripped),
+        "flags": sorted(set(flags)),
+        "brace_depth": brace_depth,
+        "bracket_depth": bracket_depth,
+        "tail": _sanitize_chunk_preview(stripped[-160:], max_chars=160),
+    }
+
+
 def _build_chunk_failure_diagnostic(text_chunk, err_msg="", max_preview=220):
     text = str(text_chunk or "")
     length = len(text)
@@ -2225,15 +2280,25 @@ def scan_chunk(text_chunk, index, total, system_prompt, heroines, male_protagoni
 
     retries = 3
     last_err = ""
-    for _ in range(retries):
+    compact_retry = False
+    for attempt in range(retries):
         try:
+            retry_compact_block = ""
+            if compact_retry:
+                retry_compact_block = """
+【重试压缩要求】
+上一次输出疑似被截断。请压缩 JSON：
+1. 每个数组最多输出当前片段最关键的 8 条事实或 5 条问题。
+2. evidence/detail/reason 字段每条不超过 80 字。
+3. 不输出 Markdown，不输出代码块，不输出解释。
+"""
             response = _call_json_chat_completion(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
+                    {"role": "user", "content": user_prompt + retry_compact_block},
                 ],
                 temperature=0.1,
-                max_tokens=6000,
+                max_tokens=8000 if compact_retry else 6000,
                 log_prefix=f"chunk {index}",
             )
             content = response.choices[0].message.content
@@ -2242,8 +2307,21 @@ def scan_chunk(text_chunk, index, total, system_prompt, heroines, male_protagoni
                 data = _safe_json_loads(content)
             except Exception as je:
                 snippet = (str(content)[:200] if content is not None else "None")
-                logger.warning(f"chunk {index} 返回非JSON/空内容，前200字符: {snippet!r}")
-                raise je
+                response_diag = _diagnose_json_response_text(content)
+                flags = ",".join(response_diag.get("flags") or ["none"])
+                logger.warning(
+                    f"chunk {index} 返回非JSON/空内容，响应诊断 flags={flags} "
+                    f"len={response_diag['length']} brace={response_diag['brace_depth']} "
+                    f"bracket={response_diag['bracket_depth']} tail={response_diag['tail']!r} "
+                    f"前200字符: {snippet!r}"
+                )
+                if attempt + 1 < retries and (
+                    "likely_truncated" in response_diag.get("flags", [])
+                    or "near_max_tokens_truncated" in response_diag.get("flags", [])
+                    or "json_unbalanced" in response_diag.get("flags", [])
+                ):
+                    compact_retry = True
+                raise ValueError(f"{je}; response_flags={flags}; response_len={response_diag['length']}") from je
 
             if not isinstance(data, dict):
                 snippet = (str(content)[:200] if content is not None else "None")

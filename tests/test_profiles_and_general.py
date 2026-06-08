@@ -1600,6 +1600,68 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertNotIn("输出前自检", second_user_prompt)
         self.assertNotIn("每个条目的五个维度", second_user_prompt)
 
+    def test_scan_json_parser_accepts_fenced_response(self):
+        data = novel_scan._safe_json_loads(
+            '```json\n{"issues":[],"heroine_facts":[],"extra_relations":[]}\n```'
+        )
+        self.assertEqual(data["issues"], [])
+
+    def test_scan_json_response_diagnostic_flags_truncated_fence(self):
+        diagnostic = novel_scan._diagnose_json_response_text(
+            '```json\n{"issues":[{"content":"未闭合"'
+        )
+        self.assertIn("code_fence_unclosed", diagnostic["flags"])
+        self.assertIn("json_unbalanced", diagnostic["flags"])
+        self.assertIn("likely_truncated", diagnostic["flags"])
+
+    def test_scan_chunk_uses_compact_retry_after_truncated_json(self):
+        class Message:
+            def __init__(self, content):
+                self.content = content
+
+        class Choice:
+            def __init__(self, content):
+                self.message = Message(content)
+
+        class Response:
+            def __init__(self, content):
+                self.choices = [Choice(content)]
+
+        calls = []
+        old_call = novel_scan._call_json_chat_completion
+        try:
+            def fake_call(messages, **kwargs):
+                calls.append((messages, kwargs))
+                if len(calls) == 1:
+                    return Response('```json\n{"issues":[{"content":"未闭合"')
+                return Response(json.dumps({
+                    "issues": [],
+                    "heroine_facts": [],
+                    "extra_relations": [],
+                }, ensure_ascii=False))
+
+            novel_scan._call_json_chat_completion = fake_call
+            issues, facts, extra, _summary, ok, fatal, err = novel_scan.scan_chunk(
+                "甲女与男主同行。",
+                0,
+                1,
+                "只输出 JSON",
+                ["甲女"],
+                {"name": "男主"},
+            )
+        finally:
+            novel_scan._call_json_chat_completion = old_call
+
+        self.assertTrue(ok)
+        self.assertFalse(fatal)
+        self.assertEqual(err, "")
+        self.assertEqual(issues, [])
+        self.assertEqual(facts, [])
+        self.assertEqual(extra, [])
+        self.assertEqual(calls[0][1]["max_tokens"], 6000)
+        self.assertEqual(calls[1][1]["max_tokens"], 8000)
+        self.assertIn("重试压缩要求", calls[1][0][1]["content"])
+
     def test_initial_scan_partition_uses_dynamic_small_blocks(self):
         blocks = novel_scan._partition_indices_for_thread_blocks(
             40,
