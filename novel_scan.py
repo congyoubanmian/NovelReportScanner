@@ -4110,7 +4110,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     logger.addHandler(_sh)
     _ACTIVE_DETAIL_PATH = _resolve_detail_path(
         explicit_detail_path=detail_path,
-        checkpoint_detail_path=_peek_checkpoint_detail_path(),
+        checkpoint_detail_path=_peek_checkpoint_detail_path(checkpoint_file=CHECKPOINT_FILE),
     )
 
     print(f"🚀 开始深度扫描《{clean_filename}》...")
@@ -4138,6 +4138,8 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     save_chunk_manifest(chunk_manifest, chunk_manifest_path)
     chunks = [entry.get("text", "") for entry in chunk_manifest.get("chunks", [])]
     CURRENT_CHUNK_PLAN_METADATA = _build_chunk_plan_metadata(chunk_manifest=chunk_manifest)
+    checkpoint_file = CHECKPOINT_FILE
+    chunk_plan_metadata = CURRENT_CHUNK_PLAN_METADATA
     print(f"📚 文本已切分为 {len(chunks)} 个片段")
     
     # 断点续传：加载历史进度
@@ -4151,7 +4153,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         checkpoint_detail_path,
         rescan_done_chunks,
         rescan_completed,
-    ) = load_checkpoint()
+    ) = load_checkpoint(checkpoint_file=checkpoint_file, chunk_plan_metadata=chunk_plan_metadata)
     _ACTIVE_DETAIL_PATH = _resolve_detail_path(
         explicit_detail_path=detail_path,
         checkpoint_detail_path=checkpoint_detail_path,
@@ -4180,7 +4182,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
             processed_chunks=processed_chunks,
             failed_chunks=failed_chunks,
             middle_summary_state=middle_summary_state,
-            checkpoint_file=CHECKPOINT_FILE,
+            checkpoint_file=checkpoint_file,
         )
         if fatal_error:
             print(f"❌ 扫描终止：{fatal_error}")
@@ -4214,7 +4216,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
                 processed_chunks=processed_chunks,
                 failed_chunks=failed_chunks,
                 phase_name=f"补扫(第{round_no}轮)",
-                checkpoint_file=CHECKPOINT_FILE,
+                checkpoint_file=checkpoint_file,
             )
             if fatal:
                 print(f"❌ 补扫终止：{fatal}")
@@ -4224,7 +4226,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         final_missing = all_indices - set(processed_chunks)
         if final_missing:
             logger.warning(f"⚠️ 补扫后仍有遗漏/失败片段：{len(final_missing)} 个（已写入断点 failed_chunks）")
-            print(f"⚠️ 补扫完成但仍有 {len(final_missing)} 个片段未成功（详见 {CHECKPOINT_FILE} 的 failed_chunks）")
+            print(f"⚠️ 补扫完成但仍有 {len(final_missing)} 个片段未成功（详见 {checkpoint_file} 的 failed_chunks）")
         else:
             print("✅ 补扫完成：所有片段均已成功扫描。")
 
@@ -4240,6 +4242,11 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
                 extra_relations_all,
                 failed_chunks=failed_chunks,
                 heroine_profiles=_kwargs.get("heroine_profiles"),
+                checkpoint_file=checkpoint_file,
+                chunk_plan_metadata=chunk_plan_metadata,
+                detail_path=_ACTIVE_DETAIL_PATH,
+                chunk_summaries=CHUNK_SUMMARIES,
+                chunk_failure_diagnostics=CHUNK_FAILURE_DIAGNOSTICS,
             ),
         )
     if heroine_profiles:
@@ -4261,6 +4268,11 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
                 failed_chunks=failed_chunks,
                 heroine_profiles=heroine_profiles,
                 rescan_done_chunks=rescan_done_chunks,
+                checkpoint_file=checkpoint_file,
+                chunk_plan_metadata=chunk_plan_metadata,
+                detail_path=_ACTIVE_DETAIL_PATH,
+                chunk_summaries=CHUNK_SUMMARIES,
+                chunk_failure_diagnostics=CHUNK_FAILURE_DIAGNOSTICS,
             ),
             rescan_done_chunks=rescan_done_chunks,
             novel_name=clean_filename,
@@ -4275,6 +4287,11 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
             heroine_profiles=heroine_profiles,
             rescan_done_chunks=rescan_done_chunks,
             rescan_completed=True,
+            checkpoint_file=checkpoint_file,
+            chunk_plan_metadata=chunk_plan_metadata,
+            detail_path=_ACTIVE_DETAIL_PATH,
+            chunk_summaries=CHUNK_SUMMARIES,
+            chunk_failure_diagnostics=CHUNK_FAILURE_DIAGNOSTICS,
         )
     elif rescan_completed:
         logger.info("全局补扫：检测到断点标记 rescan_completed=true，跳过补扫阶段。")

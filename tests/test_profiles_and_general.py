@@ -1446,6 +1446,83 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             novel_scan.CHUNK_SUMMARIES = old_summaries
             novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
 
+    def test_main_checkpoint_callbacks_keep_explicit_checkpoint_context(self):
+        old_novel_path = novel_scan.NOVEL_FILE_PATH
+        old_checkpoint = novel_scan.CHECKPOINT_FILE
+        old_clean_filename = novel_scan.clean_filename
+        old_output_dir = novel_scan.OUTPUT_DIR
+        old_plan = novel_scan.CURRENT_CHUNK_PLAN_METADATA
+        old_summaries = dict(novel_scan.CHUNK_SUMMARIES)
+        old_diagnostics = dict(novel_scan.CHUNK_FAILURE_DIAGNOSTICS)
+        old_detail_path = getattr(novel_scan, "_ACTIVE_DETAIL_PATH", None)
+        old_token_tracker = novel_scan.token_tracker
+        old_enable_global_rescan = novel_scan.ENABLE_GLOBAL_RESCAN
+        old_logger = novel_scan.logger
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                novel_path = os.path.join(tmpdir, "Book.txt")
+                wrong_checkpoint = os.path.join(tmpdir, "wrong_checkpoint.json")
+                with open(novel_path, "w", encoding="utf-8") as f:
+                    f.write("甲女和男主同行。")
+
+                def fake_initial_scan(**kwargs):
+                    kwargs["processed_chunks"].add(0)
+                    return None
+
+                def fake_generate_profiles(_facts, _heroines, _male, checkpoint_callback=None):
+                    novel_scan.CHECKPOINT_FILE = wrong_checkpoint
+                    checkpoint_callback(heroine_profiles={"甲女": {"summary": "画像"}})
+                    return {"甲女": {"summary": "画像"}}
+
+                novel_scan.ENABLE_GLOBAL_RESCAN = False
+                novel_scan.token_tracker = None
+                with mock.patch.object(novel_scan, "get_base_dir", return_value=tmpdir), \
+                        mock.patch.object(novel_scan, "init_token_tracker"), \
+                        mock.patch.object(novel_scan, "find_latest_scan_checkpoint", return_value=None), \
+                        mock.patch.object(novel_scan, "load_rules", return_value=([{"name": "规则"}], [])), \
+                        mock.patch.object(novel_scan, "find_heroines", return_value=(["甲女"], "男主")), \
+                        mock.patch.object(novel_scan, "build_prompt", return_value="system prompt"), \
+                        mock.patch.object(novel_scan, "build_chunk_manifest", return_value={
+                            "version": 1,
+                            "signature": "sig",
+                            "chunks": [{"text": "甲女和男主同行。"}],
+                        }), \
+                        mock.patch.object(novel_scan, "_run_initial_thread_block_scan", side_effect=fake_initial_scan), \
+                        mock.patch.object(novel_scan, "generate_heroine_profiles", side_effect=fake_generate_profiles), \
+                        mock.patch.object(novel_scan, "_save_heroine_profiles_to_detail"), \
+                        mock.patch.object(novel_scan, "_append_to_detail_file"), \
+                        mock.patch.object(novel_scan, "generate_report", return_value="报告"):
+                    novel_scan.main(novel_path=novel_path, book_name="Book")
+
+                self.assertFalse(os.path.exists(wrong_checkpoint))
+                scan_dirs = [
+                    os.path.join(tmpdir, "results", name)
+                    for name in os.listdir(os.path.join(tmpdir, "results"))
+                    if name.startswith("Book_scan_")
+                ]
+                self.assertEqual(1, len(scan_dirs))
+                checkpoint_file = os.path.join(scan_dirs[0], "latest_checkpoint.json")
+                self.assertTrue(os.path.exists(checkpoint_file))
+                with open(checkpoint_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self.assertEqual(data["heroine_profiles"], {"甲女": {"summary": "画像"}})
+                self.assertEqual(data["chunk_plan"]["chunk_count"], 1)
+        finally:
+            for handler in list(novel_scan.logger.handlers):
+                handler.close()
+                novel_scan.logger.removeHandler(handler)
+            novel_scan.NOVEL_FILE_PATH = old_novel_path
+            novel_scan.CHECKPOINT_FILE = old_checkpoint
+            novel_scan.clean_filename = old_clean_filename
+            novel_scan.OUTPUT_DIR = old_output_dir
+            novel_scan.CURRENT_CHUNK_PLAN_METADATA = old_plan
+            novel_scan.CHUNK_SUMMARIES = old_summaries
+            novel_scan.CHUNK_FAILURE_DIAGNOSTICS = old_diagnostics
+            novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
+            novel_scan.token_tracker = old_token_tracker
+            novel_scan.ENABLE_GLOBAL_RESCAN = old_enable_global_rescan
+            novel_scan.logger = old_logger
+
     def test_thread_block_accepts_isolated_middle_summary_state(self):
         old_middle_calls = novel_scan._middle_summary_calls
         old_max_middle = novel_scan.MAX_MIDDLE_SUMMARY_CALLS
