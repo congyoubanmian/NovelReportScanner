@@ -64,7 +64,7 @@
     {"word": "奖励", "weight": 3},
     {"word": "轮回", "weight": 4},
     {"word": "玩家", "weight": 4},
-    {"word": "游戏", "weight": 2},
+    {"word": "游戏", "weight": 3},
     {"word": "等级", "weight": 3},
     {"word": "经验值", "weight": 4},
     {"word": "装备", "weight": 3},

@@ -529,6 +529,27 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(urban_keywords["下山"], 5)
         self.assertEqual(urban_keywords["龙王"], 5)
         self.assertEqual(urban_keywords["战神"], 5)
+        self.assertEqual(urban_keywords["校花"], 3)
+        self.assertEqual(urban_keywords["家族"], 3)
+        self.assertEqual(urban_keywords["集团"], 3)
+        self.assertEqual(urban_keywords["商战"], 3)
+
+        hard_sci_fi_keywords = dict(analysis_profiles._keywords_from_manifest("hard_sci_fi"))
+        self.assertEqual(hard_sci_fi_keywords["AI"], 3)
+        self.assertLessEqual(
+            abs(hard_sci_fi_keywords["强人工智能"] - hard_sci_fi_keywords["AI"]),
+            2,
+        )
+
+        history_keywords = dict(analysis_profiles._keywords_from_manifest("history"))
+        self.assertEqual(history_keywords["边军"], 2)
+        self.assertEqual(history_keywords["骑兵"], 2)
+
+        isekai_keywords = dict(analysis_profiles._keywords_from_manifest("isekai_lightnovel"))
+        self.assertEqual(isekai_keywords["技能"], 4)
+
+        game_keywords = dict(analysis_profiles._keywords_from_manifest("game_system"))
+        self.assertEqual(game_keywords["游戏"], 3)
 
     def test_history_and_sci_fi_rules_include_kimi_categories(self):
         with open(os.path.join("profiles", "history", "rules.json"), "r", encoding="utf-8") as f:
@@ -3163,7 +3184,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(farming_keywords.get("税收"), 2)
 
         isekai_keywords = dict(analysis_profiles._keywords_from_manifest("isekai_lightnovel"))
-        self.assertEqual(isekai_keywords.get("技能"), 3)
+        self.assertEqual(isekai_keywords.get("技能"), 4)
+        game_keywords = dict(analysis_profiles._keywords_from_manifest("game_system"))
+        self.assertEqual(game_keywords.get("游戏"), 3)
         self.assertEqual(
             analysis_profiles.infer_profile_for_text(
                 "亏成首富从游戏开始",
@@ -3198,6 +3221,26 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "创业公司CEO和合伙人融资，董事会讨论股权、上市、现金流、供应链和竞业协议。",
             ),
             "business_career",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
+                "虚拟游戏副本",
+                "主角进入虚拟游戏，查看面板技能，完成副本任务获得装备奖励。",
+            ),
+            "game_system",
+        )
+        basketball = analysis_profiles.infer_profiles_for_text(
+            "篮球系统训练营",
+            "高中篮球队参加联赛，教练安排战术训练，主角冲击冠军。",
+        )
+        self.assertIn("sports_competition", basketball)
+        self.assertNotIn("game_system", basketball)
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
+                "影后经营游戏",
+                "娱乐圈影后进入剧组拍戏，导演安排综艺宣发，经纪人处理热搜和饭圈。",
+            ),
+            "entertainment_industry",
         )
 
         mixed = analysis_profiles.infer_profiles_for_text(
