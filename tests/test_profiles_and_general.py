@@ -1845,6 +1845,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertEqual(raw_data["chunk_plan"]["chunk_count"], 1)
                 with open(os.path.join(scan_dirs[0], "FULL_REPORT.txt"), "r", encoding="utf-8") as f:
                     self.assertEqual(f.read(), "报告:Book")
+                scan_log_handlers = [
+                    handler
+                    for handler in novel_scan.logger.handlers
+                    if isinstance(handler, RotatingFileHandler)
+                ]
+                self.assertEqual(1, len(scan_log_handlers))
+                self.assertEqual(scan_log_handlers[0].baseFilename, os.path.join(scan_dirs[0], "scan.log"))
         finally:
             for handler in list(novel_scan.logger.handlers):
                 handler.close()

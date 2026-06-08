@@ -20,6 +20,7 @@ from shared_utils import (
     DEFAULT_MAX_RETRIES,
     DEFAULT_MAX_TIMEOUT_RETRIES,
     DEFAULT_REQUEST_TIMEOUT,
+    configure_rotating_file_logger,
     create_chat_completion,
     get_base_dir,
     read_file_safely,
@@ -4110,15 +4111,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
 
     # 重新配置 logger（支持多次调用不残留旧 handler）
     logger = logging.getLogger("novel_scan")
-    logger.handlers.clear()
-    logger.setLevel(logging.INFO)
-    _fmt = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    _fh = logging.FileHandler(os.path.join(output_dir, "scan.log"), encoding='utf-8')
-    _fh.setFormatter(_fmt)
-    _sh = logging.StreamHandler()
-    _sh.setFormatter(_fmt)
-    logger.addHandler(_fh)
-    logger.addHandler(_sh)
+    configure_rotating_file_logger(logger, os.path.join(output_dir, "scan.log"))
     _ACTIVE_DETAIL_PATH = _resolve_detail_path(
         explicit_detail_path=detail_path,
         checkpoint_detail_path=_peek_checkpoint_detail_path(checkpoint_file=CHECKPOINT_FILE),
