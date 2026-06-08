@@ -294,12 +294,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             loaded = novel_reviewer.load_checkpoint(raw_path, checkpoint_path)
 
             verified, rejected_count, rejected, processed, heroine_report, _pushed, _finished, _reason, purity_done, _finish_done = loaded
-            self.assertEqual(verified, [{"type": "雷点"}])
+            self.assertEqual(verified, [{"type": "雷点"}, {"type": "郁闷点"}])
             self.assertEqual(rejected_count, 1)
             self.assertEqual(rejected, [{"type": "误判"}])
-            self.assertEqual(processed, {0, 2})
+            self.assertEqual(processed, {0, 1, 2})
             self.assertEqual(heroine_report["甲女"]["is_clean"], True)
-            self.assertFalse(purity_done)
+            self.assertTrue(purity_done)
 
     def test_protagonist_json_call_retries_without_json_mode_on_parse_failure(self):
         class FakeMessage:

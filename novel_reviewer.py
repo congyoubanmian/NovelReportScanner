@@ -1338,17 +1338,21 @@ def _fsync_parent_dir(path):
         os.close(dir_fd)
 
 
+def _copy_json_checkpoint(src_path, dst_path):
+    with open(src_path, "rb") as src, open(dst_path, "wb") as dst:
+        dst.write(src.read())
+        dst.flush()
+        os.fsync(dst.fileno())
+    _fsync_parent_dir(dst_path)
+
+
 def _atomic_write_json_checkpoint(checkpoint_file, data):
     os.makedirs(os.path.dirname(checkpoint_file) or ".", exist_ok=True)
     backup_file = _checkpoint_backup_file(checkpoint_file)
     if os.path.exists(checkpoint_file) and backup_file:
         if _json_checkpoint_is_readable(checkpoint_file):
             try:
-                with open(checkpoint_file, "rb") as src, open(backup_file, "wb") as dst:
-                    dst.write(src.read())
-                    dst.flush()
-                    os.fsync(dst.fileno())
-                _fsync_parent_dir(backup_file)
+                _copy_json_checkpoint(checkpoint_file, backup_file)
             except Exception as exc:
                 logger.warning(f"断点备份写入失败: {exc}")
         else:
@@ -1360,6 +1364,11 @@ def _atomic_write_json_checkpoint(checkpoint_file, data):
         os.fsync(f.fileno())
     os.replace(tmp_path, checkpoint_file)
     _fsync_parent_dir(checkpoint_file)
+    if backup_file:
+        try:
+            _copy_json_checkpoint(checkpoint_file, backup_file)
+        except Exception as exc:
+            logger.warning(f"断点最新备份同步失败: {exc}")
 
 
 def _load_json_checkpoint_with_backup(checkpoint_file):

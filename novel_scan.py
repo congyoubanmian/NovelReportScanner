@@ -578,17 +578,21 @@ def _fsync_parent_dir(path):
         os.close(dir_fd)
 
 
+def _copy_json_file(src_path, dst_path):
+    with open(src_path, "rb") as src, open(dst_path, "wb") as dst:
+        dst.write(src.read())
+        dst.flush()
+        os.fsync(dst.fileno())
+    _fsync_parent_dir(dst_path)
+
+
 def _atomic_write_json_file(path, data):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     backup_path = _checkpoint_backup_file(path)
     if os.path.exists(path) and backup_path:
         if _json_file_is_readable(path):
             try:
-                with open(path, "rb") as src, open(backup_path, "wb") as dst:
-                    dst.write(src.read())
-                    dst.flush()
-                    os.fsync(dst.fileno())
-                _fsync_parent_dir(backup_path)
+                _copy_json_file(path, backup_path)
             except Exception as exc:
                 logger.warning(f"断点备份写入失败: {exc}")
         else:
@@ -600,6 +604,11 @@ def _atomic_write_json_file(path, data):
         os.fsync(f.fileno())
     os.replace(tmp_path, path)
     _fsync_parent_dir(path)
+    if backup_path:
+        try:
+            _copy_json_file(path, backup_path)
+        except Exception as exc:
+            logger.warning(f"断点最新备份同步失败: {exc}")
 
 
 def _load_checkpoint_json_file(path):
