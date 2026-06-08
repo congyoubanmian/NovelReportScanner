@@ -3,6 +3,7 @@ import re
 import json
 import time
 import glob
+import hashlib
 import logging
 import concurrent.futures
 from collections import defaultdict
@@ -441,6 +442,52 @@ def _build_chunk_plan_metadata(text=None, chunks=None, chunk_size=None, overlap=
         "text_length": len(text or ""),
     }
 
+
+def _json_signature_safe(data):
+    if isinstance(data, dict):
+        return {str(k): _json_signature_safe(v) for k, v in sorted(data.items(), key=lambda item: str(item[0]))}
+    if isinstance(data, (list, tuple, set)):
+        return [_json_signature_safe(v) for v in data]
+    if hasattr(data, "pattern"):
+        return getattr(data, "pattern", str(data))
+    if isinstance(data, (str, int, float, bool)) or data is None:
+        return data
+    return str(data)
+
+
+def _stable_json_digest(data):
+    payload = json.dumps(_json_signature_safe(data), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _build_rescan_plan_metadata(chunk_plan_metadata=None, heroines=None, male_protagonist=None, effective_keywords=None):
+    keywords = effective_keywords if effective_keywords is not None else get_effective_keywords()
+    payload = {
+        "version": 1,
+        "chunk_plan": chunk_plan_metadata or CURRENT_CHUNK_PLAN_METADATA or {},
+        "heroines": sorted({str(name).strip() for name in (heroines or []) if str(name).strip()}),
+        "male_protagonist": str(male_protagonist or "").strip(),
+        "fact_dimensions": list(_FACT_DIMENSIONS),
+        "effective_keywords": keywords,
+        "rescan_config": {
+            "rescan_max_hits": RESCAN_MAX_HITS,
+            "rescan_pre_filter_threshold": RESCAN_PRE_FILTER_THRESHOLD,
+            "rescan_max_window": RESCAN_MAX_WINDOW,
+            "rescan_max_prompt_heroines": RESCAN_MAX_PROMPT_HEROINES,
+            "rescan_max_workers": RESCAN_MAX_WORKERS,
+        },
+    }
+    return {
+        "version": payload["version"],
+        "signature": _stable_json_digest(payload),
+        "chunk_plan_signature": (payload["chunk_plan"] or {}).get("signature", ""),
+        "heroines": payload["heroines"],
+        "male_protagonist": payload["male_protagonist"],
+        "fact_dimensions": payload["fact_dimensions"],
+        "rescan_config": payload["rescan_config"],
+        "keyword_signature": _stable_json_digest(keywords),
+    }
+
 # ---- API 调用封装：统一收敛到 Timerror.py（只需修改 Timerror.py 即可全局生效）----
 MAX_RETRIES = DEFAULT_MAX_RETRIES
 MAX_403_RETRIES = DEFAULT_MAX_403_RETRIES
@@ -581,7 +628,7 @@ def _load_checkpoint_json_file(path):
 def _build_checkpoint_data(all_issues, all_heroine_facts, processed_chunks, extra_relations_all=None,
                            failed_chunks=None, chunk_plan_metadata=None, chunk_summaries=None,
                            heroine_profiles=None, detail_path=None, rescan_done_chunks=None,
-                           rescan_completed=None, chunk_failure_diagnostics=None):
+                           rescan_completed=None, chunk_failure_diagnostics=None, rescan_plan_metadata=None):
     data = {
         "issues": all_issues,
         "heroine_facts": all_heroine_facts,
@@ -616,6 +663,8 @@ def _build_checkpoint_data(all_issues, all_heroine_facts, processed_chunks, extr
         data["rescan_done_chunks"] = list(sorted(rescan_done_chunks))
     if rescan_completed is not None:
         data["rescan_completed"] = bool(rescan_completed)
+    if rescan_plan_metadata is not None:
+        data["rescan_plan"] = rescan_plan_metadata
     return data
 
 
@@ -718,7 +767,8 @@ def save_checkpoint(all_issues, all_heroine_facts, processed_chunks, extra_relat
                     current_chunk_idx=None, chunk_plan_metadata=None, chunk_summaries=None, heroine_profiles=None,
                     detail_path=None, rescan_done_chunks=None, rescan_completed=None, incremental=False,
                     delta_issues=None, delta_heroine_facts=None, delta_extra_relations=None,
-                    delta_chunk_summary="", checkpoint_file=None, chunk_failure_diagnostics=None):
+                    delta_chunk_summary="", checkpoint_file=None, chunk_failure_diagnostics=None,
+                    rescan_plan_metadata=None):
     """保存扫描进度
 
     Args:
@@ -737,6 +787,7 @@ def save_checkpoint(all_issues, all_heroine_facts, processed_chunks, extra_relat
         rescan_done_chunks=rescan_done_chunks,
         rescan_completed=rescan_completed,
         chunk_failure_diagnostics=chunk_failure_diagnostics,
+        rescan_plan_metadata=rescan_plan_metadata,
     )
     try:
         with CHECKPOINT_LOCK:
@@ -755,6 +806,7 @@ def save_checkpoint(all_issues, all_heroine_facts, processed_chunks, extra_relat
                 and heroine_profiles is None
                 and rescan_done_chunks is None
                 and rescan_completed is None
+                and rescan_plan_metadata is None
                 and chunk_plan_metadata is None
                 and chunk_summaries is None
                 and detail_path is None
@@ -786,7 +838,7 @@ def save_checkpoint(all_issues, all_heroine_facts, processed_chunks, extra_relat
         logger.error(f"保存断点失败: {e}")
 
 
-def load_checkpoint(checkpoint_file=None, chunk_plan_metadata=None, update_globals=True):
+def load_checkpoint(checkpoint_file=None, chunk_plan_metadata=None, update_globals=True, rescan_plan_metadata=None):
     """加载扫描进度，若不存在返回空"""
     global CHUNK_SUMMARIES, CHUNK_FAILURE_DIAGNOSTICS
     effective_checkpoint = checkpoint_file if checkpoint_file is not None else CHECKPOINT_FILE
@@ -823,6 +875,7 @@ def load_checkpoint(checkpoint_file=None, chunk_plan_metadata=None, update_globa
         detail_path = data.get("detail_path")
         rescan_done_chunks = set(data.get("rescan_done_chunks", []))
         rescan_completed = bool(data.get("rescan_completed", False))
+        saved_rescan_plan = data.get("rescan_plan")
         loaded_chunk_summaries = {
             int(k): str(v)
             for k, v in (data.get("chunk_summaries", {}) or {}).items()
@@ -848,6 +901,15 @@ def load_checkpoint(checkpoint_file=None, chunk_plan_metadata=None, update_globa
                 CHUNK_SUMMARIES = {}
                 CHUNK_FAILURE_DIAGNOSTICS = {}
             return [], [], set(), [], set(), None, None, set(), False
+        if rescan_plan_metadata is not None and (rescan_done_chunks or rescan_completed):
+            if not saved_rescan_plan:
+                logger.warning("⚠️ 旧断点缺少全局补扫计划签名，将重新执行全局补扫阶段。")
+                rescan_done_chunks = set()
+                rescan_completed = False
+            elif saved_rescan_plan.get("signature") != rescan_plan_metadata.get("signature"):
+                logger.warning("⚠️ 全局补扫计划已变化，将重新执行全局补扫阶段。")
+                rescan_done_chunks = set()
+                rescan_completed = False
         logger.info(f"📂 已加载断点，已完成 {len(processed_chunks)} 个片段，失败 {len(failed_chunks)} 个片段")
         return issues, heroine_facts, processed_chunks, extra_relations, failed_chunks, heroine_profiles, detail_path, rescan_done_chunks, rescan_completed
     except Exception as e:
@@ -4361,6 +4423,11 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     CURRENT_CHUNK_PLAN_METADATA = _build_chunk_plan_metadata(chunk_manifest=chunk_manifest)
     checkpoint_file = CHECKPOINT_FILE
     chunk_plan_metadata = CURRENT_CHUNK_PLAN_METADATA
+    rescan_plan_metadata = _build_rescan_plan_metadata(
+        chunk_plan_metadata=chunk_plan_metadata,
+        heroines=heroines,
+        male_protagonist=male_protagonist,
+    )
     print(f"📚 文本已切分为 {len(chunks)} 个片段")
     
     # 断点续传：加载历史进度
@@ -4374,7 +4441,11 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         checkpoint_detail_path,
         rescan_done_chunks,
         rescan_completed,
-    ) = load_checkpoint(checkpoint_file=checkpoint_file, chunk_plan_metadata=chunk_plan_metadata)
+    ) = load_checkpoint(
+        checkpoint_file=checkpoint_file,
+        chunk_plan_metadata=chunk_plan_metadata,
+        rescan_plan_metadata=rescan_plan_metadata,
+    )
     _ACTIVE_DETAIL_PATH = _resolve_detail_path(
         explicit_detail_path=detail_path,
         checkpoint_detail_path=checkpoint_detail_path,
@@ -4506,6 +4577,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
                 detail_path=active_detail_path,
                 chunk_summaries=CHUNK_SUMMARIES,
                 chunk_failure_diagnostics=CHUNK_FAILURE_DIAGNOSTICS,
+                rescan_plan_metadata=rescan_plan_metadata,
             ),
             rescan_done_chunks=rescan_done_chunks,
             novel_name=current_book_name,
@@ -4525,6 +4597,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
             detail_path=active_detail_path,
             chunk_summaries=CHUNK_SUMMARIES,
             chunk_failure_diagnostics=CHUNK_FAILURE_DIAGNOSTICS,
+            rescan_plan_metadata=rescan_plan_metadata,
         )
     elif rescan_completed:
         logger.info("全局补扫：检测到断点标记 rescan_completed=true，跳过补扫阶段。")

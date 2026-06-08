@@ -2032,6 +2032,118 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             novel_scan.CHUNK_SUMMARIES = old_summaries
             novel_scan.CHUNK_FAILURE_DIAGNOSTICS = old_diagnostics
 
+    def test_scan_checkpoint_rescan_plan_preserves_matching_progress(self):
+        old_checkpoint = novel_scan.CHECKPOINT_FILE
+        old_plan = novel_scan.CURRENT_CHUNK_PLAN_METADATA
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                checkpoint_path = os.path.join(tmpdir, "latest_checkpoint.json")
+                chunk_plan = {"chunk_count": 2, "signature": "chunk-sig"}
+                rescan_plan = {"signature": "rescan-a"}
+                novel_scan.CHECKPOINT_FILE = checkpoint_path
+                novel_scan.CURRENT_CHUNK_PLAN_METADATA = chunk_plan
+
+                issue0 = {"type": "雷点", "chunk_index": 1}
+                novel_scan.save_checkpoint(
+                    [issue0],
+                    [],
+                    {0, 1},
+                    [],
+                    failed_chunks=set(),
+                    checkpoint_file=checkpoint_path,
+                    chunk_plan_metadata=chunk_plan,
+                    rescan_done_chunks={0},
+                    rescan_completed=True,
+                    rescan_plan_metadata=rescan_plan,
+                )
+
+                loaded = novel_scan.load_checkpoint(
+                    checkpoint_file=checkpoint_path,
+                    chunk_plan_metadata=chunk_plan,
+                    rescan_plan_metadata=rescan_plan,
+                    update_globals=False,
+                )
+                self.assertEqual(loaded[0], [issue0])
+                self.assertEqual(loaded[2], {0, 1})
+                self.assertEqual(loaded[7], {0})
+                self.assertTrue(loaded[8])
+        finally:
+            novel_scan.CHECKPOINT_FILE = old_checkpoint
+            novel_scan.CURRENT_CHUNK_PLAN_METADATA = old_plan
+
+    def test_scan_checkpoint_resets_only_rescan_progress_when_plan_changes(self):
+        old_checkpoint = novel_scan.CHECKPOINT_FILE
+        old_plan = novel_scan.CURRENT_CHUNK_PLAN_METADATA
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                checkpoint_path = os.path.join(tmpdir, "latest_checkpoint.json")
+                chunk_plan = {"chunk_count": 2, "signature": "chunk-sig"}
+                novel_scan.CHECKPOINT_FILE = checkpoint_path
+                novel_scan.CURRENT_CHUNK_PLAN_METADATA = chunk_plan
+
+                issue0 = {"type": "雷点", "chunk_index": 1}
+                novel_scan.save_checkpoint(
+                    [issue0],
+                    [],
+                    {0, 1},
+                    [],
+                    failed_chunks=set(),
+                    checkpoint_file=checkpoint_path,
+                    chunk_plan_metadata=chunk_plan,
+                    rescan_done_chunks={0, 1},
+                    rescan_completed=True,
+                    rescan_plan_metadata={"signature": "rescan-a"},
+                )
+
+                loaded = novel_scan.load_checkpoint(
+                    checkpoint_file=checkpoint_path,
+                    chunk_plan_metadata=chunk_plan,
+                    rescan_plan_metadata={"signature": "rescan-b"},
+                    update_globals=False,
+                )
+                self.assertEqual(loaded[0], [issue0])
+                self.assertEqual(loaded[2], {0, 1})
+                self.assertEqual(loaded[7], set())
+                self.assertFalse(loaded[8])
+        finally:
+            novel_scan.CHECKPOINT_FILE = old_checkpoint
+            novel_scan.CURRENT_CHUNK_PLAN_METADATA = old_plan
+
+    def test_scan_checkpoint_resets_legacy_rescan_progress_without_plan_signature(self):
+        old_checkpoint = novel_scan.CHECKPOINT_FILE
+        old_plan = novel_scan.CURRENT_CHUNK_PLAN_METADATA
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                checkpoint_path = os.path.join(tmpdir, "latest_checkpoint.json")
+                chunk_plan = {"chunk_count": 2, "signature": "chunk-sig"}
+                novel_scan.CHECKPOINT_FILE = checkpoint_path
+                novel_scan.CURRENT_CHUNK_PLAN_METADATA = chunk_plan
+
+                novel_scan.save_checkpoint(
+                    [],
+                    [],
+                    {0, 1},
+                    [],
+                    failed_chunks=set(),
+                    checkpoint_file=checkpoint_path,
+                    chunk_plan_metadata=chunk_plan,
+                    rescan_done_chunks={0},
+                    rescan_completed=True,
+                )
+
+                loaded = novel_scan.load_checkpoint(
+                    checkpoint_file=checkpoint_path,
+                    chunk_plan_metadata=chunk_plan,
+                    rescan_plan_metadata={"signature": "rescan-current"},
+                    update_globals=False,
+                )
+                self.assertEqual(loaded[2], {0, 1})
+                self.assertEqual(loaded[7], set())
+                self.assertFalse(loaded[8])
+        finally:
+            novel_scan.CHECKPOINT_FILE = old_checkpoint
+            novel_scan.CURRENT_CHUNK_PLAN_METADATA = old_plan
+
     def test_detail_lookup_accepts_explicit_book_context(self):
         old_name = novel_scan.clean_filename
         old_detail_path = getattr(novel_scan, "_ACTIVE_DETAIL_PATH", None)
