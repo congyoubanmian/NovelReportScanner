@@ -18,6 +18,7 @@ from shared_utils import (
     configure_rotating_file_logger,
     create_chat_completion,
     get_base_dir,
+    _safe_json_loads_maybe,
     read_file_safely,
 )
 from token_tracker import create_default_tracker
@@ -492,6 +493,39 @@ chat_completion = create_chat_completion(
     base_delay=2,
     logger=None,  # report.py 里原本用 print 输出
 )
+
+
+def _call_json_chat_completion(messages, *, model: str = None, temperature: float = 0.1, max_tokens: int = 1000) -> dict:
+    resp = chat_completion(
+        model=model or MODEL,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        response_format={"type": "json_object"},
+    )
+    record_usage(resp)
+    data, err = _safe_json_loads_maybe(resp.choices[0].message.content)
+    if data is not None:
+        return data
+
+    fallback_messages = list(messages) + [{
+        "role": "user",
+        "content": (
+            "上一次回复不是可解析的 JSON 对象。请只重新输出一个合法 JSON 对象，"
+            "不要 Markdown、不要代码块、不要解释。"
+        ),
+    }]
+    fallback_resp = chat_completion(
+        model=model or MODEL,
+        messages=fallback_messages,
+        temperature=0.0,
+        max_tokens=max_tokens,
+    )
+    record_usage(fallback_resp)
+    fallback_data, fallback_err = _safe_json_loads_maybe(fallback_resp.choices[0].message.content)
+    if fallback_data is None:
+        raise ValueError(f"{err}; fallback={fallback_err}")
+    return fallback_data
 
 
 def find_latest(pattern: str, base_dir: str = RESULTS_DIR):
@@ -1118,18 +1152,15 @@ def summarize_male_profile_llm(male_obj: dict, model: str = None) -> dict:
         indent=2,
     )
     try:
-        resp = chat_completion(
-            model=model or MODEL,
+        data = _call_json_chat_completion(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.2,
             max_tokens=500,
-            response_format={"type": "json_object"},
+            model=model or MODEL,
         )
-        record_usage(resp)
-        data = json.loads(resp.choices[0].message.content.strip())
         return {
             "identity": (data.get("identity") or identity or "未描述").strip(),
             "personality": (data.get("personality") or "未描述").strip(),
@@ -2592,15 +2623,11 @@ def _llm_judge_heroine_duplicate_group(group: list) -> dict:
         }
     }, ensure_ascii=False, indent=2)
     try:
-        resp = chat_completion(
-            model=MODEL,
+        data = _call_json_chat_completion(
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             temperature=0.0,
             max_tokens=900,
-            response_format={"type": "json_object"},
         )
-        record_usage(resp)
-        data = json.loads(resp.choices[0].message.content or "{}")
         if not isinstance(data, dict):
             return fallback
         return {
@@ -2732,18 +2759,15 @@ def summarize_heroine_profile_llm(
         "summaries_raw": summaries[:120],
     }
     try:
-        resp = chat_completion(
-            model=model or MODEL,
+        data = _call_json_chat_completion(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, indent=2)},
             ],
             temperature=0.2,
             max_tokens=600,
-            response_format={"type": "json_object"},
+            model=model or MODEL,
         )
-        record_usage(resp)
-        data = json.loads(resp.choices[0].message.content.strip())
         return {
             "relationship": (data.get("relationship") or rel_type or "未描述").strip(),
             "appearance": (data.get("appearance") or "未描述").strip(),
@@ -2876,15 +2900,11 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
         "output_schema": fallback,
     }, ensure_ascii=False, indent=2)
     try:
-        resp = chat_completion(
-            model=MODEL,
+        data = _call_json_chat_completion(
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             temperature=0.1,
             max_tokens=1400,
-            response_format={"type": "json_object"},
         )
-        record_usage(resp)
-        data = json.loads(resp.choices[0].message.content or "{}")
         if not isinstance(data, dict):
             return fallback
         return {
