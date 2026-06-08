@@ -1,6 +1,6 @@
 # Kimi 方案推进进度总结
 
-生成日期：2026-06-07（本版更新于 2026-06-08 20:25）
+生成日期：2026-06-07（本版更新于 2026-06-08 20:34）
 
 ## 总体完成度
 
@@ -8,7 +8,7 @@
 
 其中：
 
-- **分类/profile 配置完善**：约 **99%**。23 个分类的 `scan_focus`、`summary_fields`、`inference_keywords` 已基本按 Kimi 方案补齐；`kimi_v3` 指出的 10 个缺失后宫交叉规则 profile 已补齐 `cross_profile_rules`，并已新增国运/文明对抗流、幕后流/马甲流、模拟器/人生推演和中式诡异/规则怪谈四个高区分度 profile；所有 profile manifest 的 `name` 字段已与目录名统一，profile 展示/推断排序已迁移为 manifest 自治的 `sort_order`，通用 `rules.json` 已从 1 类 3 点扩展到 4 类 16 点，历史、硬科幻、蒸汽西幻、国运、幕后流、模拟器、中式诡异、都市爽文和异世界轻小说等专项规则均已补到不少于 12 个审查点，`harem/urban_power/crime_forensics` 的 `scan_focus` 数量已按 P1-2 均衡到 9/9/11 条，常见旧字段名和 Kimi 草案字段名已通过别名归并，剩余主要是真实样本校准和少量低风险提示词文案打磨。
+- **分类/profile 配置完善**：约 **99%**。23 个分类的 `scan_focus`、`summary_fields`、`inference_keywords` 已基本按 Kimi 方案补齐；`kimi_v3` 指出的 10 个缺失后宫交叉规则 profile 已补齐 `cross_profile_rules`，并已新增国运/文明对抗流、幕后流/马甲流、模拟器/人生推演和中式诡异/规则怪谈四个高区分度 profile；所有 profile manifest 的 `name` 字段已与目录名统一，profile 展示/推断排序已迁移为 manifest 自治的 `sort_order`，并已补充 `version/version_history/min_supported_scanner_version/breaking_changes` 兼容性元数据；通用 `rules.json` 已从 1 类 3 点扩展到 4 类 16 点，历史、硬科幻、蒸汽西幻、国运、幕后流、模拟器、中式诡异、都市爽文和异世界轻小说等专项规则均已补到不少于 12 个审查点，`harem/urban_power/crime_forensics` 的 `scan_focus` 数量已按 P1-2 均衡到 9/9/11 条，常见旧字段名和 Kimi 草案字段名已通过别名归并，剩余主要是真实样本校准和少量低风险提示词文案打磨。
 - **后宫/男性向排雷专项**：约 **82% - 86%**。核心定义、五维洁度、接触等级、partner 豁免、漏女三层判断、女主事实扩展、重复女主大模型合并等关键项已落地；仍需要更多真实书籍报告校准误判。
 - **多标签/混合类型扫描**：约 **92% - 94%**。已支持自动多标签、手动多选、后宫+其他类型补扫；历史、科幻、仙侠、都市、游戏、异世界、蒸汽西幻、国运、模拟器以及末世、军事、刑侦、克系、校园、文娱、种田、商战、推理、体育等副类型均已导入后宫交叉规则；并已开始利用非后宫跨类型规则导入，覆盖推理+刑侦/克系调查、历史+军事战争、种田+末世资源建设、蒸汽西幻+推理/克系异常等高价值组合。通用角色识别和通用/专项剧情补扫均已支持 1000 万字级长篇的动态预算和全书均匀抽样，避免只扫描开头。自动识别已补充标题加权、组合关键词加成、负向关键词抑制、局部否定过滤、短词污染过滤、有限频次加分和 profile 自适应阈值，降低次要标签漏标与跨类误判。
 - **报告输出和字段标题**：约 **98%**。通用报告、专项报告、后宫报告的字段标题和收尾字段已多轮补齐；所有 23 个 profile 的 summary_fields 均已补全中文标题（含主线剧情、核心冲突、世界观、主题、优点与亮点、风险与问题、适合读者、总体评价等通用字段，以及女主群像、候选女主、漏女、洁度评估、毒点、郁闷点、男主定位、感情线推进等后宫字段）；Kimi 点名的 `unit_plot_mainline_link`、`cheat_detection_dependency` 已迁移为更自解释的 `episodic_mainline_integration`、`shortcut_detection_dependency`，旧字段继续作为别名兼容；后宫报告会在扫描女主列表与审核洁度列表不一致、扫描雷点与二审输出不一致时输出交叉验证提示，并已增加 Mermaid 关系图谱区块和 Markdown 关键事件时间线；通用报告已增加六维评分表和前端评分 JSON；通用总评、作品概览、伏笔回收、适合读者、总体评价以及常见专项字段均已支持旧字段名别名读取，并有回归测试覆盖。
@@ -32,6 +32,7 @@
 - 新增 `nation_fate`（国运/文明对抗）、`mastermind_hidden`（幕后流/马甲流）、`simulator`（模拟器/人生推演）和 `chinese_weird`（中式诡异/规则怪谈）四个 Kimi v3 建议的新兴类型；四者均支持自动识别、手动别名、后宫交叉规则、后宫增强补扫和专项报告字段中文标题。`game_system` 中纯模拟器信号已降级，避免人生模拟/未来推演被普通系统文抢走；规则怪谈/民俗诡异信号已从克系诡秘中拆出，避免纯中式怪谈被旧日/外神/序列魔药专项抢走；幕后/马甲信号已从都市打脸、文娱幕后花絮和悬疑破案中拆出，重点识别隐藏身份、多马甲、信息差和掉马揭秘。
 - 补齐所有 profile manifest 的 `name` 字段，并增加目录名一致性回归测试，避免未来若代码读取 manifest name 时出现配置漂移。
 - profile 展示排序、自动推断同分排序已迁移到各 `profile.json` 的 `sort_order` 字段，移除代码内 `_PROFILE_ORDER` 硬编码；新增类型只需要在 manifest 配置排序值，不再改 `analysis_profiles.py`。
+- 所有 profile manifest 已增加版本兼容性元数据：`version`、`version_history`、`min_supported_scanner_version`、`breaking_changes`；`AnalysisProfile` 和 `profile_options()` 会暴露这些字段，便于前端、运维和后续 profile 迁移时判断兼容性。
 - `scan_focus` 均衡化已处理：后宫从 6 条补到 9 条，增加女主定位分级、L0-L5 接触等级和五维洁度评估；都市爽文从 7 条补到 9 条，增加金手指类型分辨和专业能力可信度；刑侦法医从 14 条精简到 11 条，合并重复的案件结构、程序关系和社会影响项，同时保留技术细节、程序违法、非法取证、证据效力、法医神化和误差边界等关键提示。
 
 ### 2. 后宫排雷专项
@@ -232,7 +233,7 @@
 - detail 写入显式路径，验证全局 `_ACTIVE_DETAIL_PATH` 指向其他 detail 文件时，女主画像和结构化事实仍只写入调用方传入的 detail 文件。
 - 主流程最终输出局部上下文，验证模块级 `OUTPUT_DIR`、`clean_filename` 和 `CURRENT_CHUNK_PLAN_METADATA` 被回调改写后，`raw_data.json` 与 `FULL_REPORT.txt` 仍写入当前书扫描目录并保留正确 chunk plan 和报告书名。
 - API 客户端工厂统一和默认 `BASE_URL` 一致性。
-- profile manifest 自治排序，验证所有 manifest 均提供整数 `sort_order`，`list_available_profiles()` 按 `sort_order/name` 排序，并确认代码中不再保留 `_PROFILE_ORDER` 硬编码。
+- profile manifest 自治排序和版本管理，验证所有 manifest 均提供整数 `sort_order`、版本号、版本历史、最小支持扫描器版本和 breaking 标记；`list_available_profiles()` 按 `sort_order/name` 排序，并确认代码中不再保留 `_PROFILE_ORDER` 硬编码。
 - SSE 状态流连接生命周期与目录同步节流，验证连接到期会退出、状态仍可连续推送，且同步目录调用少于状态推送次数。
 - 中式诡异/规则怪谈、幕后流/马甲流 profile，验证自动识别、manifest 发现、后宫交叉规则导入、后宫增强补扫、专项规则维度和报告字段中文标题。
 - 首批非后宫跨类型规则导入，验证推理/历史/种田/蒸汽西幻会导入刑侦、军事、末世、推理和克系异常等相关专项规则片段。
@@ -251,7 +252,7 @@
 - API 重试/超时默认参数共享，验证角色识别、首扫和报告阶段均引用 `shared_utils` 的同一组默认值。
 - 通用 summary 缓存签名，验证同 mtime 但正文内容变化时不会继续复用旧 summary。
 
-最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **210 个测试 OK**；蒸汽西幻 scan_focus、后宫/都市/刑侦 scan_focus 均衡化、组合关键词和专项规则维度已增加到现有 profile/自动分类回归测试中。国运/文明对抗、幕后流/马甲流、模拟器/人生推演和中式诡异/规则怪谈的 profile 发现、自动识别、后宫交叉规则、后宫增强补扫、字段中文标题、rules 审查点深度、首批非后宫跨类型规则导入、都市爽文跨类边界、置信度校准、通用角色识别与通用/专项剧情扫描的长篇动态预算和全书均匀抽样、后宫报告交叉验证提示（女主名单与雷点覆盖）、后宫 Mermaid 关系图谱、后宫关键事件时间线、通用报告多维度评分、通用 summary 缓存签名、扫描 checkpoint 增量恢复、prompt 自检清单去重、失败 chunk 内容诊断、首扫动态线程块分区、checkpoint 显式路径隔离、detail 显式书名查找、报告显式书名、chunk 摘要显式注入、失败诊断显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文、detail 写入显式路径、主流程最终输出局部上下文、SSE 状态流生命周期/目录同步节流、限流作用域 auto 解析、Web 文件路径归属校验、Web 状态文件损坏告警、扫描/报告日志轮转（含 scan.log/report_generation.log）、Web 访问日志、Web JSON schema 校验、API 重试/超时默认参数共享和 Web 无 token 写操作确认保护已有目标测试覆盖；profile manifest 的 `name` 字段与目录名一致性、manifest 自治排序、通用规则核心维度、历史/硬科幻专项规则补强、API 客户端工厂统一和默认 `BASE_URL` 一致性也已有回归测试覆盖。
+最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **212 个测试 OK**；蒸汽西幻 scan_focus、后宫/都市/刑侦 scan_focus 均衡化、组合关键词和专项规则维度已增加到现有 profile/自动分类回归测试中。国运/文明对抗、幕后流/马甲流、模拟器/人生推演和中式诡异/规则怪谈的 profile 发现、自动识别、后宫交叉规则、后宫增强补扫、字段中文标题、rules 审查点深度、首批非后宫跨类型规则导入、都市爽文跨类边界、置信度校准、profile manifest 版本管理、通用角色识别与通用/专项剧情扫描的长篇动态预算和全书均匀抽样、后宫报告交叉验证提示（女主名单与雷点覆盖）、后宫 Mermaid 关系图谱、后宫关键事件时间线、通用报告多维度评分、通用 summary 缓存签名、扫描 checkpoint 增量恢复、prompt 自检清单去重、失败 chunk 内容诊断、首扫动态线程块分区、checkpoint 显式路径隔离、detail 显式书名查找、报告显式书名、chunk 摘要显式注入、失败诊断显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文、detail 写入显式路径、主流程最终输出局部上下文、SSE 状态流生命周期/目录同步节流、限流作用域 auto 解析、Web 文件路径归属校验、Web 状态文件损坏告警、扫描/报告日志轮转（含 scan.log/report_generation.log）、Web 访问日志、Web JSON schema 校验、API 重试/超时默认参数共享和 Web 无 token 写操作确认保护已有目标测试覆盖；profile manifest 的 `name` 字段与目录名一致性、manifest 自治排序、通用规则核心维度、历史/硬科幻专项规则补强、API 客户端工厂统一和默认 `BASE_URL` 一致性也已有回归测试覆盖。
 
 ## 已推送的关键提交
 
@@ -323,9 +324,9 @@
 
 Kimi 草案里少量字段名与当前项目不一致（如 `humanity_and_morality` vs `humanity_moral_dilemmas`、`social_relevance` vs `social_reflection`、`adventure_structure` vs `adventure_system` 等），当前已增加别名兼容和回归测试，不影响功能。Kimi P2 点名的 `unit_plot_mainline_link`、`cheat_detection_dependency` 也已从 profile manifest 中移除并迁移为自解释字段名，旧字段继续兼容。后续若发现新的模型旧字段输出，优先补别名和测试即可。
 
-### 2.1 Profile name 字段一致性（已处理）
+### 2.1 Profile manifest 元数据一致性（已处理）
 
-Kimi v3 指出的部分 `profile.json` 缺少 `name` 字段问题已处理：所有 profile manifest 均显式声明与目录名一致的 `name`，并通过回归测试防止后续新增分类时再次遗漏。
+Kimi v3 指出的部分 `profile.json` 缺少 `name` 字段问题已处理：所有 profile manifest 均显式声明与目录名一致的 `name`，并通过回归测试防止后续新增分类时再次遗漏。主题 7 的 profile 版本管理也已落地：所有 manifest 均包含版本号、版本历史、最小支持扫描器版本和 breaking 标记，加载层与 Web profile options 均可读取这些兼容性字段。
 
 ### 3. scan_focus 文案差异（已基本处理）
 

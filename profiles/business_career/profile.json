@@ -1,6 +1,25 @@
 {
   "name": "business_career",
   "sort_order": 140,
+  "version": "2.1.0",
+  "version_history": [
+    {
+      "version": "2.1.0",
+      "date": "2026-06-08",
+      "changes": [
+        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
+      ]
+    },
+    {
+      "version": "2.0.0",
+      "date": "2026-06-07",
+      "changes": [
+        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
+      ]
+    }
+  ],
+  "min_supported_scanner_version": "1.5.0",
+  "breaking_changes": false,
   "display_name": "职场/商战/创业专长分析",
   "description": "关注行业赛道、商业模式、组织管理、资本博弈和职场成长线是否可信。",
   "enabled_stages": [

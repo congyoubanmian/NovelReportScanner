@@ -1,6 +1,25 @@
 {
   "name": "simulator",
   "sort_order": 220,
+  "version": "2.1.0",
+  "version_history": [
+    {
+      "version": "2.1.0",
+      "date": "2026-06-08",
+      "changes": [
+        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
+      ]
+    },
+    {
+      "version": "2.0.0",
+      "date": "2026-06-07",
+      "changes": [
+        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
+      ]
+    }
+  ],
+  "min_supported_scanner_version": "1.5.0",
+  "breaking_changes": false,
   "display_name": "模拟器/人生推演专长分析",
   "description": "关注模拟器推演人生、未来或多分支选择，检查推演-验证-反哺现实循环是否成立，避免只把模拟器当普通系统面板。",
   "enabled_stages": [

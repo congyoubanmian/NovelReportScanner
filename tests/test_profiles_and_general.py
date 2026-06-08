@@ -520,6 +520,23 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIsInstance(manifest.get("sort_order"), int)
                 self.assertEqual(manifest.get("sort_order"), profile.sort_order)
 
+    def test_profile_manifests_include_version_metadata(self):
+        profiles_root = os.path.join(os.path.dirname(os.path.dirname(__file__)), "profiles")
+        for profile in analysis_profiles.list_available_profiles():
+            manifest_path = os.path.join(profiles_root, profile.name, "profile.json")
+            with self.subTest(profile=profile.name):
+                with open(manifest_path, "r", encoding="utf-8") as f:
+                    manifest = json.load(f)
+                self.assertRegex(manifest.get("version", ""), r"^\d+\.\d+\.\d+$")
+                self.assertEqual(profile.version, manifest["version"])
+                self.assertIsInstance(manifest.get("version_history"), list)
+                self.assertGreaterEqual(len(manifest["version_history"]), 1)
+                self.assertEqual(profile.version_history, manifest["version_history"])
+                self.assertRegex(manifest.get("min_supported_scanner_version", ""), r"^\d+\.\d+\.\d+$")
+                self.assertEqual(profile.min_supported_scanner_version, manifest["min_supported_scanner_version"])
+                self.assertIsInstance(manifest.get("breaking_changes"), bool)
+                self.assertEqual(profile.breaking_changes, manifest["breaking_changes"])
+
     def test_profile_order_is_manifest_owned(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
         with open(os.path.join(base_dir, "analysis_profiles.py"), "r", encoding="utf-8") as f:
@@ -532,6 +549,16 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertEqual(orders, sorted(orders))
         self.assertEqual(names[:3], ["harem", "general", "history"])
+
+    def test_profile_options_expose_version_metadata(self):
+        options = analysis_profiles.profile_options(include_auto=True)
+        harem_option = next(item for item in options if item["name"] == "harem")
+        auto_option = next(item for item in options if item["name"] == "auto")
+
+        self.assertNotIn("version", auto_option)
+        self.assertRegex(harem_option["version"], r"^\d+\.\d+\.\d+$")
+        self.assertRegex(harem_option["min_supported_scanner_version"], r"^\d+\.\d+\.\d+$")
+        self.assertFalse(harem_option["breaking_changes"])
 
     def test_api_client_factory_is_shared(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))

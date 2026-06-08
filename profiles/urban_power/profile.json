@@ -1,6 +1,25 @@
 {
   "name": "urban_power",
   "sort_order": 80,
+  "version": "2.1.0",
+  "version_history": [
+    {
+      "version": "2.1.0",
+      "date": "2026-06-08",
+      "changes": [
+        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
+      ]
+    },
+    {
+      "version": "2.0.0",
+      "date": "2026-06-07",
+      "changes": [
+        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
+      ]
+    }
+  ],
+  "min_supported_scanner_version": "1.5.0",
+  "breaking_changes": false,
   "display_name": "都市异能/爽文专长分析",
   "description": "在通用小说分析基础上，重点检查都市背景、身份反转、异能金手指、装逼打脸、商战家族和现实逻辑。",
   "enabled_stages": [

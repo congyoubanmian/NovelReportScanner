@@ -1,6 +1,25 @@
 {
   "name": "apocalypse_survival",
   "sort_order": 100,
+  "version": "2.1.0",
+  "version_history": [
+    {
+      "version": "2.1.0",
+      "date": "2026-06-08",
+      "changes": [
+        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
+      ]
+    },
+    {
+      "version": "2.0.0",
+      "date": "2026-06-07",
+      "changes": [
+        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
+      ]
+    }
+  ],
+  "min_supported_scanner_version": "1.5.0",
+  "breaking_changes": false,
   "display_name": "末世/灾变/生存专长分析",
   "description": "关注灾变成因、生存资源、秩序崩塌与重建、人性考验、能力体系、探索冒险和危机升级是否自洽。覆盖丧尸末世、天灾末世、科幻末世和废土生存等子类型。",
   "enabled_stages": [

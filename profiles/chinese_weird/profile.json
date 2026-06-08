@@ -1,6 +1,25 @@
 {
   "name": "chinese_weird",
   "sort_order": 115,
+  "version": "2.1.0",
+  "version_history": [
+    {
+      "version": "2.1.0",
+      "date": "2026-06-08",
+      "changes": [
+        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
+      ]
+    },
+    {
+      "version": "2.0.0",
+      "date": "2026-06-07",
+      "changes": [
+        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
+      ]
+    }
+  ],
+  "min_supported_scanner_version": "1.5.0",
+  "breaking_changes": false,
   "display_name": "中式诡异/规则怪谈专长分析",
   "description": "关注中式民俗禁忌、规则怪谈、怪异副本、逃生验证和现实侵蚀，区别于以旧日外神、序列魔药和宇宙恐怖为核心的克系诡秘。",
   "enabled_stages": [

@@ -1,6 +1,25 @@
 {
   "name": "harem",
   "sort_order": 10,
+  "version": "2.1.0",
+  "version_history": [
+    {
+      "version": "2.1.0",
+      "date": "2026-06-08",
+      "changes": [
+        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
+      ]
+    },
+    {
+      "version": "2.0.0",
+      "date": "2026-06-07",
+      "changes": [
+        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
+      ]
+    }
+  ],
+  "min_supported_scanner_version": "1.5.0",
+  "breaking_changes": false,
   "display_name": "后宫/男性向排雷分析",
   "description": "保留当前男主、女主、初处、漏女、毒点/雷点体系，作为后宫类小说的专长分析 profile。",
   "enabled_stages": [

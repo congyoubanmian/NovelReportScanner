@@ -26,6 +26,10 @@ class AnalysisProfile:
     harem_plus: Dict[str, Any]
     cross_profile_rules: Dict[str, Any]
     sort_order: int = 1000
+    version: str = "2.1.0"
+    version_history: List[Dict[str, Any]] = None
+    min_supported_scanner_version: str = "1.5.0"
+    breaking_changes: bool = False
 
     @property
     def uses_harem_reviewer(self) -> bool:
@@ -450,6 +454,10 @@ def load_analysis_profile(profile_name: str = None) -> AnalysisProfile:
         harem_plus=manifest.get("harem_plus") if isinstance(manifest.get("harem_plus"), dict) else {},
         cross_profile_rules=manifest.get("cross_profile_rules") if isinstance(manifest.get("cross_profile_rules"), dict) else {},
         sort_order=sort_order,
+        version=str(manifest.get("version") or "2.1.0"),
+        version_history=manifest.get("version_history") if isinstance(manifest.get("version_history"), list) else [],
+        min_supported_scanner_version=str(manifest.get("min_supported_scanner_version") or "1.5.0"),
+        breaking_changes=bool(manifest.get("breaking_changes", False)),
     )
 
 
@@ -487,6 +495,9 @@ def profile_options(include_auto: bool = True) -> List[Dict[str, Any]]:
             "display_name": profile.display_name,
             "description": profile.description,
             "report_mode": profile.report_mode,
+            "version": profile.version,
+            "min_supported_scanner_version": profile.min_supported_scanner_version,
+            "breaking_changes": profile.breaking_changes,
         })
     return options
 
