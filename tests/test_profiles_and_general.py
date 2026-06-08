@@ -881,6 +881,48 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("对象是目标女主或强准女主", prompt)
         self.assertIn("反派计划把女性送人但男主没有主动参与", prompt)
 
+    def test_harem_scan_checklist_is_sent_only_for_first_chunk(self):
+        categories = [{"name": "郁闷点", "description": "测试", "points": []}]
+        system_prompt = novel_scan.build_prompt(categories, [], ["甲女"], {"name": "男主"})
+        self.assertNotIn("输出前自检", system_prompt)
+        self.assertNotIn("每个条目的五个维度", system_prompt)
+
+        calls = []
+        old_call = novel_scan._call_json_chat_completion
+        try:
+            def fake_call(messages, **_kwargs):
+                calls.append(messages)
+
+                class Message:
+                    content = json.dumps({
+                        "issues": [],
+                        "heroine_facts": [],
+                        "extra_relations": [],
+                        "_reasoning": "已自检",
+                        "_context_summary": "片段摘要",
+                    }, ensure_ascii=False)
+
+                class Choice:
+                    message = Message()
+
+                class Response:
+                    choices = [Choice()]
+
+                return Response()
+
+            novel_scan._call_json_chat_completion = fake_call
+            novel_scan.scan_chunk("甲女出场。", 0, 2, system_prompt, ["甲女"], {"name": "男主"})
+            novel_scan.scan_chunk("甲女继续行动。", 1, 2, system_prompt, ["甲女"], {"name": "男主"})
+        finally:
+            novel_scan._call_json_chat_completion = old_call
+
+        first_user_prompt = calls[0][1]["content"]
+        second_user_prompt = calls[1][1]["content"]
+        self.assertIn("输出前自检", first_user_prompt)
+        self.assertIn("每个条目的五个维度", first_user_prompt)
+        self.assertNotIn("输出前自检", second_user_prompt)
+        self.assertNotIn("每个条目的五个维度", second_user_prompt)
+
     def test_scan_checkpoint_incremental_delta_merges_on_load(self):
         old_checkpoint = novel_scan.CHECKPOINT_FILE
         old_plan = novel_scan.CURRENT_CHUNK_PLAN_METADATA

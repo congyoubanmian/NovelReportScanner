@@ -170,6 +170,7 @@
 - README 已补充公网反向代理/TLS 部署建议，包含本机端口绑定、`WEB_ACCESS_TOKEN`、CORS 收窄、Caddy/Nginx 示例和 SSE 代理配置。
 - `novel_scan.py`、`protagonist.py`、`report.py` 已统一使用 `shared_utils.create_chat_completion()` 创建 API 客户端，OpenAI client factory 只保留一份；`protagonist.py` 默认 `BASE_URL` 也已与其他阶段统一为 `https://api.deepseek.com`，避免未显式配置时不同阶段打到不同端点。
 - 扫描阶段 checkpoint 已支持逐 chunk 增量写入：首个 checkpoint 和每 10 个 chunk 会写回完整 `latest_checkpoint.json` 并清理增量文件，中间 chunk 只追加 `latest_checkpoint.json.delta.jsonl`；恢复时会自动合并基线和增量记录，减少长篇扫描过程中每块重复序列化完整 `issues/heroine_facts/extra_relations` 的开销，同时保持旧版全量 checkpoint 兼容。
+- 扫描阶段 prompt 已减少重复发送：规则说明继续保留在 system prompt 中，自检清单从 system prompt 移出，只随第一个 chunk 的 user prompt 发送一次；后续 chunk 沿用同一要求但不再重复携带 13 条自检清单，降低长篇多 chunk 扫描的重复 token。
 
 ### 6. 测试覆盖
 
@@ -187,9 +188,10 @@
 - 通用总评字段别名、作品概览别名和旧 summary 缓存复用。
 - 通用/副类型扫描会按小说长度动态提高 `GENERAL_SCAN_MAX_CHUNKS` 的有效上限：100万字内保持 80，100-300万字提高到 120，300-500万字提高到 160，500万字以上提高到 200；显式配置更高值时尊重配置，配置为 0 时仍表示不限制。
 - 扫描 checkpoint 增量写入、周期性全量合并和加载合并恢复。
+- 扫描 prompt 自检清单只在首个 chunk 发送，避免每个 chunk 重复。
 - API 客户端工厂统一和默认 `BASE_URL` 一致性。
 
-最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **164 个测试 OK**；蒸汽西幻 scan_focus、组合关键词和专项规则维度已增加到现有 profile/自动分类回归测试中。国运/文明对抗与模拟器/人生推演的 profile 发现、自动识别、后宫交叉规则、后宫增强补扫、字段中文标题、都市爽文跨类边界、置信度校准和扫描 checkpoint 增量恢复已有目标测试覆盖；profile manifest 的 `name` 字段与目录名一致性、通用规则核心维度、历史/硬科幻专项规则补强、API 客户端工厂统一和默认 `BASE_URL` 一致性也已有回归测试覆盖。
+最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **165 个测试 OK**；蒸汽西幻 scan_focus、组合关键词和专项规则维度已增加到现有 profile/自动分类回归测试中。国运/文明对抗与模拟器/人生推演的 profile 发现、自动识别、后宫交叉规则、后宫增强补扫、字段中文标题、都市爽文跨类边界、置信度校准、扫描 checkpoint 增量恢复和 prompt 自检清单去重已有目标测试覆盖；profile manifest 的 `name` 字段与目录名一致性、通用规则核心维度、历史/硬科幻专项规则补强、API 客户端工厂统一和默认 `BASE_URL` 一致性也已有回归测试覆盖。
 
 ## 已推送的关键提交
 
