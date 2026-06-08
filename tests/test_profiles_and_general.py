@@ -6282,16 +6282,42 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "plot": ["主线"],
                     "conflicts": ["冲突"],
                     "world_building": ["设定"],
+                    "scientific_logic": ["旧字段：科学逻辑自洽"],
+                    "scientific_basis": ["旧字段：核心科学假设清楚"],
                     "battlefield_operations": ["旧字段：战术行动依赖地形与兵种配合"],
                     "military_logistics": ["旧字段：补给线和医疗消耗被纳入叙事"],
                     "military_equipment": ["旧字段：火炮与通信设备形成科技树"],
+                    "strategy": ["旧字段：战略目标与资源匹配"],
+                    "command_chain": ["旧字段：指挥链责任明确"],
+                    "force_building": ["旧字段：部队扩编有训练成本"],
+                    "combat_scenes": ["旧字段：战斗场面服务战术目标"],
+                    "diplomacy": ["旧字段：外交压力影响战局"],
+                    "business_strategy": ["旧字段：商业模式有现金流闭环"],
+                    "market_dynamics": ["旧字段：市场竞争形成外部压力"],
+                    "org_management": ["旧字段：组织管理有制度约束"],
+                    "career_arc": ["旧字段：职业成长阶段明确"],
                     "industry_chain": ["旧字段：上下游议价影响公司现金流"],
                     "office_politics": ["旧字段：董事会与人事斗争推动职场线"],
+                    "industry_connections": ["旧字段：资源置换符合行业规则"],
+                    "public_relations": ["旧字段：公关舆论影响事业线"],
+                    "survival_resource_pressure": ["旧字段：食物药品构成生存压力"],
+                    "shelter_order": ["旧字段：避难所规则支撑秩序"],
+                    "collapse_rebuild": ["旧字段：旧秩序崩塌后重建组织"],
                     "production_system": ["旧字段：农田到工坊形成生产闭环"],
+                    "resource_logic": ["旧字段：资源调度决定扩张速度"],
                     "tech_tree": ["旧字段：科技树升级路径清楚"],
+                    "cultivation_realm": ["旧字段：境界突破规则清楚"],
+                    "level_scaling": ["旧字段：战力层级没有跳档"],
+                    "sect_factions": ["旧字段：宗门派系关系清楚"],
+                    "daoist_theme": ["旧字段：求道主题贯穿成长线"],
+                    "system_balance": ["旧字段：系统成长没有失衡"],
+                    "reward_cost": ["旧字段：奖励与代价绑定"],
                     "matchup_tactics": ["旧字段：对位选择决定关键比赛走势"],
                     "opponent_rivalry": ["旧字段：宿敌竞争关系稳定推进"],
                     "procedure_realism": ["旧字段：非法取证会影响证据效力"],
+                    "case_fairness": ["旧字段：谜题信息对读者公平"],
+                    "forensic_realism": ["旧字段：法医流程保留误差边界"],
+                    "teamwork": ["旧字段：团队分工推动案件侦查"],
                     "corruption_cost": ["旧字段：污染代价影响角色理智"],
                     "campus_life": ["旧字段：班级社团与宿舍日常具体"],
                     "youth_growth": ["旧字段：升学压力推动成长弧线"],
@@ -6314,12 +6340,38 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "tactics_and_operations",
                     "logistics_and_cost",
                     "equipment_and_tech",
+                    "scientific_assumptions",
+                    "science_consistency",
+                    "strategy_logic",
+                    "command_structure",
+                    "force_buildup",
+                    "combat_writing",
+                    "political_diplomacy",
+                    "business_model",
+                    "market_competition",
+                    "organization_management",
+                    "career_progression",
                     "supply_chain",
                     "corporate_politics",
+                    "industry_resources",
+                    "public_opinion",
+                    "survival_resources",
+                    "shelter_and_order",
+                    "social_collapse_and_rebuild",
                     "production_chain",
+                    "resource_management",
                     "technology_progression",
+                    "cultivation_system",
+                    "power_scaling",
+                    "faction_structure",
+                    "dao_theme",
+                    "progression_balance",
+                    "reward_and_cost",
                     "tactical_matchups",
                     "rivalry_and_opponents",
+                    "puzzle_fairness",
+                    "forensic_procedure",
+                    "team_dynamics",
                     "legal_realism",
                     "sanity_and_corruption",
                     "campus_setting",
@@ -6341,12 +6393,38 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(summary["tactics_and_operations"], ["旧字段：战术行动依赖地形与兵种配合"])
         self.assertEqual(summary["logistics_and_cost"], ["旧字段：补给线和医疗消耗被纳入叙事"])
         self.assertEqual(summary["equipment_and_tech"], ["旧字段：火炮与通信设备形成科技树"])
+        self.assertEqual(summary["scientific_assumptions"], ["旧字段：核心科学假设清楚"])
+        self.assertEqual(summary["science_consistency"], ["旧字段：科学逻辑自洽"])
+        self.assertEqual(summary["strategy_logic"], ["旧字段：战略目标与资源匹配"])
+        self.assertEqual(summary["command_structure"], ["旧字段：指挥链责任明确"])
+        self.assertEqual(summary["force_buildup"], ["旧字段：部队扩编有训练成本"])
+        self.assertEqual(summary["combat_writing"], ["旧字段：战斗场面服务战术目标"])
+        self.assertEqual(summary["political_diplomacy"], ["旧字段：外交压力影响战局"])
+        self.assertEqual(summary["business_model"], ["旧字段：商业模式有现金流闭环"])
+        self.assertEqual(summary["market_competition"], ["旧字段：市场竞争形成外部压力"])
+        self.assertEqual(summary["organization_management"], ["旧字段：组织管理有制度约束"])
+        self.assertEqual(summary["career_progression"], ["旧字段：职业成长阶段明确"])
         self.assertEqual(summary["supply_chain"], ["旧字段：上下游议价影响公司现金流"])
         self.assertEqual(summary["corporate_politics"], ["旧字段：董事会与人事斗争推动职场线"])
+        self.assertEqual(summary["industry_resources"], ["旧字段：资源置换符合行业规则"])
+        self.assertEqual(summary["public_opinion"], ["旧字段：公关舆论影响事业线"])
+        self.assertEqual(summary["survival_resources"], ["旧字段：食物药品构成生存压力"])
+        self.assertEqual(summary["shelter_and_order"], ["旧字段：避难所规则支撑秩序"])
+        self.assertEqual(summary["social_collapse_and_rebuild"], ["旧字段：旧秩序崩塌后重建组织"])
         self.assertEqual(summary["production_chain"], ["旧字段：农田到工坊形成生产闭环"])
+        self.assertEqual(summary["resource_management"], ["旧字段：资源调度决定扩张速度"])
         self.assertEqual(summary["technology_progression"], ["旧字段：科技树升级路径清楚"])
+        self.assertEqual(summary["cultivation_system"], ["旧字段：境界突破规则清楚"])
+        self.assertEqual(summary["power_scaling"], ["旧字段：战力层级没有跳档"])
+        self.assertEqual(summary["faction_structure"], ["旧字段：宗门派系关系清楚"])
+        self.assertEqual(summary["dao_theme"], ["旧字段：求道主题贯穿成长线"])
+        self.assertEqual(summary["progression_balance"], ["旧字段：系统成长没有失衡"])
+        self.assertEqual(summary["reward_and_cost"], ["旧字段：奖励与代价绑定"])
         self.assertEqual(summary["tactical_matchups"], ["旧字段：对位选择决定关键比赛走势"])
         self.assertEqual(summary["rivalry_and_opponents"], ["旧字段：宿敌竞争关系稳定推进"])
+        self.assertEqual(summary["puzzle_fairness"], ["旧字段：谜题信息对读者公平"])
+        self.assertEqual(summary["forensic_procedure"], ["旧字段：法医流程保留误差边界"])
+        self.assertEqual(summary["team_dynamics"], ["旧字段：团队分工推动案件侦查"])
         self.assertEqual(summary["legal_realism"], ["旧字段：非法取证会影响证据效力"])
         self.assertEqual(summary["sanity_and_corruption"], ["旧字段：污染代价影响角色理智"])
         self.assertEqual(summary["campus_setting"], ["旧字段：班级社团与宿舍日常具体"])
@@ -6365,12 +6443,38 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "战术与行动",
             "后勤与战争代价",
             "装备与军工科技",
+            "科学假设",
+            "科学设定自洽性",
+            "战略逻辑",
+            "指挥链与组织",
+            "部队建设",
+            "战斗描写",
+            "政治与外交",
+            "商业模式",
+            "市场竞争",
+            "组织管理",
+            "职场成长",
             "供应链/产业链",
             "职场政治",
+            "行业资源",
+            "舆论经营",
+            "生存资源",
+            "据点与秩序",
+            "秩序崩塌与重建",
             "生产链条",
+            "资源管理",
             "技术升级路径",
+            "修炼体系",
+            "战力层级",
+            "势力结构",
+            "求道/长生主题",
+            "成长与数值平衡",
+            "奖励与代价",
             "战术对局",
             "对手群像",
+            "谜题公平性",
+            "法医与侦查程序",
+            "团队协作",
             "法律现实性",
             "理智与污染代价",
             "校园环境",

@@ -114,7 +114,8 @@
 - 通用总评缓存复用判断已同步使用作品概览别名，避免旧 summary 只有 `book_overview` 等字段时被误判为过期而重复扫描。
 - 补齐全部 profile `summary_fields` 中文标题：新增 `main_plot`/`core_conflicts`/`worldbuilding`/`themes`/`strengths`/`risks_or_issues`/`reader_fit`/`overall_assessment` 等 8 个通用字段，以及 `heroines`/`candidate_heroines`/`missed_heroines`/`purity_assessment`/`poison_points`/`depressing_points`/`male_protagonist`/`relationship_progression` 等 8 个后宫字段，确保所有报告字段在输出时都有中文展示名。
 - 回归测试 `test_general_scan_field_labels_cover_profile_summary_fields` 已移除对通用字段和后宫 profile 的跳过逻辑，现在强制检查所有 profile 的所有 summary_fields 都必须有中文标题，防止新增 profile 字段遗漏标签。
-- 补充更多非后宫专项旧字段/同义字段别名，覆盖军事战术/后勤/装备、商战供应链/职场政治、种田生产链/科技树、体育对局/宿敌、刑侦司法现实、克系污染代价、校园环境/成长弧线等字段；扫描汇总和最终报告共用同一别名表，避免模型返回旧 key 时专项栏目丢失。
+- 补充更多非后宫专项旧字段/同义字段别名，覆盖军事战略/战术/指挥链/后勤/装备、商战/职场/文娱资源、末世据点与秩序、种田资源与科技树、仙侠境界/势力/求道、系统奖励代价、体育对局/宿敌、刑侦法医/团队/司法、克系污染代价、校园环境/成长弧线等字段；扫描汇总和最终报告共用同一别名表，避免模型返回旧 key 时专项栏目丢失。
+- 非后宫专项字段别名继续补漏，覆盖科学逻辑/科学假设、军事战略/指挥链/部队建设/战斗/外交、商战模式/市场/组织/职业成长、娱乐圈资源/公关、末世资源/据点/秩序重建、仙侠境界/战力/宗门/求道、系统平衡/奖励代价、刑侦谜题公平/法医流程/团队协作等常见模型同义 key。
 - 非后宫通用报告会展示片段级 `specialty_notes` 的“专项命中要点”，避免专项规则只在 prompt 或中间 JSON 中出现、最终报告看不到真实命中点。
 
 ### 5. Web 和部署工程项
