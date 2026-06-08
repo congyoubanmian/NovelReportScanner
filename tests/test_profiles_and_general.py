@@ -1073,6 +1073,77 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             novel_scan.CHUNK_SUMMARIES = old_summaries
             novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
 
+    def test_checkpoint_explicit_paths_keep_runtime_state_isolated(self):
+        old_checkpoint = novel_scan.CHECKPOINT_FILE
+        old_plan = novel_scan.CURRENT_CHUNK_PLAN_METADATA
+        old_summaries = dict(novel_scan.CHUNK_SUMMARIES)
+        old_diagnostics = dict(novel_scan.CHUNK_FAILURE_DIAGNOSTICS)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                path_a = os.path.join(tmpdir, "book_a_checkpoint.json")
+                path_b = os.path.join(tmpdir, "book_b_checkpoint.json")
+                novel_scan.CHECKPOINT_FILE = os.path.join(tmpdir, "global_checkpoint.json")
+                novel_scan.CURRENT_CHUNK_PLAN_METADATA = {"chunk_count": 99}
+                novel_scan.CHUNK_SUMMARIES = {99: "全局摘要"}
+                novel_scan.CHUNK_FAILURE_DIAGNOSTICS = {99: {"flags": ["global"]}}
+
+                novel_scan.save_checkpoint(
+                    [{"type": "A", "chunk_index": 1}],
+                    [],
+                    {0},
+                    [],
+                    failed_chunks=set(),
+                    current_chunk_idx=0,
+                    checkpoint_file=path_a,
+                    chunk_plan_metadata={"chunk_count": 2},
+                    chunk_summaries={0: "A摘要"},
+                    detail_path="/tmp/a_detail.json",
+                    chunk_failure_diagnostics={},
+                )
+                novel_scan.save_checkpoint(
+                    [],
+                    [],
+                    set(),
+                    [],
+                    failed_chunks={1},
+                    current_chunk_idx=1,
+                    checkpoint_file=path_b,
+                    chunk_plan_metadata={"chunk_count": 3},
+                    chunk_summaries={1: "B摘要"},
+                    detail_path="/tmp/b_detail.json",
+                    chunk_failure_diagnostics={1: {"flags": ["nul_bytes"], "severity": "high"}},
+                )
+
+                loaded_a = novel_scan.load_checkpoint(
+                    checkpoint_file=path_a,
+                    chunk_plan_metadata={"chunk_count": 2},
+                    update_globals=False,
+                )
+                loaded_b = novel_scan.load_checkpoint(
+                    checkpoint_file=path_b,
+                    chunk_plan_metadata={"chunk_count": 3},
+                    update_globals=False,
+                )
+
+                self.assertEqual(loaded_a[0], [{"type": "A", "chunk_index": 1}])
+                self.assertEqual(loaded_a[2], {0})
+                self.assertEqual(loaded_a[4], set())
+                self.assertEqual(loaded_a[6], "/tmp/a_detail.json")
+                self.assertEqual(loaded_b[2], set())
+                self.assertEqual(loaded_b[4], {1})
+                self.assertEqual(loaded_b[6], "/tmp/b_detail.json")
+                self.assertEqual(novel_scan.CHUNK_SUMMARIES, {99: "全局摘要"})
+                self.assertEqual(novel_scan.CHUNK_FAILURE_DIAGNOSTICS, {99: {"flags": ["global"]}})
+
+                with open(path_b, "r", encoding="utf-8") as f:
+                    data_b = json.load(f)
+                self.assertEqual(data_b["chunk_failure_diagnostics"]["1"]["flags"], ["nul_bytes"])
+        finally:
+            novel_scan.CHECKPOINT_FILE = old_checkpoint
+            novel_scan.CURRENT_CHUNK_PLAN_METADATA = old_plan
+            novel_scan.CHUNK_SUMMARIES = old_summaries
+            novel_scan.CHUNK_FAILURE_DIAGNOSTICS = old_diagnostics
+
     def test_chunk_failure_diagnostic_flags_problematic_text(self):
         diagnostic = novel_scan._build_chunk_failure_diagnostic(
             "正常开头\x00异常控制\x1b字符\n" + ("很长" * 1100) + "\ufffd",

@@ -342,10 +342,11 @@ def load_rules():
 
 
 # ---------------- 断点续传 ----------------
-def _checkpoint_delta_file():
-    if not CHECKPOINT_FILE:
+def _checkpoint_delta_file(checkpoint_file=None):
+    effective_checkpoint = checkpoint_file if checkpoint_file is not None else CHECKPOINT_FILE
+    if not effective_checkpoint:
         return None
-    return f"{CHECKPOINT_FILE}.delta.jsonl"
+    return f"{effective_checkpoint}.delta.jsonl"
 
 
 def _build_checkpoint_data(all_issues, all_heroine_facts, processed_chunks, extra_relations_all=None,
@@ -389,18 +390,19 @@ def _build_checkpoint_data(all_issues, all_heroine_facts, processed_chunks, extr
     return data
 
 
-def _write_full_checkpoint_data(data):
-    with open(CHECKPOINT_FILE, 'w', encoding='utf-8') as f:
+def _write_full_checkpoint_data(data, checkpoint_file=None):
+    effective_checkpoint = checkpoint_file if checkpoint_file is not None else CHECKPOINT_FILE
+    with open(effective_checkpoint, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-    delta_file = _checkpoint_delta_file()
+    delta_file = _checkpoint_delta_file(effective_checkpoint)
     if delta_file and os.path.exists(delta_file):
         os.unlink(delta_file)
 
 
 def _append_checkpoint_delta(current_chunk_idx, *, delta_issues=None, delta_heroine_facts=None,
                              delta_extra_relations=None, processed=False, failed=False,
-                             chunk_summary="", failure_diagnostic=None):
-    delta_file = _checkpoint_delta_file()
+                             chunk_summary="", failure_diagnostic=None, checkpoint_file=None):
+    delta_file = _checkpoint_delta_file(checkpoint_file)
     if not delta_file:
         return
     delta = {
@@ -421,8 +423,8 @@ def _append_checkpoint_delta(current_chunk_idx, *, delta_issues=None, delta_hero
         f.write(json.dumps(delta, ensure_ascii=False, separators=(",", ":")) + "\n")
 
 
-def _iter_checkpoint_deltas():
-    delta_file = _checkpoint_delta_file()
+def _iter_checkpoint_deltas(checkpoint_file=None):
+    delta_file = _checkpoint_delta_file(checkpoint_file)
     if not delta_file or not os.path.exists(delta_file):
         return []
     latest_by_chunk = {}
@@ -448,8 +450,8 @@ def _iter_checkpoint_deltas():
     return [latest_by_chunk[idx] for idx in order]
 
 
-def _merge_checkpoint_deltas(data):
-    for delta in _iter_checkpoint_deltas():
+def _merge_checkpoint_deltas(data, checkpoint_file=None):
+    for delta in _iter_checkpoint_deltas(checkpoint_file):
         idx = int(delta.get("chunk_index"))
         processed_chunks = set(data.get("processed_chunks", []))
         already_processed = idx in processed_chunks
@@ -488,7 +490,7 @@ def save_checkpoint(all_issues, all_heroine_facts, processed_chunks, extra_relat
                     current_chunk_idx=None, chunk_plan_metadata=None, chunk_summaries=None, heroine_profiles=None,
                     detail_path=None, rescan_done_chunks=None, rescan_completed=None, incremental=False,
                     delta_issues=None, delta_heroine_facts=None, delta_extra_relations=None,
-                    delta_chunk_summary=""):
+                    delta_chunk_summary="", checkpoint_file=None, chunk_failure_diagnostics=None):
     """保存扫描进度
 
     Args:
@@ -506,14 +508,21 @@ def save_checkpoint(all_issues, all_heroine_facts, processed_chunks, extra_relat
         detail_path=detail_path,
         rescan_done_chunks=rescan_done_chunks,
         rescan_completed=rescan_completed,
+        chunk_failure_diagnostics=chunk_failure_diagnostics,
     )
     try:
         with CHECKPOINT_LOCK:
+            effective_checkpoint = checkpoint_file if checkpoint_file is not None else CHECKPOINT_FILE
+            effective_failure_diagnostics = (
+                chunk_failure_diagnostics
+                if chunk_failure_diagnostics is not None
+                else CHUNK_FAILURE_DIAGNOSTICS
+            )
             can_append_delta = (
                 incremental
                 and current_chunk_idx is not None
-                and CHECKPOINT_FILE
-                and os.path.exists(CHECKPOINT_FILE)
+                and effective_checkpoint
+                and os.path.exists(effective_checkpoint)
                 and (current_chunk_idx + 1) % CHECKPOINT_FULL_MERGE_INTERVAL != 0
                 and heroine_profiles is None
                 and rescan_done_chunks is None
@@ -532,37 +541,40 @@ def save_checkpoint(all_issues, all_heroine_facts, processed_chunks, extra_relat
                     processed=current_chunk_idx in set(processed_chunks or []),
                     failed=current_chunk_idx in current_failed_chunks,
                     chunk_summary=delta_chunk_summary,
-                    failure_diagnostic=CHUNK_FAILURE_DIAGNOSTICS.get(int(current_chunk_idx)),
+                    failure_diagnostic=effective_failure_diagnostics.get(int(current_chunk_idx)),
+                    checkpoint_file=effective_checkpoint,
                 )
             else:
-                _write_full_checkpoint_data(data)
+                _write_full_checkpoint_data(data, checkpoint_file=effective_checkpoint)
         
         # 优先显示当前完成的块，否则显示进度统计
         if current_chunk_idx is not None:
-            logger.info(f"✅ 断点已保存: {CHECKPOINT_FILE}（刚完成第 {current_chunk_idx + 1} 块，累计完成 {len(processed_chunks)} 块，失败 {len(failed_chunks or [])} 块）")
+            logger.info(f"✅ 断点已保存: {effective_checkpoint}（刚完成第 {current_chunk_idx + 1} 块，累计完成 {len(processed_chunks)} 块，失败 {len(failed_chunks or [])} 块）")
         elif processed_chunks:
-            logger.info(f"✅ 断点已保存: {CHECKPOINT_FILE}（累计完成 {len(processed_chunks)} 块，失败 {len(failed_chunks or [])} 块）")
+            logger.info(f"✅ 断点已保存: {effective_checkpoint}（累计完成 {len(processed_chunks)} 块，失败 {len(failed_chunks or [])} 块）")
         else:
-            logger.info(f"✅ 断点已保存: {CHECKPOINT_FILE}（当前无已完成块）")
+            logger.info(f"✅ 断点已保存: {effective_checkpoint}（当前无已完成块）")
     except Exception as e:
         logger.error(f"保存断点失败: {e}")
 
 
-def load_checkpoint():
+def load_checkpoint(checkpoint_file=None, chunk_plan_metadata=None, update_globals=True):
     """加载扫描进度，若不存在返回空"""
     global CHUNK_SUMMARIES, CHUNK_FAILURE_DIAGNOSTICS
-    delta_file = _checkpoint_delta_file()
-    if not CHECKPOINT_FILE or (not os.path.exists(CHECKPOINT_FILE) and not (delta_file and os.path.exists(delta_file))):
-        CHUNK_SUMMARIES = {}
-        CHUNK_FAILURE_DIAGNOSTICS = {}
+    effective_checkpoint = checkpoint_file if checkpoint_file is not None else CHECKPOINT_FILE
+    delta_file = _checkpoint_delta_file(effective_checkpoint)
+    if not effective_checkpoint or (not os.path.exists(effective_checkpoint) and not (delta_file and os.path.exists(delta_file))):
+        if update_globals:
+            CHUNK_SUMMARIES = {}
+            CHUNK_FAILURE_DIAGNOSTICS = {}
         return [], [], set(), [], set(), None, None, set(), False
     try:
-        if os.path.exists(CHECKPOINT_FILE):
-            with open(CHECKPOINT_FILE, 'r', encoding='utf-8') as f:
+        if os.path.exists(effective_checkpoint):
+            with open(effective_checkpoint, 'r', encoding='utf-8') as f:
                 data = json.load(f)
         else:
             data = {}
-        data = _merge_checkpoint_deltas(data)
+        data = _merge_checkpoint_deltas(data, checkpoint_file=effective_checkpoint)
         issues = data.get("issues", [])
         heroine_facts = data.get("heroine_facts", [])
         # 兼容旧版 heroine_status
@@ -575,28 +587,38 @@ def load_checkpoint():
         detail_path = data.get("detail_path")
         rescan_done_chunks = set(data.get("rescan_done_chunks", []))
         rescan_completed = bool(data.get("rescan_completed", False))
-        CHUNK_SUMMARIES = {
+        loaded_chunk_summaries = {
             int(k): str(v)
             for k, v in (data.get("chunk_summaries", {}) or {}).items()
             if str(k).strip() and str(v).strip()
         }
-        CHUNK_FAILURE_DIAGNOSTICS = {
+        loaded_failure_diagnostics = {
             int(k): v
             for k, v in (data.get("chunk_failure_diagnostics", {}) or {}).items()
             if str(k).strip() and isinstance(v, dict)
         }
+        if update_globals:
+            CHUNK_SUMMARIES = loaded_chunk_summaries
+            CHUNK_FAILURE_DIAGNOSTICS = loaded_failure_diagnostics
         saved_chunk_plan = data.get("chunk_plan")
-        if saved_chunk_plan and CURRENT_CHUNK_PLAN_METADATA and saved_chunk_plan != CURRENT_CHUNK_PLAN_METADATA:
+        effective_chunk_plan = (
+            chunk_plan_metadata
+            if chunk_plan_metadata is not None
+            else CURRENT_CHUNK_PLAN_METADATA
+        )
+        if saved_chunk_plan and effective_chunk_plan and saved_chunk_plan != effective_chunk_plan:
             logger.warning("⚠️ 检测到切块配置或文本长度变化，旧断点不再复用，将从头开始扫描。")
-            CHUNK_SUMMARIES = {}
-            CHUNK_FAILURE_DIAGNOSTICS = {}
+            if update_globals:
+                CHUNK_SUMMARIES = {}
+                CHUNK_FAILURE_DIAGNOSTICS = {}
             return [], [], set(), [], set(), None, None, set(), False
         logger.info(f"📂 已加载断点，已完成 {len(processed_chunks)} 个片段，失败 {len(failed_chunks)} 个片段")
         return issues, heroine_facts, processed_chunks, extra_relations, failed_chunks, heroine_profiles, detail_path, rescan_done_chunks, rescan_completed
     except Exception as e:
         logger.error(f"加载断点失败: {e}，将从头开始")
-        CHUNK_SUMMARIES = {}
-        CHUNK_FAILURE_DIAGNOSTICS = {}
+        if update_globals:
+            CHUNK_SUMMARIES = {}
+            CHUNK_FAILURE_DIAGNOSTICS = {}
         return [], [], set(), [], set(), None, None, set(), False
 
 
