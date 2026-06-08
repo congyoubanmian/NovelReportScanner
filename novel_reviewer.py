@@ -1305,20 +1305,92 @@ def save_checkpoint(
         "finish_done": finish_done,
     }
     try:
-        with open(checkpoint_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        _atomic_write_json_checkpoint(checkpoint_file, data)
         logger.info(f"✅ 断点已保存: {checkpoint_file}")
     except Exception as e:
         logger.error(f"保存断点失败: {e}")
 
 
-def load_checkpoint(raw_data_path, checkpoint_file):
-    """加载审查进度；raw_data_path 不匹配时忽略旧断点"""
-    if not checkpoint_file or not os.path.exists(checkpoint_file):
-        return [], 0, [], set(), None, None, None, "", False, False
+def _checkpoint_backup_file(checkpoint_file):
+    return f"{checkpoint_file}.bak" if checkpoint_file else None
+
+
+def _json_checkpoint_is_readable(checkpoint_file):
     try:
         with open(checkpoint_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            json.load(f)
+        return True
+    except Exception:
+        return False
+
+
+def _fsync_parent_dir(path):
+    parent_dir = os.path.dirname(path) or "."
+    if not hasattr(os, "O_DIRECTORY"):
+        return
+    try:
+        dir_fd = os.open(parent_dir, os.O_RDONLY | os.O_DIRECTORY)
+    except OSError:
+        return
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
+
+
+def _atomic_write_json_checkpoint(checkpoint_file, data):
+    os.makedirs(os.path.dirname(checkpoint_file) or ".", exist_ok=True)
+    backup_file = _checkpoint_backup_file(checkpoint_file)
+    if os.path.exists(checkpoint_file) and backup_file:
+        if _json_checkpoint_is_readable(checkpoint_file):
+            try:
+                with open(checkpoint_file, "rb") as src, open(backup_file, "wb") as dst:
+                    dst.write(src.read())
+                    dst.flush()
+                    os.fsync(dst.fileno())
+                _fsync_parent_dir(backup_file)
+            except Exception as exc:
+                logger.warning(f"断点备份写入失败: {exc}")
+        else:
+            logger.warning(f"主断点不可解析，保留现有备份不覆盖: {checkpoint_file}")
+    tmp_path = f"{checkpoint_file}.{os.getpid()}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, checkpoint_file)
+    _fsync_parent_dir(checkpoint_file)
+
+
+def _load_json_checkpoint_with_backup(checkpoint_file):
+    candidates = [checkpoint_file, _checkpoint_backup_file(checkpoint_file)]
+    last_error = None
+    for candidate in candidates:
+        if not candidate or not os.path.exists(candidate):
+            continue
+        try:
+            with open(candidate, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if candidate != checkpoint_file:
+                logger.warning(f"主断点损坏或不可用，已从备份恢复: {candidate}")
+            return data
+        except Exception as exc:
+            last_error = exc
+            logger.warning(f"读取断点失败 {candidate}: {exc}")
+    if last_error:
+        raise last_error
+    return None
+
+
+def load_checkpoint(raw_data_path, checkpoint_file):
+    """加载审查进度；raw_data_path 不匹配时忽略旧断点"""
+    backup_file = _checkpoint_backup_file(checkpoint_file)
+    if not checkpoint_file or (not os.path.exists(checkpoint_file) and not (backup_file and os.path.exists(backup_file))):
+        return [], 0, [], set(), None, None, None, "", False, False
+    try:
+        data = _load_json_checkpoint_with_backup(checkpoint_file)
+        if not isinstance(data, dict):
+            return [], 0, [], set(), None, None, None, "", False, False
         if os.path.abspath(raw_data_path) != data.get("raw_data_path"):
             logger.warning("⚠️ 断点文件与当前 raw_data 不匹配，忽略旧进度")
             return [], 0, [], set(), None, None, None, "", False, False

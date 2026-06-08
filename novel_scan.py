@@ -311,11 +311,14 @@ def _resolve_detail_path(explicit_detail_path=None, checkpoint_detail_path=None,
 
 def _peek_checkpoint_detail_path(checkpoint_file=None):
     effective_checkpoint = checkpoint_file if checkpoint_file is not None else CHECKPOINT_FILE
-    if not effective_checkpoint or not os.path.exists(effective_checkpoint):
+    backup_file = _checkpoint_backup_file(effective_checkpoint)
+    if not effective_checkpoint or (
+        not os.path.exists(effective_checkpoint)
+        and not (backup_file and os.path.exists(backup_file))
+    ):
         return None
     try:
-        with open(effective_checkpoint, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        data = _load_checkpoint_json_file(effective_checkpoint)
     except Exception:
         return None
     return (data or {}).get("detail_path")
@@ -498,6 +501,83 @@ def _checkpoint_delta_file(checkpoint_file=None):
     return f"{effective_checkpoint}.delta.jsonl"
 
 
+def _checkpoint_backup_file(checkpoint_file=None):
+    effective_checkpoint = checkpoint_file if checkpoint_file is not None else CHECKPOINT_FILE
+    if not effective_checkpoint:
+        return None
+    return f"{effective_checkpoint}.bak"
+
+
+def _json_file_is_readable(path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            json.load(f)
+        return True
+    except Exception:
+        return False
+
+
+def _fsync_parent_dir(path):
+    parent_dir = os.path.dirname(path) or "."
+    if not hasattr(os, "O_DIRECTORY"):
+        return
+    try:
+        dir_fd = os.open(parent_dir, os.O_RDONLY | os.O_DIRECTORY)
+    except OSError:
+        return
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
+
+
+def _atomic_write_json_file(path, data):
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    backup_path = _checkpoint_backup_file(path)
+    if os.path.exists(path) and backup_path:
+        if _json_file_is_readable(path):
+            try:
+                with open(path, "rb") as src, open(backup_path, "wb") as dst:
+                    dst.write(src.read())
+                    dst.flush()
+                    os.fsync(dst.fileno())
+                _fsync_parent_dir(backup_path)
+            except Exception as exc:
+                logger.warning(f"断点备份写入失败: {exc}")
+        else:
+            logger.warning(f"主断点不可解析，保留现有备份不覆盖: {path}")
+    tmp_path = f"{path}.{os.getpid()}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, path)
+    _fsync_parent_dir(path)
+
+
+def _load_checkpoint_json_file(path):
+    candidates = [path]
+    backup_path = _checkpoint_backup_file(path)
+    if backup_path:
+        candidates.append(backup_path)
+    last_error = None
+    for candidate in candidates:
+        if not candidate or not os.path.exists(candidate):
+            continue
+        try:
+            with open(candidate, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if candidate != path:
+                logger.warning(f"主断点损坏或不可用，已从备份恢复: {candidate}")
+            return data
+        except Exception as exc:
+            last_error = exc
+            logger.warning(f"读取断点失败 {candidate}: {exc}")
+    if last_error:
+        raise last_error
+    return {}
+
+
 def _build_checkpoint_data(all_issues, all_heroine_facts, processed_chunks, extra_relations_all=None,
                            failed_chunks=None, chunk_plan_metadata=None, chunk_summaries=None,
                            heroine_profiles=None, detail_path=None, rescan_done_chunks=None,
@@ -541,8 +621,7 @@ def _build_checkpoint_data(all_issues, all_heroine_facts, processed_chunks, extr
 
 def _write_full_checkpoint_data(data, checkpoint_file=None):
     effective_checkpoint = checkpoint_file if checkpoint_file is not None else CHECKPOINT_FILE
-    with open(effective_checkpoint, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    _atomic_write_json_file(effective_checkpoint, data)
     delta_file = _checkpoint_delta_file(effective_checkpoint)
     if delta_file and os.path.exists(delta_file):
         os.unlink(delta_file)
@@ -712,15 +791,23 @@ def load_checkpoint(checkpoint_file=None, chunk_plan_metadata=None, update_globa
     global CHUNK_SUMMARIES, CHUNK_FAILURE_DIAGNOSTICS
     effective_checkpoint = checkpoint_file if checkpoint_file is not None else CHECKPOINT_FILE
     delta_file = _checkpoint_delta_file(effective_checkpoint)
-    if not effective_checkpoint or (not os.path.exists(effective_checkpoint) and not (delta_file and os.path.exists(delta_file))):
+    backup_file = _checkpoint_backup_file(effective_checkpoint)
+    has_checkpoint = bool(
+        effective_checkpoint
+        and (
+            os.path.exists(effective_checkpoint)
+            or (backup_file and os.path.exists(backup_file))
+        )
+    )
+    has_delta = bool(delta_file and os.path.exists(delta_file))
+    if not effective_checkpoint or not (has_checkpoint or has_delta):
         if update_globals:
             CHUNK_SUMMARIES = {}
             CHUNK_FAILURE_DIAGNOSTICS = {}
         return [], [], set(), [], set(), None, None, set(), False
     try:
-        if os.path.exists(effective_checkpoint):
-            with open(effective_checkpoint, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+        if has_checkpoint:
+            data = _load_checkpoint_json_file(effective_checkpoint)
         else:
             data = {}
         data = _merge_checkpoint_deltas(data, checkpoint_file=effective_checkpoint)

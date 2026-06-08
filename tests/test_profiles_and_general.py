@@ -261,6 +261,46 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertNotIn("response_format", calls[1])
         self.assertIn("上一次回复不是可解析的 JSON 对象", calls[1]["messages"][-1]["content"])
 
+    def test_reviewer_checkpoint_recovers_from_backup_when_primary_is_corrupt(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            raw_path = os.path.join(tmpdir, "raw.json")
+            checkpoint_path = os.path.join(tmpdir, "reviewer3_checkpoint.json")
+            with open(raw_path, "w", encoding="utf-8") as f:
+                f.write("{}")
+
+            novel_reviewer.save_checkpoint(
+                raw_path,
+                [{"type": "雷点"}],
+                1,
+                [{"type": "误判"}],
+                {0, 2},
+                checkpoint_path,
+                heroine_report={"甲女": {"is_clean": True}},
+            )
+            novel_reviewer.save_checkpoint(
+                raw_path,
+                [{"type": "雷点"}, {"type": "郁闷点"}],
+                1,
+                [{"type": "误判"}],
+                {0, 1, 2},
+                checkpoint_path,
+                heroine_report={"甲女": {"is_clean": True}},
+                purity_done=True,
+            )
+            self.assertTrue(os.path.exists(f"{checkpoint_path}.bak"))
+            with open(checkpoint_path, "w", encoding="utf-8") as f:
+                f.write("{broken")
+
+            loaded = novel_reviewer.load_checkpoint(raw_path, checkpoint_path)
+
+            verified, rejected_count, rejected, processed, heroine_report, _pushed, _finished, _reason, purity_done, _finish_done = loaded
+            self.assertEqual(verified, [{"type": "雷点"}])
+            self.assertEqual(rejected_count, 1)
+            self.assertEqual(rejected, [{"type": "误判"}])
+            self.assertEqual(processed, {0, 2})
+            self.assertEqual(heroine_report["甲女"]["is_clean"], True)
+            self.assertFalse(purity_done)
+
     def test_protagonist_json_call_retries_without_json_mode_on_parse_failure(self):
         class FakeMessage:
             def __init__(self, content):
@@ -1745,6 +1785,115 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertEqual(failed, set())
                 self.assertEqual(detail_path, "/tmp/detail.json")
                 self.assertEqual(novel_scan.CHUNK_SUMMARIES, {0: "第一块摘要", 1: "第二块摘要"})
+        finally:
+            novel_scan.CHECKPOINT_FILE = old_checkpoint
+            novel_scan.CURRENT_CHUNK_PLAN_METADATA = old_plan
+            novel_scan.CHUNK_SUMMARIES = old_summaries
+            novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
+
+    def test_scan_checkpoint_recovers_from_backup_and_delta_when_primary_is_corrupt(self):
+        old_checkpoint = novel_scan.CHECKPOINT_FILE
+        old_plan = novel_scan.CURRENT_CHUNK_PLAN_METADATA
+        old_summaries = dict(novel_scan.CHUNK_SUMMARIES)
+        old_detail_path = getattr(novel_scan, "_ACTIVE_DETAIL_PATH", None)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                novel_scan.CHECKPOINT_FILE = os.path.join(tmpdir, "latest_checkpoint.json")
+                novel_scan.CURRENT_CHUNK_PLAN_METADATA = {"chunk_count": 3}
+                novel_scan.CHUNK_SUMMARIES = {0: "第一块摘要"}
+                novel_scan._ACTIVE_DETAIL_PATH = "/tmp/detail.json"
+
+                issue0 = {"type": "前世雷", "chunk_index": 1}
+                issue1 = {"type": "漏女", "chunk_index": 2}
+                novel_scan.save_checkpoint(
+                    [issue0],
+                    [],
+                    {0},
+                    [],
+                    failed_chunks=set(),
+                    current_chunk_idx=0,
+                )
+                novel_scan.save_checkpoint(
+                    [issue0],
+                    [],
+                    {0},
+                    [],
+                    failed_chunks=set(),
+                    current_chunk_idx=0,
+                )
+                novel_scan.save_checkpoint(
+                    [issue0, issue1],
+                    [],
+                    {0, 1},
+                    [],
+                    failed_chunks=set(),
+                    current_chunk_idx=1,
+                    incremental=True,
+                    delta_issues=[issue1],
+                    delta_chunk_summary="第二块摘要",
+                )
+                self.assertTrue(os.path.exists(f"{novel_scan.CHECKPOINT_FILE}.bak"))
+
+                with open(novel_scan.CHECKPOINT_FILE, "w", encoding="utf-8") as f:
+                    f.write("{broken")
+
+                novel_scan.CHUNK_SUMMARIES = {}
+                loaded = novel_scan.load_checkpoint()
+                issues, _facts, processed, _extra, failed, _profiles, detail_path, _done, _completed = loaded
+
+                self.assertEqual(issues, [issue0, issue1])
+                self.assertEqual(processed, {0, 1})
+                self.assertEqual(failed, set())
+                self.assertEqual(detail_path, "/tmp/detail.json")
+                self.assertEqual(novel_scan.CHUNK_SUMMARIES, {0: "第一块摘要", 1: "第二块摘要"})
+        finally:
+            novel_scan.CHECKPOINT_FILE = old_checkpoint
+            novel_scan.CURRENT_CHUNK_PLAN_METADATA = old_plan
+            novel_scan.CHUNK_SUMMARIES = old_summaries
+            novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
+
+    def test_scan_checkpoint_recovers_when_primary_is_missing_but_backup_exists(self):
+        old_checkpoint = novel_scan.CHECKPOINT_FILE
+        old_plan = novel_scan.CURRENT_CHUNK_PLAN_METADATA
+        old_summaries = dict(novel_scan.CHUNK_SUMMARIES)
+        old_detail_path = getattr(novel_scan, "_ACTIVE_DETAIL_PATH", None)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                novel_scan.CHECKPOINT_FILE = os.path.join(tmpdir, "latest_checkpoint.json")
+                novel_scan.CURRENT_CHUNK_PLAN_METADATA = {"chunk_count": 2}
+                novel_scan.CHUNK_SUMMARIES = {0: "第一块摘要"}
+                novel_scan._ACTIVE_DETAIL_PATH = "/tmp/detail.json"
+
+                issue0 = {"type": "前世雷", "chunk_index": 1}
+                novel_scan.save_checkpoint(
+                    [issue0],
+                    [],
+                    {0},
+                    [],
+                    failed_chunks=set(),
+                    current_chunk_idx=0,
+                )
+                novel_scan.save_checkpoint(
+                    [issue0],
+                    [],
+                    {0},
+                    [],
+                    failed_chunks=set(),
+                    current_chunk_idx=0,
+                )
+                self.assertTrue(os.path.exists(f"{novel_scan.CHECKPOINT_FILE}.bak"))
+                os.unlink(novel_scan.CHECKPOINT_FILE)
+
+                self.assertEqual(novel_scan._peek_checkpoint_detail_path(), "/tmp/detail.json")
+                novel_scan.CHUNK_SUMMARIES = {}
+                loaded = novel_scan.load_checkpoint()
+                issues, _facts, processed, _extra, failed, _profiles, detail_path, _done, _completed = loaded
+
+                self.assertEqual(issues, [issue0])
+                self.assertEqual(processed, {0})
+                self.assertEqual(failed, set())
+                self.assertEqual(detail_path, "/tmp/detail.json")
+                self.assertEqual(novel_scan.CHUNK_SUMMARIES, {0: "第一块摘要"})
         finally:
             novel_scan.CHECKPOINT_FILE = old_checkpoint
             novel_scan.CURRENT_CHUNK_PLAN_METADATA = old_plan
