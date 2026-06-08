@@ -5417,6 +5417,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("送女排除配角/家族/反派把女性献给男主", sent_to_male_lead_issue["definition_review_hint"])
         self.assertIn("收女/献女/后宫扩张", sent_to_male_lead_issue["definition_review_hint"])
 
+        taken_into_harem_issue = report._annotate_issue_for_report(
+            {"type": "送女", "content": "配角把强女献给男主，强女被男主纳入后宫。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(taken_into_harem_issue["heroine_position_context"], "强女=强准女主")
+        self.assertIn("收女/献女/后宫扩张", taken_into_harem_issue["definition_review_hint"])
+
         marriage_invitation_issue = report._annotate_issue_for_report(
             {"type": "送女", "content": "女王向男主发起与强女的联姻邀请，被男主拒绝。"},
             [
@@ -5459,6 +5473,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertEqual(received_by_other_issue["heroine_position_context"], "强女=强准女主")
         self.assertNotIn("definition_review_hint", received_by_other_issue)
+
+        rejected_then_sent_to_other_issue = report._annotate_issue_for_report(
+            {"type": "送女", "content": "强女表白男主被男主拒绝后，男主主动把强女送给路人男。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(rejected_then_sent_to_other_issue["heroine_position_context"], "强女=强准女主")
+        self.assertNotIn("definition_review_hint", rejected_then_sent_to_other_issue)
 
         edge_issue = report._annotate_issue_for_report(
             {"type": "绿帽擦边", "content": "弱女差点被反派绑走。"},

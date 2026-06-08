@@ -1858,14 +1858,33 @@ def _strict_send_girl_to_male_lead_review_hint(issue: dict, text: str) -> str:
         return ""
     to_male_lead_markers = (
         "献给男主", "献给主角", "送给男主", "送给主角", "安排给男主", "安排给主角",
-        "交给男主", "交给主角", "嫁给男主", "嫁给主角", "收入后宫", "收进后宫",
+        "交给男主", "交给主角", "嫁给男主", "嫁给主角",
+        "男主收入后宫", "主角收入后宫", "被男主收入后宫", "被主角收入后宫",
+        "男主收进后宫", "主角收进后宫", "被男主收进后宫", "被主角收进后宫",
         "男主接收", "主角接收", "被男主接收", "被主角接收",
         "男主救下", "主角救下", "被男主救下", "被主角救下",
-        "男主纳入后宫", "主角纳入后宫", "纳入后宫", "纳为妾", "纳妾",
-        "向男主发起联姻", "向主角发起联姻", "向男主提出联姻", "向主角提出联姻",
-        "联姻邀请", "邀请联姻", "被男主拒绝", "被主角拒绝", "男主拒绝", "主角拒绝",
+        "男主纳入后宫", "主角纳入后宫", "被男主纳入后宫", "被主角纳入后宫",
+        "男主纳为妾", "主角纳为妾", "被男主纳为妾", "被主角纳为妾",
+        "男主纳妾", "主角纳妾",
     )
-    if not any(marker in text for marker in to_male_lead_markers):
+    male_lead_invitation_markers = (
+        "向男主发起联姻", "向主角发起联姻", "向男主提出联姻", "向主角提出联姻",
+    )
+    male_lead_invitation_subject_markers = ("向男主", "向主角")
+    invitation_action_markers = ("联姻邀请", "邀请联姻", "发起联姻", "提出联姻")
+    male_lead_rejection_markers = ("被男主拒绝", "被主角拒绝", "男主拒绝", "主角拒绝")
+    has_to_male_lead = any(marker in text for marker in to_male_lead_markers)
+    has_rejected_male_lead_invitation = (
+        (
+            any(marker in text for marker in male_lead_invitation_markers)
+            or (
+                any(marker in text for marker in male_lead_invitation_subject_markers)
+                and any(marker in text for marker in invitation_action_markers)
+            )
+        )
+        and any(marker in text for marker in male_lead_rejection_markers)
+    )
+    if not has_to_male_lead and not has_rejected_male_lead_invitation:
         return ""
     return "送女排除配角/家族/反派把女性献给男主或男主接收女性；当前证据更像收女/献女/后宫扩张或联姻邀请/拒绝收女，需复核是否误标送女。"
 
