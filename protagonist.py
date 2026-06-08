@@ -16,6 +16,10 @@ import concurrent.futures
 import threading
 from token_tracker import create_default_tracker
 from shared_utils import (
+    DEFAULT_MAX_403_RETRIES,
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_MAX_TIMEOUT_RETRIES,
+    DEFAULT_REQUEST_TIMEOUT,
     configure_rotating_file_logger,
     create_chat_completion,
     get_base_dir,
@@ -105,9 +109,10 @@ def get_latest_report_files(prefix: str = None):
     return dict(report_files or {})
 
 # ---- API 调用封装：统一收敛到 Timerror.py（只需修改 Timerror.py 即可全局生效）----
-MAX_403_RETRIES = 3
-MAX_TIMEOUT_RETRIES = 5  # 连续超时 3 次则标记 key 不可用
-REQUEST_TIMEOUT = 150  # 请求超时时间（秒）
+MAX_RETRIES = DEFAULT_MAX_RETRIES
+MAX_403_RETRIES = DEFAULT_MAX_403_RETRIES
+MAX_TIMEOUT_RETRIES = DEFAULT_MAX_TIMEOUT_RETRIES
+REQUEST_TIMEOUT = DEFAULT_REQUEST_TIMEOUT
 
 def _normalize_person_name(name: str) -> str:
     """
@@ -596,7 +601,7 @@ chat_completion = create_chat_completion(
     api_key_pool=API_KEY_POOL,
     base_url=BASE_URL,
     request_timeout=REQUEST_TIMEOUT,
-    max_retries=6,
+    max_retries=MAX_RETRIES,
     max_403_retries=MAX_403_RETRIES,
     max_timeout_retries=MAX_TIMEOUT_RETRIES,
     base_delay=2,

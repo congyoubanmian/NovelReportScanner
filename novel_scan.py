@@ -15,7 +15,15 @@ except Exception:
     APIStatusError = Exception
 from tqdm import tqdm
 from token_tracker import create_default_tracker
-from shared_utils import create_chat_completion, get_base_dir, read_file_safely
+from shared_utils import (
+    DEFAULT_MAX_403_RETRIES,
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_MAX_TIMEOUT_RETRIES,
+    DEFAULT_REQUEST_TIMEOUT,
+    create_chat_completion,
+    get_base_dir,
+    read_file_safely,
+)
 from text_anchor import build_chunk_manifest, save_chunk_manifest
 
 
@@ -328,15 +336,16 @@ def _build_chunk_plan_metadata(text=None, chunks=None, chunk_size=None, overlap=
     }
 
 # ---- API 调用封装：统一收敛到 Timerror.py（只需修改 Timerror.py 即可全局生效）----
-MAX_403_RETRIES = 3
-MAX_TIMEOUT_RETRIES = 3  # 连续超时 3 次则标记 key 不可用
-REQUEST_TIMEOUT = 120  # 请求超时时间（秒）
+MAX_RETRIES = DEFAULT_MAX_RETRIES
+MAX_403_RETRIES = DEFAULT_MAX_403_RETRIES
+MAX_TIMEOUT_RETRIES = DEFAULT_MAX_TIMEOUT_RETRIES
+REQUEST_TIMEOUT = DEFAULT_REQUEST_TIMEOUT
 
 chat_completion = create_chat_completion(
     api_key_pool=API_KEY_POOL,
     base_url=BASE_URL,
     request_timeout=REQUEST_TIMEOUT,
-    max_retries=5,
+    max_retries=MAX_RETRIES,
     max_403_retries=MAX_403_RETRIES,
     max_timeout_retries=MAX_TIMEOUT_RETRIES,
     base_delay=2,

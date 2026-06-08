@@ -112,9 +112,15 @@ def configure_rotating_file_logger(
     return target_logger
 
 # ---- API 调用封装：统一收敛到 Timerror.py（只需修改 Timerror.py 即可全局生效）----
-MAX_403_RETRIES = 3  # 连续 3 次 403 才标记为不可用
-MAX_TIMEOUT_RETRIES = 3  # 连续超时 3 次则标记 key 不可用
-REQUEST_TIMEOUT = 120  # 请求超时时间（秒）
+DEFAULT_MAX_RETRIES = 5
+DEFAULT_MAX_403_RETRIES = 3  # 连续 3 次 403 才标记为不可用
+DEFAULT_MAX_TIMEOUT_RETRIES = 3  # 连续超时 3 次则标记 key 不可用
+DEFAULT_REQUEST_TIMEOUT = 120  # 请求超时时间（秒）
+
+# Backward-compatible aliases for older imports.
+MAX_403_RETRIES = DEFAULT_MAX_403_RETRIES
+MAX_TIMEOUT_RETRIES = DEFAULT_MAX_TIMEOUT_RETRIES
+REQUEST_TIMEOUT = DEFAULT_REQUEST_TIMEOUT
 
 
 def _openai_client_factory(api_key: str, base_url: str, timeout: int):
@@ -161,10 +167,10 @@ def create_chat_completion(
     *,
     api_key_pool=None,
     base_url: str = None,
-    request_timeout: int = REQUEST_TIMEOUT,
-    max_retries: int = 5,
-    max_403_retries: int = MAX_403_RETRIES,
-    max_timeout_retries: int = MAX_TIMEOUT_RETRIES,
+    request_timeout: int = DEFAULT_REQUEST_TIMEOUT,
+    max_retries: int = DEFAULT_MAX_RETRIES,
+    max_403_retries: int = DEFAULT_MAX_403_RETRIES,
+    max_timeout_retries: int = DEFAULT_MAX_TIMEOUT_RETRIES,
     base_delay: int = 2,
     logger=None,
 ):

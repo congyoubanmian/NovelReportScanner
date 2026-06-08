@@ -16,6 +16,7 @@ import general_scan
 import main
 import novel_scan
 import novel_reviewer
+import protagonist
 import report
 import shared_utils
 import toxic_reviewer
@@ -506,6 +507,19 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertNotIn("from Timerror import make_chat_completion", text)
                 self.assertIn("create_chat_completion", shared_import_names)
                 self.assertIn('BASE_URL = os.environ.get("BASE_URL", "https://api.deepseek.com")', text)
+
+    def test_api_retry_defaults_are_shared_across_scan_stages(self):
+        self.assertEqual(shared_utils.DEFAULT_MAX_RETRIES, 5)
+        self.assertEqual(shared_utils.DEFAULT_MAX_403_RETRIES, 3)
+        self.assertEqual(shared_utils.DEFAULT_MAX_TIMEOUT_RETRIES, 3)
+        self.assertEqual(shared_utils.DEFAULT_REQUEST_TIMEOUT, 120)
+
+        for module in [novel_scan, protagonist, report]:
+            with self.subTest(module=module.__name__):
+                self.assertEqual(module.MAX_RETRIES, shared_utils.DEFAULT_MAX_RETRIES)
+                self.assertEqual(module.MAX_403_RETRIES, shared_utils.DEFAULT_MAX_403_RETRIES)
+                self.assertEqual(module.MAX_TIMEOUT_RETRIES, shared_utils.DEFAULT_MAX_TIMEOUT_RETRIES)
+                self.assertEqual(module.REQUEST_TIMEOUT, shared_utils.DEFAULT_REQUEST_TIMEOUT)
 
     def test_frontend_runtime_config_exposes_auto_rate_limit_scope(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
