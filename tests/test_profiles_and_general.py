@@ -202,6 +202,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertNotIn("power_system", urban_power.summary_fields)
         self.assertIn("relationships", urban_power.summary_fields)
         self.assertIn("villain_quality", urban_power.summary_fields)
+        self.assertGreaterEqual(len(urban_power.scan_focus), 9)
+        self.assertTrue(any("金手指类型分辨" in item for item in urban_power.scan_focus))
+        self.assertTrue(any("专业能力可信度" in item for item in urban_power.scan_focus))
 
         self.assertEqual(military_war.name, "military_war")
         self.assertTrue(military_war.uses_general_scan)
@@ -263,6 +266,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("case_complexity", crime_forensics.summary_fields)
         self.assertIn("criminal_psychology", crime_forensics.summary_fields)
         self.assertIn("team_dynamics", crime_forensics.summary_fields)
+        self.assertLessEqual(len(crime_forensics.scan_focus), 11)
         self.assertTrue(any("技术细节与专业度" in item for item in crime_forensics.scan_focus))
         self.assertTrue(any("程序违法无后果" in item for item in crime_forensics.scan_focus))
         self.assertTrue(any("非法取证" in item and "证据效力" in item for item in crime_forensics.scan_focus))
@@ -327,6 +331,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("mastermind_schemes", mastermind_hidden.summary_fields)
         self.assertTrue(any("马甲体系设计" in item for item in mastermind_hidden.scan_focus))
         self.assertTrue(any("掉马与揭秘爽点" in item for item in mastermind_hidden.scan_focus))
+
+        self.assertGreaterEqual(len(harem.scan_focus), 9)
+        self.assertTrue(any("女主定位分级" in item for item in harem.scan_focus))
+        self.assertTrue(any("接触等级评估" in item for item in harem.scan_focus))
+        self.assertTrue(any("五维洁度评估" in item for item in harem.scan_focus))
 
         for profile in [
             general,
