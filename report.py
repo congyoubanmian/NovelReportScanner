@@ -42,6 +42,7 @@ SUMMARY_FIELD_TITLES = {
     "warfare_and_intrigue": "战争与权谋",
     "foreshadowing_and_payoff": "伏笔与回收",
     "foreshadowing_engineering_analysis": "伏笔工程分析",
+    "semantic_layers_analysis": "深层语义分析",
     "scientific_assumptions": "科学假设",
     "technology_chain": "技术链与工程约束",
     "science_consistency": "科学设定自洽性",
@@ -274,6 +275,11 @@ SUMMARY_FIELD_ALIASES = {
     "foreshadowing_analysis": "foreshadowing_engineering_analysis",
     "thread_engineering": "foreshadowing_engineering_analysis",
     "payoff_engineering": "foreshadowing_engineering_analysis",
+    "semantic_layers": "semantic_layers_analysis",
+    "deep_semantic": "semantic_layers_analysis",
+    "subtext_analysis": "semantic_layers_analysis",
+    "reader_effect_analysis": "semantic_layers_analysis",
+    "semantic_analysis": "semantic_layers_analysis",
     "foreshadowing": "foreshadowing_and_payoff",
     "plot_threads": "foreshadowing_and_payoff",
     "payoff": "foreshadowing_and_payoff",
@@ -3399,6 +3405,11 @@ GENERAL_FORESHADOWING_ENGINEERING_FIELDS = {
 }
 
 
+GENERAL_SEMANTIC_LAYER_FIELDS = {
+    "semantic_layers_analysis",
+}
+
+
 def _append_text_block(lines: list, title: str, value, *, limit: int = 8):
     lines.extend(["", f"【{title}】"])
     if isinstance(value, list):
@@ -3552,6 +3563,32 @@ def _append_general_foreshadowing_engineering_sections(lines: list, general_summ
         _append_text_block(lines, "伏笔工程细项", rest)
 
 
+def _append_general_semantic_layers_sections(lines: list, general_summary: dict):
+    summary = (general_summary or {}).get("summary") or {}
+    semantic = summary.get("semantic_layers_analysis")
+    if not isinstance(semantic, dict) or not semantic:
+        return
+    lines.extend(["", "【深层语义分析】"])
+    lead_parts = []
+    for key, label in (
+        ("dominant_author_intent", "作者意图"),
+        ("reader_effect_pattern", "读者效果"),
+        ("deep_semantic_pattern", "深层语义"),
+    ):
+        text = str(semantic.get(key) or "").strip()
+        if text:
+            lead_parts.append(f"{label}：{text[:180]}")
+    if lead_parts:
+        lines.extend(lead_parts)
+    rest = {
+        key: value
+        for key, value in semantic.items()
+        if key not in {"dominant_author_intent", "reader_effect_pattern", "deep_semantic_pattern"}
+    }
+    if rest:
+        _append_text_block(lines, "语义细项", rest)
+
+
 def _text_signal_count(*items) -> int:
     count = 0
     for item in items:
@@ -3690,6 +3727,7 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
     add_list("核心冲突", summary_field_values(summary, "core_conflicts"))
     add_list("世界观/设定", summary_field_values(summary, "worldbuilding"))
     add_list("主题表达", summary_field_values(summary, "themes"))
+    _append_general_semantic_layers_sections(lines, general_summary)
     add_list("伏笔与回收", summary_field_values(summary, "foreshadowing_and_payoff"))
     _append_general_foreshadowing_engineering_sections(lines, general_summary)
     _append_general_narrative_architecture_sections(lines, general_summary)
@@ -3701,6 +3739,7 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
         "themes",
         "foreshadowing_and_payoff",
         *GENERAL_FORESHADOWING_ENGINEERING_FIELDS,
+        *GENERAL_SEMANTIC_LAYER_FIELDS,
         *GENERAL_CRAFT_SUMMARY_FIELDS,
         *GENERAL_NARRATIVE_ARCHITECTURE_FIELDS,
         "strengths",

@@ -53,6 +53,7 @@ const configForm = ref({
   general_scan_writing_quality: true,
   general_scan_narrative_architecture: true,
   general_scan_foreshadowing_engineering: true,
+  general_scan_semantic_layers: true,
   general_scan_rolling_context: true,
   general_scan_context_max_chars: '1600',
   harem_plus_general_scan: false
@@ -130,6 +131,7 @@ function syncConfigForm(config) {
     general_scan_writing_quality: config.general_scan_writing_quality !== false,
     general_scan_narrative_architecture: config.general_scan_narrative_architecture !== false,
     general_scan_foreshadowing_engineering: config.general_scan_foreshadowing_engineering !== false,
+    general_scan_semantic_layers: config.general_scan_semantic_layers !== false,
     general_scan_rolling_context: config.general_scan_rolling_context !== false,
     general_scan_context_max_chars: config.general_scan_context_max_chars || '1600',
     harem_plus_general_scan: Boolean(config.harem_plus_general_scan)
@@ -152,6 +154,7 @@ async function saveRuntimeConfig() {
       general_scan_narrative_architecture: configForm.value.general_scan_narrative_architecture,
       general_scan_foreshadowing_engineering:
         configForm.value.general_scan_foreshadowing_engineering,
+      general_scan_semantic_layers: configForm.value.general_scan_semantic_layers,
       general_scan_rolling_context: configForm.value.general_scan_rolling_context,
       general_scan_context_max_chars: configForm.value.general_scan_context_max_chars,
       harem_plus_general_scan: configForm.value.harem_plus_general_scan
@@ -458,6 +461,14 @@ useStateEvents(applyState, {
           @change="runtimeConfigDirty = true"
         />
         <span>伏笔工程</span>
+      </label>
+      <label class="runtime-toggle">
+        <input
+          v-model="configForm.general_scan_semantic_layers"
+          type="checkbox"
+          @change="runtimeConfigDirty = true"
+        />
+        <span>深层语义</span>
       </label>
       <label class="runtime-toggle">
         <input

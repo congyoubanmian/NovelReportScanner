@@ -400,6 +400,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("GENERAL_SCAN_WRITING_QUALITY", text)
         self.assertIn("GENERAL_SCAN_NARRATIVE_ARCHITECTURE", text)
         self.assertIn("GENERAL_SCAN_FORESHADOWING_ENGINEERING", text)
+        self.assertIn("GENERAL_SCAN_SEMANTIC_LAYERS", text)
         self.assertIn("GENERAL_SCAN_CONTENT_AWARE_SAMPLING", text)
         self.assertIn("GENERAL_SCAN_ROLLING_CONTEXT", text)
         self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS", text)
@@ -826,6 +827,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("general_scan_foreshadowing_engineering: true", text)
         self.assertIn("config.general_scan_foreshadowing_engineering !== false", text)
         self.assertIn("configForm.general_scan_foreshadowing_engineering", text)
+        self.assertIn("general_scan_semantic_layers: true", text)
+        self.assertIn("config.general_scan_semantic_layers !== false", text)
+        self.assertIn("configForm.general_scan_semantic_layers", text)
         self.assertIn("general_scan_content_aware_sampling: true", text)
         self.assertIn("config.general_scan_content_aware_sampling !== false", text)
         self.assertIn("configForm.general_scan_content_aware_sampling", text)
@@ -4229,6 +4233,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_WRITING_QUALITY",
             "GENERAL_SCAN_NARRATIVE_ARCHITECTURE",
             "GENERAL_SCAN_FORESHADOWING_ENGINEERING",
+            "GENERAL_SCAN_SEMANTIC_LAYERS",
             "GENERAL_SCAN_ROLLING_CONTEXT",
             "GENERAL_SCAN_CONTEXT_MAX_CHARS",
             "HAREM_PLUS_GENERAL_SCAN",
@@ -4249,6 +4254,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "general_scan_writing_quality": False,
                 "general_scan_narrative_architecture": False,
                 "general_scan_foreshadowing_engineering": False,
+                "general_scan_semantic_layers": False,
                 "general_scan_rolling_context": False,
                 "general_scan_context_max_chars": "800",
                 "harem_plus_general_scan": True,
@@ -4266,6 +4272,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["GENERAL_SCAN_WRITING_QUALITY"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_NARRATIVE_ARCHITECTURE"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_FORESHADOWING_ENGINEERING"], "0")
+            self.assertEqual(os.environ["GENERAL_SCAN_SEMANTIC_LAYERS"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_ROLLING_CONTEXT"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_CONTEXT_MAX_CHARS"], "800")
             self.assertEqual(os.environ["HAREM_PLUS_GENERAL_SCAN"], "1")
@@ -4276,6 +4283,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertFalse(result["general_scan_writing_quality"])
             self.assertFalse(result["general_scan_narrative_architecture"])
             self.assertFalse(result["general_scan_foreshadowing_engineering"])
+            self.assertFalse(result["general_scan_semantic_layers"])
             self.assertFalse(result["general_scan_rolling_context"])
             self.assertEqual(result["general_scan_context_max_chars"], "800")
             self.assertTrue(result["harem_plus_general_scan"])
@@ -4452,6 +4460,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_WRITING_QUALITY": "general_scan_writing_quality",
             "GENERAL_SCAN_NARRATIVE_ARCHITECTURE": "general_scan_narrative_architecture",
             "GENERAL_SCAN_FORESHADOWING_ENGINEERING": "general_scan_foreshadowing_engineering",
+            "GENERAL_SCAN_SEMANTIC_LAYERS": "general_scan_semantic_layers",
             "GENERAL_SCAN_ROLLING_CONTEXT": "general_scan_rolling_context",
             "GENERAL_SCAN_CONTEXT_MAX_CHARS": "general_scan_context_max_chars",
             "HAREM_PLUS_GENERAL_SCAN": "harem_plus_general_scan",
@@ -4488,6 +4497,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "general_scan_writing_quality": False,
                     "general_scan_narrative_architecture": False,
                     "general_scan_foreshadowing_engineering": False,
+                    "general_scan_semantic_layers": False,
                     "general_scan_rolling_context": False,
                     "general_scan_context_max_chars": 800,
                     "harem_plus_general_scan": True,
@@ -4504,6 +4514,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("GENERAL_SCAN_WRITING_QUALITY=0", lines)
                 self.assertIn("GENERAL_SCAN_NARRATIVE_ARCHITECTURE=0", lines)
                 self.assertIn("GENERAL_SCAN_FORESHADOWING_ENGINEERING=0", lines)
+                self.assertIn("GENERAL_SCAN_SEMANTIC_LAYERS=0", lines)
                 self.assertIn("GENERAL_SCAN_ROLLING_CONTEXT=0", lines)
                 self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS=800", lines)
                 self.assertIn("HAREM_PLUS_GENERAL_SCAN=1", lines)
@@ -5956,6 +5967,38 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("烟雾弹", text)
         self.assertEqual(text.count("【伏笔工程分析】"), 1)
         self.assertNotIn("【foreshadowing engineering analysis】", text)
+
+    def test_general_report_includes_semantic_layers_sections(self):
+        general_summary = {
+            "profile_display_name": "通用小说分析",
+            "summary_fields": [
+                "main_plot",
+                "semantic_layers_analysis",
+            ],
+            "summary": {
+                "story_overview": "主角在压抑后完成反击。",
+                "main_plot": ["主角反击"],
+                "semantic_layers_analysis": {
+                    "dominant_author_intent": "通过先压后扬制造反击爽感",
+                    "reader_effect_pattern": "读者先感到压抑，再获得释放",
+                    "deep_semantic_pattern": "对白表面退让，实际暗示主角已掌控局面",
+                    "technique_pattern": ["先抑后扬", "对白潜台词"],
+                    "subtext_or_irony": ["反派的胜券在握带有反讽效果"],
+                    "semantic_strengths": ["情绪转折明确"],
+                    "semantic_risks": ["若铺垫过长会造成憋屈"],
+                },
+            },
+        }
+
+        text = report.build_general_report("测试书", {}, general_summary)
+
+        self.assertIn("【深层语义分析】", text)
+        self.assertIn("作者意图：通过先压后扬制造反击爽感", text)
+        self.assertIn("读者效果：读者先感到压抑，再获得释放", text)
+        self.assertIn("对白表面退让", text)
+        self.assertIn("先抑后扬", text)
+        self.assertEqual(text.count("【深层语义分析】"), 1)
+        self.assertNotIn("【semantic layers analysis】", text)
 
     def test_general_report_does_not_repeat_footer_summary_fields(self):
         general_summary = {
@@ -9277,6 +9320,46 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("嫌疑人的假口供", result["foreshadowing_engineering"]["false_foreshadowing"])
         self.assertEqual(result["foreshadowing_engineering"]["recycling_rate"], "1/2")
 
+    def test_general_scan_outputs_semantic_layers(self):
+        profile = analysis_profiles.load_analysis_profile("general")
+        prompts = []
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(messages, max_tokens=3000):
+                prompts.append("\n".join(item.get("content", "") for item in messages))
+                return {
+                    "plot_events": ["主角表面退让，实际设局"],
+                    "conflicts": ["主角与反派的信息差"],
+                    "worldbuilding": [],
+                    "themes": ["隐忍反击"],
+                    "foreshadowing": [],
+                    "quality_notes": [],
+                    "specialty_notes": [],
+                    "semantic_layers": {
+                        "literal_meaning": "主角答应反派条件",
+                        "author_intent": "先压低主角处境，为后续反击蓄势",
+                        "surface_emotion": "压抑",
+                        "reader_effect": "读者期待主角翻盘",
+                        "deep_semantic": "主角的退让并非认输，而是在隐藏底牌",
+                        "technique": "先抑后扬与对白潜台词",
+                        "subtext_or_irony": ["反派自以为胜利形成反讽"],
+                        "confidence": "high",
+                    },
+                    "one_sentence_summary": "主角表面退让并暗中设局。",
+                }
+
+            general_scan._call_json = fake_call_json
+            result = general_scan._scan_chunk("主角说可以退一步，反派以为胜券在握。", 0, 1, profile=profile)
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertTrue(any("中文深层语义" in prompt for prompt in prompts))
+        self.assertTrue(any("四层分析" in prompt for prompt in prompts))
+        self.assertEqual(result["semantic_layers"]["literal_meaning"], "主角答应反派条件")
+        self.assertEqual(result["semantic_layers"]["author_intent"], "先压低主角处境，为后续反击蓄势")
+        self.assertIn("反派自以为胜利形成反讽", result["semantic_layers"]["subtext_or_irony"])
+        self.assertEqual(result["semantic_layers"]["confidence"], "high")
+
     def test_general_scan_uses_rolling_context_in_chunk_prompt(self):
         profile = analysis_profiles.load_analysis_profile("general")
         prompts = []
@@ -9708,6 +9791,64 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(summary["foreshadowing_engineering_analysis"]["setup_quality"], "good")
         self.assertIn("密信来源仍未揭开", summary["foreshadowing_engineering_analysis"]["active_threads"])
         self.assertEqual(summary["foreshadowing_engineering_analysis"]["recycling_rate_estimate"], "约1/2")
+
+    def test_general_scan_summary_includes_semantic_layers_material(self):
+        profile = analysis_profiles.load_analysis_profile("general")
+        prompts = []
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(messages, max_tokens=3000):
+                prompt = "\n".join(item.get("content", "") for item in messages)
+                prompts.append(prompt)
+                return {
+                    "story_overview": "主角通过隐忍完成反击。",
+                    "main_plot": ["隐忍反击"],
+                    "core_conflicts": ["主角与反派的信息差"],
+                    "worldbuilding": [],
+                    "themes": ["隐忍"],
+                    "foreshadowing_and_payoff": [],
+                    "semantic_layers_analysis": {
+                        "dominant_author_intent": "先压后扬制造翻盘爽点",
+                        "reader_effect_pattern": "压抑后释放",
+                        "deep_semantic_pattern": "退让话语带有隐藏底牌的潜台词",
+                        "technique_pattern": ["先抑后扬", "视角限制"],
+                        "subtext_or_irony": ["反派自信带有反讽"],
+                        "semantic_strengths": ["潜台词服务反击"],
+                        "semantic_risks": ["压抑段过长会削弱阅读耐心"],
+                    },
+                    "strengths": ["语义层递进清楚"],
+                    "risks_or_issues": [],
+                    "reader_fit": "喜欢反击爽点的读者",
+                    "overall_assessment": "语义层服务爽点",
+                }
+
+            general_scan._call_json = fake_call_json
+            summary = general_scan._summarize_book(
+                "语义测试",
+                [{
+                    "one_sentence_summary": "主角表面退让，实则设局。",
+                    "semantic_layers": {
+                        "literal_meaning": "主角答应反派条件",
+                        "author_intent": "制造压抑后的反击期待",
+                        "surface_emotion": "压抑",
+                        "reader_effect": "期待翻盘",
+                        "deep_semantic": "退让不是认输",
+                        "technique": "先抑后扬",
+                        "subtext_or_irony": ["反派自信构成反讽"],
+                        "confidence": "high",
+                    },
+                }],
+                profile=profile,
+            )
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertTrue(any('"semantic_layers_chunks"' in prompt for prompt in prompts))
+        self.assertTrue(any('"semantic_layers_analysis"' in prompt for prompt in prompts))
+        self.assertTrue(any("退让不是认输" in prompt for prompt in prompts))
+        self.assertEqual(summary["semantic_layers_analysis"]["dominant_author_intent"], "先压后扬制造翻盘爽点")
+        self.assertIn("先抑后扬", summary["semantic_layers_analysis"]["technique_pattern"])
+        self.assertIn("反派自信带有反讽", summary["semantic_layers_analysis"]["subtext_or_irony"])
 
     def test_general_scan_summary_uses_rolling_context_timeline_only(self):
         profile = analysis_profiles.load_analysis_profile("general")
@@ -10560,6 +10701,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(data["content_aware_sampling_schema_version"], general_scan.CONTENT_AWARE_SAMPLING_SCHEMA_VERSION)
             self.assertTrue(data["foreshadowing_engineering_enabled"])
             self.assertEqual(data["foreshadowing_engineering_schema_version"], general_scan.FORESHADOWING_ENGINEERING_SCHEMA_VERSION)
+            self.assertTrue(data["semantic_layers_enabled"])
+            self.assertEqual(data["semantic_layers_schema_version"], general_scan.SEMANTIC_LAYERS_SCHEMA_VERSION)
             self.assertEqual(sum(data["density_counts"].values()), 300)
             self.assertEqual(data["prompt_templates"]["general_scan_chunk"]["version"], "v1")
             self.assertEqual(data["prompt_templates"]["general_summary"]["version"], "v1")
@@ -10598,6 +10741,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "chunk_overlap": general_scan.CHUNK_OVERLAP,
                     "smart_density": general_scan.SMART_DENSITY,
                     "foreshadowing_engineering_enabled": general_scan.FORESHADOWING_ENGINEERING_ENABLED,
+                    "semantic_layers_enabled": general_scan.SEMANTIC_LAYERS_ENABLED,
                     "prompt_templates": {
                         "general_scan_chunk": {"name": "general_scan_chunk", "version": "v1"},
                         "general_summary": {"name": "general_summary", "version": "v1"},
@@ -10612,6 +10756,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         "narrative_structure": {"structural_function_tag": "transition"},
                         "outline_architecture": {"causal_chain": {"causal_strength": "自然发展"}},
                         "foreshadowing_engineering": {"new_foreshadowing": [{"description": "旧伏笔"}]},
+                        "semantic_layers": {"literal_meaning": "旧片段事实", "author_intent": "旧片段意图"},
                         "one_sentence_summary": "旧摘要",
                     }],
                 }, f, ensure_ascii=False)
@@ -10646,6 +10791,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertTrue(data["writing_quality_enabled"])
             self.assertTrue(data["narrative_architecture_enabled"])
             self.assertTrue(data["foreshadowing_engineering_enabled"])
+            self.assertTrue(data["semantic_layers_enabled"])
             self.assertEqual(data["reused_chunk_count"], 1)
             self.assertEqual(data["scanned_chunk_count"], 1)
             self.assertTrue(data["chunk_results"][0]["reused_from_previous"])
@@ -10685,6 +10831,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "rolling_context_schema_version": general_scan.ROLLING_CONTEXT_SCHEMA_VERSION,
                     "rolling_context_max_chars": general_scan.CONTEXT_MAX_CHARS,
                     "foreshadowing_engineering_enabled": general_scan.FORESHADOWING_ENGINEERING_ENABLED,
+                    "semantic_layers_enabled": general_scan.SEMANTIC_LAYERS_ENABLED,
                     "prompt_templates": {
                         "general_scan_chunk": {"name": "general_scan_chunk", "version": "v1"},
                         "general_summary": {"name": "general_summary", "version": "v1"},
@@ -10699,6 +10846,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         "narrative_structure": {"structural_function_tag": "transition"},
                         "outline_architecture": {"causal_chain": {"causal_strength": "自然发展"}},
                         "foreshadowing_engineering": {"new_foreshadowing": [{"description": "旧伏笔"}]},
+                        "semantic_layers": {"literal_meaning": "旧片段事实", "author_intent": "旧片段意图"},
                         "context_state_update": {"progress_summary": "旧摘要"},
                         "one_sentence_summary": "旧摘要",
                     }],
@@ -10875,6 +11023,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "rolling_context_max_chars": general_scan.CONTEXT_MAX_CHARS,
                 "foreshadowing_engineering_enabled": general_scan.FORESHADOWING_ENGINEERING_ENABLED,
                 "foreshadowing_engineering_schema_version": general_scan.FORESHADOWING_ENGINEERING_SCHEMA_VERSION,
+                "semantic_layers_enabled": general_scan.SEMANTIC_LAYERS_ENABLED,
+                "semantic_layers_schema_version": general_scan.SEMANTIC_LAYERS_SCHEMA_VERSION,
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }
@@ -10891,6 +11041,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             data_without_foreshadowing_meta = dict(data)
             data_without_foreshadowing_meta.pop("foreshadowing_engineering_enabled", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_foreshadowing_meta, novel_path, "history"))
+            data_without_semantic_meta = dict(data)
+            data_without_semantic_meta.pop("semantic_layers_enabled", None)
+            self.assertFalse(general_scan._is_fresh_summary(data_without_semantic_meta, novel_path, "history"))
             data_without_content_sampling_meta = dict(data)
             data_without_content_sampling_meta.pop("content_aware_sampling_schema_version", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_content_sampling_meta, novel_path, "history"))
@@ -10940,6 +11093,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "rolling_context_max_chars": general_scan.CONTEXT_MAX_CHARS,
                 "foreshadowing_engineering_enabled": general_scan.FORESHADOWING_ENGINEERING_ENABLED,
                 "foreshadowing_engineering_schema_version": general_scan.FORESHADOWING_ENGINEERING_SCHEMA_VERSION,
+                "semantic_layers_enabled": general_scan.SEMANTIC_LAYERS_ENABLED,
+                "semantic_layers_schema_version": general_scan.SEMANTIC_LAYERS_SCHEMA_VERSION,
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }

@@ -28,6 +28,8 @@ CONTEXT_MAX_CHARS = int(os.environ.get("GENERAL_SCAN_CONTEXT_MAX_CHARS", "1600")
 ROLLING_CONTEXT_SCHEMA_VERSION = 1
 FORESHADOWING_ENGINEERING_ENABLED = os.environ.get("GENERAL_SCAN_FORESHADOWING_ENGINEERING", "1").strip() == "1"
 FORESHADOWING_ENGINEERING_SCHEMA_VERSION = 1
+SEMANTIC_LAYERS_ENABLED = os.environ.get("GENERAL_SCAN_SEMANTIC_LAYERS", "1").strip() == "1"
+SEMANTIC_LAYERS_SCHEMA_VERSION = 1
 LOW_DENSITY_TERMS = (
     "睡觉", "起床", "吃饭", "喝茶", "闲聊", "聊天", "休息", "赶路", "路上", "返回",
     "日常", "家常", "客栈", "修炼打坐", "打坐", "闭关", "练功", "整理物品",
@@ -373,6 +375,13 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
             return False
     elif data.get("foreshadowing_engineering_enabled") not in {None, False}:
         return False
+    if SEMANTIC_LAYERS_ENABLED:
+        if data.get("semantic_layers_enabled") is not True:
+            return False
+        if data.get("semantic_layers_schema_version") != SEMANTIC_LAYERS_SCHEMA_VERSION:
+            return False
+    elif data.get("semantic_layers_enabled") not in {None, False}:
+        return False
     stored_prompt_templates = data.get("prompt_templates")
     if isinstance(stored_prompt_templates, dict):
         current_prompt_templates = prompt_templates_metadata("general_scan_chunk", "general_summary")
@@ -415,6 +424,8 @@ def _summary_can_reuse_chunk_results(data: Dict[str, Any], profile_name: str = "
         return False
     if data.get("foreshadowing_engineering_enabled") not in {None, FORESHADOWING_ENGINEERING_ENABLED}:
         return False
+    if data.get("semantic_layers_enabled") not in {None, SEMANTIC_LAYERS_ENABLED}:
+        return False
     stored_prompt_templates = data.get("prompt_templates")
     if isinstance(stored_prompt_templates, dict):
         current_prompt_templates = prompt_templates_metadata("general_scan_chunk", "general_summary")
@@ -443,6 +454,8 @@ def _reusable_chunk_result_map(data: Dict[str, Any]) -> Dict[str, Dict[str, Any]
         ):
             continue
         if FORESHADOWING_ENGINEERING_ENABLED and not item.get("foreshadowing_engineering"):
+            continue
+        if SEMANTIC_LAYERS_ENABLED and not item.get("semantic_layers"):
             continue
         chunk_hash = item.get("chunk_hash")
         if isinstance(chunk_hash, str) and chunk_hash:
@@ -638,6 +651,28 @@ def _normalize_foreshadowing_engineering(value: Any) -> Dict[str, Any]:
         "false_foreshadowing": false_items,
         "engineering_notes": _safe_list(raw.get("engineering_notes") or raw.get("notes"), limit=4),
         "recycling_rate": str(raw.get("recycling_rate") or "").strip()[:40],
+    }
+
+
+def _normalize_semantic_layers(value: Any) -> Dict[str, Any]:
+    raw = _safe_dict(value)
+    if not raw and isinstance(value, str):
+        raw = {"deep_semantic": value}
+    confidence = str(raw.get("confidence") or raw.get("confidence_level") or "").strip().lower()
+    if confidence not in {"high", "medium", "low"}:
+        confidence = ""
+    return {
+        "literal_meaning": str(raw.get("literal_meaning") or raw.get("facts") or "").strip()[:180],
+        "author_intent": str(raw.get("author_intent") or raw.get("intent") or raw.get("why") or "").strip()[:180],
+        "surface_emotion": str(raw.get("surface_emotion") or raw.get("emotion") or "").strip()[:120],
+        "reader_effect": str(raw.get("reader_effect") or raw.get("effect") or "").strip()[:180],
+        "deep_semantic": str(raw.get("deep_semantic") or raw.get("subtext") or "").strip()[:220],
+        "technique": str(raw.get("technique") or raw.get("craft") or raw.get("how") or "").strip()[:180],
+        "subtext_or_irony": _safe_list(
+            raw.get("subtext_or_irony") or raw.get("irony") or raw.get("subtexts"),
+            limit=5,
+        ),
+        "confidence": confidence,
     }
 
 
@@ -1014,6 +1049,39 @@ def _compact_foreshadowing_engineering_for_summary(chunk_results: List[Dict[str,
             "false_foreshadowing": engineering.get("false_foreshadowing") or [],
             "engineering_notes": engineering.get("engineering_notes") or [],
             "recycling_rate": engineering.get("recycling_rate") or "",
+        })
+        if len(compact) >= limit:
+            break
+    return compact
+
+
+def _compact_semantic_layers_for_summary(chunk_results: List[Dict[str, Any]], limit: int = 120) -> List[Dict[str, Any]]:
+    compact = []
+    for item in chunk_results:
+        if not isinstance(item, dict):
+            continue
+        semantic = _normalize_semantic_layers(item.get("semantic_layers"))
+        if not any([
+            semantic.get("literal_meaning"),
+            semantic.get("author_intent"),
+            semantic.get("surface_emotion"),
+            semantic.get("reader_effect"),
+            semantic.get("deep_semantic"),
+            semantic.get("technique"),
+            semantic.get("subtext_or_irony"),
+        ]):
+            continue
+        compact.append({
+            "chunk_index": item.get("original_chunk_index", item.get("chunk_index")),
+            "summary": item.get("one_sentence_summary"),
+            "literal_meaning": semantic.get("literal_meaning"),
+            "author_intent": semantic.get("author_intent"),
+            "surface_emotion": semantic.get("surface_emotion"),
+            "reader_effect": semantic.get("reader_effect"),
+            "deep_semantic": semantic.get("deep_semantic"),
+            "technique": semantic.get("technique"),
+            "subtext_or_irony": semantic.get("subtext_or_irony") or [],
+            "confidence": semantic.get("confidence"),
         })
         if len(compact) >= limit:
             break
@@ -1422,6 +1490,54 @@ def _foreshadowing_engineering_summary_json_hint() -> str:
   },"""
 
 
+def _semantic_layers_system_instruction() -> str:
+    if not SEMANTIC_LAYERS_ENABLED:
+        return ""
+    return """
+
+【中文深层语义与四层分析】
+请额外输出 semantic_layers。它用于分析当前片段的中文语义、潜台词、反讽、读者效果和写作手法，不替代事实抽取。
+
+四层判断：
+- literal_meaning：事实层，当前片段字面发生了什么或角色明确说了什么。
+- author_intent：意图层，作者为什么这样安排，如铺垫、制造期待、压抑后反弹、解释设定、强化人设。
+- reader_effect：效果层，普通读者可能产生的阅读感受，如爽、压抑、期待、困惑、厌烦、紧张、共情。
+- technique：技法层，使用了什么写作手法，如对比反衬、先抑后扬、信息延迟、视角限制、重复强调、留白、误导。
+
+deep_semantic 和 subtext_or_irony 只记录有明确文本依据的潜台词、言外之意或反讽；没有则留空/空数组。confidence 用 high/medium/low。"""
+
+
+def _semantic_layers_json_hint() -> str:
+    if not SEMANTIC_LAYERS_ENABLED:
+        return ""
+    return """,
+  "semantic_layers": {
+    "literal_meaning": "事实层：片段字面信息",
+    "author_intent": "意图层：作者安排此段的叙事目的",
+    "surface_emotion": "表层情绪基调",
+    "reader_effect": "效果层：读者可能感受",
+    "deep_semantic": "深层语义/潜台词/言外之意，没有则空",
+    "technique": "技法层：主要写作手法",
+    "subtext_or_irony": ["明确可见的潜台词或反讽"],
+    "confidence": "high|medium|low"
+  }"""
+
+
+def _semantic_layers_summary_json_hint() -> str:
+    if not SEMANTIC_LAYERS_ENABLED:
+        return ""
+    return """
+  "semantic_layers_analysis": {
+    "dominant_author_intent": "全书主要叙事意图模式",
+    "reader_effect_pattern": "读者效果与情绪反馈模式",
+    "deep_semantic_pattern": "潜台词/言外之意/反讽的整体特征",
+    "technique_pattern": ["常用语义与叙事技法"],
+    "subtext_or_irony": ["有代表性的潜台词或反讽"],
+    "semantic_strengths": ["语义表达层面的优势"],
+    "semantic_risks": ["语义表达层面的风险或误读点"]
+  },"""
+
+
 def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None, context_snapshot=None) -> Dict[str, Any]:
     profile = profile or load_analysis_profile("general")
     density_profile = density_profile or _chunk_density_profile(text_chunk)
@@ -1450,6 +1566,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 {_writing_quality_system_instruction()}
 {_narrative_architecture_system_instruction()}
 {_foreshadowing_engineering_system_instruction()}
+{_semantic_layers_system_instruction()}
 {_rolling_context_instruction(context_snapshot or {})}
 
 要求：
@@ -1471,7 +1588,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
   "themes": ["..."],
   "foreshadowing": ["..."],
   "quality_notes": ["..."],
-  "specialty_notes": ["专项规则相关要点"]{_writing_quality_json_hint()}{_narrative_architecture_json_hint()}{_foreshadowing_engineering_json_hint()}{_context_state_json_hint()},
+  "specialty_notes": ["专项规则相关要点"]{_writing_quality_json_hint()}{_narrative_architecture_json_hint()}{_foreshadowing_engineering_json_hint()}{_semantic_layers_json_hint()}{_context_state_json_hint()},
   "one_sentence_summary": "本片段一句话概要"
 }}"""
     data = _call_json(
@@ -1499,6 +1616,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         "narrative_structure": _normalize_narrative_structure(data.get("narrative_structure")) if NARRATIVE_ARCHITECTURE_ENABLED else {},
         "outline_architecture": _normalize_outline_architecture(data.get("outline_architecture")) if NARRATIVE_ARCHITECTURE_ENABLED else {},
         "foreshadowing_engineering": _normalize_foreshadowing_engineering(data.get("foreshadowing_engineering")) if FORESHADOWING_ENGINEERING_ENABLED else {},
+        "semantic_layers": _normalize_semantic_layers(data.get("semantic_layers")) if SEMANTIC_LAYERS_ENABLED else {},
         "context_snapshot_used": context_snapshot or {},
         "context_state_update": _normalize_context_state_update(data.get("context_state_update")) if ROLLING_CONTEXT_ENABLED else {},
         "one_sentence_summary": str(data.get("one_sentence_summary", "") or "").strip(),
@@ -1531,6 +1649,7 @@ def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int,
         "narrative_structure": {},
         "outline_architecture": {},
         "foreshadowing_engineering": {},
+        "semantic_layers": {},
         "one_sentence_summary": "",
         "partial_result": True,
         "partial_reason": reason,
@@ -1568,6 +1687,7 @@ def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int,
             "information_density",
             "narrative_structure",
             "outline_architecture",
+            "semantic_layers",
         ):
             if not merged.get(object_field) and isinstance(result.get(object_field), dict):
                 merged[object_field] = result.get(object_field) or {}
@@ -1654,6 +1774,8 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         material["narrative_architecture_chunks"] = _compact_narrative_architecture_for_summary(chunk_results)
     if FORESHADOWING_ENGINEERING_ENABLED:
         material["foreshadowing_engineering_chunks"] = _compact_foreshadowing_engineering_for_summary(chunk_results)
+    if SEMANTIC_LAYERS_ENABLED:
+        material["semantic_layers_chunks"] = _compact_semantic_layers_for_summary(chunk_results)
     if ROLLING_CONTEXT_ENABLED:
         material["rolling_context_timeline"] = _compact_rolling_context_timeline(chunk_results)
     base_summary_fields = {
@@ -1669,6 +1791,7 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         "narrative_structure_analysis",
         "outline_architecture_overall",
         "foreshadowing_engineering_analysis",
+        "semantic_layers_analysis",
         "strengths",
         "risks_or_issues",
     }
@@ -1695,6 +1818,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 输出必须是 JSON 对象。不要使用后宫、初处、漏女、排雷等专用标准。
 开启叙事架构分析时，请基于 narrative_architecture_chunks 判断整书结构模式、阶段转折、因果链、成长曲线和大纲风险；不要把单个片段孤证当成整书结论。
 开启伏笔工程追踪时，请结合 foreshadowing_engineering_chunks 和 rolling_context_timeline 判断伏笔设置、活跃线索、回收质量、烟雾弹和风险；不要把普通未完成剧情目标都算作伏笔。
+开启深层语义分析时，请基于 semantic_layers_chunks 归纳事实层、意图层、效果层和技法层的稳定模式；潜台词/反讽必须来自分块证据，不要强行拔高主题。
 开启滚动上下文时，请基于 rolling_context_timeline 理解全书阶段推进、人物关系延续、未解问题和回收情况；不要要求或引用 context_snapshot_used 这类逐块内部快照。"""
     user_prompt = f"""书名：{book_name}
 
@@ -1709,7 +1833,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
   "worldbuilding": ["世界观/设定要点"],
   "themes": ["主题表达"],
   "foreshadowing_and_payoff": ["伏笔、悬念、回收情况"],
-{specialty_json_hint}{_narrative_architecture_summary_json_hint()}{_foreshadowing_engineering_summary_json_hint()}{_writing_quality_summary_json_hint()}
+{specialty_json_hint}{_narrative_architecture_summary_json_hint()}{_foreshadowing_engineering_summary_json_hint()}{_semantic_layers_summary_json_hint()}{_writing_quality_summary_json_hint()}
   "strengths": ["作品优点"],
   "risks_or_issues": ["可能的问题或阅读门槛"],
   "reader_fit": "适合什么读者",
@@ -1745,6 +1869,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         "narrative_structure_analysis": _normalize_object_summary(data.get("narrative_structure_analysis")),
         "outline_architecture_overall": _normalize_object_summary(data.get("outline_architecture_overall")),
         "foreshadowing_engineering_analysis": _normalize_object_summary(data.get("foreshadowing_engineering_analysis")),
+        "semantic_layers_analysis": _normalize_object_summary(data.get("semantic_layers_analysis")),
         "strengths": _summary_field_value(data, "strengths"),
         "risks_or_issues": _summary_field_value(data, "risks_or_issues"),
         "reader_fit": "；".join(_summary_field_value(data, "reader_fit")),
@@ -1908,6 +2033,9 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "foreshadowing_engineering_enabled": FORESHADOWING_ENGINEERING_ENABLED,
         "foreshadowing_engineering_schema_version": FORESHADOWING_ENGINEERING_SCHEMA_VERSION if FORESHADOWING_ENGINEERING_ENABLED else None,
         "foreshadowing_engineering_timeline_count": len(_compact_foreshadowing_engineering_for_summary(chunk_results)) if FORESHADOWING_ENGINEERING_ENABLED else 0,
+        "semantic_layers_enabled": SEMANTIC_LAYERS_ENABLED,
+        "semantic_layers_schema_version": SEMANTIC_LAYERS_SCHEMA_VERSION if SEMANTIC_LAYERS_ENABLED else None,
+        "semantic_layers_timeline_count": len(_compact_semantic_layers_for_summary(chunk_results)) if SEMANTIC_LAYERS_ENABLED else 0,
         "density_counts": density_counts,
         "incremental_reuse": INCREMENTAL_REUSE,
         "reused_chunk_count": reused_chunk_count,
