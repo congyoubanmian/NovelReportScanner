@@ -5084,9 +5084,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "scan started\n",
                     web_manager._WEB_SCAN_RESULT_PREFIX + '{"status":"ok","book_name":"book","profile":"general"}\n',
                 ])
+                self.return_code = None
 
             def wait(self):
+                self.return_code = 0
                 return 0
+
+            def poll(self):
+                return self.return_code
 
         old_popen = web_manager.subprocess.Popen
         try:
@@ -5108,6 +5113,138 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertIn("--profile-json", calls[0][0])
         finally:
             web_manager.subprocess.Popen = old_popen
+
+    def test_web_manager_scan_subprocess_emits_heartbeat_for_log_lines(self):
+        class FakeProcess:
+            def __init__(self):
+                self.stdout = iter([
+                    "scan started\n",
+                    "scan progress\n",
+                    web_manager._WEB_SCAN_RESULT_PREFIX + '{"status":"ok","book_name":"book","profile":"general"}\n',
+                ])
+                self.return_code = None
+
+            def wait(self):
+                self.return_code = 0
+                return 0
+
+            def poll(self):
+                return self.return_code
+
+        old_popen = web_manager.subprocess.Popen
+        old_interval = web_manager.SCAN_HEARTBEAT_INTERVAL_SECONDS
+        try:
+            web_manager.SCAN_HEARTBEAT_INTERVAL_SECONDS = 0
+            web_manager.subprocess.Popen = lambda _cmd, **_kwargs: FakeProcess()
+            heartbeats = []
+
+            result = web_manager._run_scan_subprocess(
+                "/tmp/book.txt",
+                ["general"],
+                "run1",
+                io.StringIO(),
+                heartbeat_callback=heartbeats.append,
+            )
+
+            self.assertEqual(result["status"], "ok")
+            self.assertEqual(heartbeats, ["scan started\n", "scan progress\n"])
+        finally:
+            web_manager.SCAN_HEARTBEAT_INTERVAL_SECONDS = old_interval
+            web_manager.subprocess.Popen = old_popen
+
+    def test_web_manager_scan_subprocess_stall_timeout_terminates_process(self):
+        class BlockingStdout:
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                time.sleep(2)
+                raise StopIteration
+
+        class FakeProcess:
+            def __init__(self):
+                self.pid = 23456
+                self.stdout = BlockingStdout()
+                self.return_code = None
+                self.terminated = False
+                self.killed = False
+
+            def poll(self):
+                return self.return_code
+
+            def terminate(self):
+                self.terminated = True
+                self.return_code = -15
+
+            def kill(self):
+                self.killed = True
+                self.return_code = -9
+
+            def wait(self, timeout=None):
+                if self.return_code is None:
+                    self.return_code = -15
+                return self.return_code
+
+        old_popen = web_manager.subprocess.Popen
+        old_timeout = web_manager.SCAN_STALL_TIMEOUT_SECONDS
+        old_cancel_timeout = web_manager.SCAN_CANCEL_TIMEOUT_SECONDS
+        old_killpg = web_manager.os.killpg
+        try:
+            fake_proc = FakeProcess()
+            web_manager.subprocess.Popen = lambda _cmd, **_kwargs: fake_proc
+            web_manager.SCAN_STALL_TIMEOUT_SECONDS = 0.01
+            web_manager.SCAN_CANCEL_TIMEOUT_SECONDS = 0.01
+            web_manager.os.killpg = lambda _pid, _sig: (_ for _ in ()).throw(OSError("no pg"))
+
+            started = time.monotonic()
+            result = web_manager._run_scan_subprocess(
+                "/tmp/book.txt",
+                ["general"],
+                "run1",
+                io.StringIO(),
+            )
+
+            self.assertLess(time.monotonic() - started, 1.5)
+            self.assertEqual(result["status"], "fail")
+            self.assertIn("stalled without output", result["error"])
+            self.assertTrue(fake_proc.terminated)
+            self.assertFalse(fake_proc.killed)
+        finally:
+            web_manager.subprocess.Popen = old_popen
+            web_manager.SCAN_STALL_TIMEOUT_SECONDS = old_timeout
+            web_manager.SCAN_CANCEL_TIMEOUT_SECONDS = old_cancel_timeout
+            web_manager.os.killpg = old_killpg
+
+    def test_web_manager_scan_log_heartbeat_updates_running_task(self):
+        old_state = web_manager.STATE
+        old_save_state = web_manager._save_state
+        try:
+            saves = []
+            web_manager._save_state = lambda: saves.append(True)
+            web_manager.STATE = {
+                "books": {
+                    "book": {"id": "book", "name": "book", "status": "running", "message": "扫描中", "task_id": "t1"}
+                },
+                "tasks": [{"id": "t1", "book_id": "book", "status": "running"}],
+            }
+
+            web_manager._scan_log_heartbeat("t1", "扫描进度 50%\n")
+
+            task = web_manager.STATE["tasks"][0]
+            self.assertEqual(task["message"], "扫描中")
+            self.assertIn("updated_at", task)
+            self.assertIn("last_log_at", task)
+            self.assertEqual(task["last_log"], "扫描进度 50%")
+            self.assertTrue(saves)
+
+            task["status"] = "canceled"
+            previous_updated_at = task["updated_at"]
+            web_manager._scan_log_heartbeat("t1", "不应覆盖\n")
+            self.assertEqual(task["updated_at"], previous_updated_at)
+            self.assertEqual(task["last_log"], "扫描进度 50%")
+        finally:
+            web_manager.STATE = old_state
+            web_manager._save_state = old_save_state
 
     def test_web_manager_public_state_includes_profiles_and_suggestions(self):
         old_state = web_manager.STATE

@@ -45,6 +45,8 @@ SSE_STATE_INTERVAL_SECONDS = float(os.environ.get("SSE_STATE_INTERVAL_SECONDS", 
 SSE_SYNC_INTERVAL_SECONDS = float(os.environ.get("SSE_SYNC_INTERVAL_SECONDS", str(max(SYNC_BOOKS_TTL_SECONDS, SSE_STATE_INTERVAL_SECONDS))))
 SSE_MAX_CONNECTION_SECONDS = float(os.environ.get("SSE_MAX_CONNECTION_SECONDS", "300"))
 SCAN_CANCEL_TIMEOUT_SECONDS = float(os.environ.get("SCAN_CANCEL_TIMEOUT_SECONDS", "5"))
+SCAN_HEARTBEAT_INTERVAL_SECONDS = float(os.environ.get("SCAN_HEARTBEAT_INTERVAL_SECONDS", "10"))
+SCAN_STALL_TIMEOUT_SECONDS = float(os.environ.get("SCAN_STALL_TIMEOUT_SECONDS", "0"))
 LAST_BOOK_SYNC_AT = 0.0
 LAST_SSE_SYNC_AT = 0.0
 OUTPUTS_CACHE = {}
@@ -1288,7 +1290,7 @@ def _web_scan_command(book_path, profile_name, run_id):
     return [sys.executable, os.path.join(get_base_dir(), "main.py"), *task_args]
 
 
-def _run_scan_subprocess(book_path, profile_name, run_id, log_file, task_id=None):
+def _run_scan_subprocess(book_path, profile_name, run_id, log_file, task_id=None, heartbeat_callback=None):
     cmd = _web_scan_command(book_path, profile_name, run_id)
     popen_kwargs = {
         "cwd": get_base_dir(),
@@ -1309,9 +1311,53 @@ def _run_scan_subprocess(book_path, profile_name, run_id, log_file, task_id=None
         with STATE_LOCK:
             RUNNING_TASK_PROCS[task_id] = proc
     result = None
+    last_heartbeat_at = 0.0
+    output_queue = queue.Queue()
+
+    def reader():
+        try:
+            assert proc.stdout is not None
+            for item in proc.stdout:
+                output_queue.put(item)
+        finally:
+            output_queue.put(None)
+
+    reader_thread = threading.Thread(target=reader, daemon=True)
+    reader_thread.start()
     try:
-        assert proc.stdout is not None
-        for line in proc.stdout:
+        last_output_at = time.monotonic()
+        while True:
+            try:
+                line = output_queue.get(timeout=1)
+            except queue.Empty:
+                if (
+                    SCAN_STALL_TIMEOUT_SECONDS > 0
+                    and proc.poll() is None
+                    and time.monotonic() - last_output_at >= SCAN_STALL_TIMEOUT_SECONDS
+                ):
+                    result = {
+                        "status": "fail",
+                        "error": f"scan process stalled without output for {SCAN_STALL_TIMEOUT_SECONDS:g}s",
+                    }
+                    try:
+                        os.killpg(proc.pid, signal.SIGTERM)
+                    except (AttributeError, OSError):
+                        proc.terminate()
+                    try:
+                        proc.wait(timeout=SCAN_CANCEL_TIMEOUT_SECONDS)
+                    except subprocess.TimeoutExpired:
+                        try:
+                            os.killpg(proc.pid, signal.SIGKILL)
+                        except (AttributeError, OSError):
+                            proc.kill()
+                        proc.wait(timeout=SCAN_CANCEL_TIMEOUT_SECONDS)
+                    break
+                if proc.poll() is not None:
+                    break
+                continue
+            if line is None:
+                break
+            last_output_at = time.monotonic()
             if line.startswith(_WEB_SCAN_RESULT_PREFIX):
                 payload = line[len(_WEB_SCAN_RESULT_PREFIX):].strip()
                 try:
@@ -1321,6 +1367,11 @@ def _run_scan_subprocess(book_path, profile_name, run_id, log_file, task_id=None
                 continue
             log_file.write(line)
             log_file.flush()
+            if heartbeat_callback is not None:
+                now = time.monotonic()
+                if last_heartbeat_at <= 0 or SCAN_HEARTBEAT_INTERVAL_SECONDS <= 0 or now - last_heartbeat_at >= SCAN_HEARTBEAT_INTERVAL_SECONDS:
+                    heartbeat_callback(line)
+                    last_heartbeat_at = now
         return_code = proc.wait()
     finally:
         if task_id:
@@ -1340,6 +1391,24 @@ def _find_task(task_id):
         if task.get("id") == task_id:
             return task
     return None
+
+
+def _scan_log_heartbeat(task_id, line):
+    text = str(line or "").strip()
+    with STATE_LOCK:
+        task = _find_task(task_id)
+        if not task or task.get("status") != "running":
+            return
+        book = STATE["books"].get(task.get("book_id"))
+        now_text = time.strftime("%Y-%m-%d %H:%M:%S")
+        task["updated_at"] = now_text
+        task["last_log_at"] = now_text
+        task["message"] = "扫描中"
+        if text:
+            task["last_log"] = text[:240]
+        if book and book.get("status") == "running":
+            book["message"] = "扫描中"
+        _save_state()
 
 
 def _worker_loop():
@@ -1364,6 +1433,8 @@ def _worker_loop():
                 continue
             task["status"] = "running"
             task["started_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            task["updated_at"] = task["started_at"]
+            task["message"] = "扫描中"
             task["log_path"] = _task_log_path(task_id)
             book["status"] = "running"
             book["message"] = "扫描中"
@@ -1386,7 +1457,14 @@ def _worker_loop():
                 elif isinstance(profile_name, list):
                     task["resolved_profiles"] = profile_name
                     task["resolved_profile"] = "、".join(profile_name)
-                result = _run_scan_subprocess(book["path"], profile_name, _generate_run_id(), log_file, task_id=task_id)
+                result = _run_scan_subprocess(
+                    book["path"],
+                    profile_name,
+                    _generate_run_id(),
+                    log_file,
+                    task_id=task_id,
+                    heartbeat_callback=lambda line: _scan_log_heartbeat(task_id, line),
+                )
             output_index = []
             if result.get("status") in {"ok", "skipped"}:
                 result_profiles = result.get("profiles")
@@ -1400,6 +1478,7 @@ def _worker_loop():
                     continue
                 task["status"] = "completed" if result.get("status") in {"ok", "skipped"} else "failed"
                 task["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                task["updated_at"] = task["finished_at"]
                 task["result"] = result
                 book["status"] = task["status"]
                 active_profiles = result.get("profiles")
@@ -1425,6 +1504,7 @@ def _worker_loop():
                     continue
                 task["status"] = "failed"
                 task["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                task["updated_at"] = task["finished_at"]
                 task["error"] = str(exc)
                 book["status"] = "failed"
                 book["message"] = str(exc)

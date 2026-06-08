@@ -369,6 +369,9 @@ WEB_CORS_ALLOW_ORIGIN=*
 WEB_ACCESS_TOKEN=换成一段长随机字符串
 WEB_ALLOW_NO_AUTH=0
 WEB_REQUEST_TIMEOUT=60
+SCAN_CANCEL_TIMEOUT_SECONDS=5
+SCAN_HEARTBEAT_INTERVAL_SECONDS=10
+SCAN_STALL_TIMEOUT_SECONDS=0
 MAX_UPLOAD_SIZE=104857600
 MAX_JSON_BODY_SIZE=65536
 FILE_RESPONSE_CHUNK_SIZE=1048576
@@ -419,6 +422,9 @@ Web 管理端常用配置：
 - `WEB_ACCESS_TOKEN`：Web 管理端访问令牌。Docker 入口默认要求设置该值，设置后 `/api/*`、`/files`、`/upload` 和 SSE 状态流都需要携带 token。浏览器可在页面输入令牌保存，也可首次访问时使用 `http://host:port/?token=你的令牌` 自动保存。
 - `WEB_ALLOW_NO_AUTH`：是否允许 Docker 容器在没有 `WEB_ACCESS_TOKEN` 时启动，默认 `0`。只建议在服务绑定本机回环地址或可信内网、且没有公网入口时临时设为 `1`。源码本地直接运行仍保留无 token 模式：读接口开放，写操作需要 `X-Web-Unsafe-Action: confirm`。
 - `WEB_REQUEST_TIMEOUT`：单个 HTTP 连接的 socket 超时时间，默认 `60` 秒；设为 `0` 可关闭。
+- `SCAN_CANCEL_TIMEOUT_SECONDS`：取消运行中扫描时，等待子进程正常退出的秒数，超时后会强制结束，默认 `5`。
+- `SCAN_HEARTBEAT_INTERVAL_SECONDS`：扫描子进程有日志输出时，Web 状态写入 `updated_at/last_log_at` 的节流间隔，默认 `10` 秒；设为 `0` 表示每条日志都更新。
+- `SCAN_STALL_TIMEOUT_SECONDS`：运行中的扫描子进程如果超过该秒数没有任何日志输出，会被自动终止并标记失败，默认 `0` 关闭。公网无人值守部署可按模型最长正常请求时间设置为较大的值。
 - Web 访问日志写入 `results/web_logs/web_access.log`，使用 `LOG_MAX_BYTES` / `LOG_BACKUP_COUNT` 控制轮转，并会脱敏 URL 中的访问令牌。
 - `MAX_UPLOAD_SIZE`：单个上传 `.txt` 文件大小上限，默认 `104857600` 字节。
 - `MAX_JSON_BODY_SIZE`：JSON API 请求体大小上限，默认 `65536` 字节；写操作接口会校验必填字段和基础类型。
