@@ -1153,6 +1153,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
             roleplay_window = text[max(0, index - 8):index]
             tight_roleplay_window = text[max(0, index - 3):index]
             next_text = text[index + len(word):index + len(word) + 4]
+            next_context = text[index + len(word):index + len(word) + 10]
             non_romantic_like = word == "喜欢" and (
                 text[max(0, index - 2):index] == "喜不"
                 or any(text[max(0, index - len(hint)):index] == hint for hint in non_romantic_like_prefixes)
@@ -1170,8 +1171,12 @@ def _contains_positive_signal_text(value, keywords) -> bool:
                 hint in text[max(0, index - 10):index + len(word) + 12]
                 for hint in nonfactual_romance_contexts
             )
-            system_or_setting_relation = word in ("双修", "同房", "道侣", "恋人", "情侣", "伴侣", "未婚妻") and any(
-                next_text.startswith(hint) for hint in system_or_setting_followers
+            system_or_setting_relation = word in (
+                "双修", "同房", "道侣", "恋人", "情侣", "伴侣", "未婚妻",
+                "妻子", "正妻", "妻室", "夫妻", "夫妇", "女朋友", "老婆", "爱人",
+            ) and any(
+                next_text.startswith(hint) or hint in next_context
+                for hint in system_or_setting_followers
             )
             non_romantic_intimacy = word == "亲密" and (
                 any(next_text.startswith(hint) for hint in non_romantic_intimacy_followers)
