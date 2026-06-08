@@ -66,6 +66,56 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     target_logger.removeHandler(handler)
                     handler.close()
 
+    def test_report_logger_uses_rotating_handler(self):
+        old_log_path = report.REPORT_RUN_LOG_PATH
+        old_report_logger = report._REPORT_LOGGER
+        target_logger = logging.getLogger("report_generation")
+        old_handlers = list(target_logger.handlers)
+        for handler in old_handlers:
+            target_logger.removeHandler(handler)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                log_path = os.path.join(tmpdir, "report_generation.log")
+                report.REPORT_RUN_LOG_PATH = log_path
+                report._REPORT_LOGGER = None
+                logger = report.get_report_logger()
+
+                self.assertEqual(logger.name, "report_generation")
+                self.assertFalse(logger.propagate)
+                self.assertEqual(len(logger.handlers), 1)
+                self.assertIsInstance(logger.handlers[0], RotatingFileHandler)
+                self.assertEqual(logger.handlers[0].baseFilename, log_path)
+        finally:
+            for handler in list(target_logger.handlers):
+                target_logger.removeHandler(handler)
+                handler.close()
+            for handler in old_handlers:
+                target_logger.addHandler(handler)
+            report.REPORT_RUN_LOG_PATH = old_log_path
+            report._REPORT_LOGGER = old_report_logger
+
+    def test_report_logger_initialization_failure_is_logged(self):
+        old_report_logger = report._REPORT_LOGGER
+        target_logger = logging.getLogger("report_generation")
+        old_handlers = list(target_logger.handlers)
+        for handler in old_handlers:
+            target_logger.removeHandler(handler)
+        try:
+            report._REPORT_LOGGER = None
+            with mock.patch.object(report, "configure_rotating_file_logger", side_effect=RuntimeError("boom")), \
+                    self.assertLogs("report", level="WARNING") as logs:
+                logger = report.get_report_logger()
+
+            self.assertEqual(logger.name, "report_generation")
+            self.assertTrue(any("初始化报告生成日志失败" in line for line in logs.output))
+        finally:
+            for handler in list(target_logger.handlers):
+                target_logger.removeHandler(handler)
+                handler.close()
+            for handler in old_handlers:
+                target_logger.addHandler(handler)
+            report._REPORT_LOGGER = old_report_logger
+
     def test_compose_variables_are_documented_in_env_sample(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
         compose_path = os.path.join(base_dir, "docker-compose.yml")

@@ -15,6 +15,7 @@ from shared_utils import (
     DEFAULT_MAX_RETRIES,
     DEFAULT_MAX_TIMEOUT_RETRIES,
     DEFAULT_REQUEST_TIMEOUT,
+    configure_rotating_file_logger,
     create_chat_completion,
     get_base_dir,
     read_file_safely,
@@ -420,16 +421,18 @@ def get_report_logger():
     if _REPORT_LOGGER is not None:
         return _REPORT_LOGGER
     logger = logging.getLogger("report_generation")
-    logger.setLevel(logging.INFO)
     logger.propagate = False
-    if not logger.handlers:
-        try:
-            os.makedirs(os.path.dirname(REPORT_RUN_LOG_PATH), exist_ok=True)
-            fh = logging.FileHandler(REPORT_RUN_LOG_PATH, encoding="utf-8")
-            fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
-            logger.addHandler(fh)
-        except Exception:
-            pass
+    try:
+        os.makedirs(os.path.dirname(REPORT_RUN_LOG_PATH), exist_ok=True)
+        configure_rotating_file_logger(
+            logger,
+            REPORT_RUN_LOG_PATH,
+            stream=False,
+            formatter=logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"),
+        )
+    except Exception as exc:
+        logging.getLogger(__name__).warning("初始化报告生成日志失败: %s", exc)
+        logger.setLevel(logging.INFO)
     _REPORT_LOGGER = logger
     return logger
 
