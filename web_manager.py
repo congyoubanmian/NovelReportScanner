@@ -54,6 +54,32 @@ EDITABLE_RUNTIME_CONFIG = {
     "general_scan_max_chunks": {"env": "GENERAL_SCAN_MAX_CHUNKS", "type": "int", "min": 0, "max": 100000},
     "harem_plus_general_scan": {"env": "HAREM_PLUS_GENERAL_SCAN", "type": "bool"},
 }
+BOOK_ID_PAYLOAD_SCHEMA = {
+    "required": ["book_id"],
+    "fields": {"book_id": {"type": str, "non_empty": True}},
+}
+BOOK_IDS_PAYLOAD_SCHEMA = {
+    "required": ["book_ids"],
+    "fields": {"book_ids": {"type": list, "item_type": str, "non_empty_items": True}},
+}
+PROFILE_PAYLOAD_SCHEMA = {
+    "required": ["book_id"],
+    "fields": {
+        "book_id": {"type": str, "non_empty": True},
+        "profile": {"type": (str, list), "item_type": str, "non_empty_items": True},
+    },
+}
+CONFIG_PAYLOAD_SCHEMA = {
+    "required": ["config"],
+    "fields": {"config": {"type": dict}},
+}
+MOVE_QUEUE_PAYLOAD_SCHEMA = {
+    "required": ["book_id", "direction"],
+    "fields": {
+        "book_id": {"type": str, "non_empty": True},
+        "direction": {"type": str, "choices": {"up", "down"}},
+    },
+}
 
 
 def _state_path():
@@ -559,6 +585,41 @@ def _update_runtime_config(values):
     # 尝试持久化到 .env 文件（失败不影响内存中的更新）
     _persist_runtime_config_to_env_file(normalized)
     return True, _runtime_config_summary()
+
+
+def _validate_json_payload_schema(payload, schema):
+    if not isinstance(payload, dict):
+        return False, "json body must be an object"
+    fields = schema.get("fields", {}) if isinstance(schema, dict) else {}
+    required = set(schema.get("required", []) if isinstance(schema, dict) else [])
+    for field in required:
+        if field not in payload:
+            return False, f"{field} is required"
+    for field, rules in fields.items():
+        if field not in payload:
+            continue
+        value = payload.get(field)
+        if value is None and not rules.get("nullable"):
+            return False, f"{field} is required"
+        allowed_types = rules.get("type")
+        if allowed_types:
+            if not isinstance(allowed_types, tuple):
+                allowed_types = (allowed_types,)
+            if not isinstance(value, allowed_types):
+                names = "/".join(t.__name__ for t in allowed_types)
+                return False, f"{field} must be {names}"
+        if rules.get("non_empty") and isinstance(value, str) and not value.strip():
+            return False, f"{field} must not be empty"
+        choices = rules.get("choices")
+        if choices is not None and value not in choices:
+            return False, f"{field} must be one of: {', '.join(sorted(choices))}"
+        item_type = rules.get("item_type")
+        if item_type and isinstance(value, list):
+            if any(not isinstance(item, item_type) for item in value):
+                return False, f"{field} items must be {item_type.__name__}"
+            if rules.get("non_empty_items") and any(not str(item).strip() for item in value):
+                return False, f"{field} items must not be empty"
+    return True, ""
 
 
 def _web_access_token():
@@ -1372,6 +1433,16 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"error": "invalid json"}, 400)
             return None
 
+    def _read_json_payload_schema(self, schema):
+        payload = self._read_json_payload()
+        if payload is None:
+            return None
+        ok, error = _validate_json_payload_schema(payload, schema)
+        if not ok:
+            self._send_json({"error": error}, 400)
+            return None
+        return payload
+
     def _guess_mime(self, path):
         ext = os.path.splitext(path)[1].lower()
         return {
@@ -1530,7 +1601,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if not self._require_write_confirmation():
                 return
-            payload = self._read_json_payload()
+            payload = self._read_json_payload_schema(PROFILE_PAYLOAD_SCHEMA)
             if payload is None:
                 return
             with STATE_LOCK:
@@ -1559,7 +1630,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if not self._require_write_confirmation():
                 return
-            payload = self._read_json_payload()
+            payload = self._read_json_payload_schema(CONFIG_PAYLOAD_SCHEMA)
             if payload is None:
                 return
             ok, result = _update_runtime_config(payload.get("config"))
@@ -1573,7 +1644,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if not self._require_write_confirmation():
                 return
-            payload = self._read_json_payload()
+            payload = self._read_json_payload_schema(BOOK_ID_PAYLOAD_SCHEMA)
             if payload is None:
                 return
             try:
@@ -1588,13 +1659,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if not self._require_write_confirmation():
                 return
-            payload = self._read_json_payload()
+            payload = self._read_json_payload_schema(BOOK_IDS_PAYLOAD_SCHEMA)
             if payload is None:
                 return
             book_ids = payload.get("book_ids")
-            if not isinstance(book_ids, list):
-                self._send_json({"error": "book_ids must be a list"}, 400)
-                return
             try:
                 result = _enqueue_many(book_ids)
             except (PermissionError, OSError) as exc:
@@ -1607,7 +1675,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if not self._require_write_confirmation():
                 return
-            payload = self._read_json_payload()
+            payload = self._read_json_payload_schema(BOOK_ID_PAYLOAD_SCHEMA)
             if payload is None:
                 return
             try:
@@ -1622,7 +1690,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if not self._require_write_confirmation():
                 return
-            payload = self._read_json_payload()
+            payload = self._read_json_payload_schema(BOOK_ID_PAYLOAD_SCHEMA)
             if payload is None:
                 return
             try:
@@ -1637,7 +1705,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if not self._require_write_confirmation():
                 return
-            payload = self._read_json_payload()
+            payload = self._read_json_payload_schema(MOVE_QUEUE_PAYLOAD_SCHEMA)
             if payload is None:
                 return
             try:
@@ -1652,7 +1720,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if not self._require_write_confirmation():
                 return
-            payload = self._read_json_payload()
+            payload = self._read_json_payload_schema(BOOK_ID_PAYLOAD_SCHEMA)
             if payload is None:
                 return
             try:
@@ -1667,13 +1735,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if not self._require_write_confirmation():
                 return
-            payload = self._read_json_payload()
+            payload = self._read_json_payload_schema(BOOK_IDS_PAYLOAD_SCHEMA)
             if payload is None:
                 return
             book_ids = payload.get("book_ids")
-            if not isinstance(book_ids, list):
-                self._send_json({"error": "book_ids must be a list"}, 400)
-                return
             try:
                 result = _delete_many_books(book_ids)
             except (PermissionError, OSError) as exc:

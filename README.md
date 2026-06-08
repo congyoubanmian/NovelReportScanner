@@ -402,7 +402,7 @@ Web 管理端常用配置：
 - `WEB_REQUEST_TIMEOUT`：单个 HTTP 连接的 socket 超时时间，默认 `60` 秒；设为 `0` 可关闭。
 - Web 访问日志写入 `results/web_logs/web_access.log`，使用 `LOG_MAX_BYTES` / `LOG_BACKUP_COUNT` 控制轮转，并会脱敏 URL 中的访问令牌。
 - `MAX_UPLOAD_SIZE`：单个上传 `.txt` 文件大小上限，默认 `104857600` 字节。
-- `MAX_JSON_BODY_SIZE`：JSON API 请求体大小上限，默认 `65536` 字节。
+- `MAX_JSON_BODY_SIZE`：JSON API 请求体大小上限，默认 `65536` 字节；写操作接口会校验必填字段和基础类型。
 - `FILE_RESPONSE_CHUNK_SIZE`：`/files` 下载或预览文件时的流式输出块大小，默认 `1048576` 字节。
 - `SYNC_BOOKS_TTL_SECONDS`：同步 `novels/` 目录的最短间隔，默认 `5` 秒。
 - `OUTPUTS_CACHE_TTL_SECONDS`：书籍输出文件列表缓存时间，默认 `5` 秒。

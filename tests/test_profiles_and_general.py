@@ -4310,6 +4310,71 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         finally:
             web_manager.MAX_JSON_BODY_SIZE = old_limit
 
+    def test_web_manager_json_payload_schema_validates_required_fields(self):
+        ok, error = web_manager._validate_json_payload_schema(
+            {"book_id": "book"},
+            web_manager.BOOK_ID_PAYLOAD_SCHEMA,
+        )
+        self.assertTrue(ok)
+        self.assertEqual(error, "")
+
+        self.assertEqual(
+            web_manager._validate_json_payload_schema([], web_manager.BOOK_ID_PAYLOAD_SCHEMA),
+            (False, "json body must be an object"),
+        )
+        self.assertEqual(
+            web_manager._validate_json_payload_schema({}, web_manager.BOOK_ID_PAYLOAD_SCHEMA),
+            (False, "book_id is required"),
+        )
+        self.assertEqual(
+            web_manager._validate_json_payload_schema({"book_id": ""}, web_manager.BOOK_ID_PAYLOAD_SCHEMA),
+            (False, "book_id must not be empty"),
+        )
+        self.assertEqual(
+            web_manager._validate_json_payload_schema({"book_ids": ["ok", 1]}, web_manager.BOOK_IDS_PAYLOAD_SCHEMA),
+            (False, "book_ids items must be str"),
+        )
+        self.assertEqual(
+            web_manager._validate_json_payload_schema({"book_id": "book", "direction": "left"}, web_manager.MOVE_QUEUE_PAYLOAD_SCHEMA),
+            (False, "direction must be one of: down, up"),
+        )
+
+    def test_web_manager_post_rejects_invalid_schema_before_business_logic(self):
+        class FakeHandler(web_manager.Handler):
+            def __init__(self, path, payload):
+                body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                self.path = path
+                self.headers = {
+                    "Content-Length": str(len(body)),
+                    "X-Web-Unsafe-Action": "confirm",
+                }
+                self.rfile = io.BytesIO(body)
+                self.sent = []
+
+            def _send_json(self, data, status=200):
+                self.sent.append((status, data))
+
+        old_token = os.environ.get("WEB_ACCESS_TOKEN")
+        try:
+            os.environ.pop("WEB_ACCESS_TOKEN", None)
+
+            missing_id = FakeHandler("/api/enqueue", {})
+            web_manager.Handler.do_POST(missing_id)
+            self.assertEqual(missing_id.sent[0], (400, {"error": "book_id is required"}))
+
+            invalid_batch = FakeHandler("/api/delete-batch", {"book_ids": ["ok", 1]})
+            web_manager.Handler.do_POST(invalid_batch)
+            self.assertEqual(invalid_batch.sent[0], (400, {"error": "book_ids items must be str"}))
+
+            invalid_direction = FakeHandler("/api/move-queue", {"book_id": "book", "direction": "left"})
+            web_manager.Handler.do_POST(invalid_direction)
+            self.assertEqual(invalid_direction.sent[0], (400, {"error": "direction must be one of: down, up"}))
+        finally:
+            if old_token is None:
+                os.environ.pop("WEB_ACCESS_TOKEN", None)
+            else:
+                os.environ["WEB_ACCESS_TOKEN"] = old_token
+
     def test_web_manager_send_public_file_streams_in_chunks(self):
         class TrackingWFile:
             def __init__(self):
