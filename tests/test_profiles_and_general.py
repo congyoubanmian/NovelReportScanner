@@ -399,6 +399,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("GENERAL_SCAN_INCREMENTAL_REUSE", text)
         self.assertIn("GENERAL_SCAN_WRITING_QUALITY", text)
         self.assertIn("GENERAL_SCAN_NARRATIVE_ARCHITECTURE", text)
+        self.assertIn("GENERAL_SCAN_FORESHADOWING_ENGINEERING", text)
         self.assertIn("GENERAL_SCAN_ROLLING_CONTEXT", text)
         self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS", text)
 
@@ -821,6 +822,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("general_scan_narrative_architecture: true", text)
         self.assertIn("config.general_scan_narrative_architecture !== false", text)
         self.assertIn("configForm.general_scan_narrative_architecture", text)
+        self.assertIn("general_scan_foreshadowing_engineering: true", text)
+        self.assertIn("config.general_scan_foreshadowing_engineering !== false", text)
+        self.assertIn("configForm.general_scan_foreshadowing_engineering", text)
 
     def test_rate_limit_scope_auto_resolves_by_key_count(self):
         self.assertEqual(Timerror.normalize_rate_limit_scope("auto", 1), "global")
@@ -4219,6 +4223,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_INCREMENTAL_REUSE",
             "GENERAL_SCAN_WRITING_QUALITY",
             "GENERAL_SCAN_NARRATIVE_ARCHITECTURE",
+            "GENERAL_SCAN_FORESHADOWING_ENGINEERING",
             "GENERAL_SCAN_ROLLING_CONTEXT",
             "GENERAL_SCAN_CONTEXT_MAX_CHARS",
             "HAREM_PLUS_GENERAL_SCAN",
@@ -4237,6 +4242,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "general_scan_incremental_reuse": False,
                 "general_scan_writing_quality": False,
                 "general_scan_narrative_architecture": False,
+                "general_scan_foreshadowing_engineering": False,
                 "general_scan_rolling_context": False,
                 "general_scan_context_max_chars": "800",
                 "harem_plus_general_scan": True,
@@ -4252,6 +4258,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["GENERAL_SCAN_INCREMENTAL_REUSE"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_WRITING_QUALITY"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_NARRATIVE_ARCHITECTURE"], "0")
+            self.assertEqual(os.environ["GENERAL_SCAN_FORESHADOWING_ENGINEERING"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_ROLLING_CONTEXT"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_CONTEXT_MAX_CHARS"], "800")
             self.assertEqual(os.environ["HAREM_PLUS_GENERAL_SCAN"], "1")
@@ -4260,6 +4267,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertFalse(result["general_scan_incremental_reuse"])
             self.assertFalse(result["general_scan_writing_quality"])
             self.assertFalse(result["general_scan_narrative_architecture"])
+            self.assertFalse(result["general_scan_foreshadowing_engineering"])
             self.assertFalse(result["general_scan_rolling_context"])
             self.assertEqual(result["general_scan_context_max_chars"], "800")
             self.assertTrue(result["harem_plus_general_scan"])
@@ -4434,6 +4442,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_INCREMENTAL_REUSE": "general_scan_incremental_reuse",
             "GENERAL_SCAN_WRITING_QUALITY": "general_scan_writing_quality",
             "GENERAL_SCAN_NARRATIVE_ARCHITECTURE": "general_scan_narrative_architecture",
+            "GENERAL_SCAN_FORESHADOWING_ENGINEERING": "general_scan_foreshadowing_engineering",
             "GENERAL_SCAN_ROLLING_CONTEXT": "general_scan_rolling_context",
             "GENERAL_SCAN_CONTEXT_MAX_CHARS": "general_scan_context_max_chars",
             "HAREM_PLUS_GENERAL_SCAN": "harem_plus_general_scan",
@@ -4468,6 +4477,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "general_scan_incremental_reuse": False,
                     "general_scan_writing_quality": False,
                     "general_scan_narrative_architecture": False,
+                    "general_scan_foreshadowing_engineering": False,
                     "general_scan_rolling_context": False,
                     "general_scan_context_max_chars": 800,
                     "harem_plus_general_scan": True,
@@ -4482,6 +4492,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("GENERAL_SCAN_INCREMENTAL_REUSE=0", lines)
                 self.assertIn("GENERAL_SCAN_WRITING_QUALITY=0", lines)
                 self.assertIn("GENERAL_SCAN_NARRATIVE_ARCHITECTURE=0", lines)
+                self.assertIn("GENERAL_SCAN_FORESHADOWING_ENGINEERING=0", lines)
                 self.assertIn("GENERAL_SCAN_ROLLING_CONTEXT=0", lines)
                 self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS=800", lines)
                 self.assertIn("HAREM_PLUS_GENERAL_SCAN=1", lines)
@@ -5900,6 +5911,40 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("架构评分：7.8/10（good）", text)
         self.assertIn("战力体系基本稳定", text)
         self.assertNotIn("【narrative structure analysis】", text)
+
+    def test_general_report_includes_foreshadowing_engineering_sections(self):
+        general_summary = {
+            "profile_display_name": "通用小说分析",
+            "summary_fields": [
+                "main_plot",
+                "foreshadowing_engineering_analysis",
+            ],
+            "summary": {
+                "story_overview": "主角调查旧案并逐步回收线索。",
+                "main_plot": ["旧案调查"],
+                "foreshadowing_and_payoff": ["密信线索仍在推进"],
+                "foreshadowing_engineering_analysis": {
+                    "setup_quality": "good",
+                    "active_threads": ["密信来源仍未揭开"],
+                    "resolved_threads": ["旧钥匙用于打开地下档案室，回收较自然"],
+                    "false_or_red_herring": ["嫌疑人的假口供属于烟雾弹"],
+                    "payoff_satisfaction": "satisfying",
+                    "recycling_rate_estimate": "约2/3已回收",
+                    "risks": ["后续需回收密信来源"],
+                },
+            },
+        }
+
+        text = report.build_general_report("测试书", {}, general_summary)
+
+        self.assertIn("【伏笔工程分析】", text)
+        self.assertIn("设置质量：good", text)
+        self.assertIn("回收满足度：satisfying", text)
+        self.assertIn("回收率估计：约2/3已回收", text)
+        self.assertIn("密信来源仍未揭开", text)
+        self.assertIn("烟雾弹", text)
+        self.assertEqual(text.count("【伏笔工程分析】"), 1)
+        self.assertNotIn("【foreshadowing engineering analysis】", text)
 
     def test_general_report_does_not_repeat_footer_summary_fields(self):
         general_summary = {
@@ -9172,6 +9217,55 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(result["outline_architecture"]["causal_chain"]["causal_strength"], "自然发展")
         self.assertEqual(result["outline_architecture"]["architecture_integrity"]["integrity_score"], 7.6)
 
+    def test_general_scan_outputs_foreshadowing_engineering(self):
+        profile = analysis_profiles.load_analysis_profile("general")
+        prompts = []
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(messages, max_tokens=3000):
+                prompts.append("\n".join(item.get("content", "") for item in messages))
+                return {
+                    "plot_events": ["主角发现密信"],
+                    "conflicts": ["真相与隐瞒冲突"],
+                    "worldbuilding": [],
+                    "themes": ["真相"],
+                    "foreshadowing": ["密信来源未明"],
+                    "quality_notes": [],
+                    "specialty_notes": [],
+                    "foreshadowing_engineering": {
+                        "new_foreshadowing": [
+                            {
+                                "type": "item",
+                                "description": "密信背面的旧印记",
+                                "estimated_importance": "high",
+                                "evidence": "背面旧印记",
+                            }
+                        ],
+                        "foreshadowing_resolutions": [
+                            {
+                                "resolved_item": "旧钥匙用途",
+                                "resolution_description": "钥匙打开地下档案室",
+                                "satisfaction": "satisfying",
+                            }
+                        ],
+                        "false_foreshadowing": ["嫌疑人的假口供"],
+                        "engineering_notes": ["设置与回收间距清楚"],
+                        "recycling_rate": "1/2",
+                    },
+                    "one_sentence_summary": "主角发现密信并回收钥匙线索。",
+                }
+
+            general_scan._call_json = fake_call_json
+            result = general_scan._scan_chunk("主角发现密信，旧钥匙打开地下档案室。", 0, 1, profile=profile)
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertTrue(any("伏笔工程追踪" in prompt for prompt in prompts))
+        self.assertEqual(result["foreshadowing_engineering"]["new_foreshadowing"][0]["description"], "密信背面的旧印记")
+        self.assertEqual(result["foreshadowing_engineering"]["foreshadowing_resolutions"][0]["resolved_item"], "旧钥匙用途")
+        self.assertIn("嫌疑人的假口供", result["foreshadowing_engineering"]["false_foreshadowing"])
+        self.assertEqual(result["foreshadowing_engineering"]["recycling_rate"], "1/2")
+
     def test_general_scan_uses_rolling_context_in_chunk_prompt(self):
         profile = analysis_profiles.load_analysis_profile("general")
         prompts = []
@@ -9187,6 +9281,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "foreshadowing": ["旧案真相仍未揭开"],
                     "quality_notes": [],
                     "specialty_notes": [],
+                    "foreshadowing_engineering": {
+                        "new_foreshadowing": [{"description": "旧案现场留下的黑色纽扣"}],
+                    },
                     "context_state_update": {
                         "progress_summary": "调查推进到旧案线索。",
                         "active_characters": ["林澈", "许青"],
@@ -9216,6 +9313,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(result["context_state_update"]["current_stage"], "调查旧案")
         self.assertIn("林澈", result["context_snapshot_used"]["active_characters"])
 
+        state = general_scan._update_rolling_context_state(general_scan._empty_rolling_context_state(), result)
+        self.assertIn("旧案现场留下的黑色纽扣", state["active_foreshadowing"])
+        snapshot = general_scan._rolling_context_snapshot(state)
+        self.assertIn("旧案现场留下的黑色纽扣", snapshot["active_foreshadowing"])
+
     def test_general_scan_trims_rolling_context_snapshot_to_budget(self):
         snapshot = {
             "previous_progress": "前情" * 200,
@@ -9244,6 +9346,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         "active_characters": ["林澈"],
                         "open_threads": ["旧案"],
                     },
+                    "foreshadowing_engineering": {
+                        "new_foreshadowing": [{"description": "密信背面的旧印记"}],
+                    },
                     "one_sentence_summary": "前半摘要",
                 },
                 {
@@ -9252,6 +9357,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         "progress_summary": "后半推进",
                         "resolved_threads": ["旧案"],
                         "current_stage": "案件收束",
+                    },
+                    "foreshadowing_engineering": {
+                        "foreshadowing_resolutions": [
+                            {"resolved_item": "旧钥匙用途", "resolution_description": "打开档案室"}
+                        ],
+                        "false_foreshadowing": ["嫌疑人假口供"],
                     },
                     "one_sentence_summary": "后半摘要",
                 },
@@ -9264,6 +9375,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(result["context_snapshot_used"]["previous_progress"], "旧进展")
         self.assertEqual(result["context_state_update"]["current_stage"], "案件收束")
         self.assertIn("旧案", result["context_state_update"]["resolved_threads"])
+        self.assertEqual(result["foreshadowing_engineering"]["new_foreshadowing"][0]["description"], "密信背面的旧印记")
+        self.assertEqual(result["foreshadowing_engineering"]["foreshadowing_resolutions"][0]["resolved_item"], "旧钥匙用途")
+        self.assertIn("嫌疑人假口供", result["foreshadowing_engineering"]["false_foreshadowing"])
 
     def test_general_scan_density_profile_detects_high_signal_chunks(self):
         profile = general_scan._chunk_density_profile("案件出现尸体，凶手线索揭露，随后发生战斗和反转。")
@@ -9529,6 +9643,60 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(summary["narrative_structure_analysis"]["primary_structure_pattern"], "升级-换地图循环")
         self.assertEqual(summary["outline_architecture_overall"]["architecture_score"], "7.5")
         self.assertEqual(summary["outline_architecture_overall"]["growth_curve"]["smoothness"], "natural")
+
+    def test_general_scan_summary_includes_foreshadowing_engineering_material(self):
+        profile = analysis_profiles.load_analysis_profile("general")
+        prompts = []
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(messages, max_tokens=3000):
+                prompt = "\n".join(item.get("content", "") for item in messages)
+                prompts.append(prompt)
+                return {
+                    "story_overview": "主角调查旧案并回收部分伏笔。",
+                    "main_plot": ["旧案调查"],
+                    "core_conflicts": ["真相与阻挠"],
+                    "worldbuilding": [],
+                    "themes": ["真相"],
+                    "foreshadowing_and_payoff": ["密信线索仍在推进"],
+                    "foreshadowing_engineering_analysis": {
+                        "setup_quality": "good",
+                        "active_threads": ["密信来源仍未揭开"],
+                        "resolved_threads": ["旧钥匙用途回收自然"],
+                        "false_or_red_herring": ["嫌疑人假口供"],
+                        "payoff_satisfaction": "satisfying",
+                        "recycling_rate_estimate": "约1/2",
+                        "risks": ["密信线需后续回收"],
+                    },
+                    "strengths": ["伏笔间距清楚"],
+                    "risks_or_issues": ["仍有未回收线索"],
+                    "reader_fit": "悬疑读者",
+                    "overall_assessment": "伏笔工程较稳定",
+                }
+
+            general_scan._call_json = fake_call_json
+            summary = general_scan._summarize_book(
+                "伏笔工程测试",
+                [{
+                    "one_sentence_summary": "主角发现密信并使用旧钥匙。",
+                    "foreshadowing_engineering": {
+                        "new_foreshadowing": [{"description": "密信背面的旧印记", "estimated_importance": "high"}],
+                        "foreshadowing_resolutions": [{"resolved_item": "旧钥匙用途", "resolution_description": "打开档案室"}],
+                        "false_foreshadowing": ["嫌疑人假口供"],
+                        "recycling_rate": "1/2",
+                    },
+                }],
+                profile=profile,
+            )
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertTrue(any('"foreshadowing_engineering_chunks"' in prompt for prompt in prompts))
+        self.assertTrue(any('"foreshadowing_engineering_analysis"' in prompt for prompt in prompts))
+        self.assertTrue(any("密信背面的旧印记" in prompt for prompt in prompts))
+        self.assertEqual(summary["foreshadowing_engineering_analysis"]["setup_quality"], "good")
+        self.assertIn("密信来源仍未揭开", summary["foreshadowing_engineering_analysis"]["active_threads"])
+        self.assertEqual(summary["foreshadowing_engineering_analysis"]["recycling_rate_estimate"], "约1/2")
 
     def test_general_scan_summary_uses_rolling_context_timeline_only(self):
         profile = analysis_profiles.load_analysis_profile("general")
@@ -10355,6 +10523,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(data["max_chunks"], 300)
             self.assertEqual(data["chunk_sampling_strategy"], "uniform_timeline")
             self.assertTrue(data["smart_density"])
+            self.assertTrue(data["foreshadowing_engineering_enabled"])
+            self.assertEqual(data["foreshadowing_engineering_schema_version"], general_scan.FORESHADOWING_ENGINEERING_SCHEMA_VERSION)
             self.assertEqual(sum(data["density_counts"].values()), 300)
             self.assertEqual(data["prompt_templates"]["general_scan_chunk"]["version"], "v1")
             self.assertEqual(data["prompt_templates"]["general_summary"]["version"], "v1")
@@ -10391,6 +10561,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "chunk_size": general_scan.CHUNK_SIZE,
                     "chunk_overlap": general_scan.CHUNK_OVERLAP,
                     "smart_density": general_scan.SMART_DENSITY,
+                    "foreshadowing_engineering_enabled": general_scan.FORESHADOWING_ENGINEERING_ENABLED,
                     "prompt_templates": {
                         "general_scan_chunk": {"name": "general_scan_chunk", "version": "v1"},
                         "general_summary": {"name": "general_summary", "version": "v1"},
@@ -10404,6 +10575,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         "information_density": {"density_score": "medium"},
                         "narrative_structure": {"structural_function_tag": "transition"},
                         "outline_architecture": {"causal_chain": {"causal_strength": "自然发展"}},
+                        "foreshadowing_engineering": {"new_foreshadowing": [{"description": "旧伏笔"}]},
                         "one_sentence_summary": "旧摘要",
                     }],
                 }, f, ensure_ascii=False)
@@ -10437,6 +10609,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertTrue(data["incremental_reuse"])
             self.assertTrue(data["writing_quality_enabled"])
             self.assertTrue(data["narrative_architecture_enabled"])
+            self.assertTrue(data["foreshadowing_engineering_enabled"])
             self.assertEqual(data["reused_chunk_count"], 1)
             self.assertEqual(data["scanned_chunk_count"], 1)
             self.assertTrue(data["chunk_results"][0]["reused_from_previous"])
@@ -10475,6 +10648,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "rolling_context_enabled": True,
                     "rolling_context_schema_version": general_scan.ROLLING_CONTEXT_SCHEMA_VERSION,
                     "rolling_context_max_chars": general_scan.CONTEXT_MAX_CHARS,
+                    "foreshadowing_engineering_enabled": general_scan.FORESHADOWING_ENGINEERING_ENABLED,
                     "prompt_templates": {
                         "general_scan_chunk": {"name": "general_scan_chunk", "version": "v1"},
                         "general_summary": {"name": "general_summary", "version": "v1"},
@@ -10488,6 +10662,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         "information_density": {"density_score": "medium"},
                         "narrative_structure": {"structural_function_tag": "transition"},
                         "outline_architecture": {"causal_chain": {"causal_strength": "自然发展"}},
+                        "foreshadowing_engineering": {"new_foreshadowing": [{"description": "旧伏笔"}]},
                         "context_state_update": {"progress_summary": "旧摘要"},
                         "one_sentence_summary": "旧摘要",
                     }],
@@ -10660,6 +10835,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "rolling_context_enabled": general_scan.ROLLING_CONTEXT_ENABLED,
                 "rolling_context_schema_version": general_scan.ROLLING_CONTEXT_SCHEMA_VERSION,
                 "rolling_context_max_chars": general_scan.CONTEXT_MAX_CHARS,
+                "foreshadowing_engineering_enabled": general_scan.FORESHADOWING_ENGINEERING_ENABLED,
+                "foreshadowing_engineering_schema_version": general_scan.FORESHADOWING_ENGINEERING_SCHEMA_VERSION,
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }
@@ -10673,6 +10850,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             data_without_rolling_meta = dict(data)
             data_without_rolling_meta.pop("rolling_context_enabled", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_rolling_meta, novel_path, "history"))
+            data_without_foreshadowing_meta = dict(data)
+            data_without_foreshadowing_meta.pop("foreshadowing_engineering_enabled", None)
+            self.assertFalse(general_scan._is_fresh_summary(data_without_foreshadowing_meta, novel_path, "history"))
             data["summary"] = {"book_overview": "ok"}
             self.assertTrue(general_scan._is_fresh_summary(data, novel_path, "history"))
             self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "general"))
@@ -10715,6 +10895,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "rolling_context_enabled": general_scan.ROLLING_CONTEXT_ENABLED,
                 "rolling_context_schema_version": general_scan.ROLLING_CONTEXT_SCHEMA_VERSION,
                 "rolling_context_max_chars": general_scan.CONTEXT_MAX_CHARS,
+                "foreshadowing_engineering_enabled": general_scan.FORESHADOWING_ENGINEERING_ENABLED,
+                "foreshadowing_engineering_schema_version": general_scan.FORESHADOWING_ENGINEERING_SCHEMA_VERSION,
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }

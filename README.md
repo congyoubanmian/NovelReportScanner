@@ -394,6 +394,7 @@ SSE_MAX_CONNECTION_SECONDS=300
 - `GENERAL_SCAN_INCREMENTAL_REUSE`：通用/专项剧情扫描的 chunk hash 增量复用开关，默认 `1`。当同一本书已有旧 summary 且 prompt/配置兼容时，未变化片段会复用旧 `chunk_results`，只扫描新增或修改片段，最后重新生成整书 summary；设为 `0` 可强制全量重扫。
 - `GENERAL_SCAN_WRITING_QUALITY`：通用/专项剧情扫描的写作质量、节奏曲线和信息密度分析开关，默认 `1`。开启后每个片段会额外抽取文笔、人物、叙事、对话、场景、情感、信息密度和世界观融入等写作质量证据，整书报告会增加“写作质量分析”“节奏曲线分析”“信息密度审计”等章节；设为 `0` 可降低 prompt 长度和 token 成本。
 - `GENERAL_SCAN_NARRATIVE_ARCHITECTURE`：通用/专项剧情扫描的叙事结构和大纲架构分析开关，默认 `1`。开启后每个片段会额外标注结构功能、叙事弧位置、结构转折点、因果链、成长曲线、设定展开和架构稳定性，整书报告会增加“叙事结构分析”“大纲架构分析”等章节；设为 `0` 可降低 prompt 长度和 token 成本。
+- `GENERAL_SCAN_FORESHADOWING_ENGINEERING`：通用/专项剧情扫描的伏笔工程追踪开关，默认 `1`。开启后每个片段会额外抽取新伏笔、明确回收、假伏笔/烟雾弹和片段回收率线索，整书报告会增加“伏笔工程分析”；设为 `0` 可降低 prompt 长度和 token 成本。
 - `GENERAL_SCAN_ROLLING_CONTEXT`：通用/专项剧情扫描的跨片段滚动上下文开关，默认 `1`。开启后每个片段会收到前序片段压缩状态，并输出 `context_state_update`，用于减少人物指代、关系阶段、未解问题和设定连续性的误判。由于后续片段结果依赖前序上下文，开启时 chunk 级增量复用会自动禁用；整份 summary 完全新鲜时仍会直接复用。
 - `GENERAL_SCAN_CONTEXT_MAX_CHARS`：滚动上下文注入 prompt 的最大字符数，默认 `1600`。调高可保留更多前序状态，但会增加 token 成本和超长风险；设为 `0` 时不注入上下文快照。
 - `LOG_MAX_BYTES` / `LOG_BACKUP_COUNT`：扫描日志轮转配置，默认单个 `analysis.log` / `reviewer.log` 最大 `10485760` 字节并保留 `5` 份历史；`LOG_MAX_BYTES=0` 表示不按大小轮转。
@@ -416,7 +417,7 @@ Web 管理端常用配置：
 - `SSE_SYNC_INTERVAL_SECONDS`：SSE 状态流触发 `novels/` 目录同步的最短间隔，默认 `5` 秒；多个 SSE 连接会共用这个节流。
 - `SSE_MAX_CONNECTION_SECONDS`：单个 SSE 连接最大生命周期，默认 `300` 秒；到期后浏览器 `EventSource` 会自动重连，避免服务端线程长期占用。
 
-Web 页面顶部可直接调整部分非敏感运行配置，包括 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`GENERAL_SCAN_MAX_CHUNKS`、`GENERAL_SCAN_SMART_DENSITY`、`GENERAL_SCAN_INCREMENTAL_REUSE`、`GENERAL_SCAN_WRITING_QUALITY`、`GENERAL_SCAN_NARRATIVE_ARCHITECTURE`、`GENERAL_SCAN_ROLLING_CONTEXT`、`GENERAL_SCAN_CONTEXT_MAX_CHARS` 和 `HAREM_PLUS_GENERAL_SCAN`。这些修改会立即影响当前 Web 服务进程及其后续扫描子进程，并会安全写回 `.env` 文件以便重启后继续生效；写回时只更新白名单内的非敏感字段，保留注释、空行和 API Key 等敏感信息，不会展示或修改 API Key。`setting.txt` 仍作为样例/兼容配置来源，不会被 Web 配置页写回。
+Web 页面顶部可直接调整部分非敏感运行配置，包括 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`GENERAL_SCAN_MAX_CHUNKS`、`GENERAL_SCAN_SMART_DENSITY`、`GENERAL_SCAN_INCREMENTAL_REUSE`、`GENERAL_SCAN_WRITING_QUALITY`、`GENERAL_SCAN_NARRATIVE_ARCHITECTURE`、`GENERAL_SCAN_FORESHADOWING_ENGINEERING`、`GENERAL_SCAN_ROLLING_CONTEXT`、`GENERAL_SCAN_CONTEXT_MAX_CHARS` 和 `HAREM_PLUS_GENERAL_SCAN`。这些修改会立即影响当前 Web 服务进程及其后续扫描子进程，并会安全写回 `.env` 文件以便重启后继续生效；写回时只更新白名单内的非敏感字段，保留注释、空行和 API Key 等敏感信息，不会展示或修改 API Key。`setting.txt` 仍作为样例/兼容配置来源，不会被 Web 配置页写回。
 
 前端开发检查：
 
@@ -448,7 +449,7 @@ npm run build
 - `history`：历史小说专长分析，在通用流程上额外关注时代制度、战争权谋、派系逻辑、人物立场和历史氛围。
 - `hard_sci_fi`：硬科幻专长分析，在通用流程上额外关注科学假设、技术链、工程约束、因果推演和设定自洽。
 
-当前所有 `report_mode=general` 的 profile 都会运行通用角色识别，并继续执行 `general_scan.py` 抽取剧情主线、核心冲突、世界观设定、主题表达、伏笔回收、优点和问题。角色明细 JSON 中会输出通用 `characters` 列表；后宫类 `harem` 才继续使用男主/女主、初处、漏女和毒点/雷点专长流程。
+当前所有 `report_mode=general` 的 profile 都会运行通用角色识别，并继续执行 `general_scan.py` 抽取剧情主线、核心冲突、世界观设定、主题表达、伏笔回收与伏笔工程追踪、优点和问题。角色明细 JSON 中会输出通用 `characters` 列表；后宫类 `harem` 才继续使用男主/女主、初处、漏女和毒点/雷点专长流程。
 
 `auto` 不是强制唯一分类。代码会先给出候选建议，Web 管理端会展示多个候选；例如“开头是历史背景，同时又是后宫结构”的书，可以在 Web 页面里从建议中手动选择 `history`、`harem` 等一个或多个分类后再加入队列。命令行批量模式也会按得分阈值自动执行最多 3 个 profile；如果没有候选达到阈值，则回退到 `general`。
 

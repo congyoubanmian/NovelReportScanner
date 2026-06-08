@@ -41,6 +41,7 @@ SUMMARY_FIELD_TITLES = {
     "power_structure": "权力结构与派系",
     "warfare_and_intrigue": "战争与权谋",
     "foreshadowing_and_payoff": "伏笔与回收",
+    "foreshadowing_engineering_analysis": "伏笔工程分析",
     "scientific_assumptions": "科学假设",
     "technology_chain": "技术链与工程约束",
     "science_consistency": "科学设定自洽性",
@@ -269,6 +270,10 @@ SUMMARY_FIELD_ALIASES = {
     "structure_analysis": "narrative_structure_analysis",
     "narrative_architecture": "outline_architecture_overall",
     "outline_architecture": "outline_architecture_overall",
+    "foreshadowing_engineering": "foreshadowing_engineering_analysis",
+    "foreshadowing_analysis": "foreshadowing_engineering_analysis",
+    "thread_engineering": "foreshadowing_engineering_analysis",
+    "payoff_engineering": "foreshadowing_engineering_analysis",
     "foreshadowing": "foreshadowing_and_payoff",
     "plot_threads": "foreshadowing_and_payoff",
     "payoff": "foreshadowing_and_payoff",
@@ -3389,6 +3394,11 @@ GENERAL_NARRATIVE_ARCHITECTURE_FIELDS = {
 }
 
 
+GENERAL_FORESHADOWING_ENGINEERING_FIELDS = {
+    "foreshadowing_engineering_analysis",
+}
+
+
 def _append_text_block(lines: list, title: str, value, *, limit: int = 8):
     lines.extend(["", f"【{title}】"])
     if isinstance(value, list):
@@ -3513,6 +3523,33 @@ def _append_general_narrative_architecture_sections(lines: list, general_summary
                 _append_text_block(lines, "大纲架构细项", rest)
         else:
             _append_text_block(lines, "大纲架构分析", architecture)
+
+
+def _append_general_foreshadowing_engineering_sections(lines: list, general_summary: dict):
+    summary = (general_summary or {}).get("summary") or {}
+    engineering = summary.get("foreshadowing_engineering_analysis")
+    if not isinstance(engineering, dict) or not engineering:
+        return
+    setup_quality = str(engineering.get("setup_quality") or "").strip()
+    payoff_satisfaction = str(engineering.get("payoff_satisfaction") or "").strip()
+    recycling_rate = str(engineering.get("recycling_rate_estimate") or engineering.get("recycling_rate") or "").strip()
+    lines.extend(["", "【伏笔工程分析】"])
+    if setup_quality or payoff_satisfaction or recycling_rate:
+        parts = []
+        if setup_quality:
+            parts.append(f"设置质量：{setup_quality}")
+        if payoff_satisfaction:
+            parts.append(f"回收满足度：{payoff_satisfaction}")
+        if recycling_rate:
+            parts.append(f"回收率估计：{recycling_rate}")
+        lines.append("；".join(parts))
+    rest = {
+        key: value
+        for key, value in engineering.items()
+        if key not in {"setup_quality", "payoff_satisfaction", "recycling_rate_estimate", "recycling_rate"}
+    }
+    if rest:
+        _append_text_block(lines, "伏笔工程细项", rest)
 
 
 def _text_signal_count(*items) -> int:
@@ -3654,6 +3691,7 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
     add_list("世界观/设定", summary_field_values(summary, "worldbuilding"))
     add_list("主题表达", summary_field_values(summary, "themes"))
     add_list("伏笔与回收", summary_field_values(summary, "foreshadowing_and_payoff"))
+    _append_general_foreshadowing_engineering_sections(lines, general_summary)
     _append_general_narrative_architecture_sections(lines, general_summary)
     _append_general_craft_sections(lines, general_summary)
     base_summary_fields = {
@@ -3662,6 +3700,7 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
         "worldbuilding",
         "themes",
         "foreshadowing_and_payoff",
+        *GENERAL_FORESHADOWING_ENGINEERING_FIELDS,
         *GENERAL_CRAFT_SUMMARY_FIELDS,
         *GENERAL_NARRATIVE_ARCHITECTURE_FIELDS,
         "strengths",

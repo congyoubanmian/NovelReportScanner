@@ -24,6 +24,8 @@ NARRATIVE_ARCHITECTURE_ENABLED = os.environ.get("GENERAL_SCAN_NARRATIVE_ARCHITEC
 ROLLING_CONTEXT_ENABLED = os.environ.get("GENERAL_SCAN_ROLLING_CONTEXT", "1").strip() == "1"
 CONTEXT_MAX_CHARS = int(os.environ.get("GENERAL_SCAN_CONTEXT_MAX_CHARS", "1600"))
 ROLLING_CONTEXT_SCHEMA_VERSION = 1
+FORESHADOWING_ENGINEERING_ENABLED = os.environ.get("GENERAL_SCAN_FORESHADOWING_ENGINEERING", "1").strip() == "1"
+FORESHADOWING_ENGINEERING_SCHEMA_VERSION = 1
 LOW_DENSITY_TERMS = (
     "睡觉", "起床", "吃饭", "喝茶", "闲聊", "聊天", "休息", "赶路", "路上", "返回",
     "日常", "家常", "客栈", "修炼打坐", "打坐", "闭关", "练功", "整理物品",
@@ -272,6 +274,13 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
             return False
     elif data.get("rolling_context_enabled") not in {None, False}:
         return False
+    if FORESHADOWING_ENGINEERING_ENABLED:
+        if data.get("foreshadowing_engineering_enabled") is not True:
+            return False
+        if data.get("foreshadowing_engineering_schema_version") != FORESHADOWING_ENGINEERING_SCHEMA_VERSION:
+            return False
+    elif data.get("foreshadowing_engineering_enabled") not in {None, False}:
+        return False
     stored_prompt_templates = data.get("prompt_templates")
     if isinstance(stored_prompt_templates, dict):
         current_prompt_templates = prompt_templates_metadata("general_scan_chunk", "general_summary")
@@ -308,6 +317,8 @@ def _summary_can_reuse_chunk_results(data: Dict[str, Any], profile_name: str = "
         return False
     if data.get("narrative_architecture_enabled") not in {None, NARRATIVE_ARCHITECTURE_ENABLED}:
         return False
+    if data.get("foreshadowing_engineering_enabled") not in {None, FORESHADOWING_ENGINEERING_ENABLED}:
+        return False
     stored_prompt_templates = data.get("prompt_templates")
     if isinstance(stored_prompt_templates, dict):
         current_prompt_templates = prompt_templates_metadata("general_scan_chunk", "general_summary")
@@ -334,6 +345,8 @@ def _reusable_chunk_result_map(data: Dict[str, Any]) -> Dict[str, Dict[str, Any]
         if NARRATIVE_ARCHITECTURE_ENABLED and not (
             item.get("narrative_structure") and item.get("outline_architecture")
         ):
+            continue
+        if FORESHADOWING_ENGINEERING_ENABLED and not item.get("foreshadowing_engineering"):
             continue
         chunk_hash = item.get("chunk_hash")
         if isinstance(chunk_hash, str) and chunk_hash:
@@ -466,6 +479,72 @@ def _normalize_information_density(value: Any) -> Dict[str, Any]:
     }
 
 
+def _normalize_foreshadowing_item(value: Any) -> Dict[str, Any]:
+    raw = _safe_dict(value)
+    if not raw and isinstance(value, str):
+        raw = {"description": value}
+    description = str(raw.get("description") or raw.get("desc") or raw.get("item") or "").strip()[:180]
+    if not description:
+        return {}
+    return {
+        "type": str(raw.get("type") or raw.get("kind") or "").strip()[:30],
+        "description": description,
+        "estimated_importance": str(raw.get("estimated_importance") or raw.get("importance") or "").strip()[:20],
+        "evidence": str(raw.get("evidence") or raw.get("quote") or "").strip()[:120],
+    }
+
+
+def _normalize_resolution_item(value: Any) -> Dict[str, Any]:
+    raw = _safe_dict(value)
+    if not raw and isinstance(value, str):
+        raw = {"resolved_item": value}
+    resolved_item = str(raw.get("resolved_item") or raw.get("item") or raw.get("description") or "").strip()[:160]
+    resolution_description = str(raw.get("resolution_description") or raw.get("resolution") or raw.get("payoff") or "").strip()[:180]
+    if not resolved_item and not resolution_description:
+        return {}
+    return {
+        "resolved_item": resolved_item,
+        "resolution_description": resolution_description,
+        "satisfaction": str(raw.get("satisfaction") or raw.get("payoff_quality") or "").strip()[:30],
+        "evidence": str(raw.get("evidence") or raw.get("quote") or "").strip()[:120],
+    }
+
+
+def _normalize_foreshadowing_engineering(value: Any) -> Dict[str, Any]:
+    raw = _safe_dict(value)
+    new_items = []
+    for item in raw.get("new_foreshadowing") or raw.get("new_threads") or []:
+        normalized = _normalize_foreshadowing_item(item)
+        if normalized:
+            new_items.append(normalized)
+        if len(new_items) >= 6:
+            break
+    resolutions = []
+    for item in raw.get("foreshadowing_resolutions") or raw.get("resolutions") or raw.get("resolved_foreshadowing") or []:
+        normalized = _normalize_resolution_item(item)
+        if normalized:
+            resolutions.append(normalized)
+        if len(resolutions) >= 6:
+            break
+    false_items = []
+    for item in raw.get("false_foreshadowing") or raw.get("red_herrings") or []:
+        if isinstance(item, dict):
+            text = str(item.get("description") or item.get("item") or "").strip()
+        else:
+            text = str(item or "").strip()
+        if text and text not in false_items:
+            false_items.append(text[:160])
+        if len(false_items) >= 5:
+            break
+    return {
+        "new_foreshadowing": new_items,
+        "foreshadowing_resolutions": resolutions,
+        "false_foreshadowing": false_items,
+        "engineering_notes": _safe_list(raw.get("engineering_notes") or raw.get("notes"), limit=4),
+        "recycling_rate": str(raw.get("recycling_rate") or "").strip()[:40],
+    }
+
+
 def _normalize_context_state_update(value: Any) -> Dict[str, Any]:
     raw = _safe_dict(value)
     return {
@@ -498,6 +577,9 @@ def _empty_rolling_context_state() -> Dict[str, Any]:
         "relationship_updates": [],
         "open_threads": [],
         "resolved_threads": [],
+        "active_foreshadowing": [],
+        "resolved_foreshadowing": [],
+        "false_foreshadowing": [],
         "worldbuilding_updates": [],
         "current_stage": "",
         "last_chunk_index": None,
@@ -517,6 +599,8 @@ def _rolling_context_snapshot(state: Dict[str, Any], max_chars: int = None) -> D
         "relationship_updates": _safe_list(state.get("relationship_updates"), limit=10),
         "open_threads": _safe_list(state.get("open_threads"), limit=12),
         "resolved_threads": _safe_list(state.get("resolved_threads"), limit=8),
+        "active_foreshadowing": _safe_list(state.get("active_foreshadowing"), limit=10),
+        "resolved_foreshadowing": _safe_list(state.get("resolved_foreshadowing"), limit=6),
         "worldbuilding_updates": _safe_list(state.get("worldbuilding_updates"), limit=10),
     }
     while len(json.dumps(snapshot, ensure_ascii=False)) > max_chars:
@@ -544,7 +628,9 @@ def _trim_context_snapshot(snapshot: Dict[str, Any], max_chars: int = None) -> D
     drop_order = [
         "relationship_updates",
         "worldbuilding_updates",
+        "resolved_foreshadowing",
         "resolved_threads",
+        "active_foreshadowing",
         "open_threads",
         "active_characters",
         "previous_progress",
@@ -624,6 +710,7 @@ def _context_state_json_hint() -> str:
 def _update_rolling_context_state(state: Dict[str, Any], chunk_result: Dict[str, Any]) -> Dict[str, Any]:
     state = json.loads(json.dumps(state or _empty_rolling_context_state(), ensure_ascii=False))
     update = _normalize_context_state_update((chunk_result or {}).get("context_state_update"))
+    foreshadowing = _normalize_foreshadowing_engineering((chunk_result or {}).get("foreshadowing_engineering"))
     progress = update.get("progress_summary") or str((chunk_result or {}).get("one_sentence_summary") or "").strip()[:220]
     if progress:
         state["progress_summaries"] = _dedupe_extend(state.get("progress_summaries") or [], [progress], limit=10)
@@ -635,6 +722,22 @@ def _update_rolling_context_state(state: Dict[str, Any], chunk_result: Dict[str,
     resolved = set(update.get("resolved_threads") or [])
     if resolved:
         state["open_threads"] = [item for item in state.get("open_threads") or [] if item not in resolved]
+    new_foreshadowing = [item.get("description") for item in foreshadowing.get("new_foreshadowing") or [] if item.get("description")]
+    resolved_foreshadowing = [
+        item.get("resolved_item") or item.get("resolution_description")
+        for item in foreshadowing.get("foreshadowing_resolutions") or []
+        if item.get("resolved_item") or item.get("resolution_description")
+    ]
+    false_foreshadowing = foreshadowing.get("false_foreshadowing") or []
+    state["active_foreshadowing"] = _dedupe_extend(state.get("active_foreshadowing") or [], new_foreshadowing, limit=50)
+    state["resolved_foreshadowing"] = _dedupe_extend(state.get("resolved_foreshadowing") or [], resolved_foreshadowing, limit=40)
+    state["false_foreshadowing"] = _dedupe_extend(state.get("false_foreshadowing") or [], false_foreshadowing, limit=30)
+    if resolved_foreshadowing:
+        resolved_text = set(resolved_foreshadowing)
+        state["active_foreshadowing"] = [
+            item for item in state.get("active_foreshadowing") or []
+            if item not in resolved_text
+        ]
     if update.get("current_stage"):
         state["current_stage"] = update["current_stage"]
     state["last_chunk_index"] = (chunk_result or {}).get("original_chunk_index", (chunk_result or {}).get("chunk_index"))
@@ -647,7 +750,14 @@ def _compact_rolling_context_timeline(chunk_results: List[Dict[str, Any]], limit
         if not isinstance(item, dict):
             continue
         update = _normalize_context_state_update(item.get("context_state_update"))
-        if not any(update.values()):
+        foreshadowing = _normalize_foreshadowing_engineering(item.get("foreshadowing_engineering"))
+        if not any(update.values()) and not any([
+            foreshadowing.get("new_foreshadowing"),
+            foreshadowing.get("foreshadowing_resolutions"),
+            foreshadowing.get("false_foreshadowing"),
+            foreshadowing.get("engineering_notes"),
+            foreshadowing.get("recycling_rate"),
+        ]):
             continue
         timeline.append({
             "chunk_index": item.get("original_chunk_index", item.get("chunk_index")),
@@ -657,6 +767,7 @@ def _compact_rolling_context_timeline(chunk_results: List[Dict[str, Any]], limit
             "relationship_updates": update.get("relationship_updates"),
             "open_threads": update.get("open_threads"),
             "resolved_threads": update.get("resolved_threads"),
+            "foreshadowing": foreshadowing,
             "worldbuilding_updates": update.get("worldbuilding_updates"),
             "current_stage": update.get("current_stage"),
         })
@@ -783,6 +894,79 @@ def _compact_narrative_architecture_for_summary(chunk_results: List[Dict[str, An
         if len(compact) >= limit:
             break
     return compact
+
+
+def _compact_foreshadowing_engineering_for_summary(chunk_results: List[Dict[str, Any]], limit: int = 120) -> List[Dict[str, Any]]:
+    compact = []
+    for item in chunk_results:
+        if not isinstance(item, dict):
+            continue
+        engineering = _normalize_foreshadowing_engineering(item.get("foreshadowing_engineering"))
+        if not any([
+            engineering.get("new_foreshadowing"),
+            engineering.get("foreshadowing_resolutions"),
+            engineering.get("false_foreshadowing"),
+            engineering.get("engineering_notes"),
+            engineering.get("recycling_rate"),
+        ]):
+            continue
+        compact.append({
+            "chunk_index": item.get("original_chunk_index", item.get("chunk_index")),
+            "summary": item.get("one_sentence_summary"),
+            "new_foreshadowing": engineering.get("new_foreshadowing") or [],
+            "foreshadowing_resolutions": engineering.get("foreshadowing_resolutions") or [],
+            "false_foreshadowing": engineering.get("false_foreshadowing") or [],
+            "engineering_notes": engineering.get("engineering_notes") or [],
+            "recycling_rate": engineering.get("recycling_rate") or "",
+        })
+        if len(compact) >= limit:
+            break
+    return compact
+
+
+def _merge_foreshadowing_engineering_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    merged = {
+        "new_foreshadowing": [],
+        "foreshadowing_resolutions": [],
+        "false_foreshadowing": [],
+        "engineering_notes": [],
+        "recycling_rate": "",
+    }
+    seen_new = set()
+    seen_resolved = set()
+    seen_false = set()
+    for result in results or []:
+        if not isinstance(result, dict):
+            continue
+        engineering = _normalize_foreshadowing_engineering(result.get("foreshadowing_engineering"))
+        for item in engineering.get("new_foreshadowing") or []:
+            key = item.get("description")
+            if not key or key in seen_new:
+                continue
+            seen_new.add(key)
+            merged["new_foreshadowing"].append(item)
+        for item in engineering.get("foreshadowing_resolutions") or []:
+            key = item.get("resolved_item") or item.get("resolution_description")
+            if not key or key in seen_resolved:
+                continue
+            seen_resolved.add(key)
+            merged["foreshadowing_resolutions"].append(item)
+        for item in engineering.get("false_foreshadowing") or []:
+            if item in seen_false:
+                continue
+            seen_false.add(item)
+            merged["false_foreshadowing"].append(item)
+        merged["engineering_notes"] = _dedupe_extend(
+            merged.get("engineering_notes") or [],
+            engineering.get("engineering_notes") or [],
+            limit=8,
+        )
+        if engineering.get("recycling_rate"):
+            merged["recycling_rate"] = engineering["recycling_rate"]
+    merged["new_foreshadowing"] = merged["new_foreshadowing"][:6]
+    merged["foreshadowing_resolutions"] = merged["foreshadowing_resolutions"][:6]
+    merged["false_foreshadowing"] = merged["false_foreshadowing"][:5]
+    return merged
 
 
 def _normalize_object_summary(value: Any) -> Dict[str, Any]:
@@ -1093,6 +1277,55 @@ def _narrative_architecture_summary_json_hint() -> str:
   },"""
 
 
+def _foreshadowing_engineering_system_instruction() -> str:
+    if not FORESHADOWING_ENGINEERING_ENABLED:
+        return ""
+    return """
+
+【伏笔工程追踪】
+请额外输出 foreshadowing_engineering。它用于追踪“设置-维持-误导-回收”的工程质量，不等同于普通悬念列表。
+
+判断规则：
+- new_foreshadowing：只记录当前片段新出现、后续可能需要回收的具体物件、台词、异常事件、人物身份疑点、环境/设定线索；普通未完成剧情目标不要泛化成伏笔。
+- foreshadowing_resolutions：只记录当前片段明确解释、兑现或反转了前文线索的内容；要写清回收方式和满足度。
+- false_foreshadowing：记录当前片段证明是烟雾弹、误导或假线索的内容。
+- estimated_importance 必须基于片段证据估计 high/medium/low；不确定时用 low 或留空。
+- recycling_rate 只在片段内可估算时填写，例如“本片段回收1条/新增2条”；无法估算则空。
+每类最多保留关键项，不要堆砌普通信息。"""
+
+
+def _foreshadowing_engineering_json_hint() -> str:
+    if not FORESHADOWING_ENGINEERING_ENABLED:
+        return ""
+    return """,
+  "foreshadowing_engineering": {
+    "new_foreshadowing": [
+      {"type": "item|dialogue|event|character|environment", "description": "新设置的具体伏笔", "estimated_importance": "high|medium|low", "evidence": "原文短证据"}
+    ],
+    "foreshadowing_resolutions": [
+      {"resolved_item": "被回收的伏笔", "resolution_description": "如何回收/兑现/反转", "satisfaction": "satisfying|okay|disappointing|unresolved", "evidence": "原文短证据"}
+    ],
+    "false_foreshadowing": ["被证明为烟雾弹/假线索的内容"],
+    "engineering_notes": ["伏笔设置或回收的工程性评价"],
+    "recycling_rate": "片段内可估算回收率，无法估算则空"
+  }"""
+
+
+def _foreshadowing_engineering_summary_json_hint() -> str:
+    if not FORESHADOWING_ENGINEERING_ENABLED:
+        return ""
+    return """
+  "foreshadowing_engineering_analysis": {
+    "setup_quality": "excellent|good|average|weak",
+    "active_threads": ["仍未回收的重要伏笔/线索"],
+    "resolved_threads": ["已回收伏笔及回收质量"],
+    "false_or_red_herring": ["烟雾弹/假线索/误导线"],
+    "payoff_satisfaction": "satisfying|okay|uneven|weak",
+    "recycling_rate_estimate": "估计回收率或无法估算原因",
+    "risks": ["伏笔工程风险"]
+  },"""
+
+
 def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None, context_snapshot=None) -> Dict[str, Any]:
     profile = profile or load_analysis_profile("general")
     density_profile = density_profile or _chunk_density_profile(text_chunk)
@@ -1120,6 +1353,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 {_density_instruction(density_profile)}
 {_writing_quality_system_instruction()}
 {_narrative_architecture_system_instruction()}
+{_foreshadowing_engineering_system_instruction()}
 {_rolling_context_instruction(context_snapshot or {})}
 
 要求：
@@ -1141,7 +1375,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
   "themes": ["..."],
   "foreshadowing": ["..."],
   "quality_notes": ["..."],
-  "specialty_notes": ["专项规则相关要点"]{_writing_quality_json_hint()}{_narrative_architecture_json_hint()}{_context_state_json_hint()},
+  "specialty_notes": ["专项规则相关要点"]{_writing_quality_json_hint()}{_narrative_architecture_json_hint()}{_foreshadowing_engineering_json_hint()}{_context_state_json_hint()},
   "one_sentence_summary": "本片段一句话概要"
 }}"""
     data = _call_json(
@@ -1168,6 +1402,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         "information_density": _normalize_information_density(data.get("information_density")) if WRITING_QUALITY_ENABLED else {},
         "narrative_structure": _normalize_narrative_structure(data.get("narrative_structure")) if NARRATIVE_ARCHITECTURE_ENABLED else {},
         "outline_architecture": _normalize_outline_architecture(data.get("outline_architecture")) if NARRATIVE_ARCHITECTURE_ENABLED else {},
+        "foreshadowing_engineering": _normalize_foreshadowing_engineering(data.get("foreshadowing_engineering")) if FORESHADOWING_ENGINEERING_ENABLED else {},
         "context_snapshot_used": context_snapshot or {},
         "context_state_update": _normalize_context_state_update(data.get("context_state_update")) if ROLLING_CONTEXT_ENABLED else {},
         "one_sentence_summary": str(data.get("one_sentence_summary", "") or "").strip(),
@@ -1199,6 +1434,7 @@ def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int,
         "information_density": {},
         "narrative_structure": {},
         "outline_architecture": {},
+        "foreshadowing_engineering": {},
         "one_sentence_summary": "",
         "partial_result": True,
         "partial_reason": reason,
@@ -1239,6 +1475,8 @@ def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int,
         ):
             if not merged.get(object_field) and isinstance(result.get(object_field), dict):
                 merged[object_field] = result.get(object_field) or {}
+    if FORESHADOWING_ENGINEERING_ENABLED:
+        merged["foreshadowing_engineering"] = _merge_foreshadowing_engineering_results(results)
     merged["one_sentence_summary"] = "；".join(summaries[:3])
     if ROLLING_CONTEXT_ENABLED:
         merged["context_state_update"] = _merged_context_state_update(results)
@@ -1318,6 +1556,8 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         material["writing_quality_chunks"] = _compact_writing_quality_for_summary(chunk_results)
     if NARRATIVE_ARCHITECTURE_ENABLED:
         material["narrative_architecture_chunks"] = _compact_narrative_architecture_for_summary(chunk_results)
+    if FORESHADOWING_ENGINEERING_ENABLED:
+        material["foreshadowing_engineering_chunks"] = _compact_foreshadowing_engineering_for_summary(chunk_results)
     if ROLLING_CONTEXT_ENABLED:
         material["rolling_context_timeline"] = _compact_rolling_context_timeline(chunk_results)
     base_summary_fields = {
@@ -1332,6 +1572,7 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         "water_chapter_analysis",
         "narrative_structure_analysis",
         "outline_architecture_overall",
+        "foreshadowing_engineering_analysis",
         "strengths",
         "risks_or_issues",
     }
@@ -1357,6 +1598,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 
 输出必须是 JSON 对象。不要使用后宫、初处、漏女、排雷等专用标准。
 开启叙事架构分析时，请基于 narrative_architecture_chunks 判断整书结构模式、阶段转折、因果链、成长曲线和大纲风险；不要把单个片段孤证当成整书结论。
+开启伏笔工程追踪时，请结合 foreshadowing_engineering_chunks 和 rolling_context_timeline 判断伏笔设置、活跃线索、回收质量、烟雾弹和风险；不要把普通未完成剧情目标都算作伏笔。
 开启滚动上下文时，请基于 rolling_context_timeline 理解全书阶段推进、人物关系延续、未解问题和回收情况；不要要求或引用 context_snapshot_used 这类逐块内部快照。"""
     user_prompt = f"""书名：{book_name}
 
@@ -1371,7 +1613,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
   "worldbuilding": ["世界观/设定要点"],
   "themes": ["主题表达"],
   "foreshadowing_and_payoff": ["伏笔、悬念、回收情况"],
-{specialty_json_hint}{_narrative_architecture_summary_json_hint()}{_writing_quality_summary_json_hint()}
+{specialty_json_hint}{_narrative_architecture_summary_json_hint()}{_foreshadowing_engineering_summary_json_hint()}{_writing_quality_summary_json_hint()}
   "strengths": ["作品优点"],
   "risks_or_issues": ["可能的问题或阅读门槛"],
   "reader_fit": "适合什么读者",
@@ -1406,6 +1648,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         "water_chapter_analysis": _summary_field_value(data, "water_chapter_analysis"),
         "narrative_structure_analysis": _normalize_object_summary(data.get("narrative_structure_analysis")),
         "outline_architecture_overall": _normalize_object_summary(data.get("outline_architecture_overall")),
+        "foreshadowing_engineering_analysis": _normalize_object_summary(data.get("foreshadowing_engineering_analysis")),
         "strengths": _summary_field_value(data, "strengths"),
         "risks_or_issues": _summary_field_value(data, "risks_or_issues"),
         "reader_fit": "；".join(_summary_field_value(data, "reader_fit")),
@@ -1555,6 +1798,9 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "rolling_context_max_chars": CONTEXT_MAX_CHARS if ROLLING_CONTEXT_ENABLED else 0,
         "rolling_context_state": rolling_context_state if ROLLING_CONTEXT_ENABLED else {},
         "rolling_context_timeline_count": len(_compact_rolling_context_timeline(chunk_results)) if ROLLING_CONTEXT_ENABLED else 0,
+        "foreshadowing_engineering_enabled": FORESHADOWING_ENGINEERING_ENABLED,
+        "foreshadowing_engineering_schema_version": FORESHADOWING_ENGINEERING_SCHEMA_VERSION if FORESHADOWING_ENGINEERING_ENABLED else None,
+        "foreshadowing_engineering_timeline_count": len(_compact_foreshadowing_engineering_for_summary(chunk_results)) if FORESHADOWING_ENGINEERING_ENABLED else 0,
         "density_counts": density_counts,
         "incremental_reuse": INCREMENTAL_REUSE,
         "reused_chunk_count": reused_chunk_count,
