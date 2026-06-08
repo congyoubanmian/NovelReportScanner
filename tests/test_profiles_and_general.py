@@ -460,6 +460,16 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "game_system",
             "isekai_lightnovel",
             "steampunk_fantasy",
+            "apocalypse_survival",
+            "military_war",
+            "crime_forensics",
+            "cosmic_horror",
+            "campus_youth",
+            "entertainment_industry",
+            "farming_management",
+            "business_career",
+            "mystery_detective",
+            "sports_competition",
         ]:
             profile = analysis_profiles.load_analysis_profile(profile_name)
             rules_text = general_scan._profile_rules_text(profile)
@@ -1770,6 +1780,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertGreater(candidates[0]["score"], 0)
         self.assertTrue(candidates[0]["matched_keywords"])
 
+        title_weighted = analysis_profiles.infer_profile_candidates_for_text("篮球冠军", "训练和战术很重要。")
+        self.assertEqual(title_weighted[0]["name"], "sports_competition")
+        self.assertGreaterEqual(title_weighted[0]["matched_keywords"].count("篮球"), 1)
+
     def test_auto_profile_multi_label_inference(self):
         profiles = analysis_profiles.infer_profiles_for_text(
             "大明星际后宫",
@@ -1797,10 +1811,51 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("farming_management", mixed)
         self.assertIn("business_career", mixed)
 
+        kimi_mixed = analysis_profiles.infer_profiles_for_text(
+            "末世之修仙系统",
+            "丧尸爆发后主角觉醒系统面板，建立基地，吸收晶核进化，又得到灵根开始筑基修仙。",
+        )
+        self.assertIn("apocalypse_survival", kimi_mixed)
+        self.assertIn("game_system", kimi_mixed)
+        self.assertIn("xianxia_fantasy", kimi_mixed)
+
+        history_farming = analysis_profiles.infer_profiles_for_text(
+            "三国之种田霸业",
+            "主角穿越大汉乱世，在诸侯之间屯田修路，经营农田和作坊，建设城池。",
+        )
+        self.assertIn("history", history_farming)
+        self.assertIn("farming_management", history_farming)
+
+        isekai_entertainment = analysis_profiles.infer_profiles_for_text(
+            "转生之我在娱乐圈当影后",
+            "女主转生异世界后进入娱乐圈，参加选秀成为影后，经营粉丝和热搜。",
+        )
+        self.assertIn("isekai_lightnovel", isekai_entertainment)
+        self.assertIn("entertainment_industry", isekai_entertainment)
+
         self.assertEqual(
             analysis_profiles.infer_profiles_for_text("小镇旧事", "他回到故乡，重新面对童年的朋友。"),
             ["general"],
         )
+
+    def test_auto_profile_negative_keywords_reduce_cross_category_noise(self):
+        basketball = analysis_profiles.infer_profile_candidates_for_text(
+            "篮球系统训练营",
+            "高中篮球队参加联赛，教练安排战术训练，主角冲击冠军。",
+        )
+        basketball_names = [item["name"] for item in basketball]
+        self.assertEqual(basketball_names[0], "sports_competition")
+        self.assertNotIn("game_system", analysis_profiles.infer_profiles_for_text(
+            "篮球系统训练营",
+            "高中篮球队参加联赛，教练安排战术训练，主角冲击冠军。",
+        ))
+
+        entertainment = analysis_profiles.infer_profile_candidates_for_text(
+            "影后经营游戏",
+            "娱乐圈影后进入剧组拍戏，导演安排综艺宣发，经纪人处理热搜和饭圈。",
+        )
+        self.assertEqual(entertainment[0]["name"], "entertainment_industry")
+        self.assertNotIn("farming_management", [item["name"] for item in entertainment[:3]])
 
     def test_kimi_recommended_auto_profile_boundary_samples(self):
         self.assertEqual(
@@ -2114,24 +2169,51 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(any("神秘复苏" in item for item in calls[0]["focus"]))
         self.assertTrue(any("单个案件是否推动人物关系" in item or "外挂硬解" in item for item in calls[1]["focus"]))
 
-    def test_harem_plus_secondary_focus_covers_isekai_and_steampunk(self):
+    def test_harem_plus_secondary_focus_covers_cross_genre_profiles(self):
         harem = analysis_profiles.load_analysis_profile("harem")
         overrides = harem.harem_plus.get("secondary_focus_overrides", {})
 
-        self.assertIn("hard_sci_fi", overrides)
-        self.assertIn("isekai_lightnovel", overrides)
-        self.assertIn("steampunk_fantasy", overrides)
+        for profile_name in [
+            "xianxia_fantasy",
+            "history",
+            "hard_sci_fi",
+            "urban_power",
+            "game_system",
+            "isekai_lightnovel",
+            "steampunk_fantasy",
+            "apocalypse_survival",
+            "military_war",
+            "crime_forensics",
+            "cosmic_horror",
+            "campus_youth",
+            "entertainment_industry",
+            "farming_management",
+            "business_career",
+            "mystery_detective",
+            "sports_competition",
+        ]:
+            self.assertIn(profile_name, overrides)
+            self.assertTrue(overrides[profile_name], profile_name)
 
         sci_fi = analysis_profiles.load_analysis_profile("hard_sci_fi")
         isekai = analysis_profiles.load_analysis_profile("isekai_lightnovel")
         steampunk = analysis_profiles.load_analysis_profile("steampunk_fantasy")
+        apocalypse = analysis_profiles.load_analysis_profile("apocalypse_survival")
+        entertainment = analysis_profiles.load_analysis_profile("entertainment_industry")
+        crime = analysis_profiles.load_analysis_profile("crime_forensics")
         sci_fi_override = main._with_harem_plus_secondary_focus(sci_fi, harem)
         isekai_override = main._with_harem_plus_secondary_focus(isekai, harem)
         steampunk_override = main._with_harem_plus_secondary_focus(steampunk, harem)
+        apocalypse_override = main._with_harem_plus_secondary_focus(apocalypse, harem)
+        entertainment_override = main._with_harem_plus_secondary_focus(entertainment, harem)
+        crime_override = main._with_harem_plus_secondary_focus(crime, harem)
 
         self.assertTrue(any("意识上传" in item and "洁度" in item for item in sci_fi_override.scan_focus))
         self.assertTrue(any("勇者" in item and "送女" in item for item in isekai_override.scan_focus))
         self.assertTrue(any("神秘复苏" in item and "亵女" in item for item in steampunk_override.scan_focus))
+        self.assertTrue(any("末世秩序崩塌" in item and "送女" in item for item in apocalypse_override.scan_focus))
+        self.assertTrue(any("CP营销" in item and "绿帽" in item for item in entertainment_override.scan_focus))
+        self.assertTrue(any("受害未遂" in item and "绿帽" in item for item in crime_override.scan_focus))
 
     def test_requested_profiles_accepts_manual_multi_select(self):
         self.assertEqual(main._normalize_requested_profiles(["历史", "科幻"]), ["history", "hard_sci_fi"])
@@ -7055,6 +7137,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             for field in profile.summary_fields:
                 self.assertNotEqual(general_scan._summary_field_label(field), field.replace("_", " "), field)
 
+    def test_general_scan_effective_max_chunks_scales_for_long_books(self):
+        self.assertEqual(general_scan._effective_max_chunks(500_000, 80), 80)
+        self.assertEqual(general_scan._effective_max_chunks(1_500_000, 80), 120)
+        self.assertEqual(general_scan._effective_max_chunks(4_000_000, 80), 160)
+        self.assertEqual(general_scan._effective_max_chunks(6_000_000, 80), 200)
+        self.assertEqual(general_scan._effective_max_chunks(6_000_000, 0), 0)
+        self.assertEqual(general_scan._effective_max_chunks(6_000_000, 240), 240)
+
     def test_general_scan_fresh_summary(self):
         with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
             f.write("test")
@@ -7077,6 +7167,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertTrue(general_scan._is_fresh_summary(data, novel_path, "history"))
             self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "general"))
             data["max_chunks"] = general_scan.MAX_CHUNKS + 1
+            self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "history"))
+            data["max_chunks"] = general_scan._effective_max_chunks(4_000_000)
+            data["text_length"] = 4_000_000
+            self.assertTrue(general_scan._is_fresh_summary(data, novel_path, "history"))
+            data["max_chunks"] = general_scan.MAX_CHUNKS
             self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "history"))
         finally:
             os.unlink(novel_path)

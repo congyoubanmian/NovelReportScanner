@@ -79,6 +79,111 @@ _PROFILE_ORDER = {
 }
 
 
+COMBO_BONUSES = {
+    "game_system": [
+        ({"系统", "面板", "副本"}, 8),
+        ({"系统", "面板"}, 5),
+        ({"无限流", "副本", "主神"}, 10),
+        ({"主神空间", "轮回空间"}, 8),
+        ({"诸天", "万界", "穿梭"}, 8),
+        ({"模拟器", "人生", "推演"}, 8),
+        ({"签到", "加点", "面板"}, 7),
+    ],
+    "apocalypse_survival": [
+        ({"末世", "丧尸", "基地"}, 8),
+        ({"末日", "幸存者", "物资"}, 8),
+        ({"异能", "晶核", "进化"}, 8),
+        ({"废土", "辐射", "安全区"}, 8),
+        ({"极寒", "天灾", "避难所"}, 8),
+    ],
+    "cosmic_horror": [
+        ({"克苏鲁", "旧日", "外神"}, 10),
+        ({"序列", "魔药", "扮演法"}, 10),
+        ({"规则怪谈", "规则", "污染"}, 8),
+        ({"收容物", "模因", "认知崩溃"}, 8),
+        ({"SAN值", "理智", "精神污染"}, 8),
+    ],
+    "xianxia_fantasy": [
+        ({"修仙", "灵根", "筑基"}, 8),
+        ({"金丹", "元婴", "化神"}, 10),
+        ({"宗门", "秘境", "法宝"}, 7),
+        ({"洪荒", "封神", "天庭"}, 8),
+        ({"圣体", "武魂", "血脉"}, 8),
+    ],
+    "history": [
+        ({"三国", "诸侯", "大汉"}, 8),
+        ({"大明", "锦衣卫", "宦官"}, 8),
+        ({"朝廷", "科举", "士族"}, 7),
+        ({"皇帝", "宰相", "边军"}, 7),
+        ({"穿越", "古代", "变法"}, 7),
+    ],
+    "farming_management": [
+        ({"种田", "经营", "基建"}, 8),
+        ({"领地", "农田", "作坊"}, 8),
+        ({"产业链", "供应链", "产量"}, 7),
+        ({"灵田", "药园", "宗门建设"}, 7),
+        ({"基地", "生产链", "资源"}, 6),
+    ],
+    "entertainment_industry": [
+        ({"娱乐圈", "影帝", "影后"}, 8),
+        ({"选秀", "练习生", "出道"}, 8),
+        ({"剧组", "导演", "热搜"}, 7),
+        ({"网红", "MCN", "饭圈"}, 7),
+    ],
+    "sports_competition": [
+        ({"篮球", "联赛", "教练"}, 8),
+        ({"足球", "俱乐部", "战术"}, 8),
+        ({"电竞", "战队", "赛季"}, 8),
+        ({"围棋", "世锦赛", "棋手"}, 8),
+        ({"拳击", "格斗", "回合"}, 8),
+    ],
+    "crime_forensics": [
+        ({"刑警", "法医", "尸检"}, 8),
+        ({"案发现场", "证据链", "嫌疑人"}, 8),
+        ({"毒理", "DNA", "指纹"}, 8),
+        ({"专案组", "禁毒", "扫黑"}, 8),
+    ],
+    "mystery_detective": [
+        ({"密室", "诡计", "侦探"}, 8),
+        ({"暴风雪山庄", "红鲱鱼", "时刻表"}, 8),
+        ({"线索", "动机", "推理"}, 6),
+    ],
+    "isekai_lightnovel": [
+        ({"异世界", "转生", "冒险者"}, 8),
+        ({"勇者", "魔王", "地下城"}, 8),
+        ({"贵族", "王国", "精灵"}, 7),
+    ],
+    "military_war": [
+        ({"军团", "火炮", "后勤"}, 8),
+        ({"兵王", "军营", "演习"}, 8),
+        ({"军阀", "兵工厂", "步兵"}, 8),
+        ({"战区", "指挥", "补给"}, 7),
+    ],
+    "urban_power": [
+        ({"都市", "神豪", "打脸"}, 8),
+        ({"赘婿", "神医", "豪门"}, 8),
+        ({"下山", "龙王", "战神"}, 8),
+        ({"异能", "校花", "扮猪吃虎"}, 6),
+    ],
+}
+
+
+NEGATIVE_KEYWORDS = {
+    "game_system": [("篮球", -4), ("足球", -4), ("联赛", -3), ("教练", -3), ("电竞", -2), ("高考", -3)],
+    "sports_competition": [("系统", -3), ("面板", -4), ("修仙", -3), ("魔王", -3), ("副本", -3)],
+    "urban_power": [("副本", -4), ("主神", -4), ("无限流", -4), ("宗门", -3), ("金丹", -3), ("灵根", -3)],
+    "farming_management": [("娱乐圈", -4), ("影帝", -3), ("影后", -3), ("明星", -3), ("球员", -3), ("联赛", -3)],
+    "business_career": [("宗门", -3), ("灵田", -3), ("末世", -3), ("丧尸", -3), ("娱乐圈", -2)],
+    "isekai_lightnovel": [("三国", -3), ("大明", -3), ("大唐", -3), ("朝廷", -3), ("现代都市", -3)],
+    "history": [("异世界", -4), ("魔王", -3), ("冒险者", -3), ("星舰", -3), ("赛博", -3)],
+    "campus_youth": [("军团", -3), ("丧尸", -3), ("董事会", -3), ("娱乐圈", -3), ("法医", -3)],
+    "military_war": [("球员", -3), ("联赛", -3), ("法医", -3), ("尸检", -3), ("剧组", -3)],
+    "mystery_detective": [("法医", -3), ("尸检", -3), ("刑警", -2), ("系统", -3), ("超能力", -3)],
+    "crime_forensics": [("侦探", -2), ("暴风雪山庄", -3), ("红鲱鱼", -3), ("魔法", -3), ("系统", -3)],
+    "entertainment_industry": [("经营农田", -3), ("领地", -3), ("宗门", -3), ("丧尸", -3)],
+}
+
+
 def normalize_profile_name(value: str) -> str:
     name = (value or DEFAULT_PROFILE).strip().lower()
     aliases = {
@@ -311,15 +416,42 @@ def _score_keyword_matches(text: str, keywords: List[Tuple[str, int]]) -> Tuple[
     return score, matches
 
 
+def _score_combo_bonuses(text: str, profile_name: str) -> Tuple[int, List[str]]:
+    score = 0
+    matches = []
+    for words, bonus in COMBO_BONUSES.get(profile_name, []):
+        normalized_words = [str(word or "").lower() for word in words if str(word or "").strip()]
+        if normalized_words and all(word in text for word in normalized_words):
+            score += int(bonus)
+            matches.append("组合:" + "+".join(sorted(words)))
+    return score, matches
+
+
+def _score_negative_keywords(text: str, profile_name: str) -> Tuple[int, List[str]]:
+    score = 0
+    matches = []
+    for word, weight in NEGATIVE_KEYWORDS.get(profile_name, []):
+        needle = str(word or "").lower()
+        if needle and needle in text:
+            score += int(weight)
+            matches.append(f"负向:{word}")
+    return score, matches
+
+
 def infer_profile_candidates_for_text(title: str, text: str, min_score: int = 1) -> List[Dict[str, Any]]:
-    blob = f"{title}\n{text[:20000]}".lower()
+    title_text = str(title or "")
+    body_text = str(text or "")[:20000]
+    blob = f"{title_text}\n{title_text}\n{title_text}\n{body_text}".lower()
     raw = []
     for profile in list_available_profiles():
         if profile.name == "general":
             continue
-        score, matches = _score_keyword_matches(blob, _keywords_from_manifest(profile.name))
+        keyword_score, matches = _score_keyword_matches(blob, _keywords_from_manifest(profile.name))
+        combo_score, combo_matches = _score_combo_bonuses(blob, profile.name)
+        negative_score, negative_matches = _score_negative_keywords(blob, profile.name)
+        score = max(0, keyword_score + combo_score + negative_score)
         if score >= min_score:
-            raw.append((profile, score, matches))
+            raw.append((profile, score, [*matches, *combo_matches, *negative_matches]))
 
     total_score = sum(score for _profile, score, _matches in raw)
     candidates = [

@@ -1,7 +1,11 @@
 {
   "display_name": "体育/竞技专长分析",
   "description": "关注比赛规则、训练成长、战术博弈、赛事结构和团队关系。",
-  "enabled_stages": ["character_analysis", "general_scan", "general_report"],
+  "enabled_stages": [
+    "character_analysis",
+    "general_scan",
+    "general_report"
+  ],
   "rules_file": "rules.json",
   "report_mode": "general",
   "scan_focus": [
@@ -34,51 +38,206 @@
     "overall_assessment"
   ],
   "inference_keywords": [
-    {"word": "联赛", "weight": 4},
-    {"word": "冠军", "weight": 4},
-    {"word": "决赛", "weight": 4},
-    {"word": "训练", "weight": 3},
-    {"word": "教练", "weight": 3},
-    {"word": "战术", "weight": 3},
-    {"word": "足球", "weight": 5},
-    {"word": "篮球", "weight": 5},
-    {"word": "网球", "weight": 5},
-    {"word": "电竞", "weight": 4},
-    {"word": "羽毛球", "weight": 5},
-    {"word": "乒乓球", "weight": 5},
-    {"word": "游泳", "weight": 5},
-    {"word": "田径", "weight": 5},
-    {"word": "F1", "weight": 4},
-    {"word": "世界杯", "weight": 5},
-    {"word": "奥运会", "weight": 5},
-    {"word": "MVP", "weight": 4},
-    {"word": "职业赛", "weight": 4},
-    {"word": "俱乐部", "weight": 3},
-    {"word": "季后赛", "weight": 4},
-    {"word": "国家队", "weight": 3},
-    {"word": "转会", "weight": 3},
-    {"word": "格斗", "weight": 5},
-    {"word": "拳击", "weight": 5},
-    {"word": "赛车", "weight": 5},
-    {"word": "围棋", "weight": 5},
-    {"word": "排球", "weight": 5},
-    {"word": "冰球", "weight": 5},
-    {"word": "体能", "weight": 3},
-    {"word": "技术动作", "weight": 3},
-    {"word": "伤病", "weight": 3},
-    {"word": "绝杀", "weight": 4},
-    {"word": "翻盘", "weight": 4},
-    {"word": "逆风", "weight": 3},
-    {"word": "纪录", "weight": 4},
-    {"word": "金牌", "weight": 4},
-    {"word": "赛季", "weight": 4},
-    {"word": "选手", "weight": 3},
-    {"word": "球场", "weight": 3},
-    {"word": "赛场", "weight": 3},
-    {"word": "对决", "weight": 4},
-    {"word": "比赛", "weight": 3},
-    {"word": "球星", "weight": 4},
-    {"word": "世锦赛", "weight": 4},
-    {"word": "亚运会", "weight": 4}
-  ]
+    {
+      "word": "联赛",
+      "weight": 4
+    },
+    {
+      "word": "冠军",
+      "weight": 4
+    },
+    {
+      "word": "决赛",
+      "weight": 4
+    },
+    {
+      "word": "训练",
+      "weight": 3
+    },
+    {
+      "word": "教练",
+      "weight": 3
+    },
+    {
+      "word": "战术",
+      "weight": 3
+    },
+    {
+      "word": "足球",
+      "weight": 5
+    },
+    {
+      "word": "篮球",
+      "weight": 5
+    },
+    {
+      "word": "网球",
+      "weight": 5
+    },
+    {
+      "word": "电竞",
+      "weight": 4
+    },
+    {
+      "word": "羽毛球",
+      "weight": 5
+    },
+    {
+      "word": "乒乓球",
+      "weight": 5
+    },
+    {
+      "word": "游泳",
+      "weight": 5
+    },
+    {
+      "word": "田径",
+      "weight": 5
+    },
+    {
+      "word": "F1",
+      "weight": 4
+    },
+    {
+      "word": "世界杯",
+      "weight": 5
+    },
+    {
+      "word": "奥运会",
+      "weight": 5
+    },
+    {
+      "word": "MVP",
+      "weight": 4
+    },
+    {
+      "word": "职业赛",
+      "weight": 4
+    },
+    {
+      "word": "俱乐部",
+      "weight": 3
+    },
+    {
+      "word": "季后赛",
+      "weight": 4
+    },
+    {
+      "word": "国家队",
+      "weight": 3
+    },
+    {
+      "word": "转会",
+      "weight": 3
+    },
+    {
+      "word": "格斗",
+      "weight": 5
+    },
+    {
+      "word": "拳击",
+      "weight": 5
+    },
+    {
+      "word": "赛车",
+      "weight": 5
+    },
+    {
+      "word": "围棋",
+      "weight": 5
+    },
+    {
+      "word": "排球",
+      "weight": 5
+    },
+    {
+      "word": "冰球",
+      "weight": 5
+    },
+    {
+      "word": "体能",
+      "weight": 3
+    },
+    {
+      "word": "技术动作",
+      "weight": 3
+    },
+    {
+      "word": "伤病",
+      "weight": 3
+    },
+    {
+      "word": "绝杀",
+      "weight": 4
+    },
+    {
+      "word": "翻盘",
+      "weight": 4
+    },
+    {
+      "word": "逆风",
+      "weight": 3
+    },
+    {
+      "word": "纪录",
+      "weight": 4
+    },
+    {
+      "word": "金牌",
+      "weight": 4
+    },
+    {
+      "word": "赛季",
+      "weight": 4
+    },
+    {
+      "word": "选手",
+      "weight": 3
+    },
+    {
+      "word": "球场",
+      "weight": 3
+    },
+    {
+      "word": "赛场",
+      "weight": 3
+    },
+    {
+      "word": "对决",
+      "weight": 4
+    },
+    {
+      "word": "比赛",
+      "weight": 3
+    },
+    {
+      "word": "球星",
+      "weight": 4
+    },
+    {
+      "word": "世锦赛",
+      "weight": 4
+    },
+    {
+      "word": "亚运会",
+      "weight": 4
+    }
+  ],
+  "cross_profile_rules": {
+    "harem": {
+      "import_categories": [
+        "雷点（严重毒点）",
+        "郁闷点"
+      ],
+      "import_points": [
+        "绿帽",
+        "死女",
+        "送女",
+        "前世雷",
+        "破鞋/非处/非初",
+        "漏女",
+        "亵女"
+      ]
+    }
+  }
 }

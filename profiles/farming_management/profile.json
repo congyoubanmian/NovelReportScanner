@@ -1,7 +1,11 @@
 {
   "display_name": "种田/经营/基建专长分析",
   "description": "关注资源生产、经营闭环、技术升级、组织建设、贸易扩张、民生反馈和长期发展节奏。核心是建设本身就是爽点。",
-  "enabled_stages": ["character_analysis", "general_scan", "general_report"],
+  "enabled_stages": [
+    "character_analysis",
+    "general_scan",
+    "general_report"
+  ],
   "rules_file": "rules.json",
   "report_mode": "general",
   "scan_focus": [
@@ -33,45 +37,182 @@
     "overall_assessment"
   ],
   "inference_keywords": [
-    {"word": "种田", "weight": 5},
-    {"word": "经营", "weight": 4},
-    {"word": "基建", "weight": 5},
-    {"word": "领地", "weight": 4},
-    {"word": "庄园", "weight": 4},
-    {"word": "农田", "weight": 4},
-    {"word": "作坊", "weight": 4},
-    {"word": "工坊", "weight": 4},
-    {"word": "开店", "weight": 4},
-    {"word": "商铺", "weight": 3},
-    {"word": "贸易", "weight": 3},
-    {"word": "粮食", "weight": 3},
-    {"word": "税收", "weight": 2},
-    {"word": "人口", "weight": 4},
-    {"word": "城镇", "weight": 3},
-    {"word": "科技树", "weight": 4},
-    {"word": "技术升级", "weight": 4},
-    {"word": "产业链", "weight": 4},
-    {"word": "自动化", "weight": 3},
-    {"word": "灵田", "weight": 5},
-    {"word": "药园", "weight": 5},
-    {"word": "洞府", "weight": 4},
-    {"word": "宗门建设", "weight": 5},
-    {"word": "修仙种田", "weight": 5},
-    {"word": "凡人", "weight": 3},
-    {"word": "民生", "weight": 4},
-    {"word": "产量", "weight": 3},
-    {"word": "产量提升", "weight": 3},
-    {"word": "修路", "weight": 4},
-    {"word": "建桥", "weight": 4},
-    {"word": "港口", "weight": 4},
-    {"word": "城墙", "weight": 3},
-    {"word": "商会", "weight": 4},
-    {"word": "餐厅", "weight": 4},
-    {"word": "工厂", "weight": 4},
-    {"word": "银行", "weight": 3},
-    {"word": "供应链", "weight": 3},
-    {"word": "标准化", "weight": 3},
-    {"word": "产业升级", "weight": 4},
-    {"word": "囤积", "weight": 3}
-  ]
+    {
+      "word": "种田",
+      "weight": 5
+    },
+    {
+      "word": "经营",
+      "weight": 4
+    },
+    {
+      "word": "基建",
+      "weight": 5
+    },
+    {
+      "word": "领地",
+      "weight": 4
+    },
+    {
+      "word": "庄园",
+      "weight": 4
+    },
+    {
+      "word": "农田",
+      "weight": 4
+    },
+    {
+      "word": "作坊",
+      "weight": 4
+    },
+    {
+      "word": "工坊",
+      "weight": 4
+    },
+    {
+      "word": "开店",
+      "weight": 4
+    },
+    {
+      "word": "商铺",
+      "weight": 3
+    },
+    {
+      "word": "贸易",
+      "weight": 3
+    },
+    {
+      "word": "粮食",
+      "weight": 3
+    },
+    {
+      "word": "税收",
+      "weight": 2
+    },
+    {
+      "word": "人口",
+      "weight": 4
+    },
+    {
+      "word": "城镇",
+      "weight": 3
+    },
+    {
+      "word": "科技树",
+      "weight": 4
+    },
+    {
+      "word": "技术升级",
+      "weight": 4
+    },
+    {
+      "word": "产业链",
+      "weight": 4
+    },
+    {
+      "word": "自动化",
+      "weight": 3
+    },
+    {
+      "word": "灵田",
+      "weight": 5
+    },
+    {
+      "word": "药园",
+      "weight": 5
+    },
+    {
+      "word": "洞府",
+      "weight": 4
+    },
+    {
+      "word": "宗门建设",
+      "weight": 5
+    },
+    {
+      "word": "修仙种田",
+      "weight": 5
+    },
+    {
+      "word": "凡人",
+      "weight": 3
+    },
+    {
+      "word": "民生",
+      "weight": 4
+    },
+    {
+      "word": "产量",
+      "weight": 3
+    },
+    {
+      "word": "产量提升",
+      "weight": 3
+    },
+    {
+      "word": "修路",
+      "weight": 4
+    },
+    {
+      "word": "建桥",
+      "weight": 4
+    },
+    {
+      "word": "港口",
+      "weight": 4
+    },
+    {
+      "word": "城墙",
+      "weight": 3
+    },
+    {
+      "word": "商会",
+      "weight": 4
+    },
+    {
+      "word": "餐厅",
+      "weight": 4
+    },
+    {
+      "word": "工厂",
+      "weight": 4
+    },
+    {
+      "word": "银行",
+      "weight": 3
+    },
+    {
+      "word": "供应链",
+      "weight": 3
+    },
+    {
+      "word": "标准化",
+      "weight": 3
+    },
+    {
+      "word": "产业升级",
+      "weight": 4
+    },
+    {
+      "word": "囤积",
+      "weight": 3
+    }
+  ],
+  "cross_profile_rules": {
+    "harem": {
+      "import_categories": [
+        "雷点（严重毒点）",
+        "郁闷点"
+      ],
+      "import_points": [
+        "绿帽",
+        "死女",
+        "送女",
+        "前世雷",
+        "破鞋/非处/非初",
+        "漏女",
+        "亵女"
+      ]
+    }
+  }
 }

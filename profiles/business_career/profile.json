@@ -1,7 +1,11 @@
 {
   "display_name": "职场/商战/创业专长分析",
   "description": "关注行业赛道、商业模式、组织管理、资本博弈和职场成长线是否可信。",
-  "enabled_stages": ["character_analysis", "general_scan", "general_report"],
+  "enabled_stages": [
+    "character_analysis",
+    "general_scan",
+    "general_report"
+  ],
   "rules_file": "rules.json",
   "report_mode": "general",
   "scan_focus": [
@@ -30,27 +34,110 @@
     "overall_assessment"
   ],
   "inference_keywords": [
-    {"word": "创业", "weight": 5},
-    {"word": "融资", "weight": 5},
-    {"word": "股权", "weight": 4},
-    {"word": "合伙人", "weight": 4},
-    {"word": "董事会", "weight": 4},
-    {"word": "上市", "weight": 4},
-    {"word": "并购", "weight": 4},
-    {"word": "商战", "weight": 5},
-    {"word": "职场", "weight": 4},
-    {"word": "供应链", "weight": 3},
-    {"word": "产业链", "weight": 3},
-    {"word": "裁员", "weight": 3},
-    {"word": "跳槽", "weight": 3},
-    {"word": "竞业", "weight": 3},
-    {"word": "互联网", "weight": 3},
-    {"word": "老板", "weight": 2},
-    {"word": "公司", "weight": 2},
-    {"word": "项目", "weight": 2},
-    {"word": "合同", "weight": 3},
-    {"word": "现金流", "weight": 4},
-    {"word": "市场份额", "weight": 4},
-    {"word": "投资人", "weight": 4}
-  ]
+    {
+      "word": "创业",
+      "weight": 5
+    },
+    {
+      "word": "融资",
+      "weight": 5
+    },
+    {
+      "word": "股权",
+      "weight": 4
+    },
+    {
+      "word": "合伙人",
+      "weight": 4
+    },
+    {
+      "word": "董事会",
+      "weight": 4
+    },
+    {
+      "word": "上市",
+      "weight": 4
+    },
+    {
+      "word": "并购",
+      "weight": 4
+    },
+    {
+      "word": "商战",
+      "weight": 5
+    },
+    {
+      "word": "职场",
+      "weight": 4
+    },
+    {
+      "word": "供应链",
+      "weight": 3
+    },
+    {
+      "word": "产业链",
+      "weight": 3
+    },
+    {
+      "word": "裁员",
+      "weight": 3
+    },
+    {
+      "word": "跳槽",
+      "weight": 3
+    },
+    {
+      "word": "竞业",
+      "weight": 3
+    },
+    {
+      "word": "互联网",
+      "weight": 3
+    },
+    {
+      "word": "老板",
+      "weight": 2
+    },
+    {
+      "word": "公司",
+      "weight": 2
+    },
+    {
+      "word": "项目",
+      "weight": 2
+    },
+    {
+      "word": "合同",
+      "weight": 3
+    },
+    {
+      "word": "现金流",
+      "weight": 4
+    },
+    {
+      "word": "市场份额",
+      "weight": 4
+    },
+    {
+      "word": "投资人",
+      "weight": 4
+    }
+  ],
+  "cross_profile_rules": {
+    "harem": {
+      "import_categories": [
+        "雷点（严重毒点）",
+        "郁闷点"
+      ],
+      "import_points": [
+        "绿帽",
+        "死女",
+        "送女",
+        "前世雷",
+        "破鞋/非处/非初",
+        "漏女",
+        "亵女"
+      ]
+    }
+  }
 }

@@ -15,6 +15,23 @@ CHUNK_SIZE = int(os.environ.get("GENERAL_SCAN_CHUNK_SIZE", "12000"))
 CHUNK_OVERLAP = int(os.environ.get("GENERAL_SCAN_CHUNK_OVERLAP", "1000"))
 MAX_CHUNKS = int(os.environ.get("GENERAL_SCAN_MAX_CHUNKS", "80"))
 
+
+def _effective_max_chunks(text_length: int, base_max_chunks: int = None) -> int:
+    base = MAX_CHUNKS if base_max_chunks is None else int(base_max_chunks or 0)
+    if base <= 0:
+        return base
+    text_length = max(0, int(text_length or 0))
+    if text_length <= 1_000_000:
+        suggested = 80
+    elif text_length <= 3_000_000:
+        suggested = 120
+    elif text_length <= 5_000_000:
+        suggested = 160
+    else:
+        suggested = 200
+    return max(base, suggested)
+
+
 def _summary_field_label(field: str) -> str:
     try:
         from report import summary_field_label
@@ -107,7 +124,9 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
         return False
     if data.get("chunk_size") != CHUNK_SIZE or data.get("chunk_overlap") != CHUNK_OVERLAP:
         return False
-    if data.get("max_chunks") != MAX_CHUNKS:
+    text_length = int(data.get("text_length") or 0)
+    effective_max_chunks = _effective_max_chunks(text_length)
+    if data.get("max_chunks") != effective_max_chunks:
         return False
     current_mtime = _novel_mtime(novel_file)
     if current_mtime is None or data.get("novel_mtime") != current_mtime:
@@ -405,8 +424,9 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
     manifest = build_chunk_manifest(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
     save_chunk_manifest(manifest, os.path.join(output_dir, "chunk_manifest.json"))
     chunks = [x.get("text", "") for x in manifest.get("chunks", [])]
-    if MAX_CHUNKS > 0:
-        chunks = chunks[:MAX_CHUNKS]
+    effective_max_chunks = _effective_max_chunks(manifest.get("text_length") or len(text))
+    if effective_max_chunks > 0:
+        chunks = chunks[:effective_max_chunks]
 
     print(f"★ {profile.display_name}：{clean_name}，共 {len(chunks)} 个片段")
     chunk_results = []
@@ -432,7 +452,9 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "detail_path": detail_path,
         "chunk_size": CHUNK_SIZE,
         "chunk_overlap": CHUNK_OVERLAP,
-        "max_chunks": MAX_CHUNKS,
+        "max_chunks": effective_max_chunks,
+        "base_max_chunks": MAX_CHUNKS,
+        "text_length": manifest.get("text_length") or len(text),
         "chunk_count": len(chunks),
         "failed_chunks": failed,
         "chunk_results": chunk_results,

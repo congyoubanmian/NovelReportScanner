@@ -44,31 +44,126 @@
     "overall_assessment"
   ],
   "inference_keywords": [
-    {"word": "推理", "weight": 5},
-    {"word": "悬疑", "weight": 5},
-    {"word": "侦探", "weight": 5},
-    {"word": "案件", "weight": 4},
-    {"word": "凶手", "weight": 4},
-    {"word": "嫌疑人", "weight": 4},
-    {"word": "密室", "weight": 5},
-    {"word": "不在场证明", "weight": 5},
-    {"word": "线索", "weight": 3},
-    {"word": "证据", "weight": 3},
-    {"word": "谋杀", "weight": 4},
-    {"word": "真相", "weight": 3},
-    {"word": "诡计", "weight": 5},
-    {"word": "警探", "weight": 2},
-    {"word": "本格", "weight": 5},
-    {"word": "社会派", "weight": 4},
-    {"word": "暴风雪山庄", "weight": 5},
-    {"word": "叙述性诡计", "weight": 5},
-    {"word": "倒叙推理", "weight": 5},
-    {"word": "逻辑", "weight": 3},
-    {"word": "动机", "weight": 3},
-    {"word": "伪证", "weight": 3},
-    {"word": "红鲱鱼", "weight": 4},
-    {"word": "多重解答", "weight": 5},
-    {"word": "心理诡计", "weight": 4},
-    {"word": "时刻表诡计", "weight": 5}
-  ]
+    {
+      "word": "推理",
+      "weight": 5
+    },
+    {
+      "word": "悬疑",
+      "weight": 5
+    },
+    {
+      "word": "侦探",
+      "weight": 5
+    },
+    {
+      "word": "案件",
+      "weight": 4
+    },
+    {
+      "word": "凶手",
+      "weight": 4
+    },
+    {
+      "word": "嫌疑人",
+      "weight": 4
+    },
+    {
+      "word": "密室",
+      "weight": 5
+    },
+    {
+      "word": "不在场证明",
+      "weight": 5
+    },
+    {
+      "word": "线索",
+      "weight": 3
+    },
+    {
+      "word": "证据",
+      "weight": 3
+    },
+    {
+      "word": "谋杀",
+      "weight": 4
+    },
+    {
+      "word": "真相",
+      "weight": 3
+    },
+    {
+      "word": "诡计",
+      "weight": 5
+    },
+    {
+      "word": "警探",
+      "weight": 2
+    },
+    {
+      "word": "本格",
+      "weight": 5
+    },
+    {
+      "word": "社会派",
+      "weight": 4
+    },
+    {
+      "word": "暴风雪山庄",
+      "weight": 5
+    },
+    {
+      "word": "叙述性诡计",
+      "weight": 5
+    },
+    {
+      "word": "倒叙推理",
+      "weight": 5
+    },
+    {
+      "word": "逻辑",
+      "weight": 3
+    },
+    {
+      "word": "动机",
+      "weight": 3
+    },
+    {
+      "word": "伪证",
+      "weight": 3
+    },
+    {
+      "word": "红鲱鱼",
+      "weight": 4
+    },
+    {
+      "word": "多重解答",
+      "weight": 5
+    },
+    {
+      "word": "心理诡计",
+      "weight": 4
+    },
+    {
+      "word": "时刻表诡计",
+      "weight": 5
+    }
+  ],
+  "cross_profile_rules": {
+    "harem": {
+      "import_categories": [
+        "雷点（严重毒点）",
+        "郁闷点"
+      ],
+      "import_points": [
+        "绿帽",
+        "死女",
+        "送女",
+        "前世雷",
+        "破鞋/非处/非初",
+        "漏女",
+        "亵女"
+      ]
+    }
+  }
 }

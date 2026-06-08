@@ -1,7 +1,11 @@
 {
   "display_name": "校园/青春成长专长分析",
   "description": "关注校园环境、学习竞赛、同伴关系、家庭压力和青春成长弧线。",
-  "enabled_stages": ["character_analysis", "general_scan", "general_report"],
+  "enabled_stages": [
+    "character_analysis",
+    "general_scan",
+    "general_report"
+  ],
   "rules_file": "rules.json",
   "report_mode": "general",
   "scan_focus": [
@@ -30,27 +34,110 @@
     "overall_assessment"
   ],
   "inference_keywords": [
-    {"word": "校园", "weight": 5},
-    {"word": "高中", "weight": 4},
-    {"word": "大学", "weight": 3},
-    {"word": "学霸", "weight": 4},
-    {"word": "学渣", "weight": 3},
-    {"word": "同桌", "weight": 4},
-    {"word": "班主任", "weight": 4},
-    {"word": "高考", "weight": 5},
-    {"word": "月考", "weight": 4},
-    {"word": "早恋", "weight": 4},
-    {"word": "毕业", "weight": 3},
-    {"word": "复读", "weight": 3},
-    {"word": "艺考", "weight": 3},
-    {"word": "重生校园", "weight": 4},
-    {"word": "社团", "weight": 3},
-    {"word": "宿舍", "weight": 3},
-    {"word": "校花", "weight": 3},
-    {"word": "校草", "weight": 3},
-    {"word": "竞赛", "weight": 3},
-    {"word": "青春", "weight": 4},
-    {"word": "暗恋", "weight": 3},
-    {"word": "转学生", "weight": 4}
-  ]
+    {
+      "word": "校园",
+      "weight": 5
+    },
+    {
+      "word": "高中",
+      "weight": 4
+    },
+    {
+      "word": "大学",
+      "weight": 3
+    },
+    {
+      "word": "学霸",
+      "weight": 4
+    },
+    {
+      "word": "学渣",
+      "weight": 3
+    },
+    {
+      "word": "同桌",
+      "weight": 4
+    },
+    {
+      "word": "班主任",
+      "weight": 4
+    },
+    {
+      "word": "高考",
+      "weight": 5
+    },
+    {
+      "word": "月考",
+      "weight": 4
+    },
+    {
+      "word": "早恋",
+      "weight": 4
+    },
+    {
+      "word": "毕业",
+      "weight": 3
+    },
+    {
+      "word": "复读",
+      "weight": 3
+    },
+    {
+      "word": "艺考",
+      "weight": 3
+    },
+    {
+      "word": "重生校园",
+      "weight": 4
+    },
+    {
+      "word": "社团",
+      "weight": 3
+    },
+    {
+      "word": "宿舍",
+      "weight": 3
+    },
+    {
+      "word": "校花",
+      "weight": 3
+    },
+    {
+      "word": "校草",
+      "weight": 3
+    },
+    {
+      "word": "竞赛",
+      "weight": 3
+    },
+    {
+      "word": "青春",
+      "weight": 4
+    },
+    {
+      "word": "暗恋",
+      "weight": 3
+    },
+    {
+      "word": "转学生",
+      "weight": 4
+    }
+  ],
+  "cross_profile_rules": {
+    "harem": {
+      "import_categories": [
+        "雷点（严重毒点）",
+        "郁闷点"
+      ],
+      "import_points": [
+        "绿帽",
+        "死女",
+        "送女",
+        "前世雷",
+        "破鞋/非处/非初",
+        "漏女",
+        "亵女"
+      ]
+    }
+  }
 }

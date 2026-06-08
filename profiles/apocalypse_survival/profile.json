@@ -1,7 +1,11 @@
 {
   "display_name": "末世/灾变/生存专长分析",
   "description": "关注灾变成因、生存资源、秩序崩塌与重建、人性考验、能力体系、探索冒险和危机升级是否自洽。覆盖丧尸末世、天灾末世、科幻末世和废土生存等子类型。",
-  "enabled_stages": ["character_analysis", "general_scan", "general_report"],
+  "enabled_stages": [
+    "character_analysis",
+    "general_scan",
+    "general_report"
+  ],
   "rules_file": "rules.json",
   "report_mode": "general",
   "scan_focus": [
@@ -37,47 +41,190 @@
     "overall_assessment"
   ],
   "inference_keywords": [
-    {"word": "末世", "weight": 5},
-    {"word": "末日", "weight": 5},
-    {"word": "灾变", "weight": 5},
-    {"word": "丧尸", "weight": 5},
-    {"word": "废土", "weight": 5},
-    {"word": "幸存者", "weight": 5},
-    {"word": "进化", "weight": 5},
-    {"word": "异能", "weight": 5},
-    {"word": "晶核", "weight": 5},
-    {"word": "尸潮", "weight": 4},
-    {"word": "病毒", "weight": 4},
-    {"word": "感染", "weight": 4},
-    {"word": "避难所", "weight": 4},
-    {"word": "庇护所", "weight": 4},
-    {"word": "怪物", "weight": 4},
-    {"word": "异兽", "weight": 4},
-    {"word": "虫族", "weight": 4},
-    {"word": "搜集", "weight": 4},
-    {"word": "搜寻", "weight": 4},
-    {"word": "重建", "weight": 4},
-    {"word": "势力", "weight": 4},
-    {"word": "领地", "weight": 4},
-    {"word": "冰封", "weight": 4},
-    {"word": "极寒", "weight": 4},
-    {"word": "辐射", "weight": 4},
-    {"word": "物资", "weight": 4},
-    {"word": "求生", "weight": 3},
-    {"word": "秩序", "weight": 3},
-    {"word": "人性", "weight": 3},
-    {"word": "异能觉醒", "weight": 4},
-    {"word": "丧尸病毒", "weight": 4},
-    {"word": "基地", "weight": 4},
-    {"word": "天灾", "weight": 4},
-    {"word": "基地车", "weight": 3},
-    {"word": "安全区", "weight": 3},
-    {"word": "变异兽", "weight": 3},
-    {"word": "变异", "weight": 3},
-    {"word": "资源", "weight": 3},
-    {"word": "据点", "weight": 3},
-    {"word": "迁徙", "weight": 3},
-    {"word": "感染者", "weight": 3},
-    {"word": "兽潮", "weight": 3}
-  ]
+    {
+      "word": "末世",
+      "weight": 5
+    },
+    {
+      "word": "末日",
+      "weight": 5
+    },
+    {
+      "word": "灾变",
+      "weight": 5
+    },
+    {
+      "word": "丧尸",
+      "weight": 5
+    },
+    {
+      "word": "废土",
+      "weight": 5
+    },
+    {
+      "word": "幸存者",
+      "weight": 5
+    },
+    {
+      "word": "进化",
+      "weight": 5
+    },
+    {
+      "word": "异能",
+      "weight": 5
+    },
+    {
+      "word": "晶核",
+      "weight": 5
+    },
+    {
+      "word": "尸潮",
+      "weight": 4
+    },
+    {
+      "word": "病毒",
+      "weight": 4
+    },
+    {
+      "word": "感染",
+      "weight": 4
+    },
+    {
+      "word": "避难所",
+      "weight": 4
+    },
+    {
+      "word": "庇护所",
+      "weight": 4
+    },
+    {
+      "word": "怪物",
+      "weight": 4
+    },
+    {
+      "word": "异兽",
+      "weight": 4
+    },
+    {
+      "word": "虫族",
+      "weight": 4
+    },
+    {
+      "word": "搜集",
+      "weight": 4
+    },
+    {
+      "word": "搜寻",
+      "weight": 4
+    },
+    {
+      "word": "重建",
+      "weight": 4
+    },
+    {
+      "word": "势力",
+      "weight": 4
+    },
+    {
+      "word": "领地",
+      "weight": 4
+    },
+    {
+      "word": "冰封",
+      "weight": 4
+    },
+    {
+      "word": "极寒",
+      "weight": 4
+    },
+    {
+      "word": "辐射",
+      "weight": 4
+    },
+    {
+      "word": "物资",
+      "weight": 4
+    },
+    {
+      "word": "求生",
+      "weight": 3
+    },
+    {
+      "word": "秩序",
+      "weight": 3
+    },
+    {
+      "word": "人性",
+      "weight": 3
+    },
+    {
+      "word": "异能觉醒",
+      "weight": 4
+    },
+    {
+      "word": "丧尸病毒",
+      "weight": 4
+    },
+    {
+      "word": "基地",
+      "weight": 4
+    },
+    {
+      "word": "天灾",
+      "weight": 4
+    },
+    {
+      "word": "基地车",
+      "weight": 3
+    },
+    {
+      "word": "安全区",
+      "weight": 3
+    },
+    {
+      "word": "变异兽",
+      "weight": 3
+    },
+    {
+      "word": "变异",
+      "weight": 3
+    },
+    {
+      "word": "资源",
+      "weight": 3
+    },
+    {
+      "word": "据点",
+      "weight": 3
+    },
+    {
+      "word": "迁徙",
+      "weight": 3
+    },
+    {
+      "word": "感染者",
+      "weight": 3
+    },
+    {
+      "word": "兽潮",
+      "weight": 3
+    }
+  ],
+  "cross_profile_rules": {
+    "harem": {
+      "import_categories": [
+        "雷点（严重毒点）",
+        "郁闷点"
+      ],
+      "import_points": [
+        "绿帽",
+        "死女",
+        "送女",
+        "前世雷",
+        "破鞋/非处/非初",
+        "漏女",
+        "亵女"
+      ]
+    }
+  }
 }

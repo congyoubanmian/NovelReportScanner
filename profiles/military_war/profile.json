@@ -43,43 +43,174 @@
     "overall_assessment"
   ],
   "inference_keywords": [
-    {"word": "战争", "weight": 4},
-    {"word": "军营", "weight": 5},
-    {"word": "参军", "weight": 5},
-    {"word": "入伍", "weight": 5},
-    {"word": "演习", "weight": 5},
-    {"word": "兵工厂", "weight": 5},
-    {"word": "特种兵", "weight": 5},
-    {"word": "抗战", "weight": 5},
-    {"word": "军队", "weight": 4},
-    {"word": "士兵", "weight": 3},
-    {"word": "将军", "weight": 3},
-    {"word": "战役", "weight": 5},
-    {"word": "战术", "weight": 4},
-    {"word": "战略", "weight": 4},
-    {"word": "后勤", "weight": 4},
-    {"word": "补给", "weight": 4},
-    {"word": "火炮", "weight": 4},
-    {"word": "舰队", "weight": 4},
-    {"word": "坦克", "weight": 4},
-    {"word": "阵地", "weight": 3},
-    {"word": "骑兵", "weight": 3},
-    {"word": "步兵", "weight": 3},
-    {"word": "军团", "weight": 4},
-    {"word": "军工", "weight": 4},
-    {"word": "指挥", "weight": 4},
-    {"word": "战区", "weight": 4},
-    {"word": "军校", "weight": 4},
-    {"word": "兵王", "weight": 4},
-    {"word": "军阀", "weight": 4},
-    {"word": "军备", "weight": 4},
-    {"word": "争霸", "weight": 4},
-    {"word": "建军", "weight": 4},
-    {"word": "战局", "weight": 3},
-    {"word": "兵种", "weight": 3},
-    {"word": "剿匪", "weight": 3},
-    {"word": "兵力", "weight": 3},
-    {"word": "部队", "weight": 3},
-    {"word": "军衔", "weight": 3}
-  ]
+    {
+      "word": "战争",
+      "weight": 4
+    },
+    {
+      "word": "军营",
+      "weight": 5
+    },
+    {
+      "word": "参军",
+      "weight": 5
+    },
+    {
+      "word": "入伍",
+      "weight": 5
+    },
+    {
+      "word": "演习",
+      "weight": 5
+    },
+    {
+      "word": "兵工厂",
+      "weight": 5
+    },
+    {
+      "word": "特种兵",
+      "weight": 5
+    },
+    {
+      "word": "抗战",
+      "weight": 5
+    },
+    {
+      "word": "军队",
+      "weight": 4
+    },
+    {
+      "word": "士兵",
+      "weight": 3
+    },
+    {
+      "word": "将军",
+      "weight": 3
+    },
+    {
+      "word": "战役",
+      "weight": 5
+    },
+    {
+      "word": "战术",
+      "weight": 4
+    },
+    {
+      "word": "战略",
+      "weight": 4
+    },
+    {
+      "word": "后勤",
+      "weight": 4
+    },
+    {
+      "word": "补给",
+      "weight": 4
+    },
+    {
+      "word": "火炮",
+      "weight": 4
+    },
+    {
+      "word": "舰队",
+      "weight": 4
+    },
+    {
+      "word": "坦克",
+      "weight": 4
+    },
+    {
+      "word": "阵地",
+      "weight": 3
+    },
+    {
+      "word": "骑兵",
+      "weight": 3
+    },
+    {
+      "word": "步兵",
+      "weight": 3
+    },
+    {
+      "word": "军团",
+      "weight": 4
+    },
+    {
+      "word": "军工",
+      "weight": 4
+    },
+    {
+      "word": "指挥",
+      "weight": 4
+    },
+    {
+      "word": "战区",
+      "weight": 4
+    },
+    {
+      "word": "军校",
+      "weight": 4
+    },
+    {
+      "word": "兵王",
+      "weight": 4
+    },
+    {
+      "word": "军阀",
+      "weight": 4
+    },
+    {
+      "word": "军备",
+      "weight": 4
+    },
+    {
+      "word": "争霸",
+      "weight": 4
+    },
+    {
+      "word": "建军",
+      "weight": 4
+    },
+    {
+      "word": "战局",
+      "weight": 3
+    },
+    {
+      "word": "兵种",
+      "weight": 3
+    },
+    {
+      "word": "剿匪",
+      "weight": 3
+    },
+    {
+      "word": "兵力",
+      "weight": 3
+    },
+    {
+      "word": "部队",
+      "weight": 3
+    },
+    {
+      "word": "军衔",
+      "weight": 3
+    }
+  ],
+  "cross_profile_rules": {
+    "harem": {
+      "import_categories": [
+        "雷点（严重毒点）",
+        "郁闷点"
+      ],
+      "import_points": [
+        "绿帽",
+        "死女",
+        "送女",
+        "前世雷",
+        "破鞋/非处/非初",
+        "漏女",
+        "亵女"
+      ]
+    }
+  }
 }
