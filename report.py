@@ -1662,9 +1662,21 @@ def _strict_send_girl_agency_review_hint(issue: dict, text: str) -> str:
         "主角没有撮合", "主角没有安排", "主角没有送给", "主角没有让给", "主角没有明知",
         "主角没有主动撮合", "主角没有主动安排", "主角没有主动促成", "主角没有主动送给",
     )
+    male_lead_prevention_phrases = (
+        "男主主动救", "男主救下", "男主营救", "男主解救", "男主阻止", "男主制止",
+        "男主破坏联姻", "男主阻止联姻", "男主打断联姻", "男主拒绝联姻",
+        "男主拒绝撮合", "男主拒绝安排", "男主没有送出", "男主并未送出",
+        "男主未送出", "男主没有让出", "男主并未让出", "男主未让出",
+        "男主反对", "男主不同意", "男主不认可", "男主不默许",
+        "主角主动救", "主角救下", "主角营救", "主角解救", "主角阻止", "主角制止",
+        "主角破坏联姻", "主角阻止联姻", "主角打断联姻", "主角拒绝联姻",
+        "主角拒绝撮合", "主角拒绝安排", "主角没有送出", "主角并未送出",
+        "主角未送出", "主角没有让出", "主角并未让出", "主角未让出",
+        "主角反对", "主角不同意", "主角不认可", "主角不默许",
+    )
     if any(phrase in text for phrase in male_lead_agency_phrases) and not any(
         phrase in text for phrase in negated_male_lead_agency_phrases
-    ):
+    ) and not any(phrase in text for phrase in male_lead_prevention_phrases):
         return ""
     return "送女必须有男主主动或默许构成；当前证据更像被动安排/第三方送人/逼婚/政治联姻，需复核是否缺少男主主体。"
 

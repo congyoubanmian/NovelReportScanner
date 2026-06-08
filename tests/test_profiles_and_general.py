@@ -5087,6 +5087,34 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(negated_active_send_issue["heroine_position_context"], "强女=强准女主")
         self.assertIn("缺少男主主体", negated_active_send_issue["definition_review_hint"])
 
+        rescued_arrangement_issue = report._annotate_issue_for_report(
+            {"type": "送女", "content": "强女被家族安排嫁给路人男，男主主动救下强女并阻止联姻。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(rescued_arrangement_issue["heroine_position_context"], "强女=强准女主")
+        self.assertIn("缺少男主主体", rescued_arrangement_issue["definition_review_hint"])
+
+        refused_arrangement_issue = report._annotate_issue_for_report(
+            {"type": "送女", "content": "强女被长辈撮合给路人男，男主拒绝撮合，没有送出强女。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(refused_arrangement_issue["heroine_position_context"], "强女=强准女主")
+        self.assertIn("缺少男主主体", refused_arrangement_issue["definition_review_hint"])
+
         victim_only_ntr_issue = report._annotate_issue_for_report(
             {"type": "绿帽", "content": "强女被反派绑走调戏，但没有性关系也没有情感背叛。"},
             [
