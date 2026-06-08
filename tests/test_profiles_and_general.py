@@ -215,6 +215,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("proxy_buffering off", text)
         self.assertIn("proxy_read_timeout 3600s", text)
         self.assertIn("Authorization: Bearer", text)
+        self.assertIn("GENERAL_SCAN_SMART_DENSITY", text)
 
     def test_profile_aliases_and_stages(self):
         harem = analysis_profiles.load_analysis_profile("后宫")
@@ -4023,6 +4024,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "TPM_LIMIT",
             "RATE_LIMIT_SCOPE",
             "GENERAL_SCAN_MAX_CHUNKS",
+            "GENERAL_SCAN_SMART_DENSITY",
             "HAREM_PLUS_GENERAL_SCAN",
             "API_KEY",
         ]
@@ -4035,6 +4037,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "tpm_limit": "5000",
                 "rate_limit_scope": "per_key",
                 "general_scan_max_chunks": "120",
+                "general_scan_smart_density": False,
                 "harem_plus_general_scan": True,
             })
 
@@ -4044,8 +4047,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["TPM_LIMIT"], "5000")
             self.assertEqual(os.environ["RATE_LIMIT_SCOPE"], "per_key")
             self.assertEqual(os.environ["GENERAL_SCAN_MAX_CHUNKS"], "120")
+            self.assertEqual(os.environ["GENERAL_SCAN_SMART_DENSITY"], "0")
             self.assertEqual(os.environ["HAREM_PLUS_GENERAL_SCAN"], "1")
             self.assertEqual(result["max_workers"], "4")
+            self.assertFalse(result["general_scan_smart_density"])
             self.assertTrue(result["harem_plus_general_scan"])
             self.assertIn("max_workers", result["editable"])
             self.assertNotIn("api_key", result["editable"])
@@ -4214,6 +4219,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "TPM_LIMIT": "tpm_limit",
             "RATE_LIMIT_SCOPE": "rate_limit_scope",
             "GENERAL_SCAN_MAX_CHUNKS": "general_scan_max_chunks",
+            "GENERAL_SCAN_SMART_DENSITY": "general_scan_smart_density",
             "HAREM_PLUS_GENERAL_SCAN": "harem_plus_general_scan",
         }
         old_values = {env: os.environ.get(env) for env in env_field_map}
@@ -4242,6 +4248,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     f.write("# 注释\nAPI_KEY=secret\nMAX_WORKERS=4\n\n")
                 ok, _ = web_manager._update_runtime_config({
                     "max_workers": 16,
+                    "general_scan_smart_density": False,
                     "harem_plus_general_scan": True,
                 })
                 self.assertTrue(ok)
@@ -4250,6 +4257,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("# 注释", lines)
                 self.assertIn("API_KEY=secret", lines)
                 self.assertIn("MAX_WORKERS=16", lines)
+                self.assertIn("GENERAL_SCAN_SMART_DENSITY=0", lines)
                 self.assertIn("HAREM_PLUS_GENERAL_SCAN=1", lines)
                 # 旧值不应残留
                 self.assertNotIn("MAX_WORKERS=4", lines)
@@ -8682,6 +8690,42 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(result["prompt_template"]["version"], "v1")
         self.assertTrue(any("修炼体系与战力" in prompt for prompt in prompts))
 
+    def test_general_scan_uses_light_prompt_for_low_density_chunks(self):
+        profile = analysis_profiles.load_analysis_profile("general")
+        calls = []
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(messages, max_tokens=3000):
+                calls.append({
+                    "prompt": "\n".join(item.get("content", "") for item in messages),
+                    "max_tokens": max_tokens,
+                })
+                return {
+                    "plot_events": ["主角赶路后休息"],
+                    "conflicts": [],
+                    "worldbuilding": [],
+                    "themes": [],
+                    "foreshadowing": [],
+                    "quality_notes": [],
+                    "specialty_notes": [],
+                    "one_sentence_summary": "主角赶路休息。",
+                }
+
+            general_scan._call_json = fake_call_json
+            result = general_scan._scan_chunk("主角赶路，吃饭，睡觉休息。", 0, 1, profile=profile)
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertEqual(result["density_profile"]["level"], "low")
+        self.assertEqual(result["density_profile"]["strategy"], "light")
+        self.assertEqual(calls[0]["max_tokens"], 1800)
+        self.assertIn("密度策略：light", calls[0]["prompt"])
+
+    def test_general_scan_density_profile_detects_high_signal_chunks(self):
+        profile = general_scan._chunk_density_profile("案件出现尸体，凶手线索揭露，随后发生战斗和反转。")
+        self.assertEqual(profile["level"], "high")
+        self.assertEqual(profile["strategy"], "full")
+
     def test_general_scan_summary_prompt_uses_field_labels(self):
         profile = analysis_profiles.load_analysis_profile("urban_power")
         prompts = []
@@ -9535,6 +9579,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(data["chunk_count"], 300)
             self.assertEqual(data["max_chunks"], 300)
             self.assertEqual(data["chunk_sampling_strategy"], "uniform_timeline")
+            self.assertTrue(data["smart_density"])
+            self.assertEqual(sum(data["density_counts"].values()), 300)
             self.assertEqual(data["prompt_templates"]["general_scan_chunk"]["version"], "v1")
             self.assertEqual(data["prompt_templates"]["general_summary"]["version"], "v1")
             self.assertEqual(sampled_indices[0], 1)

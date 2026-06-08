@@ -1,6 +1,6 @@
 # Kimi 方案推进进度总结
 
-生成日期：2026-06-07（本版更新于 2026-06-08 21:03）
+生成日期：2026-06-07（本版更新于 2026-06-08 21:20）
 
 ## 总体完成度
 
@@ -10,7 +10,7 @@
 
 - **分类/profile 配置完善**：约 **99%**。23 个分类的 `scan_focus`、`summary_fields`、`inference_keywords` 已基本按 Kimi 方案补齐；`kimi_v3` 指出的 10 个缺失后宫交叉规则 profile 已补齐 `cross_profile_rules`，并已新增国运/文明对抗流、幕后流/马甲流、模拟器/人生推演和中式诡异/规则怪谈四个高区分度 profile；所有 profile manifest 的 `name` 字段已与目录名统一，profile 展示/推断排序已迁移为 manifest 自治的 `sort_order`，并已补充 `version/version_history/min_supported_scanner_version/breaking_changes` 兼容性元数据；通用 `rules.json` 已从 1 类 3 点扩展到 4 类 16 点，历史、硬科幻、蒸汽西幻、国运、幕后流、模拟器、中式诡异、都市爽文和异世界轻小说等专项规则均已补到不少于 12 个审查点，`harem/urban_power/crime_forensics` 的 `scan_focus` 数量已按 P1-2 均衡到 9/9/11 条，常见旧字段名和 Kimi 草案字段名已通过别名归并，剩余主要是真实样本校准和少量低风险提示词文案打磨。
 - **后宫/男性向排雷专项**：约 **82% - 86%**。核心定义、五维洁度、接触等级、partner 豁免、漏女三层判断、女主事实扩展、重复女主大模型合并等关键项已落地；仍需要更多真实书籍报告校准误判。
-- **多标签/混合类型扫描**：约 **92% - 94%**。已支持自动多标签、手动多选、后宫+其他类型补扫；历史、科幻、仙侠、都市、游戏、异世界、蒸汽西幻、国运、模拟器以及末世、军事、刑侦、克系、校园、文娱、种田、商战、推理、体育等副类型均已导入后宫交叉规则；并已开始利用非后宫跨类型规则导入，覆盖推理+刑侦/克系调查、历史+军事战争、种田+末世资源建设、蒸汽西幻+推理/克系异常等高价值组合。通用角色识别和通用/专项剧情补扫均已支持 1000 万字级长篇的动态预算和全书均匀抽样，避免只扫描开头。自动识别已补充标题加权、组合关键词加成、负向关键词抑制、局部否定过滤、短词污染过滤、有限频次加分和 profile 自适应阈值，降低次要标签漏标与跨类误判。
+- **多标签/混合类型扫描**：约 **93% - 95%**。已支持自动多标签、手动多选、后宫+其他类型补扫；历史、科幻、仙侠、都市、游戏、异世界、蒸汽西幻、国运、模拟器以及末世、军事、刑侦、克系、校园、文娱、种田、商战、推理、体育等副类型均已导入后宫交叉规则；并已开始利用非后宫跨类型规则导入，覆盖推理+刑侦/克系调查、历史+军事战争、种田+末世资源建设、蒸汽西幻+推理/克系异常等高价值组合。通用角色识别和通用/专项剧情补扫均已支持 1000 万字级长篇的动态预算和全书均匀抽样，避免只扫描开头；通用/专项剧情扫描还会对低密度过渡片段启用轻量抽取 prompt 并记录密度 metadata，降低长篇 token 浪费。自动识别已补充标题加权、组合关键词加成、负向关键词抑制、局部否定过滤、短词污染过滤、有限频次加分和 profile 自适应阈值，降低次要标签漏标与跨类误判。
 - **报告输出和字段标题**：约 **98%**。通用报告、专项报告、后宫报告的字段标题和收尾字段已多轮补齐；所有 23 个 profile 的 summary_fields 均已补全中文标题（含主线剧情、核心冲突、世界观、主题、优点与亮点、风险与问题、适合读者、总体评价等通用字段，以及女主群像、候选女主、漏女、洁度评估、毒点、郁闷点、男主定位、感情线推进等后宫字段）；Kimi 点名的 `unit_plot_mainline_link`、`cheat_detection_dependency` 已迁移为更自解释的 `episodic_mainline_integration`、`shortcut_detection_dependency`，旧字段继续作为别名兼容；后宫报告会在扫描女主列表与审核洁度列表不一致、扫描雷点与二审输出不一致时输出交叉验证提示，并已增加 Mermaid 关系图谱区块和 Markdown 关键事件时间线；通用报告已增加六维评分表和前端评分 JSON；通用总评、作品概览、伏笔回收、适合读者、总体评价以及常见专项字段均已支持旧字段名别名读取，并有回归测试覆盖。
 - **Web/部署/GitHub Actions/Docker**：约 **98% - 99%**。前后端分离、SSE 实时状态、SSE 连接生命周期与目录同步节流、标准访问日志、JSON 请求体 schema 校验、队列管理、删除/批量删除、Token 展示、配置摘要、限流作用域 `auto/global/per_key` 可配置、非敏感运行配置编辑并自动持久化到 `.env`、可选访问令牌、未设置访问令牌时写操作确认保护、Docker/GHCR/DockerHub 流程、请求体限制、文件流式输出、任务日志隔离、扫描/报告日志轮转、前端 ESLint/Prettier 检查、CI 自动验证、输出文件索引、Docker 最终镜像瘦身、容器 API Key 启动校验、书籍同步减少无变化状态写入、Web 文件路径归属校验改用 `commonpath`、Web 状态文件损坏告警、API 客户端工厂统一、API 重试/超时默认参数统一、通用 summary 缓存内容签名校验、扫描 checkpoint 增量写入、失败片段内容诊断、首扫动态线程块调度、checkpoint 运行态显式注入、detail 路径显式书名解析、报告书名显式传入、chunk 摘要状态显式注入、失败诊断状态显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文、detail 写入显式路径和主流程最终输出局部上下文等工程项已完成；剩余主要是进一步生产化部署细节（反向代理、TLS、更细粒度访问控制）和继续收敛低价值静默异常。
 
@@ -189,6 +189,7 @@
 - `novel_scan.py`、`protagonist.py`、`report.py` 的 API 重试和超时默认参数已统一引用 `shared_utils`：默认 `max_retries=5`、`max_403_retries=3`、`max_timeout_retries=3`、`request_timeout=120`，避免同一本书不同阶段使用不同容错策略。
 - 通用/专项剧情扫描已增加 context overflow 降级：当单个 chunk 因上下文过长失败时，会自动拆成两个半段重试并合并为 `partial_result`，在 `partial_reason=context_overflow_split` 中保留原因；若仍失败，会在 `failed_chunks` 中记录 `error_type=context_overflow`，便于后续定位或重跑。
 - 核心 prompt 已增加轻量版本元数据：`prompt_templates.py` 统一注册 `harem_scan_chunk/general_scan_chunk/general_summary`，默认版本为 `v1`，可通过 `PROMPT_TEMPLATE_<NAME>_VERSION` 环境变量切换；后宫首扫 prompt 会带模板标记，通用/专项剧情扫描会把 chunk 和 summary 的 prompt 模板元数据写入 `GENERAL_SUMMARY.json`，便于后续实验版本和历史报告追踪。
+- 通用/专项剧情扫描已增加片段密度分级：根据战斗、反转、案件、感情推进等高密度信号和赶路、吃饭、睡觉、日常等低密度信号标记 `density_profile`；默认 `GENERAL_SCAN_SMART_DENSITY=1` 时，低密度片段走轻量抽取 prompt 和更低 `max_tokens`，但不跳过片段，最终 summary 会记录 `density_counts`，Web/Compose/配置模板均可切换该开关。
 - 通用/专项剧情 summary 缓存已增加 `novel_signature` 校验，保存时记录文件大小、mtime_ns 和首尾采样 hash；复用时除 mtime 外还校验签名，避免正文被替换但 mtime 被保留时误用旧 summary。
 - 扫描阶段 checkpoint 已支持逐 chunk 增量写入：首个 checkpoint 和每 10 个 chunk 会写回完整 `latest_checkpoint.json` 并清理增量文件，中间 chunk 只追加 `latest_checkpoint.json.delta.jsonl`；恢复时会自动合并基线和增量记录，减少长篇扫描过程中每块重复序列化完整 `issues/heroine_facts/extra_relations` 的开销，同时保持旧版全量 checkpoint 兼容。
 - 扫描阶段 prompt 已减少重复发送：规则说明继续保留在 system prompt 中，自检清单从 system prompt 移出，只随第一个 chunk 的 user prompt 发送一次；后续 chunk 沿用同一要求但不再重复携带 13 条自检清单，降低长篇多 chunk 扫描的重复 token。
@@ -249,6 +250,7 @@
 - 通用报告多维度评分，验证 `general_scan` 总评 prompt 会要求并归一化 `radar_scores`，最终报告会输出六维 Markdown 表格和前端可解析 JSON。
 - 通用/专项剧情扫描 context overflow 降级拆分，验证上下文过长错误会触发半段重试、合并 partial 结果并落盘记录 `partial_reason`，而不是直接丢失整个 chunk。
 - Prompt 模板版本元数据，验证核心模板默认版本、环境变量覆盖、后宫首扫 prompt 标记和通用扫描落盘 metadata。
+- 通用/专项剧情扫描密度分级，验证低密度片段使用 light prompt 和较低输出预算，高密度片段保持 full 策略，长篇扫描落盘记录 `smart_density/density_counts`，Web 运行配置可编辑并持久化 `GENERAL_SCAN_SMART_DENSITY`。
 - 扫描/报告日志轮转，验证 `scan.log`、`analysis.log`、`reviewer.log` 和 `report_generation.log` 使用 `RotatingFileHandler` 默认配置，且重新配置 logger 时会关闭旧 handler，避免重复输出和文件句柄泄漏。
 - Web 访问日志，验证 `web_access.log` 使用轮转 handler，且 `token/access_token` 查询参数会被脱敏。
 - Web 状态文件损坏告警，验证 `web_manager_state.json` 解析失败时会记录 warning 日志且不影响后续恢复流程。
@@ -256,7 +258,7 @@
 - API 重试/超时默认参数共享，验证角色识别、首扫和报告阶段均引用 `shared_utils` 的同一组默认值。
 - 通用 summary 缓存签名，验证同 mtime 但正文内容变化时不会继续复用旧 summary。
 
-最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **215 个测试 OK**；蒸汽西幻 scan_focus、后宫/都市/刑侦 scan_focus 均衡化、组合关键词和专项规则维度已增加到现有 profile/自动分类回归测试中。国运/文明对抗、幕后流/马甲流、模拟器/人生推演和中式诡异/规则怪谈的 profile 发现、自动识别、后宫交叉规则、后宫增强补扫、字段中文标题、rules 审查点深度、首批非后宫跨类型规则导入、都市爽文跨类边界、置信度校准、profile manifest 版本管理、通用角色识别与通用/专项剧情扫描的长篇动态预算和全书均匀抽样、通用扫描 context overflow 降级拆分、Prompt 模板版本元数据、后宫报告交叉验证提示（女主名单与雷点覆盖）、后宫 Mermaid 关系图谱、后宫关键事件时间线、通用报告多维度评分、通用 summary 缓存签名、扫描 checkpoint 增量恢复、prompt 自检清单去重、失败 chunk 内容诊断、首扫动态线程块分区、checkpoint 显式路径隔离、detail 显式书名查找、报告显式书名、chunk 摘要显式注入、失败诊断显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文、detail 写入显式路径、主流程最终输出局部上下文、SSE 状态流生命周期/目录同步节流、限流作用域 auto 解析、Web 文件路径归属校验、Web 状态文件损坏告警、扫描/报告日志轮转（含 scan.log/report_generation.log）、Web 访问日志、Web JSON schema 校验、API 重试/超时默认参数共享和 Web 无 token 写操作确认保护已有目标测试覆盖；profile manifest 的 `name` 字段与目录名一致性、manifest 自治排序、通用规则核心维度、历史/硬科幻专项规则补强、API 客户端工厂统一和默认 `BASE_URL` 一致性也已有回归测试覆盖。
+最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **217 个测试 OK**；蒸汽西幻 scan_focus、后宫/都市/刑侦 scan_focus 均衡化、组合关键词和专项规则维度已增加到现有 profile/自动分类回归测试中。国运/文明对抗、幕后流/马甲流、模拟器/人生推演和中式诡异/规则怪谈的 profile 发现、自动识别、后宫交叉规则、后宫增强补扫、字段中文标题、rules 审查点深度、首批非后宫跨类型规则导入、都市爽文跨类边界、置信度校准、profile manifest 版本管理、通用角色识别与通用/专项剧情扫描的长篇动态预算和全书均匀抽样、通用扫描 context overflow 降级拆分、Prompt 模板版本元数据、通用扫描密度分级与轻量 prompt、后宫报告交叉验证提示（女主名单与雷点覆盖）、后宫 Mermaid 关系图谱、后宫关键事件时间线、通用报告多维度评分、通用 summary 缓存签名、扫描 checkpoint 增量恢复、prompt 自检清单去重、失败 chunk 内容诊断、首扫动态线程块分区、checkpoint 显式路径隔离、detail 显式书名查找、报告显式书名、chunk 摘要显式注入、失败诊断显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文、detail 写入显式路径、主流程最终输出局部上下文、SSE 状态流生命周期/目录同步节流、限流作用域 auto 解析、Web 文件路径归属校验、Web 状态文件损坏告警、扫描/报告日志轮转（含 scan.log/report_generation.log）、Web 访问日志、Web JSON schema 校验、API 重试/超时默认参数共享和 Web 无 token 写操作确认保护已有目标测试覆盖；profile manifest 的 `name` 字段与目录名一致性、manifest 自治排序、通用规则核心维度、历史/硬科幻专项规则补强、API 客户端工厂统一和默认 `BASE_URL` 一致性也已有回归测试覆盖。
 
 ## 已推送的关键提交
 

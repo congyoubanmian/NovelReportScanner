@@ -52,6 +52,7 @@ EDITABLE_RUNTIME_CONFIG = {
     "tpm_limit": {"env": "TPM_LIMIT", "type": "int", "min": 0, "max": 1000000000, "empty": True},
     "rate_limit_scope": {"env": "RATE_LIMIT_SCOPE", "type": "choice", "choices": {"auto", "global", "per_key"}},
     "general_scan_max_chunks": {"env": "GENERAL_SCAN_MAX_CHUNKS", "type": "int", "min": 0, "max": 100000},
+    "general_scan_smart_density": {"env": "GENERAL_SCAN_SMART_DENSITY", "type": "bool"},
     "harem_plus_general_scan": {"env": "HAREM_PLUS_GENERAL_SCAN", "type": "bool"},
 }
 BOOK_ID_PAYLOAD_SCHEMA = {
@@ -432,6 +433,7 @@ def _runtime_config_summary():
         "tpm_limit": os.environ.get("TPM_LIMIT", ""),
         "rate_limit_scope": os.environ.get("RATE_LIMIT_SCOPE", "auto"),
         "general_scan_max_chunks": os.environ.get("GENERAL_SCAN_MAX_CHUNKS", "80"),
+        "general_scan_smart_density": _env_bool_value(os.environ.get("GENERAL_SCAN_SMART_DENSITY", "1")),
         "harem_plus_general_scan": _env_bool_value(os.environ.get("HAREM_PLUS_GENERAL_SCAN", "0")),
         "editable": sorted(EDITABLE_RUNTIME_CONFIG.keys()),
         "runtime_only": True,

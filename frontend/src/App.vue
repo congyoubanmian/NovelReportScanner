@@ -47,6 +47,7 @@ const configForm = ref({
   tpm_limit: '',
   rate_limit_scope: 'auto',
   general_scan_max_chunks: '',
+  general_scan_smart_density: true,
   harem_plus_general_scan: false
 })
 const savingRuntimeConfig = ref(false)
@@ -116,6 +117,7 @@ function syncConfigForm(config) {
     tpm_limit: config.tpm_limit || '',
     rate_limit_scope: config.rate_limit_scope || 'auto',
     general_scan_max_chunks: config.general_scan_max_chunks || '80',
+    general_scan_smart_density: config.general_scan_smart_density !== false,
     harem_plus_general_scan: Boolean(config.harem_plus_general_scan)
   }
 }
@@ -129,6 +131,7 @@ async function saveRuntimeConfig() {
       tpm_limit: configForm.value.tpm_limit,
       rate_limit_scope: configForm.value.rate_limit_scope,
       general_scan_max_chunks: configForm.value.general_scan_max_chunks,
+      general_scan_smart_density: configForm.value.general_scan_smart_density,
       harem_plus_general_scan: configForm.value.harem_plus_general_scan
     })
     runtimeConfig.value = response.config || runtimeConfig.value
@@ -385,6 +388,14 @@ useStateEvents(applyState, {
           min="0"
           @input="runtimeConfigDirty = true"
         />
+      </label>
+      <label class="runtime-toggle">
+        <input
+          v-model="configForm.general_scan_smart_density"
+          type="checkbox"
+          @change="runtimeConfigDirty = true"
+        />
+        <span>智能密度</span>
       </label>
       <label class="runtime-toggle">
         <input

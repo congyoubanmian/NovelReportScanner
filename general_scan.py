@@ -1,6 +1,7 @@
 import json
 import os
 import hashlib
+import inspect
 from datetime import datetime
 from typing import Any, Dict, List
 
@@ -16,6 +17,16 @@ from text_anchor import build_chunk_manifest, save_chunk_manifest
 CHUNK_SIZE = int(os.environ.get("GENERAL_SCAN_CHUNK_SIZE", "12000"))
 CHUNK_OVERLAP = int(os.environ.get("GENERAL_SCAN_CHUNK_OVERLAP", "1000"))
 MAX_CHUNKS = int(os.environ.get("GENERAL_SCAN_MAX_CHUNKS", "80"))
+SMART_DENSITY = os.environ.get("GENERAL_SCAN_SMART_DENSITY", "1").strip() == "1"
+LOW_DENSITY_TERMS = (
+    "睡觉", "起床", "吃饭", "喝茶", "闲聊", "聊天", "休息", "赶路", "路上", "返回",
+    "日常", "家常", "客栈", "修炼打坐", "打坐", "闭关", "练功", "整理物品",
+)
+HIGH_DENSITY_TERMS = (
+    "战斗", "交手", "决战", "袭击", "追杀", "死亡", "牺牲", "危机", "冲突", "背叛",
+    "真相", "揭露", "反转", "线索", "案件", "尸体", "凶手", "审讯", "谈判", "夺权",
+    "表白", "告白", "暧昧", "亲吻", "同房", "成亲", "结婚", "突破", "晋升", "觉醒",
+)
 RADAR_SCORE_DIMENSIONS = {
     "plot": "剧情质量",
     "characters": "人物塑造",
@@ -42,6 +53,41 @@ def _effective_max_chunks(text_length: int, base_max_chunks: int = None) -> int:
     else:
         suggested = 400
     return max(base, suggested)
+
+
+def _term_hits(text: str, terms) -> List[str]:
+    normalized = text or ""
+    hits = []
+    for term in terms:
+        if term in normalized and term not in hits:
+            hits.append(term)
+    return hits
+
+
+def _chunk_density_profile(text: str) -> Dict[str, Any]:
+    sample = (text or "")[:20000]
+    high_hits = _term_hits(sample, HIGH_DENSITY_TERMS)
+    low_hits = _term_hits(sample, LOW_DENSITY_TERMS)
+    punctuation_events = sum(sample.count(mark) for mark in ("！", "？", "。", "；"))
+    length = len(sample)
+    high_score = len(high_hits) * 2 + min(4, punctuation_events // 80)
+    low_score = len(low_hits)
+    if high_score >= 6 or len(high_hits) >= 3:
+        level = "high"
+    elif high_score <= 1 and low_score >= 2:
+        level = "low"
+    elif length < 1200 and high_score == 0 and low_score >= 1:
+        level = "low"
+    else:
+        level = "medium"
+    return {
+        "level": level,
+        "high_score": high_score,
+        "low_score": low_score,
+        "high_terms": high_hits[:12],
+        "low_terms": low_hits[:12],
+        "strategy": "light" if SMART_DENSITY and level == "low" else "full",
+    }
 
 
 def _sample_chunk_entries_for_budget(chunk_entries: List[Dict[str, Any]], max_chunks: int) -> List[Dict[str, Any]]:
@@ -184,6 +230,8 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
     if data.get("max_chunks") != effective_max_chunks:
         return False
     if data.get("chunk_sampling_strategy") not in {"full", "uniform_timeline"}:
+        return False
+    if data.get("smart_density") not in {None, SMART_DENSITY}:
         return False
     stored_prompt_templates = data.get("prompt_templates")
     if isinstance(stored_prompt_templates, dict):
@@ -332,8 +380,22 @@ def _focus_text(profile) -> str:
     return "\n".join(f"- {item}" for item in focus)
 
 
-def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None) -> Dict[str, Any]:
+def _density_instruction(density_profile: Dict[str, Any]) -> str:
+    if not SMART_DENSITY or not isinstance(density_profile, dict):
+        return "密度策略：full。按完整字段抽取。"
+    level = density_profile.get("level") or "medium"
+    if density_profile.get("strategy") == "light":
+        return (
+            "密度策略：light。当前片段疑似低密度过渡/日常/重复内容；"
+            "只保留真实推动剧情的信息。plot_events 和 one_sentence_summary 必须简洁；"
+            "conflicts/worldbuilding/themes/foreshadowing/quality_notes/specialty_notes 没有明确新增信息时输出空数组。"
+        )
+    return f"密度策略：full。当前片段密度={level}，按完整字段抽取。"
+
+
+def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None) -> Dict[str, Any]:
     profile = profile or load_analysis_profile("general")
+    density_profile = density_profile or _chunk_density_profile(text_chunk)
     rules_text = _profile_rules_text(profile)
     template_meta = prompt_template_metadata("general_scan_chunk")
     system_prompt = f"""你是{profile.display_name}助手。请从片段中抽取对整本小说分析有用的信息。
@@ -353,6 +415,9 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 
 本 profile 的专项规则：
 {rules_text}
+
+当前片段密度：
+{_density_instruction(density_profile)}
 
 要求：
 1. 只根据片段内容输出，不要凭空补全。
@@ -381,11 +446,12 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        max_tokens=3000,
+        max_tokens=1800 if density_profile.get("strategy") == "light" else 3000,
     )
     return {
         "chunk_index": chunk_index,
         "prompt_template": template_meta,
+        "density_profile": density_profile,
         "plot_events": _safe_list(data.get("plot_events")),
         "conflicts": _safe_list(data.get("conflicts")),
         "worldbuilding": _safe_list(data.get("worldbuilding")),
@@ -395,6 +461,13 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         "specialty_notes": _safe_list(data.get("specialty_notes")),
         "one_sentence_summary": str(data.get("one_sentence_summary", "") or "").strip(),
     }
+
+
+def _call_scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None) -> Dict[str, Any]:
+    parameters = inspect.signature(_scan_chunk).parameters
+    if "density_profile" in parameters:
+        return _scan_chunk(text_chunk, chunk_index, total_chunks, profile=profile, density_profile=density_profile)
+    return _scan_chunk(text_chunk, chunk_index, total_chunks, profile=profile)
 
 
 def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int, reason: str) -> Dict[str, Any]:
@@ -439,8 +512,11 @@ def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int,
 
 
 def _scan_chunk_with_context_overflow_fallback(text_chunk: str, chunk_index: int, total_chunks: int, profile=None) -> Dict[str, Any]:
+    density_profile = _chunk_density_profile(text_chunk)
     try:
-        return _scan_chunk(text_chunk, chunk_index, total_chunks, profile=profile)
+        result = _call_scan_chunk(text_chunk, chunk_index, total_chunks, profile=profile, density_profile=density_profile)
+        result.setdefault("density_profile", density_profile)
+        return result
     except Exception as exc:
         if not is_context_overflow_error(exc) or len(text_chunk or "") < 2:
             raise
@@ -450,7 +526,7 @@ def _scan_chunk_with_context_overflow_fallback(text_chunk: str, chunk_index: int
         for part_index, part in enumerate(parts, 1):
             if not part.strip():
                 continue
-            result = _scan_chunk(part, chunk_index, total_chunks, profile=profile)
+            result = _call_scan_chunk(part, chunk_index, total_chunks, profile=profile, density_profile=_chunk_density_profile(part))
             result["partial_index"] = part_index
             partial_results.append(result)
         if not partial_results:
@@ -622,6 +698,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
             )
             result["sample_index"] = idx
             result["original_chunk_index"] = original_chunk_index
+            result.setdefault("density_profile", _chunk_density_profile(chunk))
             chunk_results.append(result)
         except Exception as exc:
             failed.append({
@@ -631,6 +708,12 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
             })
 
     summary = _summarize_book(clean_name, chunk_results, profile=profile) if chunk_results else {}
+    density_counts = {"low": 0, "medium": 0, "high": 0}
+    for item in chunk_results:
+        level = ((item.get("density_profile") or {}).get("level") or "medium")
+        if level not in density_counts:
+            level = "medium"
+        density_counts[level] += 1
     out = {
         "schema_version": 1,
         "analysis_profile": "general",
@@ -653,6 +736,8 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "chunk_count": len(chunks),
         "chunk_sampling_strategy": sampling_strategy,
         "sampled_chunk_indices": selected_original_indices,
+        "smart_density": SMART_DENSITY,
+        "density_counts": density_counts,
         "prompt_templates": prompt_templates_metadata("general_scan_chunk", "general_summary"),
         "failed_chunks": failed,
         "chunk_results": chunk_results,
