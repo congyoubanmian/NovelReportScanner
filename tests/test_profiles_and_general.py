@@ -5065,6 +5065,35 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("绿帽排除男主与女主亲友或其他女性发生关系", male_lead_expansion_issue["definition_review_hint"])
         self.assertIn("后宫扩张/推土机情节", male_lead_expansion_issue["definition_review_hint"])
 
+        same_subject_ntr_issue = report._annotate_issue_for_report(
+            {"type": "绿帽", "content": "强女与男主分身同房，但该分身由男主本人操控，本质上是男主本人。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(same_subject_ntr_issue["heroine_position_context"], "强女=强准女主")
+        self.assertIn("绿帽要求对象是非男主男性", same_subject_ntr_issue["definition_review_hint"])
+        self.assertIn("分身流风险复核", same_subject_ntr_issue["definition_review_hint"])
+
+        independent_clone_ntr_issue = report._annotate_issue_for_report(
+            {"type": "绿帽", "content": "强女与男主分身发生关系，但分身已有独立人格并脱离男主控制。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(independent_clone_ntr_issue["heroine_position_context"], "强女=强准女主")
+        self.assertNotIn("同一主体", independent_clone_ntr_issue.get("definition_review_hint", ""))
+
         sent_to_male_lead_issue = report._annotate_issue_for_report(
             {"type": "送女", "content": "配角把强女献给男主，男主接收强女入后宫。"},
             [
@@ -5921,6 +5950,112 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(crime_summary["case_structure"], ["旧字段：案件结构有起承转合"])
         self.assertEqual(mystery_summary["clue_fairness"], ["旧字段：关键线索提前出现"])
         self.assertEqual(mystery_summary["logic_chain_integrity"], ["旧字段：推理链条闭合"])
+
+    def test_general_scan_and_report_accept_extended_specialty_aliases(self):
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(_messages, max_tokens=3000):
+                return {
+                    "story_overview": "多类型专项字段别名测试。",
+                    "plot": ["主线"],
+                    "conflicts": ["冲突"],
+                    "world_building": ["设定"],
+                    "battlefield_operations": ["旧字段：战术行动依赖地形与兵种配合"],
+                    "military_logistics": ["旧字段：补给线和医疗消耗被纳入叙事"],
+                    "military_equipment": ["旧字段：火炮与通信设备形成科技树"],
+                    "industry_chain": ["旧字段：上下游议价影响公司现金流"],
+                    "office_politics": ["旧字段：董事会与人事斗争推动职场线"],
+                    "production_system": ["旧字段：农田到工坊形成生产闭环"],
+                    "tech_tree": ["旧字段：科技树升级路径清楚"],
+                    "matchup_tactics": ["旧字段：对位选择决定关键比赛走势"],
+                    "opponent_rivalry": ["旧字段：宿敌竞争关系稳定推进"],
+                    "procedure_realism": ["旧字段：非法取证会影响证据效力"],
+                    "corruption_cost": ["旧字段：污染代价影响角色理智"],
+                    "campus_life": ["旧字段：班级社团与宿舍日常具体"],
+                    "youth_growth": ["旧字段：升学压力推动成长弧线"],
+                    "advantages": ["优点"],
+                    "issues": ["问题"],
+                    "reader_fit": "读者",
+                    "overall_assessment": "评价",
+                }
+
+            general_scan._call_json = fake_call_json
+            profile = analysis_profiles.AnalysisProfile(
+                name="extended_alias_test",
+                display_name="扩展别名测试",
+                description="",
+                enabled_stages=["general_scan"],
+                rules_file="",
+                report_mode="general",
+                scan_focus=[],
+                summary_fields=[
+                    "tactics_and_operations",
+                    "logistics_and_cost",
+                    "equipment_and_tech",
+                    "supply_chain",
+                    "corporate_politics",
+                    "production_chain",
+                    "technology_progression",
+                    "tactical_matchups",
+                    "rivalry_and_opponents",
+                    "legal_realism",
+                    "sanity_and_corruption",
+                    "campus_setting",
+                    "coming_of_age",
+                    "reader_fit",
+                    "overall_assessment",
+                ],
+                harem_plus={},
+                cross_profile_rules={},
+            )
+            summary = general_scan._summarize_book(
+                "扩展别名测试",
+                [{"one_sentence_summary": "测试。"}],
+                profile=profile,
+            )
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertEqual(summary["tactics_and_operations"], ["旧字段：战术行动依赖地形与兵种配合"])
+        self.assertEqual(summary["logistics_and_cost"], ["旧字段：补给线和医疗消耗被纳入叙事"])
+        self.assertEqual(summary["equipment_and_tech"], ["旧字段：火炮与通信设备形成科技树"])
+        self.assertEqual(summary["supply_chain"], ["旧字段：上下游议价影响公司现金流"])
+        self.assertEqual(summary["corporate_politics"], ["旧字段：董事会与人事斗争推动职场线"])
+        self.assertEqual(summary["production_chain"], ["旧字段：农田到工坊形成生产闭环"])
+        self.assertEqual(summary["technology_progression"], ["旧字段：科技树升级路径清楚"])
+        self.assertEqual(summary["tactical_matchups"], ["旧字段：对位选择决定关键比赛走势"])
+        self.assertEqual(summary["rivalry_and_opponents"], ["旧字段：宿敌竞争关系稳定推进"])
+        self.assertEqual(summary["legal_realism"], ["旧字段：非法取证会影响证据效力"])
+        self.assertEqual(summary["sanity_and_corruption"], ["旧字段：污染代价影响角色理智"])
+        self.assertEqual(summary["campus_setting"], ["旧字段：班级社团与宿舍日常具体"])
+        self.assertEqual(summary["coming_of_age"], ["旧字段：升学压力推动成长弧线"])
+
+        text = report.build_general_report(
+            "扩展别名测试",
+            {"male_protagonist": {"name": "男主"}, "all_female_characters": {}},
+            {
+                "profile_display_name": "扩展别名测试",
+                "summary_fields": profile.summary_fields,
+                "summary": summary,
+            },
+        )
+        for title in [
+            "战术与行动",
+            "后勤与战争代价",
+            "装备与军工科技",
+            "供应链/产业链",
+            "职场政治",
+            "生产链条",
+            "技术升级路径",
+            "战术对局",
+            "对手群像",
+            "法律现实性",
+            "理智与污染代价",
+            "校园环境",
+            "成长弧线",
+        ]:
+            self.assertIn(f"【{title}】", text)
+        self.assertIn("旧字段：对位选择决定关键比赛走势", text)
 
     def test_general_scan_summary_alias_candidates_are_bidirectional(self):
         old_call_json = general_scan._call_json

@@ -1,6 +1,6 @@
 # Kimi 方案推进进度总结
 
-生成日期：2026-06-07（本版更新于 2026-06-07 23:30）
+生成日期：2026-06-07（本版更新于 2026-06-08 00:15）
 
 ## 总体完成度
 
@@ -106,6 +106,7 @@
 - 通用总评缓存复用判断已同步使用作品概览别名，避免旧 summary 只有 `book_overview` 等字段时被误判为过期而重复扫描。
 - 补齐全部 profile `summary_fields` 中文标题：新增 `main_plot`/`core_conflicts`/`worldbuilding`/`themes`/`strengths`/`risks_or_issues`/`reader_fit`/`overall_assessment` 等 8 个通用字段，以及 `heroines`/`candidate_heroines`/`missed_heroines`/`purity_assessment`/`poison_points`/`depressing_points`/`male_protagonist`/`relationship_progression` 等 8 个后宫字段，确保所有报告字段在输出时都有中文展示名。
 - 回归测试 `test_general_scan_field_labels_cover_profile_summary_fields` 已移除对通用字段和后宫 profile 的跳过逻辑，现在强制检查所有 profile 的所有 summary_fields 都必须有中文标题，防止新增 profile 字段遗漏标签。
+- 补充更多非后宫专项旧字段/同义字段别名，覆盖军事战术/后勤/装备、商战供应链/职场政治、种田生产链/科技树、体育对局/宿敌、刑侦司法现实、克系污染代价、校园环境/成长弧线等字段；扫描汇总和最终报告共用同一别名表，避免模型返回旧 key 时专项栏目丢失。
 
 ### 5. Web 和部署工程项
 
@@ -148,7 +149,7 @@
 - 专项报告字段标题和输出结构。
 - 通用总评字段别名、作品概览别名和旧 summary 缓存复用。
 
-最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **146 个测试 OK**。
+最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **147 个测试 OK**。
 
 ## 已推送的关键提交
 

@@ -228,13 +228,42 @@ SUMMARY_FIELD_ALIASES = {
     "case_design": "case_structure",
     "case_logic": "logic_chain_integrity",
     "clue_logic": "clue_fairness",
+    "investigation_method": "detective_method",
+    "reveal_payoff": "reveal_and_payoff",
+    "case_link_to_mainline": "case_mainline_link",
+    "case_mainline_connection": "case_mainline_link",
+    "procedure_realism": "legal_realism",
+    "legal_procedure": "legal_realism",
     "social_relevance": "social_reflection",
     "tech_plausibility": "tech_feasibility",
     "technology_feasibility": "tech_feasibility",
+    "alchemy_technology": "alchemy_industry",
+    "church_politics": "church_empire_politics",
+    "mysticism_industry": "mysticism_integration",
     "adventure_structure": "adventure_system",
     "companions": "party_dynamics",
     "romance_subplot": "romance_comedy_balance",
     "daily_life": "slice_of_life",
+    "war_scale": "war_type_and_scale",
+    "battlefield_operations": "tactics_and_operations",
+    "military_logistics": "logistics_and_cost",
+    "military_equipment": "equipment_and_tech",
+    "industry_chain": "supply_chain",
+    "office_politics": "corporate_politics",
+    "creative_pipeline": "creative_process",
+    "fandom_economy": "fan_economy",
+    "production_system": "production_chain",
+    "tech_tree": "technology_progression",
+    "civilization_progression": "civilization_level",
+    "sports_rules": "competition_rules",
+    "matchup_tactics": "tactical_matchups",
+    "opponent_rivalry": "rivalry_and_opponents",
+    "career_team": "career_and_team",
+    "anomaly_mechanics": "anomaly_rules",
+    "sanity_mechanics": "san_mechanics",
+    "corruption_cost": "sanity_and_corruption",
+    "campus_life": "campus_setting",
+    "youth_growth": "coming_of_age",
     "target_readers": "reader_fit",
     "reader_suitability": "reader_fit",
     "suitable_readers": "reader_fit",
@@ -1559,6 +1588,9 @@ def _strict_issue_evidence_review_hint(issue: dict) -> str:
     ntr_male_lead_expansion_hint = _strict_ntr_male_lead_expansion_review_hint(issue, text)
     if ntr_male_lead_expansion_hint:
         hints.append(ntr_male_lead_expansion_hint)
+    ntr_same_subject_hint = _strict_ntr_same_subject_review_hint(issue, text)
+    if ntr_same_subject_hint:
+        hints.append(ntr_same_subject_hint)
     send_girl_to_male_lead_hint = _strict_send_girl_to_male_lead_review_hint(issue, text)
     if send_girl_to_male_lead_hint:
         hints.append(send_girl_to_male_lead_hint)
@@ -1652,6 +1684,27 @@ def _strict_ntr_male_lead_expansion_review_hint(issue: dict, text: str) -> str:
     if not any(marker in text for marker in female_relative_markers):
         return ""
     return "绿帽排除男主与女主亲友或其他女性发生关系；当前证据更像后宫扩张/推土机情节，需复核是否误标绿帽。"
+
+
+def _strict_ntr_same_subject_review_hint(issue: dict, text: str) -> str:
+    issue_type = str((issue or {}).get("type") or "")
+    upper_type = issue_type.upper()
+    if "绿帽" not in issue_type and "NTR" not in upper_type and "牛头人" not in issue_type:
+        return ""
+    same_subject_markers = (
+        "男主分身", "主角分身", "男主马甲", "主角马甲", "男主化身", "主角化身",
+        "同一灵魂", "同一主体", "同一意识", "身体替代", "灵魂替代", "合法化身",
+        "本质上是男主", "本质上是主角", "男主本人", "主角本人", "男主操控", "主角操控",
+    )
+    if not any(marker in text for marker in same_subject_markers):
+        return ""
+    independent_markers = (
+        "独立人格", "脱离男主控制", "脱离主角控制", "不受男主控制", "不受主角控制",
+        "背叛男主", "背叛主角", "独立关系",
+    )
+    if any(marker in text for marker in independent_markers):
+        return ""
+    return "绿帽要求对象是非男主男性；当前证据更像男主分身/马甲/同一灵魂/身体替代，应优先按同一主体或分身流风险复核。"
 
 
 def _strict_send_girl_to_male_lead_review_hint(issue: dict, text: str) -> str:
