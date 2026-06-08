@@ -1253,6 +1253,47 @@ def _contains_positive_signal_text(value, keywords) -> bool:
     return False
 
 
+def _has_romance_gap_signal_text(value) -> bool:
+    if isinstance(value, (list, tuple, set)):
+        text = " ".join(str(x) for x in value if x is not None)
+    elif isinstance(value, dict):
+        text = json.dumps(value, ensure_ascii=False)
+    else:
+        text = str(value or "")
+    if not text:
+        return False
+
+    negated_gap_patterns = (
+        "不是没有恋爱", "并非没有恋爱", "并不是没有恋爱",
+        "不是没有恋爱线", "并非没有恋爱线", "并不是没有恋爱线",
+        "不是无恋爱线", "并非无恋爱线", "并不是无恋爱线",
+        "不是没有暧昧", "并非没有暧昧", "并不是没有暧昧",
+        "不是没有感情描写", "并非没有感情描写", "并不是没有感情描写",
+        "不是完全没有感情描写", "并非完全没有感情描写", "并不是完全没有感情描写",
+        "不是没有任何感情描写", "并非没有任何感情描写", "并不是没有任何感情描写",
+        "不是没有感情戏", "并非没有感情戏", "并不是没有感情戏",
+        "不是无感情戏", "并非无感情戏", "并不是无感情戏",
+        "不是没有感情线", "并非没有感情线", "并不是没有感情线",
+        "不是无感情线", "并非无感情线", "并不是无感情线",
+        "没有感情戏缺失", "不存在感情戏缺失", "未见感情戏缺失",
+        "没有感情描写缺失", "不存在感情描写缺失", "未见感情描写缺失",
+        "没有恋爱推进缺失", "不存在恋爱推进缺失", "未见恋爱推进缺失",
+        "没有感情推进缺失", "不存在感情推进缺失", "未见感情推进缺失",
+    )
+    protected_text = text
+    for pattern in negated_gap_patterns:
+        protected_text = protected_text.replace(pattern, "")
+
+    romance_gap_patterns = (
+        "没有感情描写", "无感情描写", "完全没有感情描写", "没有任何感情描写", "感情描写缺失",
+        "感情戏缺失", "没有感情戏", "无感情戏", "没有感情线", "无感情线",
+        "没有恋爱线", "无恋爱线", "没有恋爱", "没有暧昧", "恋爱推进缺失", "感情推进缺失",
+        "缺少感情", "缺乏感情", "缺少恋爱", "缺乏恋爱",
+        "没有后宫关系确认", "未确认后宫关系", "无后宫关系确认",
+    )
+    return any(pattern in protected_text for pattern in romance_gap_patterns)
+
+
 def _has_positive_leak_relationship_confirmation(text: str) -> bool:
     return _contains_positive_signal_text(
         text,
@@ -1433,11 +1474,7 @@ def _heroine_position_level(heroine_meta: dict, profile: dict, evidence: dict = 
     if _has_low_presence_or_tooling_signal(text):
         score -= 2
         risks.append("低存在感/工具人线索")
-    has_romance_gap_signal = _contains_any_text(text, [
-        "没有恋爱", "没有恋爱线", "无恋爱线", "没有暧昧", "没有感情描写", "无感情描写",
-        "没有感情戏", "无感情戏", "没有感情线", "无感情线", "感情戏缺失", "缺少感情",
-        "没有后宫关系确认", "未确认后宫关系", "无后宫关系确认",
-    ])
+    has_romance_gap_signal = _has_romance_gap_signal_text(text)
     if has_romance_gap_signal:
         score -= 1
         risks.append("明确缺少恋爱/后宫推进")
@@ -2343,12 +2380,7 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
     all_female_characters = (detailed_data or {}).get("all_female_characters") or {}
     heroine_material = []
     intimacy_words = ("亲吻", "拥抱", "牵手", "同床", "双修", "成亲", "表白", "吃醋", "暧昧", "喜欢", "爱慕", "私通", "推倒")
-    romance_gap_words = ("感情戏缺失", "预期落差", "进度条诈骗", "恋爱推进停滞", "感情描写缺失")
-    explicit_romance_gap_words = (
-        "没有感情描写", "无感情描写", "完全没有感情描写", "没有任何感情描写", "感情描写缺失",
-        "感情戏缺失", "没有感情戏", "无感情戏", "没有感情线", "无感情线",
-        "没有恋爱线", "无恋爱线", "没有恋爱", "没有暧昧", "恋爱推进缺失", "感情推进缺失",
-    )
+    romance_gap_issue_type_words = ("预期落差", "进度条诈骗", "恋爱推进停滞")
     presence_low = 0
     intimacy_hits = 0
     explicit_romance_gap_hits = 0
@@ -2373,7 +2405,7 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
         )
         if _contains_positive_signal_text(blob, intimacy_words):
             intimacy_hits += 1
-        if _contains_any_text(blob, explicit_romance_gap_words):
+        if _has_romance_gap_signal_text(blob):
             explicit_romance_gap_hits += 1
         count = int(evid.get("count") or h.get("count") or 0)
         explicit_high_presence = _contains_any_text(blob, ["存在感高", "存在感较高", "存在感很高", "存在感强", "存在感突出"])
@@ -2390,7 +2422,7 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
         if isinstance(item, dict)
         for field in ("type", "content", "review_comment", "reason")
     )
-    has_romance_gap_issue = any(word in issue_blob for word in romance_gap_words)
+    has_romance_gap_issue = _has_romance_gap_signal_text(issue_blob) or any(word in issue_blob for word in romance_gap_issue_type_words)
     has_tooling_issue = _has_low_presence_or_tooling_signal(issue_blob)
 
     male_blob = "；".join(

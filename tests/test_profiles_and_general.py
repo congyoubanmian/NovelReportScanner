@@ -4312,6 +4312,32 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 ],
                 {},
             )
+            negated_gap = report._summarize_harem_romance_overview(
+                {
+                    "all_female_characters": {
+                        "丙女": {
+                            "count": 6,
+                            "summaries": ["与男主长期暧昧并主动表白，不是没有感情戏，也没有感情戏缺失问题。"],
+                        }
+                    }
+                },
+                {
+                    "yumen_points": [
+                        {
+                            "type": "感情线复核",
+                            "content": "丙女并非没有感情线，未见感情戏缺失。",
+                        }
+                    ]
+                },
+                [
+                    {
+                        "name": "丙女",
+                        "relationship_type": "恋人",
+                        "summary": "不是没有恋爱线，双方有明确暧昧和表白。",
+                    }
+                ],
+                {},
+            )
         finally:
             report.OpenAI = old_openai
             report.API_KEY_POOL = old_api_key_pool
@@ -4319,6 +4345,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("极低", negated["romance_density"])
         self.assertIn("未见明确恋爱推进", negated["romance_progression"])
         self.assertIn("中等或以上", positive["romance_density"])
+        self.assertIn("中等或以上", negated_gap["romance_density"])
 
     def test_harem_romance_overview_keeps_physical_event_from_inflating_romance(self):
         old_openai = report.OpenAI
@@ -4733,6 +4760,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(report._contains_positive_signal_text("游戏里有亲密度系统，她只是讲解规则。", ["亲密"]))
         self.assertTrue(report._contains_positive_signal_text("她与男主亲密互动并逐渐动心。", ["亲密"]))
         self.assertFalse(report._contains_positive_signal_text("她未同房，只是住在同一院落。", ["同房"]))
+        self.assertTrue(report._has_romance_gap_signal_text("她没有感情戏，也没有恋爱线。"))
+        self.assertTrue(report._has_romance_gap_signal_text("材料显示感情戏缺失。"))
+        self.assertFalse(report._has_romance_gap_signal_text("她不是没有感情戏，也没有感情戏缺失问题。"))
+        self.assertFalse(report._has_romance_gap_signal_text("并非没有恋爱线，未见感情推进缺失。"))
 
         level = report._heroine_position_level(
             {},
@@ -4754,6 +4785,19 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertFalse(denied_relationship_level.startswith("强准女主"), denied_relationship_level)
         self.assertIn("缺少感情/后宫定位证据", denied_relationship_level)
+
+        negated_gap_level = report._heroine_position_level(
+            {"importance_rank": 2},
+            {
+                "identity": "主线女配",
+                "relationship_with_protagonist": "与男主长期暧昧，不是没有恋爱线。",
+                "key_events": "主动表白，未见感情戏缺失。",
+            },
+            {"count": 7},
+            {},
+        )
+        self.assertIn("感情/亲密推进", negated_gap_level)
+        self.assertNotIn("明确缺少恋爱/后宫推进", negated_gap_level)
 
     def test_leak_three_layers_ignores_non_romantic_love_words(self):
         clean = report._summarize_leak_three_layers(
