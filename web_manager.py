@@ -1244,6 +1244,17 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_storage_error(self, exc):
+        message = str(exc) or exc.__class__.__name__
+        self._send_json(
+            {
+                "error": "storage write failed",
+                "detail": message,
+                "hint": "检查宿主机挂载的 novels/results 目录是否允许容器运行用户写入。",
+            },
+            500,
+        )
+
     def _read_json_payload(self):
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -1421,7 +1432,11 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 book["profile"] = profile_name
                 book["message"] = "分类已更新"
-                _save_state()
+                try:
+                    _save_state()
+                except (PermissionError, OSError) as exc:
+                    self._send_storage_error(exc)
+                    return
             self._send_json({"ok": True})
             return
         if parsed.path == "/api/config":
@@ -1442,7 +1457,11 @@ class Handler(BaseHTTPRequestHandler):
             payload = self._read_json_payload()
             if payload is None:
                 return
-            ok, result = _enqueue(payload.get("book_id"))
+            try:
+                ok, result = _enqueue(payload.get("book_id"))
+            except (PermissionError, OSError) as exc:
+                self._send_storage_error(exc)
+                return
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
             return
         if parsed.path == "/api/enqueue-batch":
@@ -1455,7 +1474,11 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(book_ids, list):
                 self._send_json({"error": "book_ids must be a list"}, 400)
                 return
-            result = _enqueue_many(book_ids)
+            try:
+                result = _enqueue_many(book_ids)
+            except (PermissionError, OSError) as exc:
+                self._send_storage_error(exc)
+                return
             self._send_json({"ok": bool(result["queued"]), "result": result}, 200)
             return
         if parsed.path == "/api/cancel":
@@ -1464,7 +1487,11 @@ class Handler(BaseHTTPRequestHandler):
             payload = self._read_json_payload()
             if payload is None:
                 return
-            ok, result = _cancel_queued_book(payload.get("book_id"))
+            try:
+                ok, result = _cancel_queued_book(payload.get("book_id"))
+            except (PermissionError, OSError) as exc:
+                self._send_storage_error(exc)
+                return
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
             return
         if parsed.path == "/api/prioritize":
@@ -1473,7 +1500,11 @@ class Handler(BaseHTTPRequestHandler):
             payload = self._read_json_payload()
             if payload is None:
                 return
-            ok, result = _prioritize_queued_book(payload.get("book_id"))
+            try:
+                ok, result = _prioritize_queued_book(payload.get("book_id"))
+            except (PermissionError, OSError) as exc:
+                self._send_storage_error(exc)
+                return
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
             return
         if parsed.path == "/api/move-queue":
@@ -1482,7 +1513,11 @@ class Handler(BaseHTTPRequestHandler):
             payload = self._read_json_payload()
             if payload is None:
                 return
-            ok, result = _move_queued_book(payload.get("book_id"), payload.get("direction"))
+            try:
+                ok, result = _move_queued_book(payload.get("book_id"), payload.get("direction"))
+            except (PermissionError, OSError) as exc:
+                self._send_storage_error(exc)
+                return
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
             return
         if parsed.path == "/api/delete":
@@ -1491,7 +1526,11 @@ class Handler(BaseHTTPRequestHandler):
             payload = self._read_json_payload()
             if payload is None:
                 return
-            ok, result = _delete_book(payload.get("book_id"))
+            try:
+                ok, result = _delete_book(payload.get("book_id"))
+            except (PermissionError, OSError) as exc:
+                self._send_storage_error(exc)
+                return
             self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
             return
         if parsed.path == "/api/delete-batch":
@@ -1504,7 +1543,11 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(book_ids, list):
                 self._send_json({"error": "book_ids must be a list"}, 400)
                 return
-            result = _delete_many_books(book_ids)
+            try:
+                result = _delete_many_books(book_ids)
+            except (PermissionError, OSError) as exc:
+                self._send_storage_error(exc)
+                return
             self._send_json({"ok": bool(result["deleted"]), "result": result}, 200)
             return
         if parsed.path == "/upload":
@@ -1524,7 +1567,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(400, "missing file")
                 return
             filename = _safe_filename(file_item.filename)
-            path = os.path.join(_novels_dir(), filename)
+            try:
+                path = os.path.join(_novels_dir(), filename)
+            except (PermissionError, OSError) as exc:
+                self._send_storage_error(exc)
+                return
             book_id = _book_id_from_path(path)
             overwrite = str(form.getfirst("overwrite", "")).lower() in {"1", "true", "yes", "on"}
             ok, reason = _validate_upload_target(book_id, path, overwrite=overwrite)
@@ -1537,7 +1584,10 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 uploaded_size = _save_upload_file(file_item, path)
             except ValueError as exc:
-                self.send_error(413, str(exc))
+                self._send_json({"error": str(exc)}, 413)
+                return
+            except (PermissionError, OSError) as exc:
+                self._send_storage_error(exc)
                 return
             profile_values = form.getlist("profile")
             if not profile_values:
@@ -1571,7 +1621,11 @@ class Handler(BaseHTTPRequestHandler):
                 if overwrite:
                     STATE["books"][book_id]["history_reset_at"] = uploaded_at
                     STATE["books"][book_id]["outputs_reset_after"] = outputs_reset_after
-                _save_state()
+                try:
+                    _save_state()
+                except (PermissionError, OSError) as exc:
+                    self._send_storage_error(exc)
+                    return
             self._send_json({"ok": True, "book_id": book_id})
             return
         self.send_error(404)

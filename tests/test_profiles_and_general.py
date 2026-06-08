@@ -2378,6 +2378,64 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 else:
                     os.environ[key] = value
 
+    def test_web_manager_enqueue_permission_error_returns_json(self):
+        class FakeHandler(web_manager.Handler):
+            def __init__(self, body):
+                self.path = "/api/enqueue"
+                self.headers = {"Content-Length": str(len(body))}
+                self.rfile = io.BytesIO(body)
+                self.sent = []
+
+            def _send_json(self, data, status=200):
+                self.sent.append((status, data))
+
+        old_state = web_manager.STATE
+        old_save_state = web_manager._save_state
+        old_queue_ids = set(web_manager.TASK_QUEUE_IDS)
+        old_token = os.environ.get("WEB_ACCESS_TOKEN")
+        try:
+            os.environ.pop("WEB_ACCESS_TOKEN", None)
+            web_manager.TASK_QUEUE_IDS.clear()
+            while not web_manager.TASK_QUEUE.empty():
+                web_manager.TASK_QUEUE.get_nowait()
+                web_manager.TASK_QUEUE.task_done()
+            web_manager.STATE = {
+                "books": {
+                    "ready": {
+                        "id": "ready",
+                        "name": "ready",
+                        "path": "/tmp/ready.txt",
+                        "profile": "general",
+                        "status": "idle",
+                    }
+                },
+                "tasks": [],
+            }
+            web_manager._save_state = lambda: (_ for _ in ()).throw(
+                PermissionError("/app/results/web_manager_state.json.1.tmp")
+            )
+            body = json.dumps({"book_id": "ready"}, ensure_ascii=False).encode("utf-8")
+            handler = FakeHandler(body)
+
+            web_manager.Handler.do_POST(handler)
+
+            self.assertEqual(handler.sent[0][0], 500)
+            self.assertEqual(handler.sent[0][1]["error"], "storage write failed")
+            self.assertIn("/app/results/web_manager_state.json.1.tmp", handler.sent[0][1]["detail"])
+            self.assertIn("novels/results", handler.sent[0][1]["hint"])
+        finally:
+            while not web_manager.TASK_QUEUE.empty():
+                web_manager.TASK_QUEUE.get_nowait()
+                web_manager.TASK_QUEUE.task_done()
+            web_manager.TASK_QUEUE_IDS.clear()
+            web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
+            web_manager.STATE = old_state
+            web_manager._save_state = old_save_state
+            if old_token is None:
+                os.environ.pop("WEB_ACCESS_TOKEN", None)
+            else:
+                os.environ["WEB_ACCESS_TOKEN"] = old_token
+
     def test_web_manager_runtime_config_persists_to_env_file(self):
         import tempfile
 

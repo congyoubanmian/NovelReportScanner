@@ -47,7 +47,7 @@ async function _request(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
     })
     if (!res.ok) {
       const text = await res.text()
-      throw new Error(text || `HTTP ${res.status}`)
+      throw new Error(_formatErrorResponse(text, res.status))
     }
     return res
   } catch (e) {
@@ -60,6 +60,17 @@ async function _request(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
     throw e
   } finally {
     clearTimeout(timeout)
+  }
+}
+
+function _formatErrorResponse(text, status) {
+  if (!text) return `HTTP ${status}`
+  try {
+    const data = JSON.parse(text)
+    const parts = [data.error, data.detail, data.hint].filter(Boolean)
+    return parts.length ? parts.join('：') : text
+  } catch {
+    return text
   }
 }
 
