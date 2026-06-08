@@ -604,6 +604,25 @@ def find_general_summary_json(book_key: str, base_dir: str = RESULTS_DIR, profil
     return None
 
 
+def find_reviewer_summary_json(book_key: str, base_dir: str = RESULTS_DIR, strict: bool = False):
+    if not book_key:
+        return find_latest("VERIFIED_SUMMARY_*.json", base_dir)
+    direct_patterns = [
+        os.path.join(base_dir, f"{book_key}_VERIFIED_SUMMARY_*.json"),
+        os.path.join(base_dir, f"VERIFIED_SUMMARY_{book_key}_*.json"),
+    ]
+    paths = []
+    for pattern in direct_patterns:
+        paths.extend(glob.glob(pattern))
+    nested_paths = glob.glob(os.path.join(base_dir, "**", "VERIFIED_SUMMARY_*.json"), recursive=True)
+    paths.extend(p for p in nested_paths if infer_book_key_from_results_dir(p) == book_key)
+    if paths:
+        return max(set(paths), key=os.path.getmtime)
+    if strict:
+        return None
+    return find_latest("VERIFIED_SUMMARY_*.json", base_dir)
+
+
 def load_json(path):
     if not path or not os.path.exists(path):
         return None
@@ -4154,13 +4173,19 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     if novel_path_env:
         env_book_key = os.path.splitext(os.path.basename(novel_path_env))[0].strip()
 
-    # 查找数据文件。通用模式不依赖后宫 reviewer，避免误读其他书的 VERIFIED_SUMMARY。
-    reviewer_path = None if profile.report_mode == "general" else find_latest("VERIFIED_SUMMARY_*.json")
-    reviewer = None if profile.report_mode == "general" else load_json(reviewer_path)
-    
-    # 先从环境变量/文件名尝试推断书名；若 reviewer 是 VERIFIED_SUMMARY_*.json，则需要进一步纠正
+    # 先从显式参数/环境变量推断书名；后宫 reviewer 也必须受这个上下文约束。
     explicit_book_context = bool((book_name or "").strip() or env_book_key)
-    book_key = (book_name or "").strip() or env_book_key or extract_book_key_from_path(reviewer_path)
+    book_key = (book_name or "").strip() or env_book_key
+
+    # 查找数据文件。通用模式不依赖后宫 reviewer，避免误读其他书的 VERIFIED_SUMMARY。
+    reviewer_path = None
+    if profile.report_mode != "general":
+        reviewer_path = find_reviewer_summary_json(book_key, strict=explicit_book_context)
+        if not book_key:
+            book_key = extract_book_key_from_path(reviewer_path)
+    reviewer = None if profile.report_mode == "general" else load_json(reviewer_path)
+
+    # 若 reviewer 是 VERIFIED_SUMMARY_*.json，则需要进一步纠正 book_key
     detailed_path = None
     if book_key:
         detailed_path = find_detailed_json(book_key, detail_path=detail_path, strict=explicit_book_context)

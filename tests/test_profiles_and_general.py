@@ -7260,6 +7260,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 other_detail = os.path.join(tmpdir, "乙书_detailed_20260609.json")
                 with open(other_detail, "w", encoding="utf-8") as f:
                     json.dump({"male_protagonist": {"name": "乙男"}}, f, ensure_ascii=False)
+                other_review_dir = os.path.join(tmpdir, "乙书_scan_20260609")
+                os.makedirs(other_review_dir)
+                with open(os.path.join(other_review_dir, "VERIFIED_SUMMARY_20260609.json"), "w", encoding="utf-8") as f:
+                    json.dump({"male_lead": "乙男", "heroines_purity": [{"name": "乙女"}]}, f, ensure_ascii=False)
 
                 captured = {}
 
@@ -7276,6 +7280,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
                 self.assertEqual(captured["book_key"], "甲书")
                 self.assertIsNone(captured["detailed_data"])
+                self.assertIsNone(captured["reviewer"])
         finally:
             report.RESULTS_DIR = old_results_dir
             report.REPORT_CHECKPOINT_FILE = old_checkpoint
@@ -7287,6 +7292,23 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 os.environ.pop("ANALYSIS_PROFILE", None)
             else:
                 os.environ["ANALYSIS_PROFILE"] = old_profile
+
+    def test_find_reviewer_summary_json_requires_exact_book_key_from_scan_dir(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            wrong_dir = os.path.join(tmpdir, "九锡外传_scan_20260609")
+            right_dir = os.path.join(tmpdir, "九锡_scan_20260609")
+            os.makedirs(wrong_dir)
+            os.makedirs(right_dir)
+            wrong_path = os.path.join(wrong_dir, "VERIFIED_SUMMARY_20260609.json")
+            right_path = os.path.join(right_dir, "VERIFIED_SUMMARY_20260609.json")
+            with open(wrong_path, "w", encoding="utf-8") as f:
+                json.dump({"book": "九锡外传"}, f)
+            with open(right_path, "w", encoding="utf-8") as f:
+                json.dump({"book": "九锡"}, f)
+
+            self.assertEqual(report.find_reviewer_summary_json("九锡", base_dir=tmpdir, strict=True), right_path)
+            os.unlink(right_path)
+            self.assertIsNone(report.find_reviewer_summary_json("九锡", base_dir=tmpdir, strict=True))
 
     def test_find_general_summary_json_requires_exact_book_key_from_scan_dir(self):
         with tempfile.TemporaryDirectory() as tmpdir:
