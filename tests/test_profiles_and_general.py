@@ -397,6 +397,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("Authorization: Bearer", text)
         self.assertIn("GENERAL_SCAN_SMART_DENSITY", text)
         self.assertIn("GENERAL_SCAN_INCREMENTAL_REUSE", text)
+        self.assertIn("GENERAL_SCAN_WRITING_QUALITY", text)
 
     def test_profile_aliases_and_stages(self):
         harem = analysis_profiles.load_analysis_profile("后宫")
@@ -811,6 +812,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("rate_limit_scope: 'auto'", text)
         self.assertIn("config.rate_limit_scope || 'auto'", text)
         self.assertIn('<option value="auto">auto</option>', text)
+        self.assertIn("general_scan_writing_quality: true", text)
+        self.assertIn("config.general_scan_writing_quality !== false", text)
+        self.assertIn("configForm.general_scan_writing_quality", text)
 
     def test_rate_limit_scope_auto_resolves_by_key_count(self):
         self.assertEqual(Timerror.normalize_rate_limit_scope("auto", 1), "global")
@@ -4207,6 +4211,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_MAX_CHUNKS",
             "GENERAL_SCAN_SMART_DENSITY",
             "GENERAL_SCAN_INCREMENTAL_REUSE",
+            "GENERAL_SCAN_WRITING_QUALITY",
             "HAREM_PLUS_GENERAL_SCAN",
             "API_KEY",
         ]
@@ -4221,6 +4226,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "general_scan_max_chunks": "120",
                 "general_scan_smart_density": False,
                 "general_scan_incremental_reuse": False,
+                "general_scan_writing_quality": False,
                 "harem_plus_general_scan": True,
             })
 
@@ -4232,10 +4238,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["GENERAL_SCAN_MAX_CHUNKS"], "120")
             self.assertEqual(os.environ["GENERAL_SCAN_SMART_DENSITY"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_INCREMENTAL_REUSE"], "0")
+            self.assertEqual(os.environ["GENERAL_SCAN_WRITING_QUALITY"], "0")
             self.assertEqual(os.environ["HAREM_PLUS_GENERAL_SCAN"], "1")
             self.assertEqual(result["max_workers"], "4")
             self.assertFalse(result["general_scan_smart_density"])
             self.assertFalse(result["general_scan_incremental_reuse"])
+            self.assertFalse(result["general_scan_writing_quality"])
             self.assertTrue(result["harem_plus_general_scan"])
             self.assertIn("max_workers", result["editable"])
             self.assertNotIn("api_key", result["editable"])
@@ -4406,6 +4414,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_MAX_CHUNKS": "general_scan_max_chunks",
             "GENERAL_SCAN_SMART_DENSITY": "general_scan_smart_density",
             "GENERAL_SCAN_INCREMENTAL_REUSE": "general_scan_incremental_reuse",
+            "GENERAL_SCAN_WRITING_QUALITY": "general_scan_writing_quality",
             "HAREM_PLUS_GENERAL_SCAN": "harem_plus_general_scan",
         }
         old_values = {env: os.environ.get(env) for env in env_field_map}
@@ -4436,6 +4445,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "max_workers": 16,
                     "general_scan_smart_density": False,
                     "general_scan_incremental_reuse": False,
+                    "general_scan_writing_quality": False,
                     "harem_plus_general_scan": True,
                 })
                 self.assertTrue(ok)
@@ -4446,6 +4456,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("MAX_WORKERS=16", lines)
                 self.assertIn("GENERAL_SCAN_SMART_DENSITY=0", lines)
                 self.assertIn("GENERAL_SCAN_INCREMENTAL_REUSE=0", lines)
+                self.assertIn("GENERAL_SCAN_WRITING_QUALITY=0", lines)
                 self.assertIn("HAREM_PLUS_GENERAL_SCAN=1", lines)
                 # 旧值不应残留
                 self.assertNotIn("MAX_WORKERS=4", lines)
@@ -5758,6 +5769,71 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn('"plot": {', text)
         self.assertIn('"label": "剧情质量"', text)
         self.assertIn('"score": 7.5', text)
+
+    def test_general_report_includes_writing_quality_sections(self):
+        general_summary = {
+            "profile_display_name": "通用小说分析",
+            "summary_fields": [
+                "main_plot",
+                "writing_quality_overall",
+                "pacing_analysis_overall",
+                "information_density_audit",
+                "water_chapter_analysis",
+            ],
+            "summary": {
+                "story_overview": "主角推进案件并维持悬疑节奏。",
+                "main_plot": ["案件推进"],
+                "writing_quality_overall": {
+                    "overall_score": "7.2",
+                    "grade": "B",
+                    "dimension_scores": {
+                        "prose_quality": "6.5",
+                        "character_depth": "7",
+                        "narrative_technique": "7.5",
+                        "dialogue_quality": "7",
+                        "scene_description": "6",
+                        "emotional_impact": "6.5",
+                        "info_density": "8",
+                        "worldbuilding_integration": "7",
+                    },
+                    "strengths": ["线索推进密集"],
+                    "weaknesses": ["人物声口区分一般"],
+                    "evidence": ["审问段落持续推进证词"],
+                    "assessment": "整体写作质量良好。",
+                },
+                "pacing_analysis_overall": {
+                    "rhythm_curve": "调查推进较紧",
+                    "high_points": ["获得证词"],
+                    "slow_or_water_segments": ["说明段略长"],
+                    "emotion_pattern": "悬疑为主",
+                    "risks": ["中段可能拖慢"],
+                },
+                "information_density_audit": {
+                    "density_verdict": "信息密度较高",
+                    "water_ratio_estimate": "约10%",
+                    "high_density_material": ["审问线索"],
+                    "redundancy_patterns": ["设定解释重复"],
+                    "skip_advice": "审问段不建议跳读",
+                },
+                "water_chapter_analysis": ["说明性段落略多"],
+            },
+        }
+
+        text = report.build_general_report("测试书", {}, general_summary)
+
+        self.assertIn("【写作质量分析】", text)
+        self.assertIn("总体：7.2/10（B）", text)
+        self.assertIn("| 文笔质量 | 6.5/10 |", text)
+        self.assertIn("| 信息密度 | 8.0/10 |", text)
+        self.assertIn("【写作优势】", text)
+        self.assertIn("线索推进密集", text)
+        self.assertIn("【节奏曲线分析】", text)
+        self.assertIn("调查推进较紧", text)
+        self.assertIn("【信息密度审计】", text)
+        self.assertIn("审问段不建议跳读", text)
+        self.assertIn("【水文与冗余分析】", text)
+        self.assertIn("写作质量JSON", text)
+        self.assertNotIn("【writing quality overall】", text)
 
     def test_general_report_does_not_repeat_footer_summary_fields(self):
         general_summary = {
@@ -8909,6 +8985,64 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(calls[0]["max_tokens"], 1800)
         self.assertIn("密度策略：light", calls[0]["prompt"])
 
+    def test_general_scan_outputs_writing_quality_pacing_and_density(self):
+        profile = analysis_profiles.load_analysis_profile("general")
+        prompts = []
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(messages, max_tokens=3000):
+                prompts.append("\n".join(item.get("content", "") for item in messages))
+                return {
+                    "plot_events": ["主角审问嫌疑人"],
+                    "conflicts": ["真相与谎言冲突"],
+                    "worldbuilding": ["近代城市警务"],
+                    "themes": ["真相代价"],
+                    "foreshadowing": [],
+                    "quality_notes": ["对话推进线索"],
+                    "specialty_notes": [],
+                    "writing_quality": {
+                        "prose_quality": {"score": 6.75, "strength": "表达清楚", "weakness": "句式略平"},
+                        "character_depth": {"score": 7, "strength": "角色动机明确", "weakness": ""},
+                        "narrative_technique": {"score": 8, "strength": "信息控制有效", "weakness": ""},
+                        "dialogue_quality": {"score": 7, "strength": "问答有推进", "weakness": "声口区分一般"},
+                        "scene_description": {"score": 5, "strength": "空间清楚", "weakness": "感官不足"},
+                        "emotional_impact": {"score": 6, "strength": "紧张感稳定", "weakness": ""},
+                        "info_density": {"score": 8, "water_chapter_score": 2, "strength": "线索密集", "weakness": ""},
+                        "worldbuilding_integration": {"score": 6, "strength": "警务设定服务剧情", "weakness": ""},
+                        "chunk_assessment": "信息密度较高。",
+                        "evidence": [{"type": "亮点", "dimension": "对话质量", "quote": "他说出了关键证词", "note": "推进线索"}],
+                    },
+                    "pacing_analysis": {
+                        "pacing_type": "dense",
+                        "tension_level": 7,
+                        "emotion_tone": "悬",
+                        "emotion_intensity": 6,
+                        "payoff_moment": "获得关键证词",
+                        "cliffhanger_quality": "medium",
+                        "reader_engagement_prediction": "high",
+                    },
+                    "information_density": {
+                        "density_score": "high",
+                        "skipability": "essential",
+                        "key_information": ["嫌疑人证词改变"],
+                        "redundancy_flags": [],
+                        "narrative_efficiency": "每段都有线索推进",
+                    },
+                    "one_sentence_summary": "主角审问并获得证词。",
+                }
+
+            general_scan._call_json = fake_call_json
+            result = general_scan._scan_chunk("主角审问嫌疑人并发现证词漏洞。", 0, 1, profile=profile)
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertTrue(any("写作质量、节奏和信息密度评估" in prompt for prompt in prompts))
+        self.assertEqual(result["writing_quality"]["prose_quality"]["score"], 6.8)
+        self.assertEqual(result["writing_quality"]["info_density"]["water_chapter_score"], 2.0)
+        self.assertEqual(result["pacing_analysis"]["pacing_type"], "dense")
+        self.assertEqual(result["information_density"]["skipability"], "essential")
+        self.assertIn("嫌疑人证词改变", result["information_density"]["key_information"])
+
     def test_general_scan_density_profile_detects_high_signal_chunks(self):
         profile = general_scan._chunk_density_profile("案件出现尸体，凶手线索揭露，随后发生战斗和反转。")
         self.assertEqual(profile["level"], "high")
@@ -9027,6 +9161,82 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(summary["radar_scores"]["worldbuilding"]["score"], 10.0)
         self.assertEqual(summary["radar_scores"]["pacing"]["score"], 0.0)
         self.assertEqual(summary["radar_scores"]["writing"]["score"], 7.0)
+
+    def test_general_scan_summary_includes_writing_quality_material(self):
+        profile = analysis_profiles.load_analysis_profile("general")
+        prompts = []
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(messages, max_tokens=3000):
+                prompt = "\n".join(item.get("content", "") for item in messages)
+                prompts.append(prompt)
+                return {
+                    "story_overview": "主角推进案件。",
+                    "main_plot": ["案件推进"],
+                    "core_conflicts": ["真相与阻挠"],
+                    "worldbuilding": ["城市警务"],
+                    "themes": ["真相"],
+                    "foreshadowing_and_payoff": [],
+                    "writing_quality_overall": {
+                        "overall_score": 7.2,
+                        "grade": "B",
+                        "dimension_scores": {
+                            "prose_quality": 6.5,
+                            "character_depth": 7,
+                            "narrative_technique": 7.5,
+                            "dialogue_quality": 7,
+                            "scene_description": 6,
+                            "emotional_impact": 6.5,
+                            "info_density": 8,
+                            "worldbuilding_integration": 7,
+                        },
+                        "strengths": ["线索推进密集"],
+                        "weaknesses": ["人物声口区分一般"],
+                        "evidence": ["审问段落持续推进证词"],
+                        "assessment": "整体写作质量良好。",
+                    },
+                    "pacing_analysis_overall": {
+                        "rhythm_curve": "调查推进较紧",
+                        "high_points": ["获得证词"],
+                        "slow_or_water_segments": ["说明段略长"],
+                        "emotion_pattern": "悬疑为主",
+                        "risks": ["中段可能拖慢"],
+                    },
+                    "information_density_audit": {
+                        "density_verdict": "信息密度较高",
+                        "water_ratio_estimate": "约10%",
+                        "high_density_material": ["审问线索"],
+                        "redundancy_patterns": ["设定解释重复"],
+                        "skip_advice": "审问段不建议跳读",
+                    },
+                    "water_chapter_analysis": ["说明性段落略多"],
+                    "strengths": ["结构清晰"],
+                    "risks_or_issues": ["中段略慢"],
+                    "reader_fit": "悬疑读者",
+                    "overall_assessment": "可读",
+                }
+
+            general_scan._call_json = fake_call_json
+            summary = general_scan._summarize_book(
+                "写作质量测试",
+                [{
+                    "one_sentence_summary": "主角审问嫌疑人。",
+                    "writing_quality": {"prose_quality": {"score": 6.5}, "info_density": {"score": 8}},
+                    "pacing_analysis": {"pacing_type": "dense"},
+                    "information_density": {"density_score": "high"},
+                }],
+                profile=profile,
+            )
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertTrue(any('"writing_quality_chunks"' in prompt for prompt in prompts))
+        self.assertTrue(any('"writing_quality_overall"' in prompt for prompt in prompts))
+        self.assertEqual(summary["writing_quality_overall"]["overall_score"], "7.2")
+        self.assertEqual(summary["writing_quality_overall"]["dimension_scores"]["info_density"], "8")
+        self.assertIn("调查推进较紧", summary["pacing_analysis_overall"]["rhythm_curve"])
+        self.assertIn("信息密度较高", summary["information_density_audit"]["density_verdict"])
+        self.assertIn("说明性段落略多", summary["water_chapter_analysis"])
 
     def test_general_scan_splits_chunk_on_context_overflow(self):
         old_scan_chunk = general_scan._scan_chunk
@@ -9845,6 +10055,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         "chunk_index": 0,
                         "chunk_hash": reused_hash,
                         "plot_events": ["旧事件"],
+                        "writing_quality": {"prose_quality": {"score": 6}},
+                        "pacing_analysis": {"pacing_type": "transition"},
+                        "information_density": {"density_score": "medium"},
                         "one_sentence_summary": "旧摘要",
                     }],
                 }, f, ensure_ascii=False)
@@ -9875,11 +10088,78 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
             self.assertEqual(scanned, [changed_text])
             self.assertTrue(data["incremental_reuse"])
+            self.assertTrue(data["writing_quality_enabled"])
             self.assertEqual(data["reused_chunk_count"], 1)
             self.assertEqual(data["scanned_chunk_count"], 1)
             self.assertTrue(data["chunk_results"][0]["reused_from_previous"])
             self.assertEqual(data["chunk_results"][0]["plot_events"], ["旧事件"])
             self.assertEqual(data["chunk_results"][1]["plot_events"], ["新事件"])
+
+    def test_general_scan_does_not_reuse_chunks_without_writing_quality_when_enabled(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            novels_dir = os.path.join(tmpdir, "novels")
+            results_dir = os.path.join(tmpdir, "results")
+            os.makedirs(novels_dir, exist_ok=True)
+            os.makedirs(results_dir, exist_ok=True)
+            novel_path = os.path.join(novels_dir, "incremental_writing.txt")
+            with open(novel_path, "w", encoding="utf-8") as f:
+                f.write("changed")
+
+            reused_text = "第一段旧内容。"
+            reused_hash = general_scan._chunk_text_hash(reused_text)
+            manifest = {
+                "text_length": 20_000,
+                "chunks": [{"chunk_index": 1, "text": reused_text}],
+            }
+            latest_path = os.path.join(results_dir, "incremental_writing_GENERAL_SUMMARY_latest.json")
+            with open(latest_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "schema_version": 1,
+                    "analysis_profile": "general",
+                    "specialty_profile": "general",
+                    "chunk_size": general_scan.CHUNK_SIZE,
+                    "chunk_overlap": general_scan.CHUNK_OVERLAP,
+                    "smart_density": general_scan.SMART_DENSITY,
+                    "prompt_templates": {
+                        "general_scan_chunk": {"name": "general_scan_chunk", "version": "v1"},
+                        "general_summary": {"name": "general_summary", "version": "v1"},
+                    },
+                    "chunk_results": [{
+                        "chunk_index": 0,
+                        "chunk_hash": reused_hash,
+                        "plot_events": ["旧事件"],
+                        "one_sentence_summary": "旧摘要",
+                    }],
+                }, f, ensure_ascii=False)
+
+            scanned = []
+
+            def fake_scan(chunk, chunk_index, total_chunks, profile=None):
+                scanned.append(chunk)
+                return {
+                    "chunk_index": chunk_index,
+                    "chunk_hash": general_scan._chunk_text_hash(chunk),
+                    "plot_events": ["新事件"],
+                    "one_sentence_summary": "新摘要",
+                }
+
+            with mock.patch.object(general_scan, "get_base_dir", return_value=tmpdir), \
+                    mock.patch.object(general_scan, "init_token_tracker"), \
+                    mock.patch.object(general_scan, "_read_novel", return_value="changed"), \
+                    mock.patch.object(general_scan, "build_chunk_manifest", return_value=manifest), \
+                    mock.patch.object(general_scan, "save_chunk_manifest"), \
+                    mock.patch.object(general_scan, "tqdm", side_effect=lambda items, desc=None: items), \
+                    mock.patch.object(general_scan, "_scan_chunk", side_effect=fake_scan), \
+                    mock.patch.object(general_scan, "_summarize_book", return_value={"story_overview": "ok"}):
+                self.assertEqual(general_scan.main(novel_path=novel_path, book_name="incremental_writing"), 0)
+
+            with open(latest_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            self.assertEqual(scanned, [reused_text])
+            self.assertEqual(data["reused_chunk_count"], 0)
+            self.assertEqual(data["scanned_chunk_count"], 1)
+            self.assertEqual(data["chunk_results"][0]["plot_events"], ["新事件"])
 
     def test_general_scan_main_records_context_overflow_partial_result(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -9945,10 +10225,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "chunk_overlap": general_scan.CHUNK_OVERLAP,
                 "max_chunks": general_scan.MAX_CHUNKS,
                 "chunk_sampling_strategy": "full",
+                "writing_quality_enabled": general_scan.WRITING_QUALITY_ENABLED,
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }
             self.assertTrue(general_scan._is_fresh_summary(data, novel_path, "history"))
+            data_without_writing_meta = dict(data)
+            data_without_writing_meta.pop("writing_quality_enabled", None)
+            self.assertFalse(general_scan._is_fresh_summary(data_without_writing_meta, novel_path, "history"))
             data["summary"] = {"book_overview": "ok"}
             self.assertTrue(general_scan._is_fresh_summary(data, novel_path, "history"))
             self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "general"))
@@ -9986,6 +10270,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "chunk_overlap": general_scan.CHUNK_OVERLAP,
                 "max_chunks": general_scan.MAX_CHUNKS,
                 "chunk_sampling_strategy": "full",
+                "writing_quality_enabled": general_scan.WRITING_QUALITY_ENABLED,
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }

@@ -49,6 +49,7 @@ const configForm = ref({
   general_scan_max_chunks: '',
   general_scan_smart_density: true,
   general_scan_incremental_reuse: true,
+  general_scan_writing_quality: true,
   harem_plus_general_scan: false
 })
 const savingRuntimeConfig = ref(false)
@@ -120,6 +121,7 @@ function syncConfigForm(config) {
     general_scan_max_chunks: config.general_scan_max_chunks || '80',
     general_scan_smart_density: config.general_scan_smart_density !== false,
     general_scan_incremental_reuse: config.general_scan_incremental_reuse !== false,
+    general_scan_writing_quality: config.general_scan_writing_quality !== false,
     harem_plus_general_scan: Boolean(config.harem_plus_general_scan)
   }
 }
@@ -135,6 +137,7 @@ async function saveRuntimeConfig() {
       general_scan_max_chunks: configForm.value.general_scan_max_chunks,
       general_scan_smart_density: configForm.value.general_scan_smart_density,
       general_scan_incremental_reuse: configForm.value.general_scan_incremental_reuse,
+      general_scan_writing_quality: configForm.value.general_scan_writing_quality,
       harem_plus_general_scan: configForm.value.harem_plus_general_scan
     })
     runtimeConfig.value = response.config || runtimeConfig.value
@@ -407,6 +410,14 @@ useStateEvents(applyState, {
           @change="runtimeConfigDirty = true"
         />
         <span>增量复用</span>
+      </label>
+      <label class="runtime-toggle">
+        <input
+          v-model="configForm.general_scan_writing_quality"
+          type="checkbox"
+          @change="runtimeConfigDirty = true"
+        />
+        <span>写作质量</span>
       </label>
       <label class="runtime-toggle">
         <input

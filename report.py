@@ -48,6 +48,18 @@ SUMMARY_FIELD_TITLES = {
     "social_ethical_impact": "社会与伦理影响",
     "character_highlights": "角色亮点",
     "pacing_and_emotion": "节奏与情绪曲线",
+    "writing_quality_overall": "写作质量总评",
+    "pacing_analysis_overall": "节奏曲线分析",
+    "information_density_audit": "信息密度审计",
+    "water_chapter_analysis": "水文与冗余分析",
+    "prose_quality": "文笔质量",
+    "character_depth": "人物塑造",
+    "narrative_technique": "叙事技巧",
+    "dialogue_quality": "对话质量",
+    "scene_description": "场景描写",
+    "emotional_impact": "情感渲染",
+    "info_density": "信息密度",
+    "worldbuilding_integration": "世界观融入",
     "cultivation_system": "修炼体系",
     "bloodline_physique": "血脉/体质/天赋",
     "power_scaling": "战力层级",
@@ -245,6 +257,13 @@ SUMMARY_FIELD_ALIASES = {
     "pacing": "pacing_and_emotion",
     "pacing_emotion": "pacing_and_emotion",
     "emotion_curve": "pacing_and_emotion",
+    "writing_quality": "writing_quality_overall",
+    "writing_quality_summary": "writing_quality_overall",
+    "craft_quality": "writing_quality_overall",
+    "pacing_analysis": "pacing_analysis_overall",
+    "rhythm_curve": "pacing_analysis_overall",
+    "density_audit": "information_density_audit",
+    "information_density": "information_density_audit",
     "foreshadowing": "foreshadowing_and_payoff",
     "plot_threads": "foreshadowing_and_payoff",
     "payoff": "foreshadowing_and_payoff",
@@ -3339,6 +3358,120 @@ def _clamp_score(value, default: float = 6.0) -> float:
     return round(max(0.0, min(10.0, score)), 1)
 
 
+WRITING_QUALITY_DIMENSION_LABELS = {
+    "prose_quality": "文笔质量",
+    "character_depth": "人物塑造",
+    "narrative_technique": "叙事技巧",
+    "dialogue_quality": "对话质量",
+    "scene_description": "场景描写",
+    "emotional_impact": "情感渲染",
+    "info_density": "信息密度",
+    "worldbuilding_integration": "世界观融入",
+}
+
+
+GENERAL_CRAFT_SUMMARY_FIELDS = {
+    "writing_quality_overall",
+    "pacing_analysis_overall",
+    "information_density_audit",
+    "water_chapter_analysis",
+}
+
+
+def _append_text_block(lines: list, title: str, value, *, limit: int = 8):
+    lines.extend(["", f"【{title}】"])
+    if isinstance(value, list):
+        items = _clean_text_items(value, limit=limit, max_len=180)
+        if items:
+            lines.extend(f"- {item}" for item in items)
+        else:
+            lines.append("未描述")
+    elif isinstance(value, dict):
+        added = False
+        for key, item in value.items():
+            label = summary_field_label(str(key))
+            if isinstance(item, list):
+                items = _clean_text_items(item, limit=limit, max_len=160)
+                if items:
+                    lines.append(f"- {label}：{'；'.join(items)}")
+                    added = True
+            elif isinstance(item, dict):
+                nested = []
+                for sub_key, sub_value in item.items():
+                    if isinstance(sub_value, (list, dict)):
+                        continue
+                    text = str(sub_value or "").strip()
+                    if text:
+                        nested.append(f"{summary_field_label(str(sub_key))}={text}")
+                if nested:
+                    lines.append(f"- {label}：{'；'.join(nested[:4])}")
+                    added = True
+            else:
+                text = str(item or "").strip()
+                if text:
+                    lines.append(f"- {label}：{text[:220]}")
+                    added = True
+        if not added:
+            lines.append("未描述")
+    else:
+        text = str(value or "").strip()
+        lines.append(text if text else "未描述")
+
+
+def _append_general_craft_sections(lines: list, general_summary: dict):
+    summary = (general_summary or {}).get("summary") or {}
+    writing = summary.get("writing_quality_overall")
+    pacing = summary.get("pacing_analysis_overall")
+    density = summary.get("information_density_audit")
+    water = summary_field_values(summary, "water_chapter_analysis")
+    has_any = any([
+        isinstance(writing, dict) and writing,
+        isinstance(pacing, dict) and pacing,
+        isinstance(density, dict) and density,
+        bool(water),
+    ])
+    if not has_any:
+        return
+
+    lines.extend(["", "【写作质量分析】"])
+    if isinstance(writing, dict) and writing:
+        overall_score = writing.get("overall_score") or writing.get("score")
+        grade = str(writing.get("grade") or "").strip()
+        assessment = str(writing.get("assessment") or writing.get("overall_assessment") or "").strip()
+        if overall_score is not None or grade:
+            score_text = f"{_clamp_score(overall_score):.1f}/10" if overall_score is not None else "未评分"
+            lines.append(f"总体：{score_text}" + (f"（{grade}）" if grade else ""))
+        if assessment:
+            lines.append(assessment)
+        dimension_scores = writing.get("dimension_scores") if isinstance(writing.get("dimension_scores"), dict) else {}
+        if dimension_scores:
+            lines.extend(["", "| 维度 | 分数 |", "|---|---:|"])
+            for key, label in WRITING_QUALITY_DIMENSION_LABELS.items():
+                if key in dimension_scores:
+                    lines.append(f"| {label} | {_clamp_score(dimension_scores.get(key)):.1f}/10 |")
+        for title, key in (("写作优势", "strengths"), ("写作短板", "weaknesses"), ("写作证据", "evidence")):
+            items = _clean_text_items(writing.get(key) or [], limit=5, max_len=160)
+            if items:
+                lines.extend(["", f"【{title}】"])
+                lines.extend(f"- {item}" for item in items)
+        frontend = {
+            "overall_score": _clamp_score(overall_score) if overall_score is not None else None,
+            "grade": grade,
+            "dimension_scores": {
+                key: _clamp_score(value)
+                for key, value in dimension_scores.items()
+            },
+        }
+        lines.extend(["", "写作质量JSON：", "```json", json.dumps(frontend, ensure_ascii=False, indent=2), "```"])
+
+    if isinstance(pacing, dict) and pacing:
+        _append_text_block(lines, "节奏曲线分析", pacing)
+    if isinstance(density, dict) and density:
+        _append_text_block(lines, "信息密度审计", density)
+    if water:
+        _append_text_block(lines, "水文与冗余分析", water)
+
+
 def _text_signal_count(*items) -> int:
     count = 0
     for item in items:
@@ -3478,12 +3611,14 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
     add_list("世界观/设定", summary_field_values(summary, "worldbuilding"))
     add_list("主题表达", summary_field_values(summary, "themes"))
     add_list("伏笔与回收", summary_field_values(summary, "foreshadowing_and_payoff"))
+    _append_general_craft_sections(lines, general_summary)
     base_summary_fields = {
         "main_plot",
         "core_conflicts",
         "worldbuilding",
         "themes",
         "foreshadowing_and_payoff",
+        *GENERAL_CRAFT_SUMMARY_FIELDS,
         "strengths",
         "risks_or_issues",
         "reader_fit",

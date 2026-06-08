@@ -19,6 +19,7 @@ CHUNK_OVERLAP = int(os.environ.get("GENERAL_SCAN_CHUNK_OVERLAP", "1000"))
 MAX_CHUNKS = int(os.environ.get("GENERAL_SCAN_MAX_CHUNKS", "80"))
 SMART_DENSITY = os.environ.get("GENERAL_SCAN_SMART_DENSITY", "1").strip() == "1"
 INCREMENTAL_REUSE = os.environ.get("GENERAL_SCAN_INCREMENTAL_REUSE", "1").strip() == "1"
+WRITING_QUALITY_ENABLED = os.environ.get("GENERAL_SCAN_WRITING_QUALITY", "1").strip() == "1"
 LOW_DENSITY_TERMS = (
     "睡觉", "起床", "吃饭", "喝茶", "闲聊", "聊天", "休息", "赶路", "路上", "返回",
     "日常", "家常", "客栈", "修炼打坐", "打坐", "闭关", "练功", "整理物品",
@@ -35,6 +36,16 @@ RADAR_SCORE_DIMENSIONS = {
     "pacing": "节奏把控",
     "writing": "文笔水准",
     "emotion": "情绪调动",
+}
+WRITING_QUALITY_DIMENSIONS = {
+    "prose_quality": "文笔质量",
+    "character_depth": "人物塑造",
+    "narrative_technique": "叙事技巧",
+    "dialogue_quality": "对话质量",
+    "scene_description": "场景描写",
+    "emotional_impact": "情感渲染",
+    "info_density": "信息密度",
+    "worldbuilding_integration": "世界观融入",
 }
 
 
@@ -240,6 +251,10 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
         return False
     if data.get("incremental_reuse") not in {None, INCREMENTAL_REUSE}:
         return False
+    if WRITING_QUALITY_ENABLED and data.get("writing_quality_enabled") is not True:
+        return False
+    if not WRITING_QUALITY_ENABLED and data.get("writing_quality_enabled") not in {None, False}:
+        return False
     stored_prompt_templates = data.get("prompt_templates")
     if isinstance(stored_prompt_templates, dict):
         current_prompt_templates = prompt_templates_metadata("general_scan_chunk", "general_summary")
@@ -270,6 +285,8 @@ def _summary_can_reuse_chunk_results(data: Dict[str, Any], profile_name: str = "
         return False
     if data.get("smart_density") not in {None, SMART_DENSITY}:
         return False
+    if data.get("writing_quality_enabled") not in {None, WRITING_QUALITY_ENABLED}:
+        return False
     stored_prompt_templates = data.get("prompt_templates")
     if isinstance(stored_prompt_templates, dict):
         current_prompt_templates = prompt_templates_metadata("general_scan_chunk", "general_summary")
@@ -286,6 +303,10 @@ def _reusable_chunk_result_map(data: Dict[str, Any]) -> Dict[str, Dict[str, Any]
         return reusable
     for item in data.get("chunk_results") or []:
         if not isinstance(item, dict):
+            continue
+        if WRITING_QUALITY_ENABLED and not (
+            item.get("writing_quality") and item.get("pacing_analysis") and item.get("information_density")
+        ):
             continue
         chunk_hash = item.get("chunk_hash")
         if isinstance(chunk_hash, str) and chunk_hash:
@@ -345,6 +366,114 @@ def _normalize_radar_scores(value: Any) -> Dict[str, Dict[str, Any]]:
             "score": round(score, 1),
             "reason": reason[:120],
         }
+    return normalized
+
+
+def _safe_dict(value: Any) -> Dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _clamp_score(value: Any, default: float = 0.0) -> float:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        score = default
+    return round(max(0.0, min(10.0, score)), 1)
+
+
+def _normalize_writing_quality(value: Any) -> Dict[str, Any]:
+    raw = _safe_dict(value)
+    normalized = {}
+    for key, label in WRITING_QUALITY_DIMENSIONS.items():
+        item = _safe_dict(raw.get(key))
+        normalized[key] = {
+            "label": label,
+            "score": _clamp_score(item.get("score")),
+            "strength": str(item.get("strength") or item.get("advantage") or "").strip()[:160],
+            "weakness": str(item.get("weakness") or item.get("issue") or "").strip()[:160],
+        }
+        if key == "info_density":
+            normalized[key]["water_chapter_score"] = _clamp_score(item.get("water_chapter_score"))
+    evidence = []
+    for item in raw.get("evidence") or raw.get("notable_passages") or []:
+        if not isinstance(item, dict):
+            continue
+        evidence.append({
+            "type": str(item.get("type") or "").strip()[:20],
+            "dimension": str(item.get("dimension") or "").strip()[:30],
+            "quote": str(item.get("quote") or "").strip()[:60],
+            "note": str(item.get("note") or "").strip()[:80],
+        })
+        if len(evidence) >= 3:
+            break
+    normalized["chunk_assessment"] = str(raw.get("chunk_assessment") or "").strip()[:120]
+    normalized["evidence"] = [x for x in evidence if x.get("quote") or x.get("note")]
+    return normalized
+
+
+def _normalize_pacing_analysis(value: Any) -> Dict[str, Any]:
+    raw = _safe_dict(value)
+    return {
+        "pacing_type": str(raw.get("pacing_type") or raw.get("pacing_type_tag") or "").strip()[:40],
+        "tension_level": _clamp_score(raw.get("tension_level")),
+        "emotion_tone": str(raw.get("emotion_tone") or raw.get("emotion_tone_tag") or "").strip()[:20],
+        "emotion_intensity": _clamp_score(raw.get("emotion_intensity")),
+        "payoff_moment": str(raw.get("payoff_moment") or "").strip()[:160],
+        "suffering_moment": str(raw.get("suffering_moment") or "").strip()[:160],
+        "cliffhanger_quality": str(
+            (_safe_dict(raw.get("cliffhanger")).get("cliffhanger_quality") if isinstance(raw.get("cliffhanger"), dict) else raw.get("cliffhanger_quality"))
+            or ""
+        ).strip()[:20],
+        "reader_engagement_prediction": str(raw.get("reader_engagement_prediction") or "").strip()[:20],
+    }
+
+
+def _normalize_information_density(value: Any) -> Dict[str, Any]:
+    raw = _safe_dict(value)
+    return {
+        "density_score": str(raw.get("density_score") or raw.get("information_density") or "").strip()[:20],
+        "skipability": str(raw.get("skipability") or raw.get("skipability_score") or "").strip()[:30],
+        "key_information": _safe_list(raw.get("key_information") or raw.get("key_information_conveyed"), limit=5),
+        "redundancy_flags": _safe_list(raw.get("redundancy_flags") or raw.get("water_chapter_indicators"), limit=5),
+        "narrative_efficiency": str(raw.get("narrative_efficiency") or "").strip()[:160],
+    }
+
+
+def _compact_writing_quality_for_summary(chunk_results: List[Dict[str, Any]], limit: int = 80) -> List[Dict[str, Any]]:
+    compact = []
+    for item in chunk_results:
+        if not isinstance(item, dict):
+            continue
+        writing_quality = _safe_dict(item.get("writing_quality"))
+        pacing = _safe_dict(item.get("pacing_analysis"))
+        density = _safe_dict(item.get("information_density"))
+        if not writing_quality and not pacing and not density:
+            continue
+        compact.append({
+            "chunk_index": item.get("original_chunk_index", item.get("chunk_index")),
+            "summary": item.get("one_sentence_summary"),
+            "writing_quality": writing_quality,
+            "pacing_analysis": pacing,
+            "information_density": density,
+        })
+        if len(compact) >= limit:
+            break
+    return compact
+
+
+def _normalize_object_summary(value: Any) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    normalized = {}
+    for key, item in value.items():
+        if isinstance(item, list):
+            normalized[key] = _safe_list(item, limit=10)
+        elif isinstance(item, dict):
+            normalized[key] = _normalize_object_summary(item)
+        else:
+            text = str(item or "").strip()
+            if text:
+                normalized[key] = text[:600]
     return normalized
 
 
@@ -442,6 +571,103 @@ def _density_instruction(density_profile: Dict[str, Any]) -> str:
     return f"密度策略：full。当前片段密度={level}，按完整字段抽取。"
 
 
+def _writing_quality_system_instruction() -> str:
+    if not WRITING_QUALITY_ENABLED:
+        return ""
+    return """
+
+【写作质量、节奏和信息密度评估】
+请额外输出 writing_quality、pacing_analysis、information_density 三个结构化字段。判断必须基于当前片段可见证据，不要把缺失内容脑补成整书结论。
+
+writing_quality 采用 8 个维度，每个维度输出 score(0-10)、strength、weakness：
+- prose_quality: 文笔质量，关注词汇、句式、修辞、语体自然度、模板化表达。
+- character_depth: 人物塑造，关注立体度、行为一致性、角色区分度、工具人风险。
+- narrative_technique: 叙事技巧，关注视角、时空处理、详略、信息控制和衔接。
+- dialogue_quality: 对话质量，关注自然度、性格化、信息效率、潜台词、说教感。
+- scene_description: 场景描写，关注画面、空间、五感、动作/战斗清晰度和氛围。
+- emotional_impact: 情感渲染，关注情绪递进、共情、燃点/泪点/爽点是否成立。
+- info_density: 信息密度，额外输出 water_chapter_score(0=完全不水，10=明显水章)。
+- worldbuilding_integration: 世界观融入，关注设定是否自然服务剧情，是否信息倾倒。
+
+pacing_analysis 输出 pacing_type、tension_level、emotion_tone、emotion_intensity、payoff_moment、suffering_moment、cliffhanger_quality、reader_engagement_prediction。
+information_density 输出 density_score(high/medium/low/water)、skipability(essential/helpful/skippable/deletable)、key_information、redundancy_flags、narrative_efficiency。
+evidence 最多 3 条，quote 原文摘录不超过 30 字。"""
+
+
+def _writing_quality_json_hint() -> str:
+    if not WRITING_QUALITY_ENABLED:
+        return ""
+    return """,
+  "writing_quality": {
+    "prose_quality": {"score": 0-10, "strength": "...", "weakness": "..."},
+    "character_depth": {"score": 0-10, "strength": "...", "weakness": "..."},
+    "narrative_technique": {"score": 0-10, "strength": "...", "weakness": "..."},
+    "dialogue_quality": {"score": 0-10, "strength": "...", "weakness": "..."},
+    "scene_description": {"score": 0-10, "strength": "...", "weakness": "..."},
+    "emotional_impact": {"score": 0-10, "strength": "...", "weakness": "..."},
+    "info_density": {"score": 0-10, "water_chapter_score": 0-10, "strength": "...", "weakness": "..."},
+    "worldbuilding_integration": {"score": 0-10, "strength": "...", "weakness": "..."},
+    "chunk_assessment": "本片段写作质量一句话评价",
+    "evidence": [{"type": "亮点/问题", "dimension": "维度名", "quote": "原文短摘录", "note": "说明"}]
+  },
+  "pacing_analysis": {
+    "pacing_type": "fast|slow|climax|transition|dense|action|emotional|filler",
+    "tension_level": 0-10,
+    "emotion_tone": "爽|虐|燃|悲|悬|甜|恐|平|怒|喜",
+    "emotion_intensity": 0-10,
+    "payoff_moment": "爽点/燃点/甜点，没有则空",
+    "suffering_moment": "虐点/痛点/泪点，没有则空",
+    "cliffhanger_quality": "strong|medium|weak|none",
+    "reader_engagement_prediction": "high|medium|low"
+  },
+  "information_density": {
+    "density_score": "high|medium|low|water",
+    "skipability": "essential|helpful|skippable|deletable",
+    "key_information": ["本片段实际推进的新信息"],
+    "redundancy_flags": ["重复解释/无效日常/重复心理等，没有则空"],
+    "narrative_efficiency": "每千字有效推进量的简短评价"
+  }"""
+
+
+def _writing_quality_summary_json_hint() -> str:
+    if not WRITING_QUALITY_ENABLED:
+        return ""
+    return """
+  "writing_quality_overall": {
+    "overall_score": 0-10,
+    "grade": "S/A/B/C/D/E/F",
+    "dimension_scores": {
+      "prose_quality": 0-10,
+      "character_depth": 0-10,
+      "narrative_technique": 0-10,
+      "dialogue_quality": 0-10,
+      "scene_description": 0-10,
+      "emotional_impact": 0-10,
+      "info_density": 0-10,
+      "worldbuilding_integration": 0-10
+    },
+    "strengths": ["写作层面的主要优势"],
+    "weaknesses": ["写作层面的主要短板"],
+    "evidence": ["基于分块材料的短证据"],
+    "assessment": "整书写作质量评价"
+  },
+  "pacing_analysis_overall": {
+    "rhythm_curve": "节奏曲线描述",
+    "high_points": ["主要高潮/爽点/燃点"],
+    "slow_or_water_segments": ["拖慢阅读的位置或类型"],
+    "emotion_pattern": "情绪调动模式",
+    "risks": ["节奏风险"]
+  },
+  "information_density_audit": {
+    "density_verdict": "整体信息密度判断",
+    "water_ratio_estimate": "水章比例估计",
+    "high_density_material": ["高信息量内容类型"],
+    "redundancy_patterns": ["重复解释/无效日常/重复心理等"],
+    "skip_advice": "哪些内容可跳读或不建议跳读"
+  },
+  "water_chapter_analysis": ["水文/冗余/低效叙事的具体表现"],"""
+
+
 def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None) -> Dict[str, Any]:
     profile = profile or load_analysis_profile("general")
     density_profile = density_profile or _chunk_density_profile(text_chunk)
@@ -467,6 +693,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 
 当前片段密度：
 {_density_instruction(density_profile)}
+{_writing_quality_system_instruction()}
 
 要求：
 1. 只根据片段内容输出，不要凭空补全。
@@ -487,7 +714,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
   "themes": ["..."],
   "foreshadowing": ["..."],
   "quality_notes": ["..."],
-  "specialty_notes": ["专项规则相关要点"],
+  "specialty_notes": ["专项规则相关要点"]{_writing_quality_json_hint()},
   "one_sentence_summary": "本片段一句话概要"
 }}"""
     data = _call_json(
@@ -509,6 +736,9 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         "foreshadowing": _safe_list(data.get("foreshadowing")),
         "quality_notes": _safe_list(data.get("quality_notes")),
         "specialty_notes": _safe_list(data.get("specialty_notes")),
+        "writing_quality": _normalize_writing_quality(data.get("writing_quality")) if WRITING_QUALITY_ENABLED else {},
+        "pacing_analysis": _normalize_pacing_analysis(data.get("pacing_analysis")) if WRITING_QUALITY_ENABLED else {},
+        "information_density": _normalize_information_density(data.get("information_density")) if WRITING_QUALITY_ENABLED else {},
         "one_sentence_summary": str(data.get("one_sentence_summary", "") or "").strip(),
     }
 
@@ -614,12 +844,18 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         "quality_notes": _merge_items(chunk_results, "quality_notes"),
         "specialty_notes": _merge_items(chunk_results, "specialty_notes"),
     }
+    if WRITING_QUALITY_ENABLED:
+        material["writing_quality_chunks"] = _compact_writing_quality_for_summary(chunk_results)
     base_summary_fields = {
         "main_plot",
         "core_conflicts",
         "worldbuilding",
         "themes",
         "foreshadowing_and_payoff",
+        "writing_quality_overall",
+        "pacing_analysis_overall",
+        "information_density_audit",
+        "water_chapter_analysis",
         "strengths",
         "risks_or_issues",
     }
@@ -657,7 +893,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
   "worldbuilding": ["世界观/设定要点"],
   "themes": ["主题表达"],
   "foreshadowing_and_payoff": ["伏笔、悬念、回收情况"],
-{specialty_json_hint}
+{specialty_json_hint}{_writing_quality_summary_json_hint()}
   "strengths": ["作品优点"],
   "risks_or_issues": ["可能的问题或阅读门槛"],
   "reader_fit": "适合什么读者",
@@ -686,6 +922,10 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         "worldbuilding": _summary_field_value(data, "worldbuilding"),
         "themes": _summary_field_value(data, "themes"),
         "foreshadowing_and_payoff": _summary_field_value(data, "foreshadowing_and_payoff"),
+        "writing_quality_overall": _normalize_object_summary(data.get("writing_quality_overall")),
+        "pacing_analysis_overall": _normalize_object_summary(data.get("pacing_analysis_overall")),
+        "information_density_audit": _normalize_object_summary(data.get("information_density_audit")),
+        "water_chapter_analysis": _summary_field_value(data, "water_chapter_analysis"),
         "strengths": _summary_field_value(data, "strengths"),
         "risks_or_issues": _summary_field_value(data, "risks_or_issues"),
         "reader_fit": "；".join(_summary_field_value(data, "reader_fit")),
@@ -809,6 +1049,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "chunk_sampling_strategy": sampling_strategy,
         "sampled_chunk_indices": selected_original_indices,
         "smart_density": SMART_DENSITY,
+        "writing_quality_enabled": WRITING_QUALITY_ENABLED,
         "density_counts": density_counts,
         "incremental_reuse": INCREMENTAL_REUSE,
         "reused_chunk_count": reused_chunk_count,
