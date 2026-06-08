@@ -82,6 +82,21 @@ _ACTIVE_DETAIL_PATH = None
 CHECKPOINT_FULL_MERGE_INTERVAL = 10
 
 
+def _reserve_middle_summary_call(middle_summary_state=None):
+    global _middle_summary_calls
+    with MIDDLE_SUMMARY_LOCK:
+        if middle_summary_state is not None:
+            current = int(middle_summary_state.get("calls", 0) or 0)
+            if current >= MAX_MIDDLE_SUMMARY_CALLS:
+                return False
+            middle_summary_state["calls"] = current + 1
+            return True
+        if _middle_summary_calls >= MAX_MIDDLE_SUMMARY_CALLS:
+            return False
+        _middle_summary_calls += 1
+        return True
+
+
 def _sanitize_chunk_preview(text, max_chars=220):
     raw = str(text or "")[:max_chars]
     return (
@@ -2429,8 +2444,7 @@ def generate_context_summary(text_chunk, heroines=None, male_protagonist=None, p
 def _process_thread_block(block_id, block_indices, chunks, system_prompt, heroines, male_protagonist=None,
                           fact_boost_prompt=None, all_issues=None, all_heroine_facts=None,
                           extra_relations_all=None, processed_chunks=None, failed_chunks=None,
-                          chunk_summaries=None, chunk_failure_diagnostics=None):
-    global _middle_summary_calls
+                          chunk_summaries=None, chunk_failure_diagnostics=None, middle_summary_state=None):
     explicit_chunk_summaries = chunk_summaries is not None
     summaries = chunk_summaries if chunk_summaries is not None else CHUNK_SUMMARIES
     explicit_failure_diagnostics = chunk_failure_diagnostics is not None
@@ -2494,13 +2508,7 @@ def _process_thread_block(block_id, block_indices, chunks, system_prompt, heroin
             if cached_prev:
                 carry_summary = cached_prev
             else:
-                should_generate_middle_summary = False
-                with MIDDLE_SUMMARY_LOCK:
-                    if _middle_summary_calls < MAX_MIDDLE_SUMMARY_CALLS:
-                        _middle_summary_calls += 1
-                        should_generate_middle_summary = True
-
-                if should_generate_middle_summary:
+                if _reserve_middle_summary_call(middle_summary_state=middle_summary_state):
                     generated_summary = generate_context_summary(
                         chunks[idx - 1],
                         heroines=heroines,
@@ -2641,7 +2649,7 @@ def _commit_chunk_result(idx, issues, heroine_facts, extra_rel, next_summary, ok
 
 def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protagonist, fact_boost_prompt,
                                    all_issues, all_heroine_facts, extra_relations_all, processed_chunks, failed_chunks,
-                                   chunk_summaries=None, chunk_failure_diagnostics=None):
+                                   chunk_summaries=None, chunk_failure_diagnostics=None, middle_summary_state=None):
     global _ACTIVE_PROGRESS_STATE
     explicit_chunk_summaries = chunk_summaries is not None
     summaries = chunk_summaries if chunk_summaries is not None else CHUNK_SUMMARIES
@@ -2686,6 +2694,7 @@ def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protago
                     failed_chunks,
                     summaries if explicit_chunk_summaries else None,
                     diagnostics if explicit_failure_diagnostics else None,
+                    middle_summary_state,
                 ): block_id
                 for block_id, block_indices in enumerate(blocks)
                 if block_indices
@@ -4053,6 +4062,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     CHUNK_FAILURE_DIAGNOSTICS = {}
     _middle_summary_calls = 0
     _ACTIVE_DETAIL_PATH = None
+    middle_summary_state = {"calls": 0}
 
     base = get_base_dir()
     results_base = os.path.join(base, "results")
@@ -4158,6 +4168,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
             extra_relations_all=extra_relations_all,
             processed_chunks=processed_chunks,
             failed_chunks=failed_chunks,
+            middle_summary_state=middle_summary_state,
         )
         if fatal_error:
             print(f"❌ 扫描终止：{fatal_error}")

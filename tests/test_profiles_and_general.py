@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 import analysis_profiles
 import general_scan
@@ -1402,6 +1403,61 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             novel_scan.CHUNK_SUMMARIES = old_summaries
             novel_scan.CHUNK_FAILURE_DIAGNOSTICS = old_diagnostics
             novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
+
+    def test_thread_block_accepts_isolated_middle_summary_state(self):
+        old_middle_calls = novel_scan._middle_summary_calls
+        old_max_middle = novel_scan.MAX_MIDDLE_SUMMARY_CALLS
+        old_summaries = dict(novel_scan.CHUNK_SUMMARIES)
+        try:
+            novel_scan._middle_summary_calls = 7
+            novel_scan.MAX_MIDDLE_SUMMARY_CALLS = 2
+            novel_scan.CHUNK_SUMMARIES = {}
+            local_summaries = {}
+            local_state = {"calls": 0}
+            processed_chunks = {0}
+            failed_chunks = set()
+            all_issues = []
+
+            with mock.patch.object(novel_scan, "generate_context_summary", return_value="局部前情") as mock_summary, \
+                    mock.patch.object(novel_scan, "scan_chunk") as mock_scan, \
+                    mock.patch.object(novel_scan, "save_checkpoint"):
+                mock_scan.side_effect = lambda _text, idx, _total, *_args, **_kwargs: (
+                    [{"type": f"chunk-{idx}", "chunk_index": idx + 1}],
+                    [],
+                    [],
+                    f"摘要{idx}",
+                    True,
+                    False,
+                    "",
+                )
+
+                result = novel_scan._process_thread_block(
+                    0,
+                    [1, 2, 3],
+                    ["第一块", "第二块", "第三块", "第四块"],
+                    "system",
+                    ["甲女"],
+                    all_issues=all_issues,
+                    all_heroine_facts=[],
+                    extra_relations_all=[],
+                    processed_chunks=processed_chunks,
+                    failed_chunks=failed_chunks,
+                    chunk_summaries=local_summaries,
+                    middle_summary_state=local_state,
+                )
+
+            self.assertEqual(result["fatal_error"], "")
+            self.assertEqual(local_state["calls"], 1)
+            self.assertEqual(novel_scan._middle_summary_calls, 7)
+            self.assertEqual(mock_summary.call_count, 1)
+            self.assertIn(1, local_summaries)
+            self.assertIn(2, local_summaries)
+            self.assertIn(3, local_summaries)
+            self.assertEqual(novel_scan.CHUNK_SUMMARIES, {})
+        finally:
+            novel_scan._middle_summary_calls = old_middle_calls
+            novel_scan.MAX_MIDDLE_SUMMARY_CALLS = old_max_middle
+            novel_scan.CHUNK_SUMMARIES = old_summaries
 
     def test_toxic_reviewer_prompt_locks_strict_harem_definitions(self):
         system_prompt, user_prompt = toxic_reviewer.build_review_prompts(
