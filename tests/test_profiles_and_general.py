@@ -4615,6 +4615,33 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertNotIn("低存在感/工具人线索", negated_low_presence)
         self.assertIn("感情/亲密推进", negated_low_presence)
 
+        summon_career = report._heroine_position_level(
+            {"importance_rank": 2},
+            {
+                "identity": "召唤系法师",
+                "relationship_with_protagonist": "与男主长期暧昧并并肩作战，不是召唤物。",
+                "features": "高频参与主线，不是召唤工具，也不是捧哏。",
+                "key_events": "多次推进主线并主动表白。",
+            },
+            {"count": 10, "summaries": ["召唤师职业设定明确，存在感较高。"]},
+            {},
+        )
+        self.assertNotIn("低存在感/工具人线索", summon_career)
+        self.assertIn("感情/亲密推进", summon_career)
+
+        summon_tool = report._heroine_position_level(
+            {"importance_rank": 5},
+            {
+                "identity": "召唤助手",
+                "relationship_with_protagonist": "主要帮男主做召唤物，没有恋爱线。",
+                "features": "承担召唤功能。",
+                "key_events": "负责召唤并说明召唤规则。",
+            },
+            {"count": 3, "summaries": ["负责召唤物和背景说明。"]},
+            {},
+        )
+        self.assertIn("低存在感/工具人线索", summon_tool)
+
         exposition_role = report._heroine_position_level(
             {"importance_rank": 5},
             {

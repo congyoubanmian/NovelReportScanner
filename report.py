@@ -1529,6 +1529,9 @@ def _has_low_presence_or_tooling_signal(text: str) -> bool:
     negated_tooling_patterns = (
         "不是工具人", "并非工具人", "非工具人", "不算工具人", "没有工具人化",
         "不是背景板", "并非背景板", "非背景板",
+        "不是召唤物", "并非召唤物", "非召唤物", "不是召唤工具", "并非召唤工具",
+        "没有召唤功能", "没有召唤物功能", "不负责召唤",
+        "不是捧哏", "并非捧哏", "非捧哏", "不负责捧哏",
         "不是客串", "并非客串", "非客串", "不算客串", "没有客串",
         "不是神隐", "并非神隐", "非神隐", "没有神隐", "并未神隐", "未神隐", "不再神隐",
         "不是低存在感", "并非低存在感", "非低存在感", "不算低存在感", "没有低存在感",
@@ -1540,8 +1543,14 @@ def _has_low_presence_or_tooling_signal(text: str) -> bool:
     protected_text = text
     for pattern in negated_tooling_patterns:
         protected_text = protected_text.replace(pattern, "")
-    tooling_words = ("工具", "召唤", "捧哏", "客串", "神隐")
+    tooling_words = ("工具", "捧哏", "客串", "神隐")
     if _contains_any_text(protected_text, tooling_words):
+        return True
+    summon_tooling_patterns = (
+        "召唤物", "召唤工具", "召唤助手", "召唤功能",
+        "负责召唤", "承担召唤", "帮男主召唤", "帮主角召唤", "做召唤物",
+    )
+    if any(pattern in protected_text for pattern in summon_tooling_patterns):
         return True
     background_exposition_patterns = (
         "背景说明", "说明背景", "负责说明", "负责解释", "解释背景", "讲解背景",
