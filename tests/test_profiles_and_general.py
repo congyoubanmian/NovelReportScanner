@@ -523,6 +523,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 keywords = analysis_profiles._keywords_from_manifest(profile.name)
                 self.assertTrue(keywords, f"{profile.name} missing inference_keywords")
 
+        urban_keywords = dict(analysis_profiles._keywords_from_manifest("urban_power"))
+        self.assertEqual(urban_keywords["系统"], 3)
+        self.assertEqual(urban_keywords["修仙"], 2)
+        self.assertEqual(urban_keywords["下山"], 5)
+        self.assertEqual(urban_keywords["龙王"], 5)
+        self.assertEqual(urban_keywords["战神"], 5)
+
     def test_history_and_sci_fi_rules_include_kimi_categories(self):
         with open(os.path.join("profiles", "history", "rules.json"), "r", encoding="utf-8") as f:
             history_rules = json.load(f)
