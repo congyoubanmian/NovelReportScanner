@@ -292,6 +292,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(any("外挂硬解" in item and "可复核线索推理" in item for item in mystery_detective.scan_focus))
         self.assertTrue(any("案件彼此割裂" in item for item in mystery_detective.scan_focus))
         self.assertIn("tech_feasibility", steampunk_fantasy.summary_fields)
+        self.assertGreaterEqual(len(steampunk_fantasy.scan_focus), 8)
+        self.assertTrue(any("社会阶层体系" in item for item in steampunk_fantasy.scan_focus))
+        self.assertTrue(any("炼金工业的经济逻辑" in item for item in steampunk_fantasy.scan_focus))
+        self.assertTrue(any("技术-魔法的平衡" in item for item in steampunk_fantasy.scan_focus))
 
         for profile in [
             general,
@@ -1783,6 +1787,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         title_weighted = analysis_profiles.infer_profile_candidates_for_text("篮球冠军", "训练和战术很重要。")
         self.assertEqual(title_weighted[0]["name"], "sports_competition")
         self.assertGreaterEqual(title_weighted[0]["matched_keywords"].count("篮球"), 1)
+
+        steampunk = analysis_profiles.infer_profile_candidates_for_text(
+            "蒸汽朋克西幻",
+            "教会帝国里，差分机接入炼金矩阵，蒸汽机械卷入神秘复苏案件。",
+        )
+        self.assertEqual(steampunk[0]["name"], "steampunk_fantasy")
+        self.assertIn("组合:炼金+蒸汽", steampunk[0]["matched_keywords"])
+        self.assertIn("组合:蒸汽朋克+西幻", steampunk[0]["matched_keywords"])
+        self.assertIn("组合:差分机+炼金矩阵+蒸汽", steampunk[0]["matched_keywords"])
 
     def test_auto_profile_multi_label_inference(self):
         profiles = analysis_profiles.infer_profiles_for_text(
