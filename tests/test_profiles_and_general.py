@@ -1296,6 +1296,49 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             novel_scan.CHUNK_FAILURE_DIAGNOSTICS = old_diagnostics
             novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
 
+    def test_commit_chunk_result_accepts_isolated_chunk_summaries(self):
+        old_checkpoint = novel_scan.CHECKPOINT_FILE
+        old_plan = novel_scan.CURRENT_CHUNK_PLAN_METADATA
+        old_summaries = dict(novel_scan.CHUNK_SUMMARIES)
+        old_detail_path = getattr(novel_scan, "_ACTIVE_DETAIL_PATH", None)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                novel_scan.CHECKPOINT_FILE = os.path.join(tmpdir, "latest_checkpoint.json")
+                novel_scan.CURRENT_CHUNK_PLAN_METADATA = {"chunk_count": 2}
+                novel_scan.CHUNK_SUMMARIES = {99: "全局摘要"}
+                novel_scan._ACTIVE_DETAIL_PATH = "/tmp/detail.json"
+                local_summaries = {0: "本书前块摘要"}
+
+                novel_scan._commit_chunk_result(
+                    1,
+                    [],
+                    [],
+                    [],
+                    "本书第二块摘要",
+                    True,
+                    "",
+                    all_issues=[],
+                    all_heroine_facts=[],
+                    extra_relations_all=[],
+                    processed_chunks={0},
+                    failed_chunks=set(),
+                    chunk_summaries=local_summaries,
+                )
+
+                self.assertEqual(local_summaries, {0: "本书前块摘要", 1: "本书第二块摘要"})
+                self.assertEqual(novel_scan.CHUNK_SUMMARIES, {99: "全局摘要"})
+                with open(novel_scan.CHECKPOINT_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self.assertEqual(data["chunk_summaries"], {
+                    "0": "本书前块摘要",
+                    "1": "本书第二块摘要",
+                })
+        finally:
+            novel_scan.CHECKPOINT_FILE = old_checkpoint
+            novel_scan.CURRENT_CHUNK_PLAN_METADATA = old_plan
+            novel_scan.CHUNK_SUMMARIES = old_summaries
+            novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
+
     def test_toxic_reviewer_prompt_locks_strict_harem_definitions(self):
         system_prompt, user_prompt = toxic_reviewer.build_review_prompts(
             {

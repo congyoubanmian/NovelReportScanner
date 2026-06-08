@@ -2427,8 +2427,11 @@ def generate_context_summary(text_chunk, heroines=None, male_protagonist=None, p
 
 def _process_thread_block(block_id, block_indices, chunks, system_prompt, heroines, male_protagonist=None,
                           fact_boost_prompt=None, all_issues=None, all_heroine_facts=None,
-                          extra_relations_all=None, processed_chunks=None, failed_chunks=None):
+                          extra_relations_all=None, processed_chunks=None, failed_chunks=None,
+                          chunk_summaries=None):
     global _middle_summary_calls
+    explicit_chunk_summaries = chunk_summaries is not None
+    summaries = chunk_summaries if chunk_summaries is not None else CHUNK_SUMMARIES
     if not block_indices:
         return {
             "block_id": block_id,
@@ -2455,10 +2458,10 @@ def _process_thread_block(block_id, block_indices, chunks, system_prompt, heroin
         predecessor_summary = ""
         if boundary_idx > 0:
             with CHECKPOINT_LOCK:
-                predecessor_summary = CHUNK_SUMMARIES.get(boundary_idx - 1, "")
+                predecessor_summary = summaries.get(boundary_idx - 1, "")
         if boundary_idx in processed_chunks:
             with CHECKPOINT_LOCK:
-                carry_summary = CHUNK_SUMMARIES.get(boundary_idx, predecessor_summary)
+                carry_summary = summaries.get(boundary_idx, predecessor_summary)
             indices_to_scan = block_indices[1:]
         elif predecessor_summary:
             carry_summary = predecessor_summary
@@ -2477,13 +2480,13 @@ def _process_thread_block(block_id, block_indices, chunks, system_prompt, heroin
     for idx in indices_to_scan:
         if idx in processed_chunks:
             with CHECKPOINT_LOCK:
-                cached_summary = CHUNK_SUMMARIES.get(idx, "")
+                cached_summary = summaries.get(idx, "")
             carry_summary = cached_summary if cached_summary else ""
             continue
 
         if not carry_summary and idx > 0:
             with CHECKPOINT_LOCK:
-                cached_prev = CHUNK_SUMMARIES.get(idx - 1, "")
+                cached_prev = summaries.get(idx - 1, "")
 
             if cached_prev:
                 carry_summary = cached_prev
@@ -2503,11 +2506,11 @@ def _process_thread_block(block_id, block_indices, chunks, system_prompt, heroin
                     if generated_summary:
                         carry_summary = generated_summary
                         with CHECKPOINT_LOCK:
-                            existing_summary = CHUNK_SUMMARIES.get(idx - 1, "")
+                            existing_summary = summaries.get(idx - 1, "")
                             if existing_summary:
                                 carry_summary = existing_summary
                             else:
-                                CHUNK_SUMMARIES[idx - 1] = generated_summary
+                                summaries[idx - 1] = generated_summary
 
         issues, heroine_facts, extra_rel, next_summary, ok, fatal, err_msg = scan_chunk(
             chunks[idx],
@@ -2547,6 +2550,7 @@ def _process_thread_block(block_id, block_indices, chunks, system_prompt, heroin
             processed_chunks=processed_chunks,
             failed_chunks=failed_chunks,
             chunk_text=chunks[idx],
+            chunk_summaries=summaries if explicit_chunk_summaries else None,
         )
         if ok and next_summary:
             carry_summary = next_summary or carry_summary
@@ -2581,12 +2585,15 @@ def _merge_scan_success(all_issues, all_heroine_facts, extra_relations_all, proc
 
 def _commit_chunk_result(idx, issues, heroine_facts, extra_rel, next_summary, ok, err_msg="",
                          all_issues=None, all_heroine_facts=None, extra_relations_all=None,
-                         processed_chunks=None, failed_chunks=None, progress_state=None, chunk_text=None):
+                         processed_chunks=None, failed_chunks=None, progress_state=None, chunk_text=None,
+                         chunk_summaries=None):
     all_issues = all_issues if all_issues is not None else []
     all_heroine_facts = all_heroine_facts if all_heroine_facts is not None else []
     extra_relations_all = extra_relations_all if extra_relations_all is not None else []
     processed_chunks = processed_chunks if processed_chunks is not None else set()
     failed_chunks = failed_chunks if failed_chunks is not None else set()
+    explicit_chunk_summaries = chunk_summaries is not None
+    summaries = chunk_summaries if chunk_summaries is not None else CHUNK_SUMMARIES
     with CHECKPOINT_LOCK:
         if not ok:
             _record_chunk_failure_diagnostic(idx, chunk_text, err_msg=err_msg)
@@ -2604,7 +2611,7 @@ def _commit_chunk_result(idx, issues, heroine_facts, extra_rel, next_summary, ok
             err_msg,
         )
         if ok and next_summary:
-            CHUNK_SUMMARIES[idx] = next_summary
+            summaries[idx] = next_summary
         save_checkpoint(
             all_issues,
             all_heroine_facts,
@@ -2617,13 +2624,17 @@ def _commit_chunk_result(idx, issues, heroine_facts, extra_rel, next_summary, ok
             delta_heroine_facts=heroine_facts if ok else [],
             delta_extra_relations=extra_rel if ok else [],
             delta_chunk_summary=next_summary if ok else "",
+            chunk_summaries=summaries if explicit_chunk_summaries else None,
         )
         _advance_chunk_progress(idx, processed_chunks, failed_chunks, progress_state or _ACTIVE_PROGRESS_STATE)
 
 
 def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protagonist, fact_boost_prompt,
-                                   all_issues, all_heroine_facts, extra_relations_all, processed_chunks, failed_chunks):
+                                   all_issues, all_heroine_facts, extra_relations_all, processed_chunks, failed_chunks,
+                                   chunk_summaries=None):
     global _ACTIVE_PROGRESS_STATE
+    explicit_chunk_summaries = chunk_summaries is not None
+    summaries = chunk_summaries if chunk_summaries is not None else CHUNK_SUMMARIES
     if not chunks:
         return None
 
@@ -2661,6 +2672,7 @@ def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protago
                     extra_relations_all,
                     processed_chunks,
                     failed_chunks,
+                    summaries if explicit_chunk_summaries else None,
                 ): block_id
                 for block_id, block_indices in enumerate(blocks)
                 if block_indices
@@ -2692,7 +2704,7 @@ def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protago
             predecessor_summary = ""
             if boundary_idx > 0:
                 with CHECKPOINT_LOCK:
-                    predecessor_summary = CHUNK_SUMMARIES.get(boundary_idx - 1, "")
+                    predecessor_summary = summaries.get(boundary_idx - 1, "")
             if not predecessor_summary:
                 predecessor_summary = (
                     block_results.get(block_id - 1, {}).get("last_summary")
@@ -2737,6 +2749,7 @@ def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protago
                 failed_chunks=failed_chunks,
                 progress_state=progress_state,
                 chunk_text=chunks[boundary_idx],
+                chunk_summaries=summaries if explicit_chunk_summaries else None,
             )
 
         if fatal_error_msg:
@@ -3880,8 +3893,10 @@ def _append_to_detail_file(heroine_facts, extra_relations, male_protagonist=None
 
 def _run_scan_for_indices(chunks, indices, system_prompt, heroines, male_protagonist, fact_boost_prompt,
                           all_issues, all_heroine_facts, extra_relations_all, processed_chunks, failed_chunks,
-                          phase_name="补扫"):
+                          phase_name="补扫", chunk_summaries=None):
     global _ACTIVE_PROGRESS_STATE
+    explicit_chunk_summaries = chunk_summaries is not None
+    summaries = chunk_summaries if chunk_summaries is not None else CHUNK_SUMMARIES
     """
     对指定 indices（0-based）执行扫描。
     - 成功：写入 all_issues/all_heroine_facts/extra_relations_all，并将 idx 加入 processed_chunks，且从 failed_chunks 移除
@@ -3918,6 +3933,7 @@ def _run_scan_for_indices(chunks, indices, system_prompt, heroines, male_protago
                     heroines,
                     male_protagonist,
                     fact_boost_prompt,
+                    summaries if explicit_chunk_summaries else None,
                 ): i
                 for i in pending_indices
             }
@@ -3963,6 +3979,7 @@ def _run_scan_for_indices(chunks, indices, system_prompt, heroines, male_protago
                     failed_chunks=failed_chunks,
                     progress_state=progress_state,
                     chunk_text=chunks[idx],
+                    chunk_summaries=summaries if explicit_chunk_summaries else None,
                 )
 
             return fatal_error
@@ -3971,11 +3988,13 @@ def _run_scan_for_indices(chunks, indices, system_prompt, heroines, male_protago
         _ACTIVE_PROGRESS_STATE = previous_progress_state
 
 
-def _rescan_worker_task(idx, chunks, system_prompt, heroines, male_protagonist=None, fact_boost_prompt=None):
+def _rescan_worker_task(idx, chunks, system_prompt, heroines, male_protagonist=None, fact_boost_prompt=None,
+                        chunk_summaries=None):
+    summaries = chunk_summaries if chunk_summaries is not None else CHUNK_SUMMARIES
     context_summary = ""
     if idx > 0:
         with CHECKPOINT_LOCK:
-            context_summary = CHUNK_SUMMARIES.get(idx - 1, "")
+            context_summary = summaries.get(idx - 1, "")
         if not context_summary:
             generated_summary = generate_context_summary(
                 chunks[idx - 1],
@@ -3984,11 +4003,11 @@ def _rescan_worker_task(idx, chunks, system_prompt, heroines, male_protagonist=N
             )
             if generated_summary:
                 with CHECKPOINT_LOCK:
-                    existing_summary = CHUNK_SUMMARIES.get(idx - 1, "")
+                    existing_summary = summaries.get(idx - 1, "")
                     if existing_summary:
                         context_summary = existing_summary
                     else:
-                        CHUNK_SUMMARIES[idx - 1] = generated_summary
+                        summaries[idx - 1] = generated_summary
                         context_summary = generated_summary
 
     issues, heroine_facts, extra_rel, next_summary, ok, fatal, err_msg = scan_chunk(
