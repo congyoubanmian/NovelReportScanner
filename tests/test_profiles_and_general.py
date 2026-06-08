@@ -1422,6 +1422,24 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         confirmed = confirmed_map["丙女"]
         self.assertTrue(confirmed["leak_relationship_confirmed"])
         self.assertIn("已被男主明确推倒", confirmed["leak_reason"])
+        self.assertFalse(
+            novel_reviewer._contains_positive_phrase_for_leak_confirmation(
+                "名义夫妻，有名无实，未同房，未确认关系。",
+                ("同房", "确认关系"),
+            )
+        )
+        self.assertFalse(
+            novel_reviewer._contains_positive_phrase_for_leak_confirmation(
+                "两人没有发生关系。",
+                ("发生关系",),
+            )
+        )
+        self.assertTrue(
+            novel_reviewer._contains_positive_phrase_for_leak_confirmation(
+                "后续明确同房并确认关系。",
+                ("同房", "确认关系"),
+            )
+        )
 
     def test_rebuild_leak_state_requires_explicit_ending_account(self):
         data = {
@@ -4302,6 +4320,19 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(weak_candidate.startswith("弱准女主"))
         self.assertTrue(low_evidence.startswith("低证据女角色"))
         self.assertIn("低存在感/工具人线索", low_evidence)
+
+        nominal_pushed = report._heroine_position_level(
+            {"importance_rank": 2},
+            {
+                "relationship_with_protagonist": "与男主长期暧昧并喜欢男主。",
+                "key_events": "两人只是名义夫妻，有名无实，未同房也未圆房，未确认关系。",
+                "features": "主线相关角色",
+            },
+            {"count": 6, "summaries": ["长期参与主线，但关系仍未收束。"]},
+            {"pushed_by_male_lead": True, "pushed_reason": "名义夫妻，有名无实，未同房，未确认关系。"},
+        )
+        self.assertFalse(nominal_pushed.startswith("目标女主"), nominal_pushed)
+        self.assertIn("推倒/确认关系证据疑似名义或否定语境", nominal_pushed)
 
         ex_wife_vibe = report._heroine_position_level(
             {"importance_rank": 2},

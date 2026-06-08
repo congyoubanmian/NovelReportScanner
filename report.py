@@ -1358,15 +1358,26 @@ def _heroine_position_level(heroine_meta: dict, profile: dict, evidence: dict = 
     signals = []
     risks = []
 
-    if purity_info.get("pushed_by_male_lead") is True:
+    pushed_confirmed = (
+        purity_info.get("pushed_by_male_lead") is True
+        and not _pushed_confirmation_is_nominal_or_negated_for_report(purity_info, text)
+    )
+    if pushed_confirmed:
         score += 4
         signals.append("已被男主明确推倒/确认关系")
+    elif purity_info.get("pushed_by_male_lead") is True:
+        risks.append("推倒/确认关系证据疑似名义或否定语境")
     if purity_info.get("is_leak_heroine") is True or purity_info.get("leak_emotional_depth") is True:
         score += 3
         signals.append("漏女/情感深度证据")
     strong_relationship_position_words = ["妻子", "正妻", "妻室", "夫妻", "夫妇", "道侣", "恋人", "爱人", "后宫", "未婚妻", "伴侣", "情侣", "女朋友", "老婆"]
     romance_signal_words = ["喜欢", "爱慕", "表白", "暧昧", "吃醋", "双修", "同房", "亲密", "推倒", "收女", "动心", "倾心"]
-    if _contains_positive_signal_text(text, strong_relationship_position_words) or _has_positive_heroine_position_signal(text):
+    has_nominal_or_negated_relationship_context = _relationship_position_is_nominal_or_negated_for_report(text)
+    has_strong_relationship_position = (
+        _contains_positive_signal_text(text, strong_relationship_position_words)
+        and not has_nominal_or_negated_relationship_context
+    )
+    if has_strong_relationship_position or _has_positive_heroine_position_signal(text):
         score += 2
         signals.append("关系定位明确")
     if _contains_positive_signal_text(text, romance_signal_words):
@@ -1406,15 +1417,15 @@ def _heroine_position_level(heroine_meta: dict, profile: dict, evidence: dict = 
         risks.append("缺少关系、事件和出场证据")
 
     has_confirmed_target = (
-        purity_info.get("pushed_by_male_lead") is True
-        or _contains_positive_signal_text(text, ["妻子", "正妻", "妻室", "夫妻", "夫妇", "道侣", "恋人", "爱人", "后宫", "未婚妻", "伴侣", "情侣", "女朋友", "老婆"])
+        pushed_confirmed
+        or has_strong_relationship_position
     )
     has_candidate_relationship_signal = (
         has_confirmed_target
         or purity_info.get("is_leak_heroine") is True
         or purity_info.get("leak_emotional_depth") is True
         or _has_positive_heroine_position_signal(text)
-        or _contains_positive_signal_text(text, strong_relationship_position_words)
+        or has_strong_relationship_position
         or _contains_positive_signal_text(text, romance_signal_words)
     )
     if score >= 7 and has_confirmed_target:
@@ -1431,6 +1442,56 @@ def _heroine_position_level(heroine_meta: dict, profile: dict, evidence: dict = 
 
     detail = "；".join(dict.fromkeys(signals[:4] + risks[:3])) or "证据不足"
     return f"{label}：{detail}"
+
+
+def _pushed_confirmation_is_nominal_or_negated_for_report(purity_info: dict, context_text: str) -> bool:
+    text = " ".join(
+        str(part or "")
+        for part in [
+            purity_info.get("pushed_reason") if isinstance(purity_info, dict) else "",
+            purity_info.get("leak_relationship_reason") if isinstance(purity_info, dict) else "",
+            context_text,
+        ]
+    )
+    if not text:
+        return False
+    nominal_or_negated_markers = (
+        "只是称呼", "只是个称呼", "只是外号", "只是绰号", "玩笑称呼", "调侃称呼", "口头称呼",
+        "只是玩笑", "开玩笑", "读者调侃", "读者脑补", "粉丝称呼", "书友称呼",
+        "有名无实", "名义夫妻", "名义上的夫妻", "名义婚约", "名义关系",
+        "假结婚", "假扮夫妻", "伪装夫妻", "契约夫妻", "政治婚约", "政治联姻",
+        "未圆房", "没有圆房", "未同房", "没有同房", "未发生关系", "没有发生关系",
+        "无实质关系", "没有实质关系", "无身体关系", "没有身体关系", "未确认关系",
+        "关系确认未知", "非实质确认语境",
+    )
+    if not any(marker in text for marker in nominal_or_negated_markers):
+        return False
+    return not _contains_positive_signal_text(
+        text,
+        [
+            "已同房", "已经同房", "明确同房", "发生关系", "发生性关系", "圆房了", "已经圆房",
+            "确认推倒", "明确推倒", "收入后宫", "收进后宫", "成为道侣", "确认关系",
+        ],
+    )
+
+
+def _relationship_position_is_nominal_or_negated_for_report(text: str) -> bool:
+    text = str(text or "")
+    if not text:
+        return False
+    nominal_or_negated_markers = (
+        "有名无实", "名义夫妻", "名义上的夫妻", "名义婚约", "名义关系",
+        "假结婚", "假扮夫妻", "伪装夫妻", "契约夫妻", "政治婚约", "政治联姻",
+        "未圆房", "没有圆房", "未同房", "没有同房", "未发生关系", "没有发生关系",
+        "无实质关系", "没有实质关系", "无身体关系", "没有身体关系", "未确认关系",
+        "没有确认关系", "未收入后宫", "没有收入后宫", "未收女", "没有收女",
+    )
+    if not any(marker in text for marker in nominal_or_negated_markers):
+        return False
+    return not _contains_positive_signal_text(
+        text,
+        ["已同房", "已经同房", "明确同房", "发生关系", "发生性关系", "圆房了", "已经圆房", "确认关系", "收入后宫"],
+    )
 
 
 def _has_low_presence_or_tooling_signal(text: str) -> bool:
