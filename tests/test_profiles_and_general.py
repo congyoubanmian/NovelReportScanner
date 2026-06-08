@@ -3399,6 +3399,22 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("组合:蒸汽朋克+西幻", steampunk[0]["matched_keywords"])
         self.assertIn("组合:差分机+炼金矩阵+蒸汽", steampunk[0]["matched_keywords"])
 
+    def test_auto_profile_novel_reads_timeline_samples(self):
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as f:
+            path = f.name
+            f.write("小镇日常与朋友重逢。\n" * 4000)
+            f.write("星舰进入虫洞，曲率引擎启动，量子通讯和太空殖民成为主线。\n" * 80)
+        try:
+            candidates = analysis_profiles.infer_profile_candidates_for_novel(path, "慢热长篇")
+            names = [item["name"] for item in candidates]
+            self.assertIn("hard_sci_fi", names)
+            sampled = analysis_profiles._read_text_timeline_samples_safely(path)
+            self.assertIn("__sample_head__", sampled)
+            self.assertIn("__sample_tail__", sampled)
+            self.assertIn("曲率引擎", sampled)
+        finally:
+            os.remove(path)
+
     def test_auto_profile_multi_label_inference(self):
         profiles = analysis_profiles.infer_profiles_for_text(
             "大明星际后宫",

@@ -11,6 +11,7 @@ DEFAULT_PROFILE = "harem"
 AUTO_PROFILE = "auto"
 AUTO_PROFILE_MIN_SCORE = 6
 AUTO_PROFILE_MAX_PROFILES = 3
+PROFILE_INFERENCE_TEXT_LIMIT = 60000
 
 
 @dataclass(frozen=True)
@@ -648,7 +649,7 @@ def _calibrated_confidence(
 
 def infer_profile_candidates_for_text(title: str, text: str, min_score: int = 1) -> List[Dict[str, Any]]:
     title_text = str(title or "")
-    body_text = str(text or "")[:20000]
+    body_text = str(text or "")[:PROFILE_INFERENCE_TEXT_LIMIT]
     blob = f"{title_text}\n{title_text}\n{title_text}\n{body_text}".lower()
     raw = []
     for profile in list_available_profiles():
@@ -708,23 +709,64 @@ def infer_profile_candidates_for_text(title: str, text: str, min_score: int = 1)
 
 def infer_profile_candidates_for_novel(novel_path: str, book_name: str = "", min_score: int = 1) -> List[Dict[str, Any]]:
     try:
-        text = _read_text_prefix_safely(novel_path, char_limit=20000)
+        text = _read_text_timeline_samples_safely(novel_path, char_limit=30000)
     except Exception:
         text = ""
     title = book_name or os.path.splitext(os.path.basename(novel_path))[0]
     return infer_profile_candidates_for_text(title, text, min_score=min_score)
 
 
+def _read_text_timeline_samples_safely(path: str, char_limit: int = 30000) -> str:
+    """Read head/middle/tail samples so auto profile inference can see late genre turns."""
+    per_sample_chars = max(2000, char_limit // 3)
+    per_sample_bytes = max(per_sample_chars * 4, 4096)
+    size = os.path.getsize(path)
+    offsets = [0]
+    if size > per_sample_bytes * 2:
+        offsets.append(max(0, size // 2 - per_sample_bytes // 2))
+    if size > per_sample_bytes:
+        offsets.append(max(0, size - per_sample_bytes))
+
+    chunks = []
+    seen_offsets = set()
+    with open(path, "rb") as f:
+        for label, offset in zip(("head", "middle", "tail"), offsets):
+            if offset in seen_offsets:
+                continue
+            seen_offsets.add(offset)
+            f.seek(offset)
+            raw = f.read(per_sample_bytes)
+            text = _decode_text_sample(raw, per_sample_chars, position=label)
+            if text:
+                chunks.append(f"__sample_{label}__\n{text}")
+    return "\n".join(chunks)[:char_limit]
+
+
+def _decode_text_sample(raw: bytes, char_limit: int, position: str = "head") -> str:
+    for encoding in ("utf-8", "gb18030"):
+        try:
+            return _slice_decoded_sample(raw.decode(encoding), char_limit, position)
+        except UnicodeDecodeError:
+            continue
+    return _slice_decoded_sample(raw.decode("utf-8", errors="ignore"), char_limit, position)
+
+
+def _slice_decoded_sample(text: str, char_limit: int, position: str = "head") -> str:
+    if len(text) <= char_limit:
+        return text
+    if position == "tail":
+        return text[-char_limit:]
+    if position == "middle":
+        start = max(0, len(text) // 2 - char_limit // 2)
+        return text[start : start + char_limit]
+    return text[:char_limit]
+
+
 def _read_text_prefix_safely(path: str, char_limit: int = 20000) -> str:
     byte_limit = max(char_limit * 4, 4096)
     with open(path, "rb") as f:
         raw = f.read(byte_limit)
-    for encoding in ("utf-8", "gb18030"):
-        try:
-            return raw.decode(encoding)[:char_limit]
-        except UnicodeDecodeError:
-            continue
-    return raw.decode("utf-8", errors="ignore")[:char_limit]
+    return _decode_text_sample(raw, char_limit)
 
 
 def infer_profile_for_text(title: str, text: str) -> str:
