@@ -447,6 +447,38 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("穿越合理性", history_text)
         self.assertIn("社会伦理", sci_fi_text)
 
+    def test_general_rules_cover_kimi_core_dimensions(self):
+        with open(os.path.join("profiles", "general", "rules.json"), "r", encoding="utf-8") as f:
+            rules = json.load(f)
+
+        categories = {item["name"]: item for item in rules["categories"]}
+        for category_name in ["叙事与节奏", "人物塑造", "阅读体验", "完成度"]:
+            self.assertIn(category_name, categories)
+
+        points = {
+            point["name"]
+            for category in rules["categories"]
+            for point in category.get("points", [])
+        }
+        for point_name in [
+            "叙事完整性",
+            "节奏控制",
+            "主角动机",
+            "配角立体度",
+            "反派质量",
+            "爽点设计",
+            "虐点控制",
+            "文笔与表达",
+            "伏笔回收",
+            "结局质量",
+        ]:
+            self.assertIn(point_name, points)
+        self.assertGreaterEqual(len(points), 15)
+
+        general_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("general"))
+        self.assertIn("叙事完整性", general_text)
+        self.assertIn("期待管理", general_text)
+
     def test_xianxia_isekai_and_game_rules_include_kimi_categories(self):
         rule_paths = {
             "xianxia_fantasy": os.path.join("profiles", "xianxia_fantasy", "rules.json"),
