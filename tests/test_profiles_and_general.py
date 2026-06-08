@@ -355,6 +355,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertTrue(compose_vars)
         self.assertEqual(set(), compose_vars - env_sample_vars)
+        self.assertIn("SCAN_STALL_TIMEOUT_SECONDS: ${SCAN_STALL_TIMEOUT_SECONDS:-1200}", compose_text)
+        self.assertIn("SCAN_STALL_TIMEOUT_SECONDS=1200", env_sample_text)
 
     def test_docker_entrypoint_requires_web_token_and_writable_volumes(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -4734,10 +4736,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE",
             "GENERAL_SCAN_CONTEXT_MAX_CHARS",
             "RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER",
+            "SCAN_STALL_TIMEOUT_SECONDS",
             "HAREM_PLUS_GENERAL_SCAN",
             "API_KEY",
         ]
         old_env = {key: os.environ.get(key) for key in keys}
+        old_stall_timeout = web_manager.SCAN_STALL_TIMEOUT_SECONDS
         try:
             os.environ["API_KEY"] = "sk-secret"
             ok, result = web_manager._update_runtime_config({
@@ -4759,6 +4763,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "general_scan_knowledge_base_llm_merge": True,
                 "general_scan_context_max_chars": "800",
                 "rescan_skip_chronic_parse_failure_after": "3",
+                "scan_stall_timeout_seconds": "900",
                 "harem_plus_general_scan": True,
             })
 
@@ -4781,6 +4786,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE"], "1")
             self.assertEqual(os.environ["GENERAL_SCAN_CONTEXT_MAX_CHARS"], "800")
             self.assertEqual(os.environ["RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER"], "3")
+            self.assertEqual(os.environ["SCAN_STALL_TIMEOUT_SECONDS"], "900")
+            self.assertEqual(web_manager.SCAN_STALL_TIMEOUT_SECONDS, 900)
             self.assertEqual(os.environ["HAREM_PLUS_GENERAL_SCAN"], "1")
             self.assertEqual(result["max_workers"], "4")
             self.assertFalse(result["general_scan_smart_density"])
@@ -4796,6 +4803,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertTrue(result["general_scan_knowledge_base_llm_merge"])
             self.assertEqual(result["general_scan_context_max_chars"], "800")
             self.assertEqual(result["rescan_skip_chronic_parse_failure_after"], "3")
+            self.assertEqual(result["web"]["scan_stall_timeout_seconds"], 900)
+            self.assertTrue(result["web"]["scan_stall_watchdog_enabled"])
             self.assertTrue(result["harem_plus_general_scan"])
             self.assertIn("max_workers", result["editable"])
             self.assertNotIn("api_key", result["editable"])
@@ -4818,6 +4827,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertFalse(ok)
             self.assertIn("one of", error)
         finally:
+            web_manager.SCAN_STALL_TIMEOUT_SECONDS = old_stall_timeout
             for key, value in old_env.items():
                 if value is None:
                     os.environ.pop(key, None)
@@ -4977,9 +4987,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE": "general_scan_knowledge_base_llm_merge",
             "GENERAL_SCAN_CONTEXT_MAX_CHARS": "general_scan_context_max_chars",
             "RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER": "rescan_skip_chronic_parse_failure_after",
+            "SCAN_STALL_TIMEOUT_SECONDS": "scan_stall_timeout_seconds",
             "HAREM_PLUS_GENERAL_SCAN": "harem_plus_general_scan",
         }
         old_values = {env: os.environ.get(env) for env in env_field_map}
+        old_stall_timeout = web_manager.SCAN_STALL_TIMEOUT_SECONDS
 
         with tempfile.TemporaryDirectory() as tmpdir:
             env_path = os.path.join(tmpdir, ".env")
@@ -5018,6 +5030,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "general_scan_knowledge_base_llm_merge": True,
                     "general_scan_context_max_chars": 800,
                     "rescan_skip_chronic_parse_failure_after": 3,
+                    "scan_stall_timeout_seconds": 900,
                     "harem_plus_general_scan": True,
                 })
                 self.assertTrue(ok)
@@ -5039,6 +5052,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE=1", lines)
                 self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS=800", lines)
                 self.assertIn("RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER=3", lines)
+                self.assertIn("SCAN_STALL_TIMEOUT_SECONDS=900", lines)
                 self.assertIn("HAREM_PLUS_GENERAL_SCAN=1", lines)
                 # 旧值不应残留
                 self.assertNotIn("MAX_WORKERS=4", lines)
@@ -5056,6 +5070,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         os.environ.pop(env, None)
                     else:
                         os.environ[env] = value
+                web_manager.SCAN_STALL_TIMEOUT_SECONDS = old_stall_timeout
 
     def test_web_manager_handler_rejects_unauthorized_api_requests(self):
         class FakeHandler(web_manager.Handler):

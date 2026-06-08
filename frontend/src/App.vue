@@ -60,6 +60,7 @@ const configForm = ref({
   general_scan_knowledge_base_llm_merge: false,
   general_scan_context_max_chars: '1600',
   rescan_skip_chronic_parse_failure_after: '2',
+  scan_stall_timeout_seconds: '1200',
   harem_plus_general_scan: false
 })
 const savingRuntimeConfig = ref(false)
@@ -155,6 +156,7 @@ function syncConfigForm(config) {
     general_scan_context_max_chars: config.general_scan_context_max_chars || '1600',
     rescan_skip_chronic_parse_failure_after:
       config.rescan_skip_chronic_parse_failure_after || '2',
+    scan_stall_timeout_seconds: String(config.web?.scan_stall_timeout_seconds ?? '1200'),
     harem_plus_general_scan: Boolean(config.harem_plus_general_scan)
   }
 }
@@ -183,6 +185,7 @@ async function saveRuntimeConfig() {
       general_scan_context_max_chars: configForm.value.general_scan_context_max_chars,
       rescan_skip_chronic_parse_failure_after:
         configForm.value.rescan_skip_chronic_parse_failure_after,
+      scan_stall_timeout_seconds: configForm.value.scan_stall_timeout_seconds,
       harem_plus_general_scan: configForm.value.harem_plus_general_scan
     })
     runtimeConfig.value = response.config || runtimeConfig.value
@@ -553,6 +556,16 @@ useStateEvents(applyState, {
           type="number"
           min="0"
           max="20"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>卡死保护</span>
+        <input
+          v-model="configForm.scan_stall_timeout_seconds"
+          type="number"
+          min="0"
+          max="86400"
           @input="runtimeConfigDirty = true"
         />
       </label>
