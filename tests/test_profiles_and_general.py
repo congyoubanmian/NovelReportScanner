@@ -695,6 +695,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("种族生态", isekai_points)
         self.assertIn("政治结构", isekai_points)
         self.assertIn("日常平衡", isekai_points)
+        self.assertIn("轻小说节奏", isekai_points)
+        self.assertGreaterEqual(len(isekai_points), 12)
 
         game_categories = {item["name"] for item in rules["game_system"]["categories"]}
         game_points = {
@@ -710,9 +712,35 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("现实影响", game_points)
 
         xianxia_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("xianxia_fantasy"))
+        isekai_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("isekai_lightnovel"))
         game_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("game_system"))
         self.assertIn("求道主题", xianxia_text)
+        self.assertIn("轻小说节奏", isekai_text)
         self.assertIn("玩家互动", game_text)
+
+    def test_new_emerging_profile_rules_have_minimum_kimi_depth(self):
+        expected_points = {
+            "nation_fate": ["奖励反噬", "战力尺度", "直播舆论"],
+            "simulator": ["结算通胀", "现实信息差", "重复日志压缩"],
+            "chinese_weird": ["规则冲突", "仪式代价", "污染扩散"],
+            "mastermind_hidden": ["马甲数量管理", "组织资源成本", "暴露后果"],
+        }
+
+        for profile_name, point_names in expected_points.items():
+            with open(os.path.join("profiles", profile_name, "rules.json"), "r", encoding="utf-8") as f:
+                rules = json.load(f)
+            points = {
+                point["name"]
+                for category in rules["categories"]
+                for point in category.get("points", [])
+            }
+            self.assertGreaterEqual(len(points), 12, profile_name)
+            for point_name in point_names:
+                self.assertIn(point_name, points, profile_name)
+
+            rules_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile(profile_name))
+            for point_name in point_names:
+                self.assertIn(point_name, rules_text)
 
     def test_specialty_profiles_import_harem_cross_rules(self):
         for profile_name in [
@@ -852,6 +880,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("隐藏规则", chinese_weird_points)
         self.assertIn("民俗底盘", chinese_weird_points)
         self.assertIn("现实侵蚀", chinese_weird_points)
+        self.assertIn("规则冲突", chinese_weird_points)
+        self.assertIn("仪式代价", chinese_weird_points)
+        self.assertIn("污染扩散", chinese_weird_points)
 
         mastermind_categories = {item["name"] for item in rules["mastermind_hidden"]["categories"]}
         mastermind_points = {
@@ -865,6 +896,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("马甲边界", mastermind_points)
         self.assertIn("信息差来源", mastermind_points)
         self.assertIn("掉马时机", mastermind_points)
+        self.assertIn("马甲数量管理", mastermind_points)
+        self.assertIn("组织资源成本", mastermind_points)
+        self.assertIn("暴露后果", mastermind_points)
 
         sports_categories = {item["name"] for item in rules["sports_competition"]["categories"]}
         sports_points = {
@@ -897,7 +931,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("侦探魅力", mystery_text)
         self.assertIn("规则怪谈", horror_text)
         self.assertIn("民俗底盘", chinese_weird_text)
+        self.assertIn("污染扩散", chinese_weird_text)
         self.assertIn("马甲边界", mastermind_text)
+        self.assertIn("组织资源成本", mastermind_text)
         self.assertIn("名场面", sports_text)
         self.assertIn("科技树", farming_text)
 
@@ -922,6 +958,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("压扬循环", urban_points)
         self.assertIn("势力层级", urban_points)
         self.assertIn("女性角色与感情模式", urban_points)
+        self.assertIn("专业能力展示", urban_points)
+        self.assertIn("法治舆论后果", urban_points)
 
         campus_categories = {item["name"] for item in rules["campus_youth"]["categories"]}
         campus_points = {

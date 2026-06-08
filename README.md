@@ -407,7 +407,7 @@ Web 管理端常用配置：
 - `SSE_SYNC_INTERVAL_SECONDS`：SSE 状态流触发 `novels/` 目录同步的最短间隔，默认 `5` 秒；多个 SSE 连接会共用这个节流。
 - `SSE_MAX_CONNECTION_SECONDS`：单个 SSE 连接最大生命周期，默认 `300` 秒；到期后浏览器 `EventSource` 会自动重连，避免服务端线程长期占用。
 
-Web 页面顶部可直接调整部分非敏感运行配置，包括 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`GENERAL_SCAN_MAX_CHUNKS` 和 `HAREM_PLUS_GENERAL_SCAN`。这些修改只影响当前 Web 服务进程及其后续扫描子进程，不会写回 `.env`、`setting.txt`，也不会展示或修改 API Key。
+Web 页面顶部可直接调整部分非敏感运行配置，包括 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`GENERAL_SCAN_MAX_CHUNKS` 和 `HAREM_PLUS_GENERAL_SCAN`。这些修改会立即影响当前 Web 服务进程及其后续扫描子进程，并会安全写回 `.env` 文件以便重启后继续生效；写回时只更新白名单内的非敏感字段，保留注释、空行和 API Key 等敏感信息，不会展示或修改 API Key。`setting.txt` 仍作为样例/兼容配置来源，不会被 Web 配置页写回。
 
 前端开发检查：
 
