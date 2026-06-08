@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 from tqdm import tqdm
 
 from analysis_profiles import load_analysis_profile
+from prompt_templates import prompt_template_metadata, prompt_templates_metadata
 from shared_utils import MODEL, chat_completion, get_base_dir, init_token_tracker, is_context_overflow_error, read_file_safely, record_usage
 from shared_utils import _safe_json_loads_maybe
 from text_anchor import build_chunk_manifest, save_chunk_manifest
@@ -184,6 +185,13 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
         return False
     if data.get("chunk_sampling_strategy") not in {"full", "uniform_timeline"}:
         return False
+    stored_prompt_templates = data.get("prompt_templates")
+    if isinstance(stored_prompt_templates, dict):
+        current_prompt_templates = prompt_templates_metadata("general_scan_chunk", "general_summary")
+        for name, current_meta in current_prompt_templates.items():
+            stored_meta = stored_prompt_templates.get(name)
+            if isinstance(stored_meta, dict) and stored_meta.get("version") != current_meta.get("version"):
+                return False
     current_mtime = _novel_mtime(novel_file)
     if current_mtime is None or data.get("novel_mtime") != current_mtime:
         return False
@@ -327,7 +335,10 @@ def _focus_text(profile) -> str:
 def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None) -> Dict[str, Any]:
     profile = profile or load_analysis_profile("general")
     rules_text = _profile_rules_text(profile)
+    template_meta = prompt_template_metadata("general_scan_chunk")
     system_prompt = f"""你是{profile.display_name}助手。请从片段中抽取对整本小说分析有用的信息。
+
+Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 
 关注范围：
 - plot_events: 推动主线或支线的关键事件
@@ -374,6 +385,7 @@ def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=No
     )
     return {
         "chunk_index": chunk_index,
+        "prompt_template": template_meta,
         "plot_events": _safe_list(data.get("plot_events")),
         "conflicts": _safe_list(data.get("conflicts")),
         "worldbuilding": _safe_list(data.get("worldbuilding")),
@@ -496,8 +508,11 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
             for field in specialty_fields
         )
     rules_text = _profile_rules_text(profile)
+    template_meta = prompt_template_metadata("general_summary")
 
     system_prompt = f"""你是{profile.display_name}总评分析师。请基于分块抽取结果，形成整本书的分析结论。
+
+Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 
 本 profile 的专项规则：
 {rules_text}
@@ -538,6 +553,7 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         max_tokens=4000,
     )
     summary = {
+        "prompt_template": template_meta,
         "story_overview": _summary_field_text(data, "story_overview"),
         "main_plot": _summary_field_value(data, "main_plot"),
         "core_conflicts": _summary_field_value(data, "core_conflicts"),
@@ -637,6 +653,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "chunk_count": len(chunks),
         "chunk_sampling_strategy": sampling_strategy,
         "sampled_chunk_indices": selected_original_indices,
+        "prompt_templates": prompt_templates_metadata("general_scan_chunk", "general_summary"),
         "failed_chunks": failed,
         "chunk_results": chunk_results,
         "summary": summary,

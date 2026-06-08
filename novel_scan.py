@@ -25,6 +25,7 @@ from shared_utils import (
     get_base_dir,
     read_file_safely,
 )
+from prompt_templates import prompt_template_metadata, prompt_templates_metadata
 from text_anchor import build_chunk_manifest, save_chunk_manifest
 
 
@@ -841,11 +842,16 @@ def _render_prompt_checklist():
 
 def build_prompt(categories, glossary, heroines, male_protagonist=None):
     """构建三层扫描 Prompt：保留原长文规则，只做重排与局部增补。"""
+    template_meta = prompt_template_metadata("harem_scan_chunk")
     male_prompt_text = _male_identity_prompt_text(male_protagonist)
     categories_text = _render_categories(categories)
     glossary_text = _render_glossary(glossary)
 
-    layer_one = "你是一个深谙'男性向网文'逻辑的扫书专家。你的任务是为读者排毒。请注意：网文的道德逻辑与现实世界不同，请务必执行以下双重标准。\n"
+    layer_one = (
+        "你是一个深谙'男性向网文'逻辑的扫书专家。你的任务是为读者排毒。"
+        f"Prompt模板：{template_meta['name']}@{template_meta['version']}。"
+        "请注意：网文的道德逻辑与现实世界不同，请务必执行以下双重标准。\n"
+    )
 
     layer_one += "\n【任务二：女主事实抽取（仅抽取事实，不做判断）】\n"
     if heroines:
@@ -4313,6 +4319,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         "detail_path": active_detail_path,
         "chunk_manifest_file": chunk_manifest_path,
         "chunk_plan": chunk_plan_metadata,
+        "prompt_templates": prompt_templates_metadata("harem_scan_chunk"),
     }
     with open(os.path.join(output_dir, "raw_data.json"), 'w', encoding='utf-8') as f:
         json.dump(raw_data, f, ensure_ascii=False, indent=2)

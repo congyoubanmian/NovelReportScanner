@@ -17,6 +17,7 @@ import main
 import novel_scan
 import novel_reviewer
 import protagonist
+import prompt_templates
 import report
 import shared_utils
 import toxic_reviewer
@@ -559,6 +560,28 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertRegex(harem_option["version"], r"^\d+\.\d+\.\d+$")
         self.assertRegex(harem_option["min_supported_scanner_version"], r"^\d+\.\d+\.\d+$")
         self.assertFalse(harem_option["breaking_changes"])
+
+    def test_prompt_template_versions_are_registered_and_overridable(self):
+        self.assertEqual(
+            prompt_templates.prompt_template_metadata("general_scan_chunk")["version"],
+            "v1",
+        )
+        with mock.patch.dict(
+            os.environ,
+            {"PROMPT_TEMPLATE_GENERAL_SCAN_CHUNK_VERSION": "v2"},
+            clear=False,
+        ):
+            self.assertEqual(
+                prompt_templates.prompt_template_metadata("general_scan_chunk")["version"],
+                "v2",
+            )
+
+        metadata = prompt_templates.prompt_templates_metadata(
+            "harem_scan_chunk",
+            "general_scan_chunk",
+            "general_summary",
+        )
+        self.assertEqual(sorted(metadata), ["general_scan_chunk", "general_summary", "harem_scan_chunk"])
 
     def test_api_client_factory_is_shared(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -1260,6 +1283,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         prompt = novel_scan.build_prompt(categories, glossary, ["甲女"], {"name": "男主"})
 
+        self.assertIn("Prompt模板：harem_scan_chunk@v1", prompt)
         self.assertIn("漏女三层判定", prompt)
         self.assertIn("情感深度", prompt)
         self.assertIn("关系是否确认", prompt)
@@ -8654,6 +8678,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             general_scan._call_json = old_call_json
 
         self.assertIn("境界体系清晰", result["specialty_notes"])
+        self.assertEqual(result["prompt_template"]["name"], "general_scan_chunk")
+        self.assertEqual(result["prompt_template"]["version"], "v1")
         self.assertTrue(any("修炼体系与战力" in prompt for prompt in prompts))
 
     def test_general_scan_summary_prompt_uses_field_labels(self):
@@ -9509,6 +9535,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(data["chunk_count"], 300)
             self.assertEqual(data["max_chunks"], 300)
             self.assertEqual(data["chunk_sampling_strategy"], "uniform_timeline")
+            self.assertEqual(data["prompt_templates"]["general_scan_chunk"]["version"], "v1")
+            self.assertEqual(data["prompt_templates"]["general_summary"]["version"], "v1")
             self.assertEqual(sampled_indices[0], 1)
             self.assertEqual(sampled_indices[-1], 1000)
             self.assertTrue(any(450 <= idx <= 550 for idx in sampled_indices))
@@ -9588,6 +9616,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "history"))
             data["max_chunks"] = general_scan._effective_max_chunks(4_000_000)
             data["text_length"] = 4_000_000
+            self.assertTrue(general_scan._is_fresh_summary(data, novel_path, "history"))
+            data["prompt_templates"] = {
+                "general_scan_chunk": {"name": "general_scan_chunk", "version": "v0"},
+                "general_summary": {"name": "general_summary", "version": "v1"},
+            }
+            self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "history"))
+            data["prompt_templates"]["general_scan_chunk"]["version"] = "v1"
             self.assertTrue(general_scan._is_fresh_summary(data, novel_path, "history"))
             data["max_chunks"] = general_scan.MAX_CHUNKS
             self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "history"))
