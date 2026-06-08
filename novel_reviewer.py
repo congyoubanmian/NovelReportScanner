@@ -702,9 +702,27 @@ def _pushed_confirmation_is_nominal_or_negated(pushed_reason: str, hinfo: Dict[s
         "已同房", "已经同房", "明确同房", "发生关系", "发生性关系", "圆房了", "已经圆房",
         "确认推倒", "明确推倒", "收入后宫", "收进后宫", "成为道侣", "确认关系",
     )
-    if any(marker in text for marker in factual_override_markers):
+    if _contains_positive_phrase_for_leak_confirmation(text, factual_override_markers):
         return False
     return any(marker in text for marker in nominal_or_negated_markers)
+
+
+def _contains_positive_phrase_for_leak_confirmation(text: str, markers: Tuple[str, ...]) -> bool:
+    negative_prefixes = (
+        "没有", "没", "无", "未", "并未", "尚未", "不曾", "未曾", "不是", "并非",
+        "不算", "不能算", "称不上", "谈不上",
+    )
+    for marker in markers:
+        start = 0
+        while marker:
+            idx = text.find(marker, start)
+            if idx < 0:
+                break
+            window = text[max(0, idx - 8):idx]
+            if not any(prefix in window for prefix in negative_prefixes):
+                return True
+            start = idx + len(marker)
+    return False
 
 
 def detect_leak_heroines(

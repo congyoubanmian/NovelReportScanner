@@ -1378,7 +1378,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         "name": "丙女",
                         "summaries": [
                             "与男主长期暧昧并喜欢男主。",
-                            "两人只是名义夫妻，有名无实，未同房也未圆房。",
+                            "两人只是名义夫妻，有名无实，未同房也未圆房，未确认关系。",
                         ],
                     }
                 ]
@@ -1393,7 +1393,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 char_file_path=char_path,
                 novel_tail="尾声里只有男主离开江湖。",
                 finished=True,
-                pushed_map={"丙女": (True, "名义夫妻，有名无实，未同房。")},
+                pushed_map={"丙女": (True, "名义夫妻，有名无实，未同房，未确认关系。")},
             )
         finally:
             os.unlink(char_path)
