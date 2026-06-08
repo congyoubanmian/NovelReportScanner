@@ -1144,11 +1144,16 @@ def _contains_positive_signal_text(value, keywords) -> bool:
     non_romantic_like_followers = (
         "什么", "哪", "吃", "喝", "看", "用", "这", "那", "某", "衣", "裙", "书", "菜", "颜色", "东西", "物件",
         "破案", "探案", "推理", "研究", "调查", "冒险", "战斗", "修炼", "种田", "赚钱", "吐槽", "搞笑",
+        "权势", "权力", "金钱", "财富", "名利", "地位", "身份", "容貌", "外表",
     )
     non_romantic_love_prefixes = ("可", "讨人喜", "喜", "热")
     non_romantic_love_followers = (
         "吃", "喝", "看", "用", "好", "好者", "好是", "心", "护", "惜", "美", "漂亮", "玩", "闹",
         "丽", "莉", "琳", "莲", "莎", "丝", "薇", "娜", "妮", "德", "尔", "伦", "蜜", "丽丝", "丽莎",
+    )
+    non_romantic_admire_followers = (
+        "虚荣", "权势", "权力", "金钱", "财富", "名利", "地位", "身份", "容貌", "外表",
+        "者", "对象", "粉丝", "追求者",
     )
     non_romantic_emotion_contexts = ("读者", "书友", "粉丝", "作者", "剧情", "副本", "设定", "文笔", "设计", "说明")
     nonfactual_romance_contexts = ("传言", "传闻", "流言", "谣言", "误会", "误传", "炒作", "营销", "澄清", "伪装")
@@ -1204,6 +1209,10 @@ def _contains_positive_signal_text(value, keywords) -> bool:
             non_romantic_love = word == "爱" and (
                 any(text[max(0, index - len(hint)):index] == hint for hint in non_romantic_love_prefixes)
                 or any(next_text.startswith(hint) for hint in non_romantic_love_followers)
+            )
+            non_romantic_admire = word == "爱慕" and (
+                any(next_context.startswith(hint) for hint in non_romantic_admire_followers)
+                or any(hint in text[max(0, index - 4):index] for hint in ("被", "受", "读者", "旁人", "众人"))
             )
             non_romantic_emotion = word in ("动心", "倾心") and any(
                 hint in text[max(0, index - 8):index + len(word) + 8]
@@ -1263,6 +1272,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
                 and not any(hint in next_text for hint in roleplay_after_hints)
                 and not non_romantic_like
                 and not non_romantic_love
+                and not non_romantic_admire
                 and not non_romantic_emotion
                 and not nonfactual_romance
                 and not system_or_setting_relation

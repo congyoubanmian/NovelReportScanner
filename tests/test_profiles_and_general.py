@@ -4742,6 +4742,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(report._contains_positive_signal_text("她热爱推理，主要作用是提供线索。", ["爱"]))
         self.assertFalse(report._contains_positive_signal_text("三小只包括爱丽丝、小人鱼和公主。", ["爱"]))
         self.assertFalse(report._contains_positive_signal_text("角色名叫爱琳，主要是女仆助手。", ["爱"]))
+        self.assertFalse(report._contains_positive_signal_text("她性格爱慕虚荣，喜欢权势。", ["爱慕"]))
+        self.assertFalse(report._contains_positive_signal_text("她被众人爱慕，追求者很多。", ["爱慕"]))
+        self.assertTrue(report._contains_positive_signal_text("她爱慕男主，并主动靠近。", ["爱慕"]))
         self.assertTrue(report._contains_positive_signal_text("她爱男主，并主动告白。", ["爱"]))
         self.assertTrue(report._contains_positive_signal_text("她爱他，并愿意相伴余生。", ["爱"]))
         self.assertTrue(report._contains_positive_signal_text("她爱上男主。", ["爱"]))
@@ -4839,6 +4842,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertNotIn("感情/亲密推进", familial_level)
         self.assertIn("明确缺少恋爱/后宫推进", familial_level)
+
+        vain_level = report._heroine_position_level(
+            {"importance_rank": 2},
+            {
+                "identity": "贵族女配",
+                "relationship_with_protagonist": "与男主只是政治同盟，没有恋爱线。",
+                "features": "性格爱慕虚荣，喜欢权势。",
+                "key_events": "多次出场推动贵族支线。",
+            },
+            {"count": 7},
+            {},
+        )
+        self.assertNotIn("感情/亲密推进", vain_level)
+        self.assertIn("明确缺少恋爱/后宫推进", vain_level)
 
     def test_leak_three_layers_ignores_non_romantic_love_words(self):
         clean = report._summarize_leak_three_layers(
