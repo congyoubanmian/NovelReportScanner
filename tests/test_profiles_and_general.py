@@ -400,6 +400,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("GENERAL_SCAN_WRITING_QUALITY", text)
         self.assertIn("GENERAL_SCAN_NARRATIVE_ARCHITECTURE", text)
         self.assertIn("GENERAL_SCAN_FORESHADOWING_ENGINEERING", text)
+        self.assertIn("GENERAL_SCAN_CONTENT_AWARE_SAMPLING", text)
         self.assertIn("GENERAL_SCAN_ROLLING_CONTEXT", text)
         self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS", text)
 
@@ -825,6 +826,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("general_scan_foreshadowing_engineering: true", text)
         self.assertIn("config.general_scan_foreshadowing_engineering !== false", text)
         self.assertIn("configForm.general_scan_foreshadowing_engineering", text)
+        self.assertIn("general_scan_content_aware_sampling: true", text)
+        self.assertIn("config.general_scan_content_aware_sampling !== false", text)
+        self.assertIn("configForm.general_scan_content_aware_sampling", text)
 
     def test_rate_limit_scope_auto_resolves_by_key_count(self):
         self.assertEqual(Timerror.normalize_rate_limit_scope("auto", 1), "global")
@@ -4220,6 +4224,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "RATE_LIMIT_SCOPE",
             "GENERAL_SCAN_MAX_CHUNKS",
             "GENERAL_SCAN_SMART_DENSITY",
+            "GENERAL_SCAN_CONTENT_AWARE_SAMPLING",
             "GENERAL_SCAN_INCREMENTAL_REUSE",
             "GENERAL_SCAN_WRITING_QUALITY",
             "GENERAL_SCAN_NARRATIVE_ARCHITECTURE",
@@ -4239,6 +4244,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "rate_limit_scope": "per_key",
                 "general_scan_max_chunks": "120",
                 "general_scan_smart_density": False,
+                "general_scan_content_aware_sampling": False,
                 "general_scan_incremental_reuse": False,
                 "general_scan_writing_quality": False,
                 "general_scan_narrative_architecture": False,
@@ -4255,6 +4261,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["RATE_LIMIT_SCOPE"], "per_key")
             self.assertEqual(os.environ["GENERAL_SCAN_MAX_CHUNKS"], "120")
             self.assertEqual(os.environ["GENERAL_SCAN_SMART_DENSITY"], "0")
+            self.assertEqual(os.environ["GENERAL_SCAN_CONTENT_AWARE_SAMPLING"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_INCREMENTAL_REUSE"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_WRITING_QUALITY"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_NARRATIVE_ARCHITECTURE"], "0")
@@ -4264,6 +4271,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["HAREM_PLUS_GENERAL_SCAN"], "1")
             self.assertEqual(result["max_workers"], "4")
             self.assertFalse(result["general_scan_smart_density"])
+            self.assertFalse(result["general_scan_content_aware_sampling"])
             self.assertFalse(result["general_scan_incremental_reuse"])
             self.assertFalse(result["general_scan_writing_quality"])
             self.assertFalse(result["general_scan_narrative_architecture"])
@@ -4439,6 +4447,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "RATE_LIMIT_SCOPE": "rate_limit_scope",
             "GENERAL_SCAN_MAX_CHUNKS": "general_scan_max_chunks",
             "GENERAL_SCAN_SMART_DENSITY": "general_scan_smart_density",
+            "GENERAL_SCAN_CONTENT_AWARE_SAMPLING": "general_scan_content_aware_sampling",
             "GENERAL_SCAN_INCREMENTAL_REUSE": "general_scan_incremental_reuse",
             "GENERAL_SCAN_WRITING_QUALITY": "general_scan_writing_quality",
             "GENERAL_SCAN_NARRATIVE_ARCHITECTURE": "general_scan_narrative_architecture",
@@ -4474,6 +4483,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 ok, _ = web_manager._update_runtime_config({
                     "max_workers": 16,
                     "general_scan_smart_density": False,
+                    "general_scan_content_aware_sampling": False,
                     "general_scan_incremental_reuse": False,
                     "general_scan_writing_quality": False,
                     "general_scan_narrative_architecture": False,
@@ -4489,6 +4499,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("API_KEY=secret", lines)
                 self.assertIn("MAX_WORKERS=16", lines)
                 self.assertIn("GENERAL_SCAN_SMART_DENSITY=0", lines)
+                self.assertIn("GENERAL_SCAN_CONTENT_AWARE_SAMPLING=0", lines)
                 self.assertIn("GENERAL_SCAN_INCREMENTAL_REUSE=0", lines)
                 self.assertIn("GENERAL_SCAN_WRITING_QUALITY=0", lines)
                 self.assertIn("GENERAL_SCAN_NARRATIVE_ARCHITECTURE=0", lines)
@@ -10408,6 +10419,27 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(general_scan._sample_chunk_entries_for_budget(entries, 0), entries)
         self.assertEqual(general_scan._sample_chunk_entries_for_budget(entries, 1), [entries[0]])
 
+    def test_general_scan_content_aware_sampling_keeps_high_signal_chunks(self):
+        entries = [
+            {"chunk_index": i + 1, "text": "赶路吃饭睡觉。"}
+            for i in range(100)
+        ]
+        entries[49]["text"] = "大战爆发，主角突破并揭露真相，旧伏笔回收。"
+
+        sampled = general_scan._sample_chunk_entries_for_budget(entries, 10, content_aware=True)
+        content_indices = [item["chunk_index"] for item in sampled]
+        uniform_indices = [
+            item["chunk_index"]
+            for item in general_scan._sample_chunk_entries_for_budget(entries, 10, content_aware=False)
+        ]
+
+        self.assertEqual(len(sampled), 10)
+        self.assertEqual(content_indices[0], 1)
+        self.assertEqual(content_indices[-1], 100)
+        self.assertEqual(content_indices, sorted(content_indices))
+        self.assertIn(50, content_indices)
+        self.assertNotIn(50, uniform_indices)
+
     def test_general_character_scan_samples_ten_million_word_books(self):
         self.assertEqual(protagonist._effective_general_character_max_chunks(10_000_000, 80), 300)
         sampled_indices = protagonist._sample_chunk_indices_for_budget(1000, 300)
@@ -10494,6 +10526,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     for i in range(1000)
                 ],
             }
+            manifest["chunks"][499]["text"] = "大战爆发，主角突破并揭露真相，旧伏笔回收。"
 
             def fake_scan(chunk, chunk_index, total_chunks, profile=None):
                 return {
@@ -10521,8 +10554,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(data["source_chunk_count"], 1000)
             self.assertEqual(data["chunk_count"], 300)
             self.assertEqual(data["max_chunks"], 300)
-            self.assertEqual(data["chunk_sampling_strategy"], "uniform_timeline")
+            self.assertEqual(data["chunk_sampling_strategy"], "content_aware_timeline")
             self.assertTrue(data["smart_density"])
+            self.assertTrue(data["content_aware_sampling"])
+            self.assertEqual(data["content_aware_sampling_schema_version"], general_scan.CONTENT_AWARE_SAMPLING_SCHEMA_VERSION)
             self.assertTrue(data["foreshadowing_engineering_enabled"])
             self.assertEqual(data["foreshadowing_engineering_schema_version"], general_scan.FORESHADOWING_ENGINEERING_SCHEMA_VERSION)
             self.assertEqual(sum(data["density_counts"].values()), 300)
@@ -10530,6 +10565,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(data["prompt_templates"]["general_summary"]["version"], "v1")
             self.assertEqual(sampled_indices[0], 1)
             self.assertEqual(sampled_indices[-1], 1000)
+            self.assertIn(500, sampled_indices)
             self.assertTrue(any(450 <= idx <= 550 for idx in sampled_indices))
 
     def test_general_scan_main_reuses_unchanged_chunk_results(self):
@@ -10830,6 +10866,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "chunk_overlap": general_scan.CHUNK_OVERLAP,
                 "max_chunks": general_scan.MAX_CHUNKS,
                 "chunk_sampling_strategy": "full",
+                "content_aware_sampling": general_scan.CONTENT_AWARE_SAMPLING,
+                "content_aware_sampling_schema_version": general_scan.CONTENT_AWARE_SAMPLING_SCHEMA_VERSION,
                 "writing_quality_enabled": general_scan.WRITING_QUALITY_ENABLED,
                 "narrative_architecture_enabled": general_scan.NARRATIVE_ARCHITECTURE_ENABLED,
                 "rolling_context_enabled": general_scan.ROLLING_CONTEXT_ENABLED,
@@ -10853,6 +10891,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             data_without_foreshadowing_meta = dict(data)
             data_without_foreshadowing_meta.pop("foreshadowing_engineering_enabled", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_foreshadowing_meta, novel_path, "history"))
+            data_without_content_sampling_meta = dict(data)
+            data_without_content_sampling_meta.pop("content_aware_sampling_schema_version", None)
+            self.assertFalse(general_scan._is_fresh_summary(data_without_content_sampling_meta, novel_path, "history"))
             data["summary"] = {"book_overview": "ok"}
             self.assertTrue(general_scan._is_fresh_summary(data, novel_path, "history"))
             self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "general"))
@@ -10890,6 +10931,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "chunk_overlap": general_scan.CHUNK_OVERLAP,
                 "max_chunks": general_scan.MAX_CHUNKS,
                 "chunk_sampling_strategy": "full",
+                "content_aware_sampling": general_scan.CONTENT_AWARE_SAMPLING,
+                "content_aware_sampling_schema_version": general_scan.CONTENT_AWARE_SAMPLING_SCHEMA_VERSION,
                 "writing_quality_enabled": general_scan.WRITING_QUALITY_ENABLED,
                 "narrative_architecture_enabled": general_scan.NARRATIVE_ARCHITECTURE_ENABLED,
                 "rolling_context_enabled": general_scan.ROLLING_CONTEXT_ENABLED,

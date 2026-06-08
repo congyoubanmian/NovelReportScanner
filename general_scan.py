@@ -18,6 +18,8 @@ CHUNK_SIZE = int(os.environ.get("GENERAL_SCAN_CHUNK_SIZE", "12000"))
 CHUNK_OVERLAP = int(os.environ.get("GENERAL_SCAN_CHUNK_OVERLAP", "1000"))
 MAX_CHUNKS = int(os.environ.get("GENERAL_SCAN_MAX_CHUNKS", "80"))
 SMART_DENSITY = os.environ.get("GENERAL_SCAN_SMART_DENSITY", "1").strip() == "1"
+CONTENT_AWARE_SAMPLING = os.environ.get("GENERAL_SCAN_CONTENT_AWARE_SAMPLING", "1").strip() == "1"
+CONTENT_AWARE_SAMPLING_SCHEMA_VERSION = 1
 INCREMENTAL_REUSE = os.environ.get("GENERAL_SCAN_INCREMENTAL_REUSE", "1").strip() == "1"
 WRITING_QUALITY_ENABLED = os.environ.get("GENERAL_SCAN_WRITING_QUALITY", "1").strip() == "1"
 NARRATIVE_ARCHITECTURE_ENABLED = os.environ.get("GENERAL_SCAN_NARRATIVE_ARCHITECTURE", "1").strip() == "1"
@@ -34,6 +36,12 @@ HIGH_DENSITY_TERMS = (
     "战斗", "交手", "决战", "袭击", "追杀", "死亡", "牺牲", "危机", "冲突", "背叛",
     "真相", "揭露", "反转", "线索", "案件", "尸体", "凶手", "审讯", "谈判", "夺权",
     "表白", "告白", "暧昧", "亲吻", "同房", "成亲", "结婚", "突破", "晋升", "觉醒",
+)
+CONTENT_AWARE_SIGNAL_TERMS = HIGH_DENSITY_TERMS + (
+    "伏笔", "悬念", "秘密", "身份", "暴露", "阴谋", "布局", "决裂", "复仇", "逃亡",
+    "传承", "遗迹", "宝物", "法宝", "神器", "阵法", "禁制", "任务", "副本", "系统",
+    "联姻", "订婚", "婚约", "吃醋", "修罗场", "双修", "亲密", "生离死别", "重逢",
+    "战争", "刺杀", "政变", "登基", "造反", "审判", "破案", "证据", "谜团", "谜底",
 )
 RADAR_SCORE_DIMENSIONS = {
     "plot": "剧情质量",
@@ -112,7 +120,7 @@ def _chunk_text_hash(text: str) -> str:
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
 
 
-def _sample_chunk_entries_for_budget(chunk_entries: List[Dict[str, Any]], max_chunks: int) -> List[Dict[str, Any]]:
+def _uniform_sample_chunk_entries(chunk_entries: List[Dict[str, Any]], max_chunks: int) -> List[Dict[str, Any]]:
     entries = list(chunk_entries or [])
     if max_chunks <= 0 or len(entries) <= max_chunks:
         return entries
@@ -132,6 +140,85 @@ def _sample_chunk_entries_for_budget(chunk_entries: List[Dict[str, Any]], max_ch
         cursor += 1
     selected.sort(key=lambda item: int(item.get("chunk_index", 0)))
     return selected[:max_chunks]
+
+
+def _content_sampling_signal(text: str) -> Dict[str, Any]:
+    sample = (text or "")[:20000]
+    high_hits = _term_hits(sample, CONTENT_AWARE_SIGNAL_TERMS)
+    low_hits = _term_hits(sample, LOW_DENSITY_TERMS)
+    punctuation_events = sum(sample.count(mark) for mark in ("！", "？", "。", "；"))
+    dialogue_marks = sample.count("“") + sample.count("”") + sample.count('"')
+    paragraph_breaks = sample.count("\n")
+    score = (
+        len(high_hits) * 10
+        + min(12, punctuation_events // 35)
+        + min(8, dialogue_marks // 12)
+        + min(4, paragraph_breaks // 20)
+        - min(10, len(low_hits) * 2)
+    )
+    if len(high_hits) >= 4:
+        level = "high"
+    elif score >= 18:
+        level = "high"
+    elif score <= 3 and len(low_hits) >= 2:
+        level = "low"
+    else:
+        level = "medium"
+    return {
+        "score": max(0, int(score)),
+        "level": level,
+        "signal_terms": high_hits[:12],
+        "low_terms": low_hits[:8],
+    }
+
+
+def _content_aware_sample_chunk_entries(chunk_entries: List[Dict[str, Any]], max_chunks: int) -> List[Dict[str, Any]]:
+    entries = list(chunk_entries or [])
+    if max_chunks <= 0 or len(entries) <= max_chunks:
+        return entries
+    if max_chunks == 1:
+        return [entries[0]]
+
+    timeline_quota = max(2, min(max_chunks, int(round(max_chunks * 0.65))))
+    selected_by_index = {}
+    for item in _uniform_sample_chunk_entries(entries, timeline_quota):
+        idx = int(item.get("chunk_index", 0) or 0)
+        selected_by_index[idx] = item
+
+    scored = []
+    for position, item in enumerate(entries):
+        idx = int(item.get("chunk_index", position + 1) or position + 1)
+        if idx in selected_by_index:
+            continue
+        signal = _content_sampling_signal(item.get("text", ""))
+        scored.append((signal["score"], position, idx, item))
+    scored.sort(key=lambda row: (-row[0], row[1]))
+
+    for score, _position, idx, item in scored:
+        if len(selected_by_index) >= max_chunks:
+            break
+        if score <= 0:
+            continue
+        selected_by_index[idx] = item
+
+    if len(selected_by_index) < max_chunks:
+        for item in _uniform_sample_chunk_entries(entries, max_chunks):
+            idx = int(item.get("chunk_index", 0) or 0)
+            selected_by_index.setdefault(idx, item)
+            if len(selected_by_index) >= max_chunks:
+                break
+
+    selected = list(selected_by_index.values())
+    selected.sort(key=lambda item: int(item.get("chunk_index", 0)))
+    return selected[:max_chunks]
+
+
+def _sample_chunk_entries_for_budget(chunk_entries: List[Dict[str, Any]], max_chunks: int, content_aware: bool = None) -> List[Dict[str, Any]]:
+    if content_aware is None:
+        content_aware = CONTENT_AWARE_SAMPLING
+    if content_aware:
+        return _content_aware_sample_chunk_entries(chunk_entries, max_chunks)
+    return _uniform_sample_chunk_entries(chunk_entries, max_chunks)
 
 
 def _summary_field_label(field: str) -> str:
@@ -251,10 +338,15 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
     effective_max_chunks = _effective_max_chunks(text_length)
     if data.get("max_chunks") != effective_max_chunks:
         return False
-    if data.get("chunk_sampling_strategy") not in {"full", "uniform_timeline"}:
+    if data.get("chunk_sampling_strategy") not in {"full", "uniform_timeline", "content_aware_timeline"}:
         return False
     if data.get("smart_density") not in {None, SMART_DENSITY}:
         return False
+    if data.get("content_aware_sampling") not in {None, CONTENT_AWARE_SAMPLING}:
+        return False
+    if CONTENT_AWARE_SAMPLING:
+        if data.get("content_aware_sampling_schema_version") != CONTENT_AWARE_SAMPLING_SCHEMA_VERSION:
+            return False
     if data.get("incremental_reuse") not in {None, INCREMENTAL_REUSE}:
         return False
     if WRITING_QUALITY_ENABLED and data.get("writing_quality_enabled") is not True:
@@ -312,6 +404,10 @@ def _summary_can_reuse_chunk_results(data: Dict[str, Any], profile_name: str = "
     if data.get("chunk_size") != CHUNK_SIZE or data.get("chunk_overlap") != CHUNK_OVERLAP:
         return False
     if data.get("smart_density") not in {None, SMART_DENSITY}:
+        return False
+    if data.get("content_aware_sampling") not in {None, CONTENT_AWARE_SAMPLING}:
+        return False
+    if CONTENT_AWARE_SAMPLING and data.get("content_aware_sampling_schema_version") not in {None, CONTENT_AWARE_SAMPLING_SCHEMA_VERSION}:
         return False
     if data.get("writing_quality_enabled") not in {None, WRITING_QUALITY_ENABLED}:
         return False
@@ -1693,7 +1789,12 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         for idx, x in enumerate(selected_chunk_entries)
     ]
     if effective_max_chunks > 0:
-        sampling_strategy = "full" if source_chunk_count <= effective_max_chunks else "uniform_timeline"
+        if source_chunk_count <= effective_max_chunks:
+            sampling_strategy = "full"
+        elif CONTENT_AWARE_SAMPLING:
+            sampling_strategy = "content_aware_timeline"
+        else:
+            sampling_strategy = "uniform_timeline"
     else:
         sampling_strategy = "full"
 
@@ -1719,7 +1820,11 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
                     "sampled_context": True,
                     "source_chunk_count": source_chunk_count,
                     "current_original_chunk_index": original_chunk_index,
-                    "sampling_note": "当前扫描为全书均匀抽样，前序上下文来自已扫描样本，不代表原文连续章节。",
+                    "sampling_note": (
+                        "当前扫描为全书内容感知抽样，前序上下文来自已扫描样本，不代表原文连续章节。"
+                        if sampling_strategy == "content_aware_timeline"
+                        else "当前扫描为全书均匀抽样，前序上下文来自已扫描样本，不代表原文连续章节。"
+                    ),
                 })
             context_snapshot = _trim_context_snapshot(context_snapshot)
         reusable_result = reusable_results.get(chunk_hash)
@@ -1791,6 +1896,8 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "chunk_sampling_strategy": sampling_strategy,
         "sampled_chunk_indices": selected_original_indices,
         "smart_density": SMART_DENSITY,
+        "content_aware_sampling": CONTENT_AWARE_SAMPLING,
+        "content_aware_sampling_schema_version": CONTENT_AWARE_SAMPLING_SCHEMA_VERSION if CONTENT_AWARE_SAMPLING else None,
         "writing_quality_enabled": WRITING_QUALITY_ENABLED,
         "narrative_architecture_enabled": NARRATIVE_ARCHITECTURE_ENABLED,
         "rolling_context_enabled": ROLLING_CONTEXT_ENABLED,

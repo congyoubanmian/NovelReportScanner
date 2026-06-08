@@ -389,8 +389,9 @@ SSE_MAX_CONNECTION_SECONDS=300
 - `MAX_WORKERS`：并发规模基线。
 - `ANALYSIS_PROFILE`：分析模式。`harem` 为默认后宫/男性向排雷模式；`auto` 可按每本书自动识别；`general`、`history`、`hard_sci_fi` 为通用和类型专长入口。
 - `HAREM_PLUS_GENERAL_SCAN`：后宫增强模式开关。设为 `1` 时，`harem` 流程会在后宫排雷后额外运行一次通用剧情扫描，并在后宫报告末尾追加“作品整体评价”；默认 `0`，不增加额外调用。
-- `GENERAL_SCAN_MAX_CHUNKS`：通用/专项剧情扫描的基础片段预算，默认 `80`。程序会按小说长度自动提高有效上限：100 万字内 80、100-300 万字 120、300-500 万字 160、500-1000 万字含 1000 万字 300、超过 1000 万字 400；手动配置更高值时会尊重配置，设为 `0` 表示不限制。超出预算时会按全书时间线均匀抽样，而不是只扫描开头。
+- `GENERAL_SCAN_MAX_CHUNKS`：通用/专项剧情扫描的基础片段预算，默认 `80`。程序会按小说长度自动提高有效上限：100 万字内 80、100-300 万字 120、300-500 万字 160、500-1000 万字含 1000 万字 300、超过 1000 万字 400；手动配置更高值时会尊重配置，设为 `0` 表示不限制。超出预算时默认按全书时间线覆盖并优先纳入高信号片段，而不是只扫描开头。
 - `GENERAL_SCAN_SMART_DENSITY`：通用/专项剧情扫描的片段密度分级开关，默认 `1`。开启后低密度过渡/日常片段会走轻量抽取 prompt，只保留真实新增信息；不会跳过片段，结果会记录 `density_profile` 和汇总 `density_counts`。设为 `0` 可恢复所有片段完整抽取。
+- `GENERAL_SCAN_CONTENT_AWARE_SAMPLING`：通用/专项剧情扫描的内容感知抽样开关，默认 `1`。长篇超出片段预算时，会保留首尾和时间线覆盖，并额外优先选择战斗、反转、线索、突破、感情推进等高信号片段；设为 `0` 可恢复旧的均匀时间线抽样。
 - `GENERAL_SCAN_INCREMENTAL_REUSE`：通用/专项剧情扫描的 chunk hash 增量复用开关，默认 `1`。当同一本书已有旧 summary 且 prompt/配置兼容时，未变化片段会复用旧 `chunk_results`，只扫描新增或修改片段，最后重新生成整书 summary；设为 `0` 可强制全量重扫。
 - `GENERAL_SCAN_WRITING_QUALITY`：通用/专项剧情扫描的写作质量、节奏曲线和信息密度分析开关，默认 `1`。开启后每个片段会额外抽取文笔、人物、叙事、对话、场景、情感、信息密度和世界观融入等写作质量证据，整书报告会增加“写作质量分析”“节奏曲线分析”“信息密度审计”等章节；设为 `0` 可降低 prompt 长度和 token 成本。
 - `GENERAL_SCAN_NARRATIVE_ARCHITECTURE`：通用/专项剧情扫描的叙事结构和大纲架构分析开关，默认 `1`。开启后每个片段会额外标注结构功能、叙事弧位置、结构转折点、因果链、成长曲线、设定展开和架构稳定性，整书报告会增加“叙事结构分析”“大纲架构分析”等章节；设为 `0` 可降低 prompt 长度和 token 成本。
@@ -417,7 +418,7 @@ Web 管理端常用配置：
 - `SSE_SYNC_INTERVAL_SECONDS`：SSE 状态流触发 `novels/` 目录同步的最短间隔，默认 `5` 秒；多个 SSE 连接会共用这个节流。
 - `SSE_MAX_CONNECTION_SECONDS`：单个 SSE 连接最大生命周期，默认 `300` 秒；到期后浏览器 `EventSource` 会自动重连，避免服务端线程长期占用。
 
-Web 页面顶部可直接调整部分非敏感运行配置，包括 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`GENERAL_SCAN_MAX_CHUNKS`、`GENERAL_SCAN_SMART_DENSITY`、`GENERAL_SCAN_INCREMENTAL_REUSE`、`GENERAL_SCAN_WRITING_QUALITY`、`GENERAL_SCAN_NARRATIVE_ARCHITECTURE`、`GENERAL_SCAN_FORESHADOWING_ENGINEERING`、`GENERAL_SCAN_ROLLING_CONTEXT`、`GENERAL_SCAN_CONTEXT_MAX_CHARS` 和 `HAREM_PLUS_GENERAL_SCAN`。这些修改会立即影响当前 Web 服务进程及其后续扫描子进程，并会安全写回 `.env` 文件以便重启后继续生效；写回时只更新白名单内的非敏感字段，保留注释、空行和 API Key 等敏感信息，不会展示或修改 API Key。`setting.txt` 仍作为样例/兼容配置来源，不会被 Web 配置页写回。
+Web 页面顶部可直接调整部分非敏感运行配置，包括 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`GENERAL_SCAN_MAX_CHUNKS`、`GENERAL_SCAN_SMART_DENSITY`、`GENERAL_SCAN_CONTENT_AWARE_SAMPLING`、`GENERAL_SCAN_INCREMENTAL_REUSE`、`GENERAL_SCAN_WRITING_QUALITY`、`GENERAL_SCAN_NARRATIVE_ARCHITECTURE`、`GENERAL_SCAN_FORESHADOWING_ENGINEERING`、`GENERAL_SCAN_ROLLING_CONTEXT`、`GENERAL_SCAN_CONTEXT_MAX_CHARS` 和 `HAREM_PLUS_GENERAL_SCAN`。这些修改会立即影响当前 Web 服务进程及其后续扫描子进程，并会安全写回 `.env` 文件以便重启后继续生效；写回时只更新白名单内的非敏感字段，保留注释、空行和 API Key 等敏感信息，不会展示或修改 API Key。`setting.txt` 仍作为样例/兼容配置来源，不会被 Web 配置页写回。
 
 前端开发检查：
 
