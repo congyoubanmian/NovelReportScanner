@@ -139,6 +139,7 @@
 - Web 书籍目录同步仅在新增/路径变化/分类建议变化时写入状态文件，避免 `/api/state` 和 SSE 周期同步造成无意义磁盘写入。
 - Web 页面支持编辑 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`GENERAL_SCAN_MAX_CHUNKS`、`HAREM_PLUS_GENERAL_SCAN` 等非敏感运行配置；修改后会自动原子写回 `.env` 文件，服务重启后仍然生效。写回时只更新白名单内的非敏感字段，保留注释、空行和 API Key 等敏感信息，避免 Key 泄露或丢失。
 - Web 写入 `novels/`、`results/` 或状态文件遇到宿主机挂载目录权限错误时，会返回结构化 JSON 错误和目录权限提示，避免请求线程直接 traceback 导致前端只看到接口失败。
+- Web 运行信息条会展示 `novels/` 和 `results/` 挂载目录的可写状态，部署后可直接判断目录权限是否会影响上传、入队和报告写入。
 - Docker 最终运行镜像不再 `COPY . .`，只复制 Python 源码、`profiles/`、`rules2.json` 和前端构建产物，避免把测试、前端源码、文档和本地杂项带入运行层。
 - `.dockerignore` 保留前端源码进入 builder stage，同时最终运行层只接收 `frontend/dist`，避免无缓存构建时缺少源码或运行镜像携带前端源码。
 - Docker/Compose 容器启动时默认要求 `API_KEY` 或 `API_KEY_POOL` 至少存在一个，避免缺少 Key 时 Web 进程正常启动但扫描任务延迟失败；确需只启动 Web UI 时可用 `NOVEL_REPORT_SCANNER_REQUIRE_API_KEY=0` 跳过。
@@ -161,7 +162,7 @@
 - 专项报告字段标题和输出结构。
 - 通用总评字段别名、作品概览别名和旧 summary 缓存复用。
 
-最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **152 个测试 OK**。
+最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **153 个测试 OK**。
 
 ## 已推送的关键提交
 

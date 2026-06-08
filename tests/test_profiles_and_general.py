@@ -2295,6 +2295,28 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             else:
                 os.environ["NOVEL_REPORT_SCANNER_REQUIRE_API_KEY"] = old_key_required
 
+    def test_web_manager_runtime_config_reports_storage_writability(self):
+        old_base_dir = web_manager.get_base_dir
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                web_manager.get_base_dir = lambda: tmp
+                summary = web_manager._runtime_config_summary()
+                storage = summary["web"]["storage"]
+                self.assertTrue(storage["novels"]["writable"])
+                self.assertTrue(storage["results"]["writable"])
+                self.assertEqual(storage["novels"]["error"], "")
+                self.assertEqual(storage["results"]["error"], "")
+
+            with tempfile.NamedTemporaryFile() as tmp_file:
+                web_manager.get_base_dir = lambda: tmp_file.name
+                storage = web_manager._runtime_config_summary()["web"]["storage"]
+                self.assertFalse(storage["novels"]["writable"])
+                self.assertFalse(storage["results"]["writable"])
+                self.assertTrue(storage["novels"]["error"])
+                self.assertTrue(storage["results"]["error"])
+        finally:
+            web_manager.get_base_dir = old_base_dir
+
     def test_web_manager_runtime_config_update_allows_only_safe_fields(self):
         keys = [
             "MAX_WORKERS",

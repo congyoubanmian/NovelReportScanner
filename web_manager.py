@@ -3,6 +3,7 @@ import os
 import queue
 import secrets
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
@@ -364,8 +365,31 @@ def _runtime_config_summary():
             "sse_state_interval_seconds": SSE_STATE_INTERVAL_SECONDS,
             "auth_enabled": _web_auth_enabled(),
             "api_key_required_on_start": _env_bool_value(os.environ.get("NOVEL_REPORT_SCANNER_REQUIRE_API_KEY", "1")),
+            "storage": _storage_health_summary(),
         },
     }
+
+
+def _storage_health_summary():
+    return {
+        "novels": _directory_write_status(_novels_dir),
+        "results": _directory_write_status(lambda: os.path.join(get_base_dir(), "results")),
+    }
+
+
+def _directory_write_status(path_factory):
+    try:
+        path = path_factory()
+        os.makedirs(path, exist_ok=True)
+        with tempfile.NamedTemporaryFile(prefix=".write-test-", dir=path, delete=True):
+            pass
+        return {"path": path, "writable": True, "error": ""}
+    except Exception as exc:
+        try:
+            path = path_factory()
+        except Exception:
+            path = ""
+        return {"path": path, "writable": False, "error": str(exc) or exc.__class__.__name__}
 
 
 def _env_bool_value(value):

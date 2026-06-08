@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import BookUpload from './components/BookUpload.vue'
 import BookList from './components/BookList.vue'
 import BookDetail from './components/BookDetail.vue'
@@ -51,6 +51,19 @@ const configForm = ref({
 })
 const savingRuntimeConfig = ref(false)
 const runtimeConfigDirty = ref(false)
+const storageStatus = computed(() => {
+  const storage = runtimeConfig.value?.web?.storage || {}
+  const novelsWritable = storage.novels?.writable !== false
+  const resultsWritable = storage.results?.writable !== false
+  return {
+    ok: novelsWritable && resultsWritable,
+    label: novelsWritable && resultsWritable ? '正常' : '异常',
+    title: [
+      `novels: ${storage.novels?.path || '—'}${novelsWritable ? '' : ` (${storage.novels?.error || '不可写'})`}`,
+      `results: ${storage.results?.path || '—'}${resultsWritable ? '' : ` (${storage.results?.error || '不可写'})`}`
+    ].join('\n')
+  }
+})
 
 // Race-condition guard for detail loading
 let detailRequestId = 0
@@ -311,6 +324,9 @@ useStateEvents(applyState, {
         ><b>Key校验</b
         >{{ runtimeConfig.web?.api_key_required_on_start ? '启动必需' : '允许跳过' }}</span
       >
+      <span class="runtime-item" :class="{ danger: !storageStatus.ok }" :title="storageStatus.title"
+        ><b>存储</b>{{ storageStatus.label }}</span
+      >
     </div>
 
     <div class="access-token-row" v-if="!runtimeConfig || runtimeConfig.web?.auth_enabled">
@@ -538,6 +554,11 @@ header p {
 .runtime-item b {
   color: var(--text-heading);
   font-weight: 600;
+}
+.runtime-item.danger {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .access-token-row {
