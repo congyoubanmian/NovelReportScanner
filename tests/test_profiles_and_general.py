@@ -1077,6 +1077,51 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("未达到漏女判定门槛", leak_map["乙女"]["leak_reason"])
         self.assertTrue(leak_map["甲女"]["is_leak_heroine"])
 
+    def test_rebuild_leak_state_keeps_romance_depth_when_relationship_unconfirmed(self):
+        data = {
+            "heroine_result": {
+                "heroines": [
+                    {
+                        "name": "乙女",
+                        "summaries": [
+                            "与男主长期暧昧并喜欢男主，但未确认关系。",
+                            "结局未交代归宿，也没有收入后宫。",
+                        ],
+                    },
+                    {
+                        "name": "丙女",
+                        "summaries": [
+                            "与男主没有暧昧，只是任务搭档。",
+                            "未确认关系，也没有感情线。",
+                        ],
+                    },
+                ]
+            }
+        }
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+            char_path = f.name
+        try:
+            issues, leak_map = novel_reviewer._rebuild_leak_state_from_pushed_map(
+                female_leads=["乙女", "丙女"],
+                char_file_path=char_path,
+                novel_tail="尾声里只有男主离开江湖。",
+                finished=True,
+                pushed_map={
+                    "乙女": (False, "未见推倒或同房证据"),
+                    "丙女": (False, "未见推倒或同房证据"),
+                },
+            )
+        finally:
+            os.unlink(char_path)
+
+        self.assertEqual([issue["content"] for issue in issues], ["乙女 未被男主明确推倒，且尾声未明确交代结局"])
+        self.assertTrue(leak_map["乙女"]["is_leak_heroine"])
+        self.assertTrue(leak_map["乙女"]["leak_emotional_depth"])
+        self.assertIn("命中情感/亲密关键词", leak_map["乙女"]["leak_emotional_depth_reason"])
+        self.assertFalse(leak_map["丙女"]["is_leak_heroine"])
+        self.assertFalse(leak_map["丙女"]["leak_emotional_depth"])
+
     def test_rebuild_leak_state_ignores_meta_popularity_emotion(self):
         data = {
             "heroine_result": {
@@ -1324,6 +1369,59 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIsNone(info["leak_relationship_confirmed"])
         self.assertFalse(info["leak_ending_accounted"])
         self.assertIn("关系确认未知", info["leak_reason"])
+
+    def test_rebuild_leak_state_rechecks_nominal_pushed_confirmation(self):
+        data = {
+            "heroine_result": {
+                "heroines": [
+                    {
+                        "name": "丙女",
+                        "summaries": [
+                            "与男主长期暧昧并喜欢男主。",
+                            "两人只是名义夫妻，有名无实，未同房也未圆房。",
+                        ],
+                    }
+                ]
+            }
+        }
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+            char_path = f.name
+        try:
+            issues, leak_map = novel_reviewer._rebuild_leak_state_from_pushed_map(
+                female_leads=["丙女"],
+                char_file_path=char_path,
+                novel_tail="尾声里只有男主离开江湖。",
+                finished=True,
+                pushed_map={"丙女": (True, "名义夫妻，有名无实，未同房。")},
+            )
+        finally:
+            os.unlink(char_path)
+
+        self.assertEqual(issues, [])
+        info = leak_map["丙女"]
+        self.assertFalse(info["is_leak_heroine"])
+        self.assertIsNone(info["leak_relationship_confirmed"])
+        self.assertIn("关系确认未知", info["leak_reason"])
+        self.assertIn("非实质确认语境", info["leak_relationship_reason"])
+
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+            char_path = f.name
+        try:
+            _, confirmed_map = novel_reviewer._rebuild_leak_state_from_pushed_map(
+                female_leads=["丙女"],
+                char_file_path=char_path,
+                novel_tail="尾声里只有男主离开江湖。",
+                finished=True,
+                pushed_map={"丙女": (True, "后续明确同房并确认关系。")},
+            )
+        finally:
+            os.unlink(char_path)
+
+        confirmed = confirmed_map["丙女"]
+        self.assertTrue(confirmed["leak_relationship_confirmed"])
+        self.assertIn("已被男主明确推倒", confirmed["leak_reason"])
 
     def test_rebuild_leak_state_requires_explicit_ending_account(self):
         data = {

@@ -506,7 +506,7 @@ def _leak_emotional_depth_effective_text(texts: List[str]) -> str:
         "没有暧昧", "无暧昧", "没有喜欢", "不喜欢", "没有爱", "不爱", "没有动心", "未动心",
         "没有感情", "无感情", "没感情", "没有感情线", "无感情线", "没有感情戏", "无感情戏",
         "没有恋爱", "无恋爱", "没有恋爱线", "无恋爱线", "没有亲密", "无亲密",
-        "未确认关系", "没有确认关系", "无后宫关系确认",
+        "无后宫关系确认",
     )
     nonfactual_markers = (
         "调侃", "玩笑", "误会", "误传", "传闻", "传言", "据说", "听说", "疑似", "像", "读者觉得",
@@ -624,6 +624,10 @@ def _rebuild_leak_state_from_pushed_map(
 
     for name in female_leads:
         pushed, pushed_reason = pushed_map.get(name, (None, "未判定"))
+        hinfo = heroine_map.get(name, {"name": name})
+        if pushed is True and _pushed_confirmation_is_nominal_or_negated(pushed_reason, hinfo):
+            pushed = None
+            pushed_reason = f"{pushed_reason}；命中名义/称呼/未圆房等非实质确认语境，关系确认改为未知"
         if pushed is True:
             relationship_confirmed: Optional[bool] = True
         elif pushed is False:
@@ -631,7 +635,6 @@ def _rebuild_leak_state_from_pushed_map(
         else:
             relationship_confirmed = None
         pushed_ok = relationship_confirmed is True
-        hinfo = heroine_map.get(name, {"name": name})
         has_emotional_depth, emotional_depth_reason = _heroine_has_emotional_depth_for_leak(hinfo)
         aliases = hinfo.get("aliases", []) if isinstance(hinfo.get("aliases", []), list) else []
         ending_accounted, ending_reason = _ending_accounted_in_tail(novel_tail or "", name, aliases)
@@ -672,6 +675,36 @@ def _rebuild_leak_state_from_pushed_map(
         logger.info(f"[漏女判定] {name}: pushed_ok={pushed_ok}, ending_accounted={ending_accounted}, pushed={pushed}")
 
     return issues, leak_status_map
+
+
+def _pushed_confirmation_is_nominal_or_negated(pushed_reason: str, hinfo: Dict[str, Any]) -> bool:
+    text_parts = [str(pushed_reason or "")]
+    if isinstance(hinfo, dict):
+        for key in ("summary", "summaries", "relationship_with_protagonist", "features", "key_events"):
+            value = hinfo.get(key)
+            if isinstance(value, (list, tuple, set)):
+                text_parts.extend(str(item) for item in value if item is not None)
+            elif value is not None:
+                text_parts.append(str(value))
+    text = " ".join(part for part in text_parts if part)
+    if not text:
+        return False
+
+    nominal_or_negated_markers = (
+        "只是称呼", "只是个称呼", "只是外号", "只是绰号", "玩笑称呼", "调侃称呼", "口头称呼",
+        "只是玩笑", "开玩笑", "读者调侃", "读者脑补", "粉丝称呼", "书友称呼",
+        "有名无实", "名义夫妻", "名义上的夫妻", "名义婚约", "名义关系",
+        "假结婚", "假扮夫妻", "伪装夫妻", "契约夫妻", "政治婚约", "政治联姻",
+        "未圆房", "没有圆房", "未同房", "没有同房", "未发生关系", "没有发生关系",
+        "无实质关系", "没有实质关系", "无身体关系", "没有身体关系",
+    )
+    factual_override_markers = (
+        "已同房", "已经同房", "明确同房", "发生关系", "发生性关系", "圆房了", "已经圆房",
+        "确认推倒", "明确推倒", "收入后宫", "收进后宫", "成为道侣", "确认关系",
+    )
+    if any(marker in text for marker in factual_override_markers):
+        return False
+    return any(marker in text for marker in nominal_or_negated_markers)
 
 
 def detect_leak_heroines(
