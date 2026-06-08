@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import queue
 import secrets
@@ -23,6 +24,7 @@ from analysis_profiles import (
     profile_options,
 )
 from main import _WEB_SCAN_RESULT_PREFIX, _generate_run_id, get_base_dir, load_configs
+from shared_utils import configure_rotating_file_logger
 
 
 STATE_LOCK = threading.RLock()
@@ -43,6 +45,7 @@ SSE_MAX_CONNECTION_SECONDS = float(os.environ.get("SSE_MAX_CONNECTION_SECONDS", 
 LAST_BOOK_SYNC_AT = 0.0
 LAST_SSE_SYNC_AT = 0.0
 OUTPUTS_CACHE = {}
+ACCESS_LOGGER = None
 EDITABLE_RUNTIME_CONFIG = {
     "max_workers": {"env": "MAX_WORKERS", "type": "int", "min": 1, "max": 64},
     "rpm_limit": {"env": "RPM_LIMIT", "type": "int", "min": 0, "max": 1000000, "empty": True},
@@ -104,6 +107,34 @@ def _task_log_dir():
 
 def _task_log_path(task_id):
     return os.path.join(_task_log_dir(), f"{task_id}.log")
+
+
+def _web_access_log_path():
+    return os.path.join(_task_log_dir(), "web_access.log")
+
+
+def _access_logger():
+    global ACCESS_LOGGER
+    if ACCESS_LOGGER is None:
+        ACCESS_LOGGER = logging.getLogger("web_manager.access")
+        ACCESS_LOGGER.propagate = False
+        configure_rotating_file_logger(ACCESS_LOGGER, _web_access_log_path(), stream=False)
+    return ACCESS_LOGGER
+
+
+def _sanitize_log_path(path):
+    parsed = urlparse(path or "")
+    if not parsed.query:
+        return parsed.path or "/"
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    for key in list(params.keys()):
+        if key.lower() in {"token", "access_token", "web_access_token"}:
+            params[key] = ["***"]
+    query_parts = []
+    for key in sorted(params):
+        for value in params[key]:
+            query_parts.append(f"{quote(str(key), safe='')}={quote(str(value), safe='')}")
+    return parsed.path + ("?" + "&".join(query_parts) if query_parts else "")
 
 
 class TimeoutHTTPServer(ThreadingHTTPServer):
@@ -1286,6 +1317,18 @@ def _try_load_runtime_config(interactive_context: str = "web"):
 
 
 class Handler(BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        status = str(args[1]) if len(args) > 1 else "-"
+        size = str(args[2]) if len(args) > 2 else "-"
+        _access_logger().info(
+            "%s %s %s %s %s",
+            self.address_string(),
+            getattr(self, "command", "-"),
+            _sanitize_log_path(getattr(self, "path", "")),
+            status,
+            size,
+        )
+
     def end_headers(self):
         self.send_header("Access-Control-Allow-Origin", os.environ.get("WEB_CORS_ALLOW_ORIGIN", "*"))
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")

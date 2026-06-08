@@ -3765,6 +3765,63 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             else:
                 os.environ["WEB_CORS_ALLOW_ORIGIN"] = old_origin
 
+    def test_web_manager_access_logger_uses_rotation(self):
+        old_base_dir = web_manager.get_base_dir
+        old_access_logger = web_manager.ACCESS_LOGGER
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.ACCESS_LOGGER = None
+                logger = web_manager._access_logger()
+                self.assertEqual(logger.name, "web_manager.access")
+                self.assertFalse(logger.propagate)
+                self.assertEqual(len(logger.handlers), 1)
+                self.assertIsInstance(logger.handlers[0], RotatingFileHandler)
+                self.assertEqual(
+                    logger.handlers[0].baseFilename,
+                    os.path.join(tmp, "results", "web_logs", "web_access.log"),
+                )
+        finally:
+            if web_manager.ACCESS_LOGGER is not None:
+                for handler in list(web_manager.ACCESS_LOGGER.handlers):
+                    web_manager.ACCESS_LOGGER.removeHandler(handler)
+                    handler.close()
+            web_manager.ACCESS_LOGGER = old_access_logger
+            web_manager.get_base_dir = old_base_dir
+
+    def test_web_manager_access_log_redacts_token_query(self):
+        class CaptureLogger:
+            def __init__(self):
+                self.records = []
+
+            def info(self, fmt, *args):
+                self.records.append((fmt, args))
+
+        class FakeHandler(web_manager.Handler):
+            def __init__(self):
+                self.command = "GET"
+                self.path = "/api/state?token=secret&book=a&access_token=hidden"
+
+            def address_string(self):
+                return "127.0.0.1"
+
+        capture = CaptureLogger()
+        old_access_logger = web_manager._access_logger
+        try:
+            web_manager._access_logger = lambda: capture
+            web_manager.Handler.log_message(FakeHandler(), '"GET /api/state?token=secret HTTP/1.1" %s %s', "200", "123")
+            self.assertEqual(len(capture.records), 1)
+            fmt, args = capture.records[0]
+            rendered = fmt % args
+            self.assertIn("GET", rendered)
+            self.assertIn("/api/state?", rendered)
+            self.assertIn("token=%2A%2A%2A", rendered)
+            self.assertIn("access_token=%2A%2A%2A", rendered)
+            self.assertNotIn("secret", rendered)
+            self.assertNotIn("hidden", rendered)
+        finally:
+            web_manager._access_logger = old_access_logger
+
     def test_web_manager_access_token_auth_is_optional_and_secret(self):
         old_token = os.environ.get("WEB_ACCESS_TOKEN")
         old_key_required = os.environ.get("NOVEL_REPORT_SCANNER_REQUIRE_API_KEY")
