@@ -2187,6 +2187,55 @@ def _heroine_name_key(name: str) -> str:
     return text
 
 
+def _heroine_match_keys(name: str, aliases: list = None) -> set:
+    keys = set()
+    for item in [name, *(aliases or [])]:
+        key = _heroine_name_key(item)
+        if key and len(key) >= 2 and not _is_generic_heroine_anchor_name(key):
+            keys.add(key)
+    return keys
+
+
+def _harem_consistency_warnings(heroines: list, reviewer: dict, all_female_characters: dict = None) -> list:
+    scan_by_key = {}
+    reviewer_by_key = {}
+
+    for heroine in heroines or []:
+        if not isinstance(heroine, dict):
+            continue
+        name = str(heroine.get("name") or "").strip()
+        if not name or _is_generic_heroine_anchor_name(name):
+            continue
+        aliases = heroine.get("aliases") or heroine.get("other_names") or []
+        evidence = _match_female_evidence(name, aliases, all_female_characters or {}) or {}
+        evidence_aliases = evidence.get("other_names") or []
+        for key in _heroine_match_keys(name, [*aliases, *evidence_aliases]):
+            scan_by_key.setdefault(key, name)
+
+    for item in (reviewer or {}).get("heroines_purity", []) or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name or _is_generic_heroine_anchor_name(name):
+            continue
+        for key in _heroine_match_keys(name):
+            reviewer_by_key.setdefault(key, name)
+
+    if not scan_by_key and not reviewer_by_key:
+        return []
+
+    warnings = []
+    scan_keys = set(scan_by_key)
+    reviewer_keys = set(reviewer_by_key)
+    missing_review = sorted({scan_by_key[key] for key in scan_keys - reviewer_keys})
+    extra_review = sorted({reviewer_by_key[key] for key in reviewer_keys - scan_keys})
+    if missing_review:
+        warnings.append(f"扫描阶段识别到但审核洁度未覆盖：{', '.join(missing_review[:10])}")
+    if extra_review:
+        warnings.append(f"审核洁度中出现但扫描女主列表未列出：{', '.join(extra_review[:10])}")
+    return warnings
+
+
 def _heroine_candidate_duplicate_groups(heroines: list, all_female_characters: dict) -> list:
     groups = []
     used = set()
@@ -2926,6 +2975,10 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
         f"预期落差：{romance_overview.get('romance_expectation_gap') or '未描述'}",
         f"男主前史情感雷点：{romance_overview.get('male_past_romance_risk') or '未描述'}",
     ]
+    consistency_warnings = _harem_consistency_warnings(heroines, reviewer, all_female_characters)
+    if consistency_warnings:
+        romance_lines.extend(["", "【交叉验证提示】"])
+        romance_lines.extend(f"- {item}" for item in consistency_warnings)
 
     # ---------------- 毒点/雷点（原样输出，不润色） ----------------
     heroine_contexts = _build_heroine_position_contexts(heroines, all_female_characters, profile_cache, purity_map)

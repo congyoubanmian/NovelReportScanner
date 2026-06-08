@@ -6030,6 +6030,70 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("明显感情戏缺失风险", overview["romance_expectation_gap"])
         self.assertIn("工具人女主", overview["female_tooling_risk"])
 
+    def test_harem_report_adds_cross_validation_warnings_for_mismatched_heroine_lists(self):
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        try:
+            report.OpenAI = None
+            report.API_KEY_POOL = []
+            text = report.build_report_v2(
+                "测试后宫",
+                {
+                    "male_protagonist": {"name": "男主"},
+                    "heroine_result": {
+                        "heroines": [
+                            {"name": "甲女", "importance_rank": 1},
+                            {"name": "乙女", "importance_rank": 2},
+                        ]
+                    },
+                    "all_female_characters": {},
+                },
+                {
+                    "heroines_purity": [
+                        {"name": "甲女", "is_virgin": True},
+                        {"name": "丙女", "is_virgin": True},
+                    ]
+                },
+            )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+
+        self.assertIn("【交叉验证提示】", text)
+        self.assertIn("扫描阶段识别到但审核洁度未覆盖：乙女", text)
+        self.assertIn("审核洁度中出现但扫描女主列表未列出：丙女", text)
+
+    def test_harem_cross_validation_uses_aliases_and_core_names(self):
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        try:
+            report.OpenAI = None
+            report.API_KEY_POOL = []
+            text = report.build_report_v2(
+                "测试后宫",
+                {
+                    "male_protagonist": {"name": "男主"},
+                    "heroine_result": {
+                        "heroines": [
+                            {"name": "圣女甲女（王室成员）", "aliases": ["甲女"], "importance_rank": 1},
+                        ]
+                    },
+                    "all_female_characters": {
+                        "圣女甲女": {"other_names": ["甲女"]}
+                    },
+                },
+                {
+                    "heroines_purity": [
+                        {"name": "甲女", "is_virgin": True},
+                    ]
+                },
+            )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+
+        self.assertNotIn("【交叉验证提示】", text)
+
     def test_harem_romance_overview_counts_low_presence_semantically(self):
         old_openai = report.OpenAI
         old_api_key_pool = report.API_KEY_POOL
@@ -8950,6 +9014,75 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertEqual(general_scan._sample_chunk_entries_for_budget(entries, 0), entries)
         self.assertEqual(general_scan._sample_chunk_entries_for_budget(entries, 1), [entries[0]])
+
+    def test_general_character_scan_samples_ten_million_word_books(self):
+        self.assertEqual(protagonist._effective_general_character_max_chunks(10_000_000, 80), 300)
+        sampled_indices = protagonist._sample_chunk_indices_for_budget(1000, 300)
+
+        self.assertEqual(len(sampled_indices), 300)
+        self.assertEqual(sampled_indices[0], 0)
+        self.assertEqual(sampled_indices[-1], 999)
+        self.assertEqual(sampled_indices, sorted(sampled_indices))
+        self.assertTrue(any(450 <= idx <= 550 for idx in sampled_indices))
+        self.assertEqual(protagonist._sample_chunk_indices_for_budget(1000, 0), list(range(1000)))
+
+    def test_protagonist_general_main_samples_long_books_across_timeline(self):
+        old_profile = os.environ.get("ANALYSIS_PROFILE")
+        try:
+            os.environ["ANALYSIS_PROFILE"] = "general"
+            with tempfile.TemporaryDirectory() as tmpdir:
+                novels_dir = os.path.join(tmpdir, "novels")
+                os.makedirs(novels_dir, exist_ok=True)
+                novel_path = os.path.join(novels_dir, "ten_million.txt")
+                with open(novel_path, "w", encoding="utf-8") as f:
+                    f.write("stub")
+
+                scanned_indices = []
+
+                def fake_analyze(chunk, chunk_index, total_chunks, max_retries=3):
+                    scanned_indices.append(chunk_index)
+                    return {
+                        "_success": True,
+                        "male_protagonist": {"name": "主角", "summary": "行动"},
+                        "female_characters": [],
+                    }
+
+                with mock.patch.object(protagonist, "get_base_dir", return_value=tmpdir), \
+                        mock.patch.object(protagonist, "init_token_tracker"), \
+                        mock.patch.object(protagonist, "read_novel", return_value="字" * 10_000_000), \
+                        mock.patch.object(protagonist, "split_text_by_length", return_value=[f"chunk-{i}" for i in range(1000)]), \
+                        mock.patch.object(protagonist, "validate_config"), \
+                        mock.patch.object(protagonist, "tqdm", side_effect=lambda items, **kwargs: items), \
+                        mock.patch.object(protagonist, "analyze_chunk_for_heroines", side_effect=fake_analyze), \
+                        mock.patch.object(protagonist, "identify_male_protagonist", return_value={"name": "主角"}), \
+                        mock.patch.object(protagonist, "merge_aliases", return_value={}), \
+                        mock.patch.object(protagonist, "identify_heroines", return_value={"heroines": []}), \
+                        mock.patch.object(protagonist, "merge_heroines_final", side_effect=lambda result, stats: result), \
+                        mock.patch.object(protagonist, "generate_final_report", return_value="report"), \
+                        mock.patch.object(protagonist, "export_results", return_value=("detail.json", "snapshot.json", "report.txt")):
+                    self.assertEqual(protagonist.main(novel_path=novel_path, book_name="ten_million"), 0)
+
+                sorted_scanned_indices = sorted(scanned_indices)
+                self.assertEqual(len(sorted_scanned_indices), 300)
+                self.assertEqual(sorted_scanned_indices[0], 0)
+                self.assertEqual(sorted_scanned_indices[-1], 999)
+                self.assertTrue(any(450 <= idx <= 550 for idx in sorted_scanned_indices))
+
+                checkpoint_path = os.path.join(
+                    tmpdir,
+                    "results",
+                    next(name for name in os.listdir(os.path.join(tmpdir, "results")) if name.startswith("ten_million_characters_")),
+                    "latest_checkpoint.json",
+                )
+                with open(checkpoint_path, "r", encoding="utf-8") as f:
+                    checkpoint = json.load(f)
+                self.assertTrue(checkpoint["progress"]["scanned"])
+                self.assertEqual(len(checkpoint["completed_chunks"]), 300)
+        finally:
+            if old_profile is None:
+                os.environ.pop("ANALYSIS_PROFILE", None)
+            else:
+                os.environ["ANALYSIS_PROFILE"] = old_profile
 
     def test_general_scan_main_supports_ten_million_word_books(self):
         with tempfile.TemporaryDirectory() as tmpdir:

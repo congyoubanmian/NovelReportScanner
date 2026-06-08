@@ -37,6 +37,7 @@ API_KEY_POOL = [
 API_KEY = API_KEY_POOL[0] if API_KEY_POOL else ""
 
 CHUNK_SIZE = 10000
+GENERAL_CHARACTER_MAX_CHUNKS = int(os.environ.get("GENERAL_CHARACTER_MAX_CHUNKS", os.environ.get("GENERAL_SCAN_MAX_CHUNKS", "80")))
 
 DEFAULT_PROGRESS_FLAGS = {
     "scanned": False,
@@ -70,6 +71,44 @@ def _is_general_profile():
 
 def _role_stage_label():
     return "通用角色识别" if _is_general_profile() else "男主/女主识别"
+
+
+def _effective_general_character_max_chunks(text_length: int, base_max_chunks: int = None) -> int:
+    base = GENERAL_CHARACTER_MAX_CHUNKS if base_max_chunks is None else int(base_max_chunks or 0)
+    if base <= 0:
+        return base
+    text_length = max(0, int(text_length or 0))
+    if text_length <= 1_000_000:
+        suggested = 80
+    elif text_length <= 3_000_000:
+        suggested = 120
+    elif text_length <= 5_000_000:
+        suggested = 160
+    elif text_length <= 10_000_000:
+        suggested = 300
+    else:
+        suggested = 400
+    return max(base, suggested)
+
+
+def _sample_chunk_indices_for_budget(total_chunks: int, max_chunks: int):
+    total = max(0, int(total_chunks or 0))
+    if total <= 0:
+        return []
+    if max_chunks <= 0 or total <= max_chunks:
+        return list(range(total))
+    if max_chunks == 1:
+        return [0]
+    last_index = total - 1
+    selected = {
+        round(i * last_index / (max_chunks - 1))
+        for i in range(max_chunks)
+    }
+    cursor = 0
+    while len(selected) < max_chunks and cursor < total:
+        selected.add(cursor)
+        cursor += 1
+    return sorted(selected)[:max_chunks]
 
 
 def find_latest_checkpoint_dir(prefix: str):
@@ -4087,8 +4126,25 @@ def main(novel_path=None, book_name=None, run_id=None):
         
         # 3. 切分文本
         chunks = split_text_by_length(text, CHUNK_SIZE)
-        total_chunks = len(chunks)
-        print(f"? 总共 {total_chunks} 个分析块")
+        source_total_chunks = len(chunks)
+        target_chunk_indices = list(range(source_total_chunks))
+        sampling_strategy = "full"
+        effective_max_chunks = 0
+        if _is_general_profile():
+            effective_max_chunks = _effective_general_character_max_chunks(len(text))
+            target_chunk_indices = _sample_chunk_indices_for_budget(source_total_chunks, effective_max_chunks)
+            if effective_max_chunks > 0 and len(target_chunk_indices) < source_total_chunks:
+                sampling_strategy = "uniform_timeline"
+        total_chunks = len(target_chunk_indices)
+        target_chunk_set = set(target_chunk_indices)
+        final_target_chunk_index = max(target_chunk_indices) if target_chunk_indices else source_total_chunks - 1
+        if _is_general_profile():
+            print(
+                f"? 总共 {source_total_chunks} 个分析块，通用角色识别实际扫描 {total_chunks} 个"
+                f"（策略={sampling_strategy}，上限={effective_max_chunks if effective_max_chunks > 0 else '不限制'}）"
+            )
+        else:
+            print(f"? 总共 {total_chunks} 个分析块")
         
         # 4. 尝试加载断点（包含女性角色和男主信息，及阶段标记）
         global_stats, male_protagonist_stats, completed_chunks, progress_flags, loaded_merged_stats, loaded_heroine_result, loaded_male_final = load_checkpoint()
@@ -4108,14 +4164,15 @@ def main(novel_path=None, book_name=None, run_id=None):
             pass
 
         # 断点纠错：避免 progress_flags["scanned"]=True 但实际仍有遗漏块，导致跳过扫描
-        if progress_flags.get("scanned") and len(completed_chunks) < total_chunks:
+        completed_target_chunks = completed_chunks & target_chunk_set
+        if progress_flags.get("scanned") and len(completed_target_chunks) < total_chunks:
             logger.warning(
-                f"断点异常：阶段一标记为已完成(scanned=True)，但 completed_chunks={len(completed_chunks)}/{total_chunks}，将自动纠正并补扫遗漏块"
+                f"断点异常：阶段一标记为已完成(scanned=True)，但 completed_chunks={len(completed_target_chunks)}/{total_chunks}，将自动纠正并补扫遗漏块"
             )
             progress_flags["scanned"] = False
         
         # 如果已完成且报告已生成，直接退出，避免重复分析
-        if progress_flags.get("report_generated") and len(completed_chunks) >= total_chunks:
+        if progress_flags.get("report_generated") and len(completed_target_chunks) >= total_chunks:
             print("★ 检测到已完成且报告已生成，跳过所有分析。")
             if progress_flags.get("report_files"):
                 print(f"★ 报告文件: {progress_flags.get('report_files')}")
@@ -4127,9 +4184,9 @@ def main(novel_path=None, book_name=None, run_id=None):
             chunks_to_process = []
         else:
             # 只处理尚未成功完成的块（不在 completed_chunks 中的块）
-            chunks_to_process = [(chunks[i], i) for i in range(len(chunks)) if i not in completed_chunks]
+            chunks_to_process = [(chunks[i], i) for i in target_chunk_indices if i not in completed_chunks]
         
-        print(f"? 剩余 {len(chunks_to_process)} 个块待分析（已完成 {len(completed_chunks)} 块）...")
+        print(f"? 剩余 {len(chunks_to_process)} 个块待分析（已完成 {len(completed_target_chunks)} 块）...")
         print(f"★ 阶段标记: 扫描={'是' if progress_flags.get('scanned') else '否'} | 男主识别={'是' if progress_flags.get('male_identified') else '否'} | 别称合并={'是' if progress_flags.get('alias_merged') else '否'} | 女主识别={'是' if progress_flags.get('heroines_identified') else '否'} | 报告生成={'是' if progress_flags.get('report_generated') else '否'}")
         if progress_flags.get("report_generated") and progress_flags.get("report_files"):
             print(f"★ 上次报告文件: {progress_flags.get('report_files')}")
@@ -4287,7 +4344,8 @@ def main(novel_path=None, book_name=None, run_id=None):
                                 global_stats[name]["emotion_signals"].append((char_chunk_idx, emotion))
 
                 completed_chunks.add(chunk_idx)
-                if len(completed_chunks) % 5 == 0 or len(completed_chunks) == total_chunks:
+                completed_target_count = len(completed_chunks & target_chunk_set)
+                if completed_target_count % 5 == 0 or completed_target_count == total_chunks:
                     save_checkpoint(
                         global_stats,
                         male_protagonist_stats,
@@ -4301,7 +4359,7 @@ def main(novel_path=None, book_name=None, run_id=None):
             
             with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                 future_to_chunk = {
-                    executor.submit(analyze_chunk_for_heroines, chunk_data[0], chunk_data[1], total_chunks): chunk_data[1] 
+                    executor.submit(analyze_chunk_for_heroines, chunk_data[0], chunk_data[1], source_total_chunks): chunk_data[1]
                     for chunk_data in chunks_to_process
                 }
                 
@@ -4322,7 +4380,7 @@ def main(novel_path=None, book_name=None, run_id=None):
             # 说明：某些情况下 API 会慢/超时导致单块失败。以前需要下次运行才重试，这里改为当次补齐。
             MAX_PATCH_ROUNDS = 3
             for round_no in range(1, MAX_PATCH_ROUNDS + 1):
-                missing = [i for i in range(total_chunks) if i not in completed_chunks]
+                missing = [i for i in target_chunk_indices if i not in completed_chunks]
                 if not missing:
                     break
 
@@ -4333,7 +4391,7 @@ def main(novel_path=None, book_name=None, run_id=None):
                 retry_failed = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=retry_workers) as executor:
                     future_to_idx = {
-                        executor.submit(analyze_chunk_for_heroines, chunks[i], i, total_chunks): i
+                        executor.submit(analyze_chunk_for_heroines, chunks[i], i, source_total_chunks): i
                         for i in missing
                     }
                     for future in tqdm(
@@ -4369,16 +4427,16 @@ def main(novel_path=None, book_name=None, run_id=None):
             if failed_chunks:
                 logger.warning(f"本次扫描有 {len(failed_chunks)} 个块失败: {sorted(failed_chunks)}")
                 # 注意：已经做过补漏扫描，但仍可能有极少数块因网络/限速/内容异常失败
-                remaining_missing = [i for i in range(total_chunks) if i not in completed_chunks]
+                remaining_missing = [i for i in target_chunk_indices if i not in completed_chunks]
                 if remaining_missing:
                     print(f"\n⚠ 仍有 {len(remaining_missing)} 个块分析失败，将在下次运行时继续重试：{remaining_missing[:20]}{'...' if len(remaining_missing) > 20 else ''}")
             
             # 只有所有块都成功完成时才标记阶段一完成
-            if len(completed_chunks) >= total_chunks:
+            if len(completed_chunks & target_chunk_set) >= total_chunks:
                 progress_flags["scanned"] = True
                 logger.info("所有块扫描完成，标记阶段一完成")
             else:
-                logger.info(f"扫描进度: {len(completed_chunks)}/{total_chunks} 块完成")
+                logger.info(f"扫描进度: {len(completed_chunks & target_chunk_set)}/{total_chunks} 块完成")
             
             save_checkpoint(global_stats, male_protagonist_stats, max(completed_chunks) if completed_chunks else -1, progress_flags, completed_chunks=completed_chunks)
 
@@ -4395,7 +4453,7 @@ def main(novel_path=None, book_name=None, run_id=None):
                 male_protagonist = identify_male_protagonist(male_protagonist_stats)
                 print(f"★ 阶段二（升级）已重新汇总男主: {male_protagonist.get('name') if male_protagonist else '未知'}")
                 progress_flags["male_identified"] = True
-                save_checkpoint(global_stats, male_protagonist_stats, total_chunks - 1, progress_flags, merged_stats=loaded_merged_stats, heroine_result=loaded_heroine_result, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks)
+                save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=loaded_merged_stats, heroine_result=loaded_heroine_result, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks)
         else:
             male_protagonist = identify_male_protagonist(male_protagonist_stats)
             if male_protagonist:
@@ -4403,7 +4461,7 @@ def main(novel_path=None, book_name=None, run_id=None):
                 if male_protagonist.get('other_names'):
                     print(f"    别称: {', '.join(male_protagonist['other_names'])}")
             progress_flags["male_identified"] = True
-            save_checkpoint(global_stats, male_protagonist_stats, total_chunks - 1, progress_flags, merged_stats=None, heroine_result=None, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks)
+            save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=None, heroine_result=None, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks)
         
         print("\n" + "=" * 70)
         print(f"【阶段三】别称识别与合并（共发现 {len(global_stats)} 个女性角色名）...")
@@ -4415,7 +4473,7 @@ def main(novel_path=None, book_name=None, run_id=None):
         else:
             merged_stats = merge_aliases(global_stats)
             progress_flags["alias_merged"] = True
-            save_checkpoint(global_stats, male_protagonist_stats, total_chunks - 1, progress_flags, merged_stats=merged_stats, heroine_result=None, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks)
+            save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=merged_stats, heroine_result=None, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks)
         
         print("\n" + "=" * 70)
         print("【阶段四】最终女主角识别...")
@@ -4427,7 +4485,7 @@ def main(novel_path=None, book_name=None, run_id=None):
         else:
             heroine_result = identify_heroines(merged_stats)
             progress_flags["heroines_identified"] = True
-            save_checkpoint(global_stats, male_protagonist_stats, total_chunks - 1, progress_flags, merged_stats=merged_stats, heroine_result=heroine_result, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks)
+            save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=merged_stats, heroine_result=heroine_result, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks)
         
         # 女主最终合并检查
         if progress_flags.get("heroines_final_merged"):
@@ -4437,7 +4495,7 @@ def main(novel_path=None, book_name=None, run_id=None):
             print("【阶段四点五】女主最终合并检查...")
             heroine_result = merge_heroines_final(heroine_result, merged_stats)
             progress_flags["heroines_final_merged"] = True
-            save_checkpoint(global_stats, male_protagonist_stats, total_chunks - 1, progress_flags, merged_stats=merged_stats, heroine_result=heroine_result, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks)
+            save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=merged_stats, heroine_result=heroine_result, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks)
         
         print("\n" + "=" * 70)
         print("【阶段五】生成分析报告...")
@@ -4467,7 +4525,7 @@ def main(novel_path=None, book_name=None, run_id=None):
                 "detailed_snapshot": detailed_snapshot_file,
                 "report": report_file
             }
-            save_checkpoint(global_stats, male_protagonist_stats, total_chunks - 1, progress_flags, merged_stats=merged_stats, heroine_result=heroine_result, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks)
+            save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=merged_stats, heroine_result=heroine_result, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks)
         
         print("\n" + "=" * 70)
         print("? 分析完成！")
