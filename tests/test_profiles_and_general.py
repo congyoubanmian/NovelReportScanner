@@ -8734,6 +8734,39 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(profile["level"], "high")
         self.assertEqual(profile["strategy"], "full")
 
+    def test_general_scan_call_json_retries_without_json_mode_on_parse_failure(self):
+        class FakeMessage:
+            def __init__(self, content):
+                self.content = content
+
+        class FakeChoice:
+            def __init__(self, content):
+                self.message = FakeMessage(content)
+
+        class FakeResponse:
+            def __init__(self, content):
+                self.choices = [FakeChoice(content)]
+
+        calls = []
+        old_chat = general_scan.chat_completion
+        try:
+            def fake_chat_completion(**kwargs):
+                calls.append(kwargs)
+                if len(calls) == 1:
+                    return FakeResponse("这不是 JSON")
+                return FakeResponse('{"plot_events":["重试成功"]}')
+
+            general_scan.chat_completion = fake_chat_completion
+            data = general_scan._call_json([{"role": "user", "content": "输出 JSON"}], max_tokens=128)
+        finally:
+            general_scan.chat_completion = old_chat
+
+        self.assertEqual(data["plot_events"], ["重试成功"])
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
+        self.assertNotIn("response_format", calls[1])
+        self.assertIn("上一次回复不是可解析的 JSON 对象", calls[1]["messages"][-1]["content"])
+
     def test_general_scan_summary_prompt_uses_field_labels(self):
         profile = analysis_profiles.load_analysis_profile("urban_power")
         prompts = []

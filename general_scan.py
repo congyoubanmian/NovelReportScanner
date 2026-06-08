@@ -417,9 +417,27 @@ def _call_json(messages, max_tokens=3000) -> Dict[str, Any]:
     record_usage(response)
     content = response.choices[0].message.content
     data, err = _safe_json_loads_maybe(content)
-    if data is None:
-        raise ValueError(err)
-    return data
+    if data is not None:
+        return data
+
+    fallback_messages = list(messages) + [{
+        "role": "user",
+        "content": (
+            "上一次回复不是可解析的 JSON 对象。请只重新输出一个合法 JSON 对象，"
+            "不要 Markdown、不要代码块、不要解释。"
+        ),
+    }]
+    fallback_response = chat_completion(
+        model=MODEL,
+        messages=fallback_messages,
+        temperature=0.0,
+        max_tokens=max_tokens,
+    )
+    record_usage(fallback_response)
+    fallback_data, fallback_err = _safe_json_loads_maybe(fallback_response.choices[0].message.content)
+    if fallback_data is None:
+        raise ValueError(f"{err}; fallback={fallback_err}")
+    return fallback_data
 
 
 def _focus_text(profile) -> str:
