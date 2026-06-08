@@ -5423,6 +5423,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(active_send_to_other_issue["heroine_position_context"], "强女=强准女主")
         self.assertNotIn("definition_review_hint", active_send_to_other_issue)
 
+        received_by_other_issue = report._annotate_issue_for_report(
+            {"type": "送女", "content": "男主主动把强女送给路人男，路人男接收强女。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(received_by_other_issue["heroine_position_context"], "强女=强准女主")
+        self.assertNotIn("definition_review_hint", received_by_other_issue)
+
         edge_issue = report._annotate_issue_for_report(
             {"type": "绿帽擦边", "content": "弱女差点被反派绑走。"},
             contexts,
