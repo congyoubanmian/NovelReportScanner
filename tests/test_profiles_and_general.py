@@ -4197,6 +4197,44 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertIn("低存在感条目约 1 位", overview["female_presence"])
 
+    def test_harem_romance_overview_counts_small_presence_phrases(self):
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        try:
+            report.OpenAI = None
+            report.API_KEY_POOL = []
+            overview = report._summarize_harem_romance_overview(
+                {
+                    "all_female_characters": {
+                        "甲女": {
+                            "count": 4,
+                            "summaries": ["主要在两个案件中出场，存在感很小。"],
+                        },
+                        "乙女": {
+                            "count": 4,
+                            "summaries": ["偶尔在案件中客串，存在感较小。"],
+                        },
+                        "丙女": {
+                            "count": 8,
+                            "summaries": ["长期参与主线，存在感不小，与男主有暧昧推进。"],
+                        },
+                    }
+                },
+                {},
+                [
+                    {"name": "甲女", "importance_rank": 2},
+                    {"name": "乙女", "importance_rank": 3},
+                    {"name": "丙女", "importance_rank": 1},
+                ],
+                {},
+            )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+
+        self.assertIn("低存在感条目约 2 位", overview["female_presence"])
+        self.assertIn("女角色可能偏工具人", overview["female_tooling_risk"])
+
     def test_harem_romance_overview_ignores_negated_tooling_issue(self):
         old_openai = report.OpenAI
         old_api_key_pool = report.API_KEY_POOL
