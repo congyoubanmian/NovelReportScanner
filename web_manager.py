@@ -229,8 +229,11 @@ def _load_state():
                 data = json.load(f)
             if isinstance(data, dict):
                 STATE = {"books": data.get("books", {}) or {}, "tasks": data.get("tasks", []) or []}
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.getLogger("web_manager").warning(
+                "读取 Web 状态文件失败，将使用空状态并重新同步目录: %s",
+                exc,
+            )
     _recover_incomplete_tasks()
     _sync_books_from_disk()
 

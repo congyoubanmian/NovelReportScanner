@@ -3822,6 +3822,34 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         finally:
             web_manager._access_logger = old_access_logger
 
+    def test_web_manager_load_state_logs_corrupt_state_file(self):
+        old_base_dir = web_manager.get_base_dir
+        old_state = web_manager.STATE
+        old_recover = web_manager._recover_incomplete_tasks
+        old_sync = web_manager._sync_books_from_disk
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                results_dir = os.path.join(tmp, "results")
+                os.makedirs(results_dir, exist_ok=True)
+                with open(os.path.join(results_dir, "web_manager_state.json"), "w", encoding="utf-8") as f:
+                    f.write("{bad json")
+
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.STATE = {"books": {"old": {"id": "old"}}, "tasks": [{"id": "old-task"}]}
+                web_manager._recover_incomplete_tasks = lambda: None
+                web_manager._sync_books_from_disk = lambda: None
+
+                with self.assertLogs("web_manager", level="WARNING") as logs:
+                    web_manager._load_state()
+
+                self.assertTrue(any("读取 Web 状态文件失败" in line for line in logs.output))
+                self.assertEqual(web_manager.STATE["books"], {"old": {"id": "old"}})
+        finally:
+            web_manager.get_base_dir = old_base_dir
+            web_manager.STATE = old_state
+            web_manager._recover_incomplete_tasks = old_recover
+            web_manager._sync_books_from_disk = old_sync
+
     def test_web_manager_access_token_auth_is_optional_and_secret(self):
         old_token = os.environ.get("WEB_ACCESS_TOKEN")
         old_key_required = os.environ.get("NOVEL_REPORT_SCANNER_REQUIRE_API_KEY")
