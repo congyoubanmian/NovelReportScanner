@@ -1404,6 +1404,48 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             novel_scan.CHUNK_FAILURE_DIAGNOSTICS = old_diagnostics
             novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
 
+    def test_commit_chunk_result_accepts_explicit_checkpoint_file(self):
+        old_checkpoint = novel_scan.CHECKPOINT_FILE
+        old_plan = novel_scan.CURRENT_CHUNK_PLAN_METADATA
+        old_summaries = dict(novel_scan.CHUNK_SUMMARIES)
+        old_detail_path = getattr(novel_scan, "_ACTIVE_DETAIL_PATH", None)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                global_checkpoint = os.path.join(tmpdir, "global_checkpoint.json")
+                local_checkpoint = os.path.join(tmpdir, "local_checkpoint.json")
+                novel_scan.CHECKPOINT_FILE = global_checkpoint
+                novel_scan.CURRENT_CHUNK_PLAN_METADATA = {"chunk_count": 2}
+                novel_scan.CHUNK_SUMMARIES = {}
+                novel_scan._ACTIVE_DETAIL_PATH = "/tmp/detail.json"
+
+                novel_scan._commit_chunk_result(
+                    0,
+                    [{"type": "命中", "chunk_index": 1}],
+                    [],
+                    [],
+                    "第一块摘要",
+                    True,
+                    "",
+                    all_issues=[],
+                    all_heroine_facts=[],
+                    extra_relations_all=[],
+                    processed_chunks=set(),
+                    failed_chunks=set(),
+                    checkpoint_file=local_checkpoint,
+                )
+
+                self.assertFalse(os.path.exists(global_checkpoint))
+                self.assertTrue(os.path.exists(local_checkpoint))
+                with open(local_checkpoint, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self.assertEqual(data["processed_chunks"], [0])
+                self.assertEqual(data["issues"][0]["type"], "命中")
+        finally:
+            novel_scan.CHECKPOINT_FILE = old_checkpoint
+            novel_scan.CURRENT_CHUNK_PLAN_METADATA = old_plan
+            novel_scan.CHUNK_SUMMARIES = old_summaries
+            novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
+
     def test_thread_block_accepts_isolated_middle_summary_state(self):
         old_middle_calls = novel_scan._middle_summary_calls
         old_max_middle = novel_scan.MAX_MIDDLE_SUMMARY_CALLS
