@@ -226,10 +226,10 @@ async function handleBatchScan(bookIds) {
 async function handleCancel(bookId) {
   try {
     await cancelQueuedBook(bookId)
-    toastSuccess('已取消排队')
+    toastSuccess('已取消任务')
     await refresh()
   } catch (e) {
-    toastError('取消排队失败: ' + e.message)
+    toastError('取消任务失败: ' + e.message)
   }
 }
 

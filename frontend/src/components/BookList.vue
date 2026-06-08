@@ -43,6 +43,10 @@ function isQueued(book) {
   return book.status === 'queued'
 }
 
+function isCancelable(book) {
+  return book.status === 'queued' || book.status === 'running'
+}
+
 function profileValues(book) {
   const value = book.profile
   if (Array.isArray(value)) return value
@@ -232,11 +236,11 @@ function confirmDelete(book) {
                   加入队列
                 </button>
                 <button
-                  v-if="isQueued(book)"
+                  v-if="isCancelable(book)"
                   class="btn btn-sm btn-secondary"
                   @click="emit('cancel', book.id)"
                 >
-                  取消排队
+                  {{ book.status === 'running' ? '取消扫描' : '取消排队' }}
                 </button>
                 <button
                   v-if="isQueued(book)"

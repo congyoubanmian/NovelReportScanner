@@ -5358,16 +5358,69 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         try:
             web_manager.STATE = {
                 "books": {
-                    "running": {"id": "running", "name": "running", "profile": "general", "status": "running", "task_id": "t1"},
                     "idle": {"id": "idle", "name": "idle", "profile": "general", "status": "idle"},
+                },
+                "tasks": [],
+            }
+
+            self.assertEqual(web_manager._cancel_queued_book("missing"), (False, "book not found"))
+            self.assertEqual(web_manager._cancel_queued_book("idle"), (False, "book is not queued or running"))
+        finally:
+            web_manager.STATE = old_state
+
+    def test_web_manager_cancel_running_book_marks_task_canceled_and_terminates_process(self):
+        class FakeProcess:
+            def __init__(self):
+                self.pid = 12345
+                self.terminated = False
+                self.killed = False
+
+            def terminate(self):
+                self.terminated = True
+
+            def kill(self):
+                self.killed = True
+
+            def wait(self, timeout=None):
+                return -15
+
+        old_state = web_manager.STATE
+        old_procs = dict(web_manager.RUNNING_TASK_PROCS)
+        old_killpg = web_manager.os.killpg
+        try:
+            fake_proc = FakeProcess()
+            killpg_calls = []
+            web_manager.os.killpg = lambda pid, sig: killpg_calls.append((pid, sig))
+            web_manager.RUNNING_TASK_PROCS.clear()
+            web_manager.RUNNING_TASK_PROCS["t1"] = fake_proc
+            web_manager.STATE = {
+                "books": {
+                    "running": {
+                        "id": "running",
+                        "name": "running",
+                        "profile": "general",
+                        "status": "running",
+                        "task_id": "t1",
+                    },
                 },
                 "tasks": [{"id": "t1", "book_id": "running", "status": "running"}],
             }
 
-            self.assertEqual(web_manager._cancel_queued_book("missing"), (False, "book not found"))
-            self.assertEqual(web_manager._cancel_queued_book("running"), (False, "book is not queued"))
-            self.assertEqual(web_manager._cancel_queued_book("idle"), (False, "book is not queued"))
+            ok, task_id = web_manager._cancel_queued_book("running")
+
+            self.assertTrue(ok)
+            self.assertEqual(task_id, "t1")
+            self.assertEqual(web_manager.STATE["tasks"][0]["status"], "canceled")
+            self.assertEqual(web_manager.STATE["tasks"][0]["error"], "用户取消扫描")
+            self.assertEqual(web_manager.STATE["books"]["running"]["status"], "idle")
+            self.assertEqual(web_manager.STATE["books"]["running"]["message"], "已取消扫描")
+            self.assertNotIn("task_id", web_manager.STATE["books"]["running"])
+            self.assertEqual(killpg_calls, [(12345, web_manager.signal.SIGTERM)])
+            self.assertFalse(fake_proc.killed)
         finally:
+            web_manager.os.killpg = old_killpg
+            web_manager.RUNNING_TASK_PROCS.clear()
+            web_manager.RUNNING_TASK_PROCS.update(old_procs)
             web_manager.STATE = old_state
 
     def test_web_manager_delete_book_removes_novel_and_state(self):

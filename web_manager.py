@@ -3,6 +3,7 @@ import logging
 import os
 import queue
 import secrets
+import signal
 import subprocess
 import tempfile
 import threading
@@ -30,6 +31,7 @@ from shared_utils import configure_rotating_file_logger
 STATE_LOCK = threading.RLock()
 TASK_QUEUE = queue.Queue()
 TASK_QUEUE_IDS = set()
+RUNNING_TASK_PROCS = {}
 WORKER_STARTED = False
 STATE = {"books": {}, "tasks": []}
 CONFIG_READY = False
@@ -42,6 +44,7 @@ OUTPUTS_CACHE_TTL_SECONDS = float(os.environ.get("OUTPUTS_CACHE_TTL_SECONDS", "5
 SSE_STATE_INTERVAL_SECONDS = float(os.environ.get("SSE_STATE_INTERVAL_SECONDS", "3"))
 SSE_SYNC_INTERVAL_SECONDS = float(os.environ.get("SSE_SYNC_INTERVAL_SECONDS", str(max(SYNC_BOOKS_TTL_SECONDS, SSE_STATE_INTERVAL_SECONDS))))
 SSE_MAX_CONNECTION_SECONDS = float(os.environ.get("SSE_MAX_CONNECTION_SECONDS", "300"))
+SCAN_CANCEL_TIMEOUT_SECONDS = float(os.environ.get("SCAN_CANCEL_TIMEOUT_SECONDS", "5"))
 LAST_BOOK_SYNC_AT = 0.0
 LAST_SSE_SYNC_AT = 0.0
 OUTPUTS_CACHE = {}
@@ -1173,26 +1176,55 @@ def _move_queued_book(book_id, direction):
     return True, task.get("id")
 
 
-def _cancel_queued_book(book_id):
+def _terminate_running_task_process(task_id):
+    with STATE_LOCK:
+        proc = RUNNING_TASK_PROCS.get(task_id)
+    if not proc:
+        return False
+    try:
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except (AttributeError, OSError):
+            proc.terminate()
+        proc.wait(timeout=SCAN_CANCEL_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (AttributeError, OSError):
+            proc.kill()
+        proc.wait(timeout=SCAN_CANCEL_TIMEOUT_SECONDS)
+    except OSError:
+        return False
+    return True
+
+
+def _cancel_book_task(book_id):
     with STATE_LOCK:
         book = STATE["books"].get(book_id)
         if not book:
             return False, "book not found"
-        if book.get("status") != "queued":
-            return False, "book is not queued"
+        if book.get("status") not in {"queued", "running"}:
+            return False, "book is not queued or running"
         task_id = book.get("task_id")
         task = _find_task(task_id)
-        if not task or task.get("status") != "queued":
-            return False, "queued task not found"
+        if not task or task.get("status") not in {"queued", "running"}:
+            return False, "active task not found"
+        was_running = task.get("status") == "running"
         task["status"] = "canceled"
         task["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        task["error"] = "用户取消排队"
+        task["error"] = "用户取消扫描" if was_running else "用户取消排队"
         book["status"] = "idle"
-        book["message"] = "已取消排队"
+        book["message"] = "已取消扫描" if was_running else "已取消排队"
         book.pop("task_id", None)
         TASK_QUEUE_IDS.discard(task_id)
         _save_state()
+    if was_running:
+        _terminate_running_task_process(task_id)
     return True, task_id
+
+
+def _cancel_queued_book(book_id):
+    return _cancel_book_task(book_id)
 
 
 def _delete_book(book_id):
@@ -1254,31 +1286,44 @@ def _web_scan_command(book_path, profile_name, run_id):
     return [sys.executable, os.path.join(get_base_dir(), "main.py"), *task_args]
 
 
-def _run_scan_subprocess(book_path, profile_name, run_id, log_file):
+def _run_scan_subprocess(book_path, profile_name, run_id, log_file, task_id=None):
     cmd = _web_scan_command(book_path, profile_name, run_id)
+    popen_kwargs = {
+        "cwd": get_base_dir(),
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.STDOUT,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "bufsize": 1,
+    }
+    if os.name == "posix":
+        popen_kwargs["start_new_session"] = True
     proc = subprocess.Popen(
         cmd,
-        cwd=get_base_dir(),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        bufsize=1,
+        **popen_kwargs,
     )
+    if task_id:
+        with STATE_LOCK:
+            RUNNING_TASK_PROCS[task_id] = proc
     result = None
-    assert proc.stdout is not None
-    for line in proc.stdout:
-        if line.startswith(_WEB_SCAN_RESULT_PREFIX):
-            payload = line[len(_WEB_SCAN_RESULT_PREFIX):].strip()
-            try:
-                result = json.loads(payload)
-            except json.JSONDecodeError as exc:
-                result = {"status": "fail", "error": f"invalid scan result: {exc}"}
-            continue
-        log_file.write(line)
-        log_file.flush()
-    return_code = proc.wait()
+    try:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            if line.startswith(_WEB_SCAN_RESULT_PREFIX):
+                payload = line[len(_WEB_SCAN_RESULT_PREFIX):].strip()
+                try:
+                    result = json.loads(payload)
+                except json.JSONDecodeError as exc:
+                    result = {"status": "fail", "error": f"invalid scan result: {exc}"}
+                continue
+            log_file.write(line)
+            log_file.flush()
+        return_code = proc.wait()
+    finally:
+        if task_id:
+            with STATE_LOCK:
+                RUNNING_TASK_PROCS.pop(task_id, None)
     if result is None:
         result = {"status": "fail", "error": f"scan process exited without result (code {return_code})"}
     elif return_code != 0 and result.get("status") in {"ok", "skipped"}:
@@ -1339,7 +1384,7 @@ def _worker_loop():
                 elif isinstance(profile_name, list):
                     task["resolved_profiles"] = profile_name
                     task["resolved_profile"] = "、".join(profile_name)
-                result = _run_scan_subprocess(book["path"], profile_name, _generate_run_id(), log_file)
+                result = _run_scan_subprocess(book["path"], profile_name, _generate_run_id(), log_file, task_id=task_id)
             output_index = []
             if result.get("status") in {"ok", "skipped"}:
                 result_profiles = result.get("profiles")
@@ -1349,6 +1394,8 @@ def _worker_loop():
                 output_index = _collect_book_outputs_from_result(task.get("book_id"), result, result_profiles)
 
             with STATE_LOCK:
+                if task.get("status") == "canceled":
+                    continue
                 task["status"] = "completed" if result.get("status") in {"ok", "skipped"} else "failed"
                 task["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
                 task["result"] = result
@@ -1372,6 +1419,8 @@ def _worker_loop():
             except Exception:
                 pass
             with STATE_LOCK:
+                if task.get("status") == "canceled":
+                    continue
                 task["status"] = "failed"
                 task["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
                 task["error"] = str(exc)
