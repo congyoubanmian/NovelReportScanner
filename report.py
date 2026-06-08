@@ -1435,6 +1435,8 @@ def _has_low_presence_or_tooling_signal(text: str) -> bool:
     negated_tooling_patterns = (
         "不是工具人", "并非工具人", "非工具人", "不算工具人", "没有工具人化",
         "不是背景板", "并非背景板", "非背景板",
+        "不是客串", "并非客串", "非客串", "不算客串", "没有客串",
+        "不是神隐", "并非神隐", "非神隐", "没有神隐", "并未神隐", "未神隐", "不再神隐",
     )
     protected_text = text
     for pattern in negated_tooling_patterns:

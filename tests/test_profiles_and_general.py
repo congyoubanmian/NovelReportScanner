@@ -4293,6 +4293,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertNotIn("低存在感/工具人线索", background_identity)
         self.assertIn("感情/亲密推进", background_identity)
 
+        negated_absence = report._heroine_position_level(
+            {"importance_rank": 2},
+            {
+                "identity": "主线女配",
+                "relationship_with_protagonist": "与男主长期暧昧并同行。",
+                "features": "不是客串角色，并未神隐。",
+                "key_events": "多次推进主线，不是背景板。",
+            },
+            {"count": 9, "summaries": ["存在感较高，没有神隐，也不是工具人。"]},
+            {},
+        )
+        self.assertNotIn("低存在感/工具人线索", negated_absence)
+        self.assertIn("感情/亲密推进", negated_absence)
+
         exposition_role = report._heroine_position_level(
             {"importance_rank": 5},
             {
