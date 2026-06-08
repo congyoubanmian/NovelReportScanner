@@ -219,7 +219,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Compose 会把 `.env` 中的模型、限流、后宫增强、上传限制、SSE 间隔、输出缓存等运行参数显式传入容器。改动 `.env` 后需要重新执行 `docker compose up -d` 让容器重建并读取新环境变量。
+Compose 会把 `.env` 中的模型、限流、后宫增强、上传限制、扫描卡死保护、SSE 间隔、输出缓存等运行参数显式传入容器。改动 `.env` 后需要重新执行 `docker compose up -d` 让容器重建并读取新环境变量。生产环境建议固定使用 release tag 或 `sha-xxxx` 镜像标签，排障时可以通过 `/healthz` 或 `/api/diagnostics` 返回的 `app.commit` 确认线上容器实际运行的提交。
 
 `.env.sample` 已包含 Compose 支持的常用部署变量和扫描调优变量，可以复制为 `.env` 后按需修改；不要把真实 `.env` 提交到仓库。
 
@@ -247,6 +247,20 @@ docker run -d \
 - 容器内 Web 服务默认绑定 `0.0.0.0:8765`，宿主机端口可通过 `-p 宿主机端口:8765` 或 Compose 里的 `WEB_PORT` 调整。
 - 容器内存限制可通过 `CONTAINER_MEMORY_LIMIT` 和 `CONTAINER_MEMORY_RESERVATION` 调整；超长小说或多分类扫描建议适当调高。
 - 镜像健康检查使用 `/healthz`，只证明 Web 管理端进程可访问；是否能真正扫描取决于 `.env` / API Key 是否配置正确。
+- 默认启用 `SCAN_STALL_TIMEOUT_SECONDS=1200`，运行中的扫描子进程如果 20 分钟没有任何日志输出会被终止并标记失败，避免单个任务长期占住队列。可在 `.env` 或 Web 顶部“运行配置”里调整，设为 `0` 表示关闭。
+
+线上排障常用命令：
+
+```bash
+# 不需要令牌，只看 Web 进程、版本和卡死保护是否启用
+curl -sS http://服务器IP:8765/healthz
+
+# 需要令牌，查看队列、running 任务、最后日志、距离最后日志秒数和存储状态
+curl -sS -H "Authorization: Bearer $WEB_ACCESS_TOKEN" \
+  http://服务器IP:8765/api/diagnostics
+```
+
+如果 `/api/diagnostics` 里 `stale_running_count > 0`，说明存在超过卡死保护阈值仍未产生日志的运行任务；优先确认线上镜像 `app.commit` 是否已经包含最新代码，且 `scan_stall_watchdog_enabled` 是否为 `true`。
 
 公网反向代理 / TLS 建议：
 
@@ -371,7 +385,7 @@ WEB_ALLOW_NO_AUTH=0
 WEB_REQUEST_TIMEOUT=60
 SCAN_CANCEL_TIMEOUT_SECONDS=5
 SCAN_HEARTBEAT_INTERVAL_SECONDS=10
-SCAN_STALL_TIMEOUT_SECONDS=0
+SCAN_STALL_TIMEOUT_SECONDS=1200
 MAX_UPLOAD_SIZE=104857600
 MAX_JSON_BODY_SIZE=65536
 FILE_RESPONSE_CHUNK_SIZE=1048576
@@ -424,7 +438,7 @@ Web 管理端常用配置：
 - `WEB_REQUEST_TIMEOUT`：单个 HTTP 连接的 socket 超时时间，默认 `60` 秒；设为 `0` 可关闭。
 - `SCAN_CANCEL_TIMEOUT_SECONDS`：取消运行中扫描时，等待子进程正常退出的秒数，超时后会强制结束，默认 `5`。
 - `SCAN_HEARTBEAT_INTERVAL_SECONDS`：扫描子进程有日志输出时，Web 状态写入 `updated_at/last_log_at` 的节流间隔，默认 `10` 秒；设为 `0` 表示每条日志都更新。
-- `SCAN_STALL_TIMEOUT_SECONDS`：运行中的扫描子进程如果超过该秒数没有任何日志输出，会被自动终止并标记失败，默认 `0` 关闭。公网无人值守部署可按模型最长正常请求时间设置为较大的值。
+- `SCAN_STALL_TIMEOUT_SECONDS`：运行中的扫描子进程如果超过该秒数没有任何日志输出，会被自动终止并标记失败，默认 `1200`。设为 `0` 可关闭；如果模型单次请求经常超过 20 分钟，可以适当调高。
 - Web 访问日志写入 `results/web_logs/web_access.log`，使用 `LOG_MAX_BYTES` / `LOG_BACKUP_COUNT` 控制轮转，并会脱敏 URL 中的访问令牌。
 - `MAX_UPLOAD_SIZE`：单个上传 `.txt` 文件大小上限，默认 `104857600` 字节。
 - `MAX_JSON_BODY_SIZE`：JSON API 请求体大小上限，默认 `65536` 字节；写操作接口会校验必填字段和基础类型。

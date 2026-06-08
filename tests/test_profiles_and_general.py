@@ -489,6 +489,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("GENERAL_SCAN_ROLLING_CONTEXT", text)
         self.assertIn("GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE", text)
         self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS", text)
+        self.assertIn("/api/diagnostics", text)
+        self.assertIn("stale_running_count", text)
+        self.assertIn("app.commit", text)
+        self.assertIn("scan_stall_watchdog_enabled", text)
+        self.assertIn("SCAN_STALL_TIMEOUT_SECONDS=1200", text)
+        self.assertIn("sha-xxxx", text)
 
     def test_profile_aliases_and_stages(self):
         harem = analysis_profiles.load_analysis_profile("后宫")
