@@ -1,4 +1,5 @@
 {
+  "name": "steampunk_fantasy",
   "display_name": "西幻/蒸汽朋克/炼金工业专长分析",
   "description": "关注西幻秩序、蒸汽时代工业、炼金科技、教会帝国、神秘学复苏和技术跃迁是否自洽。",
   "enabled_stages": ["character_analysis", "general_scan", "general_report"],

@@ -1,4 +1,5 @@
 {
+  "name": "sports_competition",
   "display_name": "体育/竞技专长分析",
   "description": "关注比赛规则、训练成长、战术博弈、赛事结构和团队关系。",
   "enabled_stages": [

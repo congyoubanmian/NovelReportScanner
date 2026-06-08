@@ -375,6 +375,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("nation_fate", names)
         self.assertIn("simulator", names)
 
+    def test_profile_manifests_name_matches_directory(self):
+        profiles_root = os.path.join(os.path.dirname(os.path.dirname(__file__)), "profiles")
+        for profile in analysis_profiles.list_available_profiles():
+            manifest_path = os.path.join(profiles_root, profile.name, "profile.json")
+            with self.subTest(profile=profile.name):
+                with open(manifest_path, "r", encoding="utf-8") as f:
+                    manifest = json.load(f)
+                self.assertEqual(manifest.get("name"), profile.name)
+
     def test_auto_inference_keywords_are_profile_owned(self):
         for profile in analysis_profiles.list_available_profiles():
             if profile.name == "general":
