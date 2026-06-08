@@ -100,6 +100,16 @@ def _log(logger: Any, level: str, msg: str) -> None:
     print(msg)
 
 
+def normalize_rate_limit_scope(scope: str, api_key_count: int = 1) -> str:
+    """Resolve configured rate-limit scope to concrete bucket mode."""
+    normalized = str(scope or "").strip().lower()
+    if normalized == "auto":
+        return "per_key" if int(api_key_count or 0) > 1 else "global"
+    if normalized in ("global", "per_key"):
+        return normalized
+    return "global"
+
+
 def _key_fingerprint(key: str) -> str:
     """
     生成脱敏 key 标识：hash 前 8 位 + 后 4 位。
@@ -144,14 +154,10 @@ class RateLimiter:
             except ValueError:
                 pass
 
-        normalized_scope = str(scope or "").strip().lower()
-        if normalized_scope not in ("global", "per_key"):
-            normalized_scope = "global"
-
         self.rpm_limit = rpm_limit if rpm_limit is not None else default_rpm
         self.tpm_limit = tpm_limit if tpm_limit is not None else default_tpm
         self.window_seconds = window_seconds
-        self.scope = normalized_scope
+        self.scope = normalize_rate_limit_scope(scope)
         self._lock = threading.Lock()
         # bucket -> deque of (timestamp, tokens)
         self._requests: Dict[str, deque] = {}
@@ -465,7 +471,7 @@ def make_chat_completion(
     # -------- 本地 RPM/TPM 限流（可选） --------
     rpm_limit: Optional[int] = None,  # 每分钟请求数限制，None 表示不限流
     tpm_limit: Optional[int] = None,  # 每分钟 token 数限制，None 表示不限流
-    rate_limit_scope: str = "global",  # global / per_key
+    rate_limit_scope: str = "",  # auto / global / per_key; empty uses env/default
     # -------- 动态 timeout 配置 --------
     dynamic_timeout_alpha: float = 0.08,  # 每 token 增加的秒数
     dynamic_timeout_cap: int = 300,  # 最大超时上限
@@ -497,13 +503,14 @@ def make_chat_completion(
     # 优先级：函数参数 > 环境变量 > 默认值（RPM=60, TPM=100000）
     # 用户传入 rpm_limit=0 可显式关闭限流
     env_scope = str(os.environ.get("RATE_LIMIT_SCOPE", "")).strip().lower()
-    if env_scope not in ("global", "per_key"):
+    if env_scope not in ("auto", "global", "per_key"):
         env_scope = ""
     param_scope = str(rate_limit_scope or "").strip().lower()
-    if param_scope not in ("global", "per_key"):
+    if param_scope not in ("auto", "global", "per_key"):
         param_scope = ""
     # Keep env usable for existing call sites that don't pass new argument.
-    resolved_scope = param_scope or env_scope or "global"
+    configured_scope = param_scope or env_scope or "auto"
+    resolved_scope = normalize_rate_limit_scope(configured_scope, len(api_key_pool))
 
     rate_limiter = RateLimiter(
         rpm_limit=rpm_limit,
@@ -513,7 +520,7 @@ def make_chat_completion(
     _log(
         logger,
         "info",
-        f"本地限流配置：enabled={rate_limiter.is_enabled}, scope={rate_limiter.scope}, "
+        f"本地限流配置：enabled={rate_limiter.is_enabled}, scope={rate_limiter.scope}, configured_scope={configured_scope}, "
         f"rpm={rate_limiter.rpm_limit}, tpm={rate_limiter.tpm_limit}, window={rate_limiter.window_seconds}s",
     )
     if not rate_limiter.is_enabled:
@@ -954,4 +961,6 @@ def make_chat_completion(
         # 超过最大外层尝试次数
         raise RuntimeError(f"超过最大重试次数({max_outer_attempts})，所有 API_KEY 均失败")
 
+    chat_completion._rate_limit_scope = rate_limiter.scope
+    chat_completion._configured_rate_limit_scope = configured_scope
     return chat_completion

@@ -45,7 +45,7 @@ const configForm = ref({
   max_workers: '',
   rpm_limit: '',
   tpm_limit: '',
-  rate_limit_scope: 'global',
+  rate_limit_scope: 'auto',
   general_scan_max_chunks: '',
   harem_plus_general_scan: false
 })
@@ -114,7 +114,7 @@ function syncConfigForm(config) {
     max_workers: config.max_workers || '',
     rpm_limit: config.rpm_limit || '',
     tpm_limit: config.tpm_limit || '',
-    rate_limit_scope: config.rate_limit_scope || 'global',
+    rate_limit_scope: config.rate_limit_scope || 'auto',
     general_scan_max_chunks: config.general_scan_max_chunks || '80',
     harem_plus_general_scan: Boolean(config.harem_plus_general_scan)
   }
@@ -372,6 +372,7 @@ useStateEvents(applyState, {
       <label>
         <span>限流域</span>
         <select v-model="configForm.rate_limit_scope" @change="runtimeConfigDirty = true">
+          <option value="auto">auto</option>
           <option value="global">global</option>
           <option value="per_key">per_key</option>
         </select>

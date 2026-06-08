@@ -1,6 +1,6 @@
 # Kimi 方案推进进度总结
 
-生成日期：2026-06-07（本版更新于 2026-06-08 16:38）
+生成日期：2026-06-07（本版更新于 2026-06-08 16:55）
 
 ## 总体完成度
 
@@ -12,7 +12,7 @@
 - **后宫/男性向排雷专项**：约 **82% - 86%**。核心定义、五维洁度、接触等级、partner 豁免、漏女三层判断、女主事实扩展、重复女主大模型合并等关键项已落地；仍需要更多真实书籍报告校准误判。
 - **多标签/混合类型扫描**：约 **91% - 93%**。已支持自动多标签、手动多选、后宫+其他类型补扫；历史、科幻、仙侠、都市、游戏、异世界、蒸汽西幻、国运、模拟器以及末世、军事、刑侦、克系、校园、文娱、种田、商战、推理、体育等副类型均已导入后宫交叉规则。自动识别已补充标题加权、组合关键词加成、负向关键词抑制、局部否定过滤、短词污染过滤、有限频次加分和 profile 自适应阈值，降低次要标签漏标与跨类误判。
 - **报告输出和字段标题**：约 **95% - 97%**。通用报告、专项报告、后宫报告的字段标题和收尾字段已多轮补齐；所有 20 个 profile 的 summary_fields 均已补全中文标题（含主线剧情、核心冲突、世界观、主题、优点与亮点、风险与问题、适合读者、总体评价等通用字段，以及女主群像、候选女主、漏女、洁度评估、毒点、郁闷点、男主定位、感情线推进等后宫字段）；通用总评、作品概览、伏笔回收、适合读者、总体评价以及常见专项字段均已支持旧字段名别名读取，并有回归测试覆盖。
-- **Web/部署/GitHub Actions/Docker**：约 **98%**。前后端分离、SSE 实时状态、SSE 连接生命周期与目录同步节流、队列管理、删除/批量删除、Token 展示、配置摘要、非敏感运行配置编辑并自动持久化到 `.env`、可选访问令牌、Docker/GHCR/DockerHub 流程、请求体限制、文件流式输出、任务日志隔离、前端 ESLint/Prettier 检查、CI 自动验证、输出文件索引、Docker 最终镜像瘦身、容器 API Key 启动校验、书籍同步减少无变化状态写入、API 客户端工厂统一、扫描 checkpoint 增量写入、失败片段内容诊断、首扫动态线程块调度、checkpoint 运行态显式注入、detail 路径显式书名解析、报告书名显式传入、chunk 摘要状态显式注入、失败诊断状态显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文、detail 写入显式路径和主流程最终输出局部上下文等工程项已完成；剩余主要是进一步生产化部署细节（反向代理、TLS、更细粒度访问控制）。
+- **Web/部署/GitHub Actions/Docker**：约 **98%**。前后端分离、SSE 实时状态、SSE 连接生命周期与目录同步节流、队列管理、删除/批量删除、Token 展示、配置摘要、限流作用域 `auto/global/per_key` 可配置、非敏感运行配置编辑并自动持久化到 `.env`、可选访问令牌、Docker/GHCR/DockerHub 流程、请求体限制、文件流式输出、任务日志隔离、前端 ESLint/Prettier 检查、CI 自动验证、输出文件索引、Docker 最终镜像瘦身、容器 API Key 启动校验、书籍同步减少无变化状态写入、API 客户端工厂统一、扫描 checkpoint 增量写入、失败片段内容诊断、首扫动态线程块调度、checkpoint 运行态显式注入、detail 路径显式书名解析、报告书名显式传入、chunk 摘要状态显式注入、失败诊断状态显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文、detail 写入显式路径和主流程最终输出局部上下文等工程项已完成；剩余主要是进一步生产化部署细节（反向代理、TLS、更细粒度访问控制）。
 
 ## 已完成的主要工作
 
@@ -160,13 +160,14 @@
 - Web 覆盖上传同名书籍时会隔离旧任务、旧输出和旧 token 用量，避免新书详情混入旧书历史结果。
 - Web 书籍目录同步仅在新增/路径变化/分类建议变化时写入状态文件；SSE 状态流增加全局目录同步节流，多个连接共用 `SSE_SYNC_INTERVAL_SECONDS`，避免每个连接每轮都遍历 `novels/`。
 - Web 页面支持编辑 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`GENERAL_SCAN_MAX_CHUNKS`、`HAREM_PLUS_GENERAL_SCAN` 等非敏感运行配置；修改后会自动原子写回 `.env` 文件，服务重启后仍然生效。写回时只更新白名单内的非敏感字段，保留注释、空行和 API Key 等敏感信息，避免 Key 泄露或丢失。
+- 本地限流作用域默认改为 `auto`：多 API Key 时自动使用 `per_key` 分桶，单 Key 时继续使用 `global`，减少多 key 场景下的无谓串行等待，同时保留 `global/per_key` 手动覆盖。
 - Web 写入 `novels/`、`results/` 或状态文件遇到宿主机挂载目录权限错误时，会返回结构化 JSON 错误和目录权限提示，避免请求线程直接 traceback 导致前端只看到接口失败。
 - Web 运行信息条会展示 `novels/` 和 `results/` 挂载目录的可写状态，部署后可直接判断目录权限是否会影响上传、入队和报告写入。
 - Docker 最终运行镜像不再 `COPY . .`，只复制 Python 源码、`profiles/`、`rules2.json` 和前端构建产物，避免把测试、前端源码、文档和本地杂项带入运行层。
 - `.dockerignore` 保留前端源码进入 builder stage，同时最终运行层只接收 `frontend/dist`，避免无缓存构建时缺少源码或运行镜像携带前端源码。
 - Docker/Compose 容器启动时默认要求 `API_KEY` 或 `API_KEY_POOL` 至少存在一个，避免缺少 Key 时 Web 进程正常启动但扫描任务延迟失败；确需只启动 Web UI 时可用 `NOVEL_REPORT_SCANNER_REQUIRE_API_KEY=0` 跳过。
 - Web 运行信息条展示容器 Key 启动校验是否开启，方便确认 Docker/Compose 部署是否允许跳过 Key 校验。
-- `docker-compose.yml` 显式透传后宫增强、上传限制、JSON 限制、文件流式块大小、目录同步 TTL、输出缓存 TTL、SSE 推送间隔、SSE 同步间隔和 SSE 连接生命周期等 `.env` 运行参数，避免只写在 `.env` 但容器内未生效。
+- `docker-compose.yml` 显式透传后宫增强、限流作用域、上传限制、JSON 限制、文件流式块大小、目录同步 TTL、输出缓存 TTL、SSE 推送间隔、SSE 同步间隔和 SSE 连接生命周期等 `.env` 运行参数，避免只写在 `.env` 但容器内未生效。
 - `.env.sample` 补齐 Compose 支持的镜像名、UID/GID、容器内存、分析模式、后宫增强和补扫调优变量，降低远程部署时漏配参数的概率。
 - README 已补充公网反向代理/TLS 部署建议，包含本机端口绑定、`WEB_ACCESS_TOKEN`、CORS 收窄、Caddy/Nginx 示例和 SSE 代理配置。
 - `novel_scan.py`、`protagonist.py`、`report.py` 已统一使用 `shared_utils.create_chat_completion()` 创建 API 客户端，OpenAI client factory 只保留一份；`protagonist.py` 默认 `BASE_URL` 也已与其他阶段统一为 `https://api.deepseek.com`，避免未显式配置时不同阶段打到不同端点。
@@ -217,8 +218,9 @@
 - API 客户端工厂统一和默认 `BASE_URL` 一致性。
 - profile manifest 自治排序，验证所有 manifest 均提供整数 `sort_order`，`list_available_profiles()` 按 `sort_order/name` 排序，并确认代码中不再保留 `_PROFILE_ORDER` 硬编码。
 - SSE 状态流连接生命周期与目录同步节流，验证连接到期会退出、状态仍可连续推送，且同步目录调用少于状态推送次数。
+- 限流作用域 `auto`，验证单 key 自动解析为 `global`、多 key 自动解析为 `per_key`、显式参数/环境变量/default 的优先级正确，Web 运行配置和前端选择框均支持 `auto`。
 
-最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **181 个测试 OK**；蒸汽西幻 scan_focus、组合关键词和专项规则维度已增加到现有 profile/自动分类回归测试中。国运/文明对抗与模拟器/人生推演的 profile 发现、自动识别、后宫交叉规则、后宫增强补扫、字段中文标题、都市爽文跨类边界、置信度校准、扫描 checkpoint 增量恢复、prompt 自检清单去重、失败 chunk 内容诊断、首扫动态线程块分区、checkpoint 显式路径隔离、detail 显式书名查找、报告显式书名、chunk 摘要显式注入、失败诊断显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文、detail 写入显式路径、主流程最终输出局部上下文和 SSE 状态流生命周期/目录同步节流已有目标测试覆盖；profile manifest 的 `name` 字段与目录名一致性、manifest 自治排序、通用规则核心维度、历史/硬科幻专项规则补强、API 客户端工厂统一和默认 `BASE_URL` 一致性也已有回归测试覆盖。
+最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **184 个测试 OK**；蒸汽西幻 scan_focus、组合关键词和专项规则维度已增加到现有 profile/自动分类回归测试中。国运/文明对抗与模拟器/人生推演的 profile 发现、自动识别、后宫交叉规则、后宫增强补扫、字段中文标题、都市爽文跨类边界、置信度校准、扫描 checkpoint 增量恢复、prompt 自检清单去重、失败 chunk 内容诊断、首扫动态线程块分区、checkpoint 显式路径隔离、detail 显式书名查找、报告显式书名、chunk 摘要显式注入、失败诊断显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文、detail 写入显式路径、主流程最终输出局部上下文、SSE 状态流生命周期/目录同步节流和限流作用域 auto 解析已有目标测试覆盖；profile manifest 的 `name` 字段与目录名一致性、manifest 自治排序、通用规则核心维度、历史/硬科幻专项规则补强、API 客户端工厂统一和默认 `BASE_URL` 一致性也已有回归测试覆盖。
 
 ## 已推送的关键提交
 

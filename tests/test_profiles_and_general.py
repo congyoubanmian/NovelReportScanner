@@ -15,6 +15,7 @@ import novel_scan
 import novel_reviewer
 import report
 import toxic_reviewer
+import Timerror
 import web_manager
 
 
@@ -417,6 +418,72 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertNotIn("from Timerror import make_chat_completion", text)
                 self.assertIn("from shared_utils import create_chat_completion", text)
                 self.assertIn('BASE_URL = os.environ.get("BASE_URL", "https://api.deepseek.com")', text)
+
+    def test_frontend_runtime_config_exposes_auto_rate_limit_scope(self):
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        app_path = os.path.join(base_dir, "frontend", "src", "App.vue")
+        with open(app_path, "r", encoding="utf-8") as f:
+            text = f.read()
+        self.assertIn("rate_limit_scope: 'auto'", text)
+        self.assertIn("config.rate_limit_scope || 'auto'", text)
+        self.assertIn('<option value="auto">auto</option>', text)
+
+    def test_rate_limit_scope_auto_resolves_by_key_count(self):
+        self.assertEqual(Timerror.normalize_rate_limit_scope("auto", 1), "global")
+        self.assertEqual(Timerror.normalize_rate_limit_scope("auto", 2), "per_key")
+        self.assertEqual(Timerror.normalize_rate_limit_scope("global", 2), "global")
+        self.assertEqual(Timerror.normalize_rate_limit_scope("per_key", 1), "per_key")
+        self.assertEqual(Timerror.normalize_rate_limit_scope("bad", 2), "global")
+
+        per_key = Timerror.RateLimiter(rpm_limit=1, tpm_limit=0, scope="per_key")
+        self.assertEqual(per_key.acquire_slot("key-a", 1), (0.0, "ok"))
+        self.assertEqual(per_key.acquire_slot("key-b", 1), (0.0, "ok"))
+        self.assertGreater(per_key.acquire_slot("key-a", 1)[0], 0)
+
+        global_scope = Timerror.RateLimiter(rpm_limit=1, tpm_limit=0, scope="global")
+        self.assertEqual(global_scope.acquire_slot("key-a", 1), (0.0, "ok"))
+        self.assertGreater(global_scope.acquire_slot("key-b", 1)[0], 0)
+
+    def test_make_chat_completion_rate_limit_scope_precedence(self):
+        old_scope = os.environ.get("RATE_LIMIT_SCOPE")
+        try:
+            os.environ["RATE_LIMIT_SCOPE"] = "per_key"
+            from_env = Timerror.make_chat_completion(
+                openai_client_factory=lambda *_args: None,
+                api_key_pool=["key-a", "key-b"],
+                base_url="https://example.test",
+                rpm_limit=0,
+                tpm_limit=0,
+            )
+            self.assertEqual(from_env._configured_rate_limit_scope, "per_key")
+            self.assertEqual(from_env._rate_limit_scope, "per_key")
+
+            explicit = Timerror.make_chat_completion(
+                openai_client_factory=lambda *_args: None,
+                api_key_pool=["key-a", "key-b"],
+                base_url="https://example.test",
+                rpm_limit=0,
+                tpm_limit=0,
+                rate_limit_scope="global",
+            )
+            self.assertEqual(explicit._configured_rate_limit_scope, "global")
+            self.assertEqual(explicit._rate_limit_scope, "global")
+
+            os.environ.pop("RATE_LIMIT_SCOPE", None)
+            default_auto = Timerror.make_chat_completion(
+                openai_client_factory=lambda *_args: None,
+                api_key_pool=["key-a", "key-b"],
+                base_url="https://example.test",
+                rpm_limit=0,
+                tpm_limit=0,
+            )
+            self.assertEqual(default_auto._configured_rate_limit_scope, "auto")
+            self.assertEqual(default_auto._rate_limit_scope, "per_key")
+        finally:
+            if old_scope is None:
+                os.environ.pop("RATE_LIMIT_SCOPE", None)
+            else:
+                os.environ["RATE_LIMIT_SCOPE"] = old_scope
 
     def test_auto_inference_keywords_are_profile_owned(self):
         for profile in analysis_profiles.list_available_profiles():
@@ -3460,6 +3527,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             ok, error = web_manager._update_runtime_config({"max_workers": "0"})
             self.assertFalse(ok)
             self.assertIn("between", error)
+
+            ok, result = web_manager._update_runtime_config({"rate_limit_scope": "auto"})
+            self.assertTrue(ok)
+            self.assertEqual(os.environ["RATE_LIMIT_SCOPE"], "auto")
+            self.assertEqual(result["rate_limit_scope"], "auto")
 
             ok, error = web_manager._update_runtime_config({"rate_limit_scope": "account"})
             self.assertFalse(ok)

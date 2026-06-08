@@ -47,7 +47,7 @@ EDITABLE_RUNTIME_CONFIG = {
     "max_workers": {"env": "MAX_WORKERS", "type": "int", "min": 1, "max": 64},
     "rpm_limit": {"env": "RPM_LIMIT", "type": "int", "min": 0, "max": 1000000, "empty": True},
     "tpm_limit": {"env": "TPM_LIMIT", "type": "int", "min": 0, "max": 1000000000, "empty": True},
-    "rate_limit_scope": {"env": "RATE_LIMIT_SCOPE", "type": "choice", "choices": {"global", "per_key"}},
+    "rate_limit_scope": {"env": "RATE_LIMIT_SCOPE", "type": "choice", "choices": {"auto", "global", "per_key"}},
     "general_scan_max_chunks": {"env": "GENERAL_SCAN_MAX_CHUNKS", "type": "int", "min": 0, "max": 100000},
     "harem_plus_general_scan": {"env": "HAREM_PLUS_GENERAL_SCAN", "type": "bool"},
 }
@@ -361,7 +361,7 @@ def _runtime_config_summary():
         "max_workers": os.environ.get("MAX_WORKERS", ""),
         "rpm_limit": os.environ.get("RPM_LIMIT", ""),
         "tpm_limit": os.environ.get("TPM_LIMIT", ""),
-        "rate_limit_scope": os.environ.get("RATE_LIMIT_SCOPE", "global"),
+        "rate_limit_scope": os.environ.get("RATE_LIMIT_SCOPE", "auto"),
         "general_scan_max_chunks": os.environ.get("GENERAL_SCAN_MAX_CHUNKS", "80"),
         "harem_plus_general_scan": _env_bool_value(os.environ.get("HAREM_PLUS_GENERAL_SCAN", "0")),
         "editable": sorted(EDITABLE_RUNTIME_CONFIG.keys()),

@@ -19,7 +19,7 @@ _DEFAULT_ENV_SETTINGS = {
     "MODEL_NAME": "deepseek-chat",
     "ANALYSIS_PROFILE": "harem",
     "MAX_WORKERS": "6",
-    "RATE_LIMIT_SCOPE": "global",
+    "RATE_LIMIT_SCOPE": "auto",
     "DIM_BOOST_MAX_PER_CHUNK": "3",
     "RESCAN_ROUNDS": "3",
     "MAX_MIDDLE_SUMMARY_CALLS": "10",
@@ -221,7 +221,7 @@ def load_configs(base_dir, interactive=True):
     print(
         f"本地限流：RPM_LIMIT={os.environ.get('RPM_LIMIT', '')}  "
         f"TPM_LIMIT={os.environ.get('TPM_LIMIT', '')}  "
-        f"RATE_LIMIT_SCOPE={os.environ.get('RATE_LIMIT_SCOPE', 'global')}"
+        f"RATE_LIMIT_SCOPE={os.environ.get('RATE_LIMIT_SCOPE', 'auto')}"
     )
     print(f"API Key 数量: {len(keys)}")
     print()

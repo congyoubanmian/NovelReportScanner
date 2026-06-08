@@ -355,7 +355,7 @@ MODEL_NAME=your-model-name
 MAX_WORKERS=2
 RPM_LIMIT=100
 TPM_LIMIT=10000000
-RATE_LIMIT_SCOPE=global
+RATE_LIMIT_SCOPE=auto
 API_KEY=sk-your-key
 # API_KEY_POOL=sk-key-1,sk-key-2
 
@@ -390,7 +390,7 @@ SSE_MAX_CONNECTION_SECONDS=300
 - `ANALYSIS_PROFILE`：分析模式。`harem` 为默认后宫/男性向排雷模式；`auto` 可按每本书自动识别；`general`、`history`、`hard_sci_fi` 为通用和类型专长入口。
 - `HAREM_PLUS_GENERAL_SCAN`：后宫增强模式开关。设为 `1` 时，`harem` 流程会在后宫排雷后额外运行一次通用剧情扫描，并在后宫报告末尾追加“作品整体评价”；默认 `0`，不增加额外调用。
 - `RPM_LIMIT` / `TPM_LIMIT`：程序本地预限流配置，用来在请求发出前控制最近 60 秒内的请求数和预估 token 数。
-- `RATE_LIMIT_SCOPE`：本地限流作用域。`global` 表示当前进程内所有线程和 key 共用一个限流桶；`per_key` 表示每个 key 单独计数。默认推荐 `global`，因为很多 OpenAI 兼容供应商会按账号或出口 IP 限速，多个 key 不一定能绕开同一个 RPM/TPM 限制。
+- `RATE_LIMIT_SCOPE`：本地限流作用域。`auto` 表示多个 API Key 时每个 key 单独计数、单个 key 时使用全局桶；`global` 表示当前进程内所有线程和 key 共用一个限流桶；`per_key` 表示每个 key 单独计数。默认推荐 `auto`，能减少多 key 场景下的无谓串行等待，同时避免单 key 场景误放大并发。
 
 Web 管理端常用配置：
 
@@ -487,7 +487,7 @@ profiles/
 - 作者建议：如果你使用的不是廉价 token，尽量不要盲目调高这些参数，优先保持默认值或保守值。
 - 其中最容易明显拉高 token 消耗的，通常是 `DIM_BOOST_MAX_PER_CHUNK`、`MAX_MIDDLE_SUMMARY_CALLS`、`RESCAN_MAX_HITS`、`RESCAN_MAX_WINDOW` 和 `RESCAN_MAX_PROMPT_HEROINES`。
 
-运行日志里的 `限流等待：... reason=rpm, scope=global` 是本程序的本地预限流日志，不是 API 服务端返回的报错。`reason=rpm` 代表最近 60 秒请求数达到 `RPM_LIMIT`；`scope=global` 代表所有线程和所有 key 共用这个计数桶。如果确认供应商对每个 key 独立限速，可以把 `RATE_LIMIT_SCOPE=per_key`，但在共享账号/IP 限速的服务上这样做更容易触发服务端 429/403 或长时间挂起。
+运行日志里的 `限流等待：... reason=rpm, scope=global/per_key` 是本程序的本地预限流日志，不是 API 服务端返回的报错。`reason=rpm` 代表最近 60 秒请求数达到 `RPM_LIMIT`；`scope=global` 代表所有线程和所有 key 共用这个计数桶，`scope=per_key` 代表每个 key 单独计数。默认 `RATE_LIMIT_SCOPE=auto` 会在多 key 时自动使用 `per_key`，单 key 时使用 `global`；如果供应商按账号或出口 IP 共享限速，可手动改回 `global`。
 
 各参数作用如下：
 
