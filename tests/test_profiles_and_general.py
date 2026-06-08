@@ -6094,6 +6094,84 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertNotIn("【交叉验证提示】", text)
 
+    def test_harem_report_warns_when_scan_issue_is_not_covered_by_reviewer(self):
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        try:
+            report.OpenAI = None
+            report.API_KEY_POOL = []
+            text = report.build_report_v2(
+                "测试后宫",
+                {
+                    "male_protagonist": {"name": "男主"},
+                    "heroine_result": {
+                        "heroines": [{"name": "甲女", "importance_rank": 1}],
+                    },
+                    "all_female_characters": {},
+                    "issues": [
+                        {
+                            "category": "雷点（严重毒点）",
+                            "type": "绿帽",
+                            "chunk_index": 18,
+                            "content": "甲女与非男主男性出现明确暧昧关系。",
+                        }
+                    ],
+                },
+                {
+                    "heroines_purity": [{"name": "甲女", "is_virgin": True}],
+                    "lei_points": [],
+                    "yumen_points": [],
+                },
+            )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+
+        self.assertIn("【交叉验证提示】", text)
+        self.assertIn("扫描阶段发现但二审输出未覆盖的雷点/郁闷点：绿帽@chunk 18", text)
+
+    def test_harem_issue_cross_validation_treats_rejected_points_as_covered(self):
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        try:
+            report.OpenAI = None
+            report.API_KEY_POOL = []
+            text = report.build_report_v2(
+                "测试后宫",
+                {
+                    "male_protagonist": {"name": "男主"},
+                    "heroine_result": {
+                        "heroines": [{"name": "甲女", "importance_rank": 1}],
+                    },
+                    "all_female_characters": {},
+                    "issues": [
+                        {
+                            "category": "雷点（严重毒点）",
+                            "type": "送女",
+                            "chunk_index": 9,
+                            "content": "传闻甲女被家族安排嫁给路人。",
+                        }
+                    ],
+                },
+                {
+                    "heroines_purity": [{"name": "甲女", "is_virgin": True}],
+                    "rejected_points": [
+                        {
+                            "category": "雷点（严重毒点）",
+                            "type": "送女",
+                            "chunk_index": 9,
+                            "content": "传闻甲女被家族安排嫁给路人。",
+                            "review_comment": "二审驳回，缺少男主主动或默许。",
+                        }
+                    ],
+                },
+            )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+
+        self.assertNotIn("扫描阶段发现但二审输出未覆盖", text)
+
     def test_harem_romance_overview_counts_low_presence_semantically(self):
         old_openai = report.OpenAI
         old_api_key_pool = report.API_KEY_POOL

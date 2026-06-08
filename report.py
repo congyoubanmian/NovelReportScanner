@@ -2236,6 +2236,85 @@ def _harem_consistency_warnings(heroines: list, reviewer: dict, all_female_chara
     return warnings
 
 
+def _issue_type_key(issue: dict) -> str:
+    text = str((issue or {}).get("type") or (issue or {}).get("category") or "").strip()
+    return re.sub(r"\s+", "", text)
+
+
+def _issue_content_key(issue: dict) -> str:
+    text = " ".join(
+        str((issue or {}).get(field) or "")
+        for field in ("content", "reason", "evidence", "review_comment")
+    )
+    text = re.sub(r"\s+", "", text)
+    return text[:80]
+
+
+def _is_reviewworthy_scan_issue(issue: dict) -> bool:
+    issue_type = _issue_type_key(issue)
+    category = str((issue or {}).get("category") or "")
+    text = f"{issue_type} {category} {_issue_content_key(issue)}"
+    if is_strict_harem_issue_type(issue_type):
+        return True
+    markers = (
+        "雷", "毒", "郁闷", "绿帽", "送女", "牛头人", "NTR", "ntr",
+        "漏女", "处女", "破身", "非处", "男伴", "精神不洁", "前世雷",
+        "亵女", "辱女", "群交", "多人运动", "雌堕", "洗脑",
+    )
+    return any(marker in text for marker in markers)
+
+
+def _issue_is_covered_by_reviewer(scan_issue: dict, review_issues: list) -> bool:
+    scan_type = _issue_type_key(scan_issue)
+    scan_chunk = (scan_issue or {}).get("chunk_index")
+    scan_content = _issue_content_key(scan_issue)
+    for review_issue in review_issues or []:
+        if not isinstance(review_issue, dict):
+            continue
+        review_type = _issue_type_key(review_issue)
+        if scan_type and review_type and scan_type != review_type:
+            continue
+        review_chunk = review_issue.get("chunk_index")
+        if scan_chunk is not None and review_chunk is not None and scan_chunk == review_chunk:
+            return True
+        review_content = _issue_content_key(review_issue)
+        if scan_content and review_content and (
+            scan_content in review_content or review_content in scan_content
+        ):
+            return True
+    return False
+
+
+def _harem_issue_consistency_warnings(detailed_data: dict, reviewer: dict) -> list:
+    scan_issues = [
+        issue
+        for issue in ((detailed_data or {}).get("issues") or [])
+        if isinstance(issue, dict) and _is_reviewworthy_scan_issue(issue)
+    ]
+    if not scan_issues:
+        return []
+
+    reviewed_issues = []
+    for key in ("lei_points", "yumen_points", "pending_points", "rejected_issues", "rejected_points"):
+        reviewed_issues.extend(
+            issue for issue in ((reviewer or {}).get(key) or []) if isinstance(issue, dict)
+        )
+
+    missing = [
+        issue for issue in scan_issues
+        if not _issue_is_covered_by_reviewer(issue, reviewed_issues)
+    ]
+    if not missing:
+        return []
+
+    samples = []
+    for issue in missing[:8]:
+        issue_type = str(issue.get("type") or issue.get("category") or "未分类").strip() or "未分类"
+        chunk = issue.get("chunk_index", "?")
+        samples.append(f"{issue_type}@chunk {chunk}")
+    return [f"扫描阶段发现但二审输出未覆盖的雷点/郁闷点：{', '.join(samples)}"]
+
+
 def _heroine_candidate_duplicate_groups(heroines: list, all_female_characters: dict) -> list:
     groups = []
     used = set()
@@ -2975,7 +3054,10 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
         f"预期落差：{romance_overview.get('romance_expectation_gap') or '未描述'}",
         f"男主前史情感雷点：{romance_overview.get('male_past_romance_risk') or '未描述'}",
     ]
-    consistency_warnings = _harem_consistency_warnings(heroines, reviewer, all_female_characters)
+    consistency_warnings = [
+        *_harem_consistency_warnings(heroines, reviewer, all_female_characters),
+        *_harem_issue_consistency_warnings(detailed_data, reviewer),
+    ]
     if consistency_warnings:
         romance_lines.extend(["", "【交叉验证提示】"])
         romance_lines.extend(f"- {item}" for item in consistency_warnings)

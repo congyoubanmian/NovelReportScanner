@@ -8978,6 +8978,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         "lei_points": [],
         "yumen_points": [],
         "pending_points": [],
+        "rejected_points": [],
     }
 
     for name, info in final_heroine_report.items():
@@ -9106,6 +9107,16 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
             "review_comment": item.get("review_comment"),
             "chunk_index": item.get("chunk_index"),
             "api_error": True,
+        })
+
+    for item in rejected_issues:
+        summary_json["rejected_points"].append({
+            "category": item.get("category"),
+            "type": item.get("type"),
+            "content": item.get("content"),
+            "reason": item.get("reason"),
+            "review_comment": item.get("review_comment"),
+            "chunk_index": item.get("chunk_index"),
         })
 
     with open(summary_file, "w", encoding="utf-8") as f:
