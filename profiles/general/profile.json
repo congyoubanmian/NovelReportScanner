@@ -1,5 +1,6 @@
 {
   "name": "general",
+  "sort_order": 20,
   "display_name": "通用小说分析",
   "description": "面向非后宫小说的通用分析入口，涵盖剧情、角色、世界观、主题、节奏、爽点/虐点和阅读门槛等全维度评估。当作品无法归入任何专长分类时自动回退至此。",
   "enabled_stages": [

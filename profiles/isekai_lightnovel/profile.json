@@ -1,5 +1,6 @@
 {
   "name": "isekai_lightnovel",
+  "sort_order": 180,
   "display_name": "异世界/轻小说专长分析",
   "description": "关注穿越转生、异世界规则、种族文化、贵族政治、冒险队伍、恋爱喜剧、慢生活元素和轻小说节奏。",
   "enabled_stages": ["character_analysis", "general_scan", "general_report"],

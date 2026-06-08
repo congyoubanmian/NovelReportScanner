@@ -1,5 +1,6 @@
 {
   "name": "history",
+  "sort_order": 30,
   "display_name": "历史小说专长分析",
   "description": "在通用小说分析基础上，重点检查时代背景、制度逻辑、战争/权谋结构、人物立场和历史氛围自洽性。",
   "enabled_stages": [

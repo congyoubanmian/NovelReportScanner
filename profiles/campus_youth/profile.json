@@ -1,5 +1,6 @@
 {
   "name": "campus_youth",
+  "sort_order": 160,
   "display_name": "校园/青春成长专长分析",
   "description": "关注校园环境、学习竞赛、同伴关系、家庭压力和青春成长弧线。",
   "enabled_stages": [

@@ -25,6 +25,7 @@ class AnalysisProfile:
     summary_fields: List[str]
     harem_plus: Dict[str, Any]
     cross_profile_rules: Dict[str, Any]
+    sort_order: int = 1000
 
     @property
     def uses_harem_reviewer(self) -> bool:
@@ -57,31 +58,6 @@ class ProfileInference:
             "confidence_level": self.confidence_level,
             "matched_keywords": self.matched_keywords,
         }
-
-
-_PROFILE_ORDER = {
-    "harem": 10,
-    "general": 20,
-    "history": 30,
-    "hard_sci_fi": 40,
-    "xianxia_fantasy": 50,
-    "mystery_detective": 60,
-    "game_system": 70,
-    "urban_power": 80,
-    "military_war": 90,
-    "apocalypse_survival": 100,
-    "cosmic_horror": 110,
-    "sports_competition": 120,
-    "entertainment_industry": 130,
-    "business_career": 140,
-    "crime_forensics": 150,
-    "campus_youth": 160,
-    "farming_management": 170,
-    "isekai_lightnovel": 180,
-    "steampunk_fantasy": 190,
-    "nation_fate": 200,
-    "simulator": 220,
-}
 
 
 COMBO_BONUSES = {
@@ -410,6 +386,10 @@ def load_analysis_profile(profile_name: str = None) -> AnalysisProfile:
         rules_file = os.path.join(profile_root, rules_file)
     if not os.path.exists(rules_file) and name == "harem":
         rules_file = os.path.join(get_base_dir(), "rules2.json")
+    try:
+        sort_order = int(manifest.get("sort_order", 1000))
+    except Exception:
+        sort_order = 1000
 
     return AnalysisProfile(
         name=name,
@@ -422,6 +402,7 @@ def load_analysis_profile(profile_name: str = None) -> AnalysisProfile:
         summary_fields=[str(x) for x in manifest.get("summary_fields", []) if str(x).strip()],
         harem_plus=manifest.get("harem_plus") if isinstance(manifest.get("harem_plus"), dict) else {},
         cross_profile_rules=manifest.get("cross_profile_rules") if isinstance(manifest.get("cross_profile_rules"), dict) else {},
+        sort_order=sort_order,
     )
 
 
@@ -440,7 +421,7 @@ def list_available_profiles() -> List[AnalysisProfile]:
         except Exception as exc:
             print(f"[WARN] 跳过无效 profile={profile_name!r}: {exc}")
 
-    profiles.sort(key=lambda p: (_PROFILE_ORDER.get(p.name, 1000), p.name))
+    profiles.sort(key=lambda p: (p.sort_order, p.name))
     return profiles
 
 
@@ -623,7 +604,7 @@ def infer_profile_candidates_for_text(title: str, text: str, min_score: int = 1)
         if score >= min_score and _profile_match_guard(profile.name, all_matches):
             raw.append((profile, score, all_matches))
 
-    raw.sort(key=lambda item: (-item[1], _PROFILE_ORDER.get(item[0].name, 1000), item[0].name))
+    raw.sort(key=lambda item: (-item[1], item[0].sort_order, item[0].name))
     candidates = []
     for index, (profile, score, matches) in enumerate(raw):
         if index == 0:

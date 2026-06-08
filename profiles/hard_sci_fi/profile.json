@@ -1,5 +1,6 @@
 {
   "name": "hard_sci_fi",
+  "sort_order": 40,
   "display_name": "硬科幻专长分析",
   "description": "在通用小说分析基础上，重点检查科学设定、技术链、因果推演、工程约束和世界观自洽性。",
   "enabled_stages": [

@@ -1,5 +1,6 @@
 {
   "name": "nation_fate",
+  "sort_order": 200,
   "display_name": "国运/文明对抗专长分析",
   "description": "关注国运绑定、文明选拔、历史人物召唤/代战、国家兴亡与个体命运的关系，覆盖国运擂台、文明试炼、全球对抗等类型。",
   "enabled_stages": [

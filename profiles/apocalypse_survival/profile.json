@@ -1,5 +1,6 @@
 {
   "name": "apocalypse_survival",
+  "sort_order": 100,
   "display_name": "末世/灾变/生存专长分析",
   "description": "关注灾变成因、生存资源、秩序崩塌与重建、人性考验、能力体系、探索冒险和危机升级是否自洽。覆盖丧尸末世、天灾末世、科幻末世和废土生存等子类型。",
   "enabled_stages": [

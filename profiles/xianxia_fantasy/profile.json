@@ -1,5 +1,6 @@
 {
   "name": "xianxia_fantasy",
+  "sort_order": 50,
   "display_name": "仙侠/玄幻专长分析",
   "description": "在通用小说分析基础上，重点检查修炼体系、血脉体质、宗门势力、法宝功法、东方神话元素、求道主题和升级爽点是否自洽。",
   "enabled_stages": [

@@ -1,5 +1,6 @@
 {
   "name": "farming_management",
+  "sort_order": 170,
   "display_name": "种田/经营/基建专长分析",
   "description": "关注资源生产、经营闭环、技术升级、组织建设、贸易扩张、民生反馈和长期发展节奏。核心是建设本身就是爽点。",
   "enabled_stages": [

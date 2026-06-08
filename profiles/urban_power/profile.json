@@ -1,5 +1,6 @@
 {
   "name": "urban_power",
+  "sort_order": 80,
   "display_name": "都市异能/爽文专长分析",
   "description": "在通用小说分析基础上，重点检查都市背景、身份反转、异能金手指、装逼打脸、商战家族和现实逻辑。",
   "enabled_stages": [

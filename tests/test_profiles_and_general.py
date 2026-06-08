@@ -384,6 +384,21 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 with open(manifest_path, "r", encoding="utf-8") as f:
                     manifest = json.load(f)
                 self.assertEqual(manifest.get("name"), profile.name)
+                self.assertIsInstance(manifest.get("sort_order"), int)
+                self.assertEqual(manifest.get("sort_order"), profile.sort_order)
+
+    def test_profile_order_is_manifest_owned(self):
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        with open(os.path.join(base_dir, "analysis_profiles.py"), "r", encoding="utf-8") as f:
+            source = f.read()
+        self.assertNotIn("_PROFILE_ORDER", source)
+
+        profiles = analysis_profiles.list_available_profiles()
+        orders = [profile.sort_order for profile in profiles]
+        names = [profile.name for profile in profiles]
+
+        self.assertEqual(orders, sorted(orders))
+        self.assertEqual(names[:3], ["harem", "general", "history"])
 
     def test_api_client_factory_is_shared(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))

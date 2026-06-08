@@ -1,5 +1,6 @@
 {
   "name": "entertainment_industry",
+  "sort_order": 130,
   "display_name": "娱乐圈/文娱专长分析",
   "description": "关注作品创作、资源博弈、舆论营销、人设经营和事业成长线。",
   "enabled_stages": [

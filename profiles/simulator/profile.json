@@ -1,5 +1,6 @@
 {
   "name": "simulator",
+  "sort_order": 220,
   "display_name": "模拟器/人生推演专长分析",
   "description": "关注模拟器推演人生、未来或多分支选择，检查推演-验证-反哺现实循环是否成立，避免只把模拟器当普通系统面板。",
   "enabled_stages": [
