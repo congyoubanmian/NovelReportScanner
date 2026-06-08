@@ -15,10 +15,10 @@ from shared_utils import (
     DEFAULT_MAX_RETRIES,
     DEFAULT_MAX_TIMEOUT_RETRIES,
     DEFAULT_REQUEST_TIMEOUT,
+    call_json_chat_completion_with_fallback,
     configure_rotating_file_logger,
     create_chat_completion,
     get_base_dir,
-    _safe_json_loads_maybe,
     read_file_safely,
 )
 from token_tracker import create_default_tracker
@@ -496,36 +496,14 @@ chat_completion = create_chat_completion(
 
 
 def _call_json_chat_completion(messages, *, model: str = None, temperature: float = 0.1, max_tokens: int = 1000) -> dict:
-    resp = chat_completion(
+    return call_json_chat_completion_with_fallback(
+        chat_completion_func=chat_completion,
         model=model or MODEL,
         messages=messages,
         temperature=temperature,
         max_tokens=max_tokens,
-        response_format={"type": "json_object"},
+        record_usage_func=record_usage,
     )
-    record_usage(resp)
-    data, err = _safe_json_loads_maybe(resp.choices[0].message.content)
-    if data is not None:
-        return data
-
-    fallback_messages = list(messages) + [{
-        "role": "user",
-        "content": (
-            "上一次回复不是可解析的 JSON 对象。请只重新输出一个合法 JSON 对象，"
-            "不要 Markdown、不要代码块、不要解释。"
-        ),
-    }]
-    fallback_resp = chat_completion(
-        model=model or MODEL,
-        messages=fallback_messages,
-        temperature=0.0,
-        max_tokens=max_tokens,
-    )
-    record_usage(fallback_resp)
-    fallback_data, fallback_err = _safe_json_loads_maybe(fallback_resp.choices[0].message.content)
-    if fallback_data is None:
-        raise ValueError(f"{err}; fallback={fallback_err}")
-    return fallback_data
 
 
 def find_latest(pattern: str, base_dir: str = RESULTS_DIR):

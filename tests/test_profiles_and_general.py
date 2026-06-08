@@ -153,6 +153,78 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertNotIn("response_format", calls[1])
         self.assertIn("上一次回复不是可解析的 JSON 对象", calls[1]["messages"][-1]["content"])
 
+    def test_shared_json_call_helper_retries_without_json_mode(self):
+        class FakeMessage:
+            def __init__(self, content):
+                self.content = content
+
+        class FakeChoice:
+            def __init__(self, content):
+                self.message = FakeMessage(content)
+
+        class FakeResponse:
+            def __init__(self, content):
+                self.choices = [FakeChoice(content)]
+
+        calls = []
+        records = []
+
+        def fake_chat_completion(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return FakeResponse("不是 JSON")
+            return FakeResponse('{"ok": true}')
+
+        data = shared_utils.call_json_chat_completion_with_fallback(
+            chat_completion_func=fake_chat_completion,
+            model="test-model",
+            messages=[{"role": "user", "content": "输出 JSON"}],
+            max_tokens=128,
+            record_usage_func=records.append,
+        )
+
+        self.assertTrue(data["ok"])
+        self.assertEqual(len(records), 2)
+        self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
+        self.assertNotIn("response_format", calls[1])
+
+    def test_shared_json_call_helper_retries_when_json_mode_is_rejected(self):
+        class FakeMessage:
+            def __init__(self, content):
+                self.content = content
+
+        class FakeChoice:
+            def __init__(self, content):
+                self.message = FakeMessage(content)
+
+        class FakeResponse:
+            def __init__(self, content):
+                self.choices = [FakeChoice(content)]
+
+        calls = []
+        records = []
+
+        def fake_chat_completion(**kwargs):
+            calls.append(kwargs)
+            if "response_format" in kwargs:
+                raise RuntimeError("response_format unsupported")
+            return FakeResponse('{"ok": true}')
+
+        data = shared_utils.call_json_chat_completion_with_fallback(
+            chat_completion_func=fake_chat_completion,
+            model="test-model",
+            messages=[{"role": "user", "content": "输出 JSON"}],
+            max_tokens=128,
+            record_usage_func=records.append,
+        )
+
+        self.assertTrue(data["ok"])
+        self.assertEqual(len(records), 1)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
+        self.assertNotIn("response_format", calls[1])
+        self.assertIn("不支持 JSON mode", calls[1]["messages"][-1]["content"])
+
     def test_reviewer_json_call_retries_without_json_mode_on_parse_failure(self):
         class FakeMessage:
             def __init__(self, content):

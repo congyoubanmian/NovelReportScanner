@@ -20,6 +20,7 @@ from shared_utils import (
     DEFAULT_MAX_RETRIES,
     DEFAULT_MAX_TIMEOUT_RETRIES,
     DEFAULT_REQUEST_TIMEOUT,
+    call_json_chat_completion_with_fallback,
     configure_rotating_file_logger,
     create_chat_completion,
     get_base_dir,
@@ -689,46 +690,15 @@ def _safe_json_loads(text: str):
 
 
 def _call_json_chat_completion(messages, *, temperature=0.1, max_tokens=4000):
-    try:
-        response = chat_completion(
-            model=MODEL,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            response_format={"type": "json_object"},
-        )
-    except Exception as exc:
-        logger.warning(f"response_format 不可用，降级调用: {exc}")
-        response = chat_completion(
-            model=MODEL,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-    record_usage(response)
-
-    content = response.choices[0].message.content
-    try:
-        return _safe_json_loads(content)
-    except json.JSONDecodeError as first_err:
-        fallback_messages = list(messages) + [{
-            "role": "user",
-            "content": (
-                "上一次回复不是可解析的 JSON 对象。请只重新输出一个合法 JSON 对象，"
-                "不要 Markdown、不要代码块、不要解释。"
-            ),
-        }]
-        fallback_response = chat_completion(
-            model=MODEL,
-            messages=fallback_messages,
-            temperature=0.0,
-            max_tokens=max_tokens,
-        )
-        record_usage(fallback_response)
-        try:
-            return _safe_json_loads(fallback_response.choices[0].message.content)
-        except json.JSONDecodeError as fallback_err:
-            raise ValueError(f"JSON解析失败: {first_err}; fallback={fallback_err}") from fallback_err
+    return call_json_chat_completion_with_fallback(
+        chat_completion_func=chat_completion,
+        model=MODEL,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        record_usage_func=record_usage,
+        parse_json_func=_safe_json_loads,
+    )
 
 token_tracker = None
 

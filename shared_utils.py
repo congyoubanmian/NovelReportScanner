@@ -310,3 +310,65 @@ def _safe_json_loads_maybe(text: Any) -> Tuple[Optional[Dict[str, Any]], str]:
     except Exception as e:
         snippet = raw[:120].replace("\n", "\\n")
         return None, f"JSON解析失败: {e}; raw_head={snippet}"
+
+
+def call_json_chat_completion_with_fallback(
+    *,
+    chat_completion_func,
+    model: str,
+    messages,
+    temperature: float = 0.1,
+    max_tokens: Optional[int] = None,
+    record_usage_func=None,
+    parse_json_func=None,
+) -> Dict[str, Any]:
+    def parse_content(content):
+        if parse_json_func is not None:
+            try:
+                data = parse_json_func(content)
+                if isinstance(data, dict):
+                    return data, ""
+                return None, f"解析到非对象类型: {type(data)}"
+            except Exception as exc:
+                return None, f"JSON解析失败: {exc}"
+        return _safe_json_loads_maybe(content)
+
+    base_kwargs = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+    }
+    if max_tokens is not None:
+        base_kwargs["max_tokens"] = max_tokens
+
+    try:
+        response = chat_completion_func(
+            **base_kwargs,
+            response_format={"type": "json_object"},
+        )
+        if record_usage_func is not None:
+            record_usage_func(response)
+        data, err = parse_content(response.choices[0].message.content)
+        if data is not None:
+            return data
+    except Exception as exc:
+        err = f"JSON mode调用失败: {exc}"
+
+    fallback_messages = list(messages) + [{
+        "role": "user",
+        "content": (
+            "上一次回复不是可解析的 JSON 对象，或当前接口不支持 JSON mode。"
+            "请只重新输出一个合法 JSON 对象，不要 Markdown、不要代码块、不要解释。"
+        ),
+    }]
+    fallback_kwargs = dict(base_kwargs)
+    fallback_kwargs["messages"] = fallback_messages
+    fallback_kwargs["temperature"] = 0.0
+    fallback_response = chat_completion_func(**fallback_kwargs)
+    if record_usage_func is not None:
+        record_usage_func(fallback_response)
+
+    fallback_data, fallback_err = parse_content(fallback_response.choices[0].message.content)
+    if fallback_data is None:
+        raise ValueError(f"{err}; fallback={fallback_err}")
+    return fallback_data

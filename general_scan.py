@@ -10,7 +10,7 @@ from tqdm import tqdm
 from analysis_profiles import load_analysis_profile
 from prompt_templates import prompt_template_metadata, prompt_templates_metadata
 from shared_utils import MODEL, chat_completion, get_base_dir, init_token_tracker, is_context_overflow_error, read_file_safely, record_usage
-from shared_utils import _safe_json_loads_maybe
+from shared_utils import call_json_chat_completion_with_fallback
 from text_anchor import build_chunk_manifest, save_chunk_manifest
 
 
@@ -407,37 +407,14 @@ def _profile_rules_text(profile) -> str:
 
 
 def _call_json(messages, max_tokens=3000) -> Dict[str, Any]:
-    response = chat_completion(
-        model=MODEL,
+    return call_json_chat_completion_with_fallback(
+        chat_completion_func=chat_completion,
         messages=messages,
+        model=MODEL,
         temperature=0.1,
         max_tokens=max_tokens,
-        response_format={"type": "json_object"},
+        record_usage_func=record_usage,
     )
-    record_usage(response)
-    content = response.choices[0].message.content
-    data, err = _safe_json_loads_maybe(content)
-    if data is not None:
-        return data
-
-    fallback_messages = list(messages) + [{
-        "role": "user",
-        "content": (
-            "上一次回复不是可解析的 JSON 对象。请只重新输出一个合法 JSON 对象，"
-            "不要 Markdown、不要代码块、不要解释。"
-        ),
-    }]
-    fallback_response = chat_completion(
-        model=MODEL,
-        messages=fallback_messages,
-        temperature=0.0,
-        max_tokens=max_tokens,
-    )
-    record_usage(fallback_response)
-    fallback_data, fallback_err = _safe_json_loads_maybe(fallback_response.choices[0].message.content)
-    if fallback_data is None:
-        raise ValueError(f"{err}; fallback={fallback_err}")
-    return fallback_data
 
 
 def _focus_text(profile) -> str:
