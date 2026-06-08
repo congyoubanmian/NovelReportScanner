@@ -425,9 +425,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             for category in history_rules["categories"]
             for point in category.get("points", [])
         }
+        self.assertGreaterEqual(len(history_points), 12)
         self.assertIn("穿越合理性", history_points)
+        self.assertIn("穿越知识边界", history_points)
         self.assertIn("战争决策", history_points)
+        self.assertIn("礼法与感情线", history_points)
         self.assertIn("时代语言", history_points)
+        self.assertIn("蝴蝶效应代价", history_points)
 
         sci_fi_categories = {item["name"]: item for item in sci_fi_rules["categories"]}
         self.assertIn("科学设定与技术链", sci_fi_categories)
@@ -438,14 +442,47 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             for category in sci_fi_rules["categories"]
             for point in category.get("points", [])
         }
+        self.assertGreaterEqual(len(sci_fi_points), 12)
         self.assertIn("技术链完整性", sci_fi_points)
+        self.assertIn("阅读门槛", sci_fi_points)
         self.assertIn("社会伦理", sci_fi_points)
+        self.assertIn("软硬混合度", sci_fi_points)
         self.assertIn("常见硬伤", sci_fi_points)
+        self.assertIn("工程代价", sci_fi_points)
 
         history_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("history"))
         sci_fi_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("hard_sci_fi"))
-        self.assertIn("穿越合理性", history_text)
-        self.assertIn("社会伦理", sci_fi_text)
+        self.assertIn("穿越知识边界", history_text)
+        self.assertIn("软硬混合度", sci_fi_text)
+
+    def test_steampunk_rules_include_kimi_audit_dimensions(self):
+        with open(os.path.join("profiles", "steampunk_fantasy", "rules.json"), "r", encoding="utf-8") as f:
+            rules = json.load(f)
+
+        categories = {item["name"]: item for item in rules["categories"]}
+        self.assertIn("蒸汽西幻底盘", categories)
+        self.assertIn("炼金工业", categories)
+        self.assertIn("技术跃迁风险", categories)
+
+        points = {
+            point["name"]
+            for category in rules["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertGreaterEqual(len(points), 12)
+        for point_name in [
+            "西幻政治结构",
+            "教会帝国博弈",
+            "社会阶层",
+            "炼金经济",
+            "技术扩散",
+            "边界约束",
+        ]:
+            self.assertIn(point_name, points)
+
+        rules_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("steampunk_fantasy"))
+        self.assertIn("教会帝国博弈", rules_text)
+        self.assertIn("炼金经济", rules_text)
 
     def test_general_rules_cover_kimi_core_dimensions(self):
         with open(os.path.join("profiles", "general", "rules.json"), "r", encoding="utf-8") as f:
