@@ -2886,10 +2886,30 @@ def _append_general_scan_section(lines: list, general_summary: dict):
     ]
     for field in specialty_fields:
         add_list(summary_field_label(field), summary_field_values(summary, field))
+    specialty_notes = _general_specialty_notes(general_summary, summary)
+    if specialty_notes:
+        add_list("专项命中要点", specialty_notes)
     add_list("优点", summary_field_values(summary, "strengths"))
     add_list("问题与阅读门槛", summary_field_values(summary, "risks_or_issues"))
     lines.extend(["", "【适合读者】", summary_field_text(summary, "reader_fit")])
     lines.extend(["", "【总体评价】", summary_field_text(summary, "overall_assessment")])
+
+
+def _general_specialty_notes(general_summary: dict, summary: dict) -> list:
+    notes = []
+
+    def add_items(items):
+        for item in _clean_text_items(items or [], limit=80, max_len=180):
+            if item not in notes:
+                notes.append(item)
+
+    add_items((summary or {}).get("specialty_notes"))
+    for chunk in (general_summary or {}).get("chunk_results") or []:
+        if isinstance(chunk, dict):
+            add_items(chunk.get("specialty_notes"))
+        if len(notes) >= 10:
+            break
+    return notes[:10]
 
 
 def build_general_report(book_key: str, detailed_data: dict, general_summary: dict = None) -> str:

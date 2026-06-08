@@ -3546,6 +3546,29 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("沈砚", text)
         self.assertIn("阵营/势力：沈家", text)
 
+    def test_general_report_includes_specialty_notes_from_chunks(self):
+        general_summary = {
+            "profile_display_name": "仙侠/玄幻专长分析",
+            "summary_fields": ["main_plot", "cultivation_system"],
+            "summary": {
+                "story_overview": "主角入宗修炼。",
+                "main_plot": ["拜入宗门"],
+                "cultivation_system": ["金丹元婴境界清晰"],
+                "specialty_notes": ["境界体系清晰", "秘境规则稳定"],
+            },
+            "chunk_results": [
+                {"specialty_notes": ["境界体系清晰", "宗门资源争夺明确"]},
+                {"specialty_notes": ["秘境规则稳定"]},
+            ],
+        }
+
+        text = report.build_general_report("测试书", {}, general_summary)
+
+        self.assertIn("【专项命中要点】", text)
+        self.assertEqual(text.count("境界体系清晰"), 1)
+        self.assertIn("秘境规则稳定", text)
+        self.assertIn("宗门资源争夺明确", text)
+
     def test_general_report_does_not_repeat_footer_summary_fields(self):
         general_summary = {
             "profile_display_name": "通用小说分析",
