@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
@@ -181,6 +182,53 @@ NEGATIVE_KEYWORDS = {
     "mystery_detective": [("法医", -3), ("尸检", -3), ("刑警", -2), ("系统", -3), ("超能力", -3)],
     "crime_forensics": [("侦探", -2), ("暴风雪山庄", -3), ("红鲱鱼", -3), ("魔法", -3), ("系统", -3)],
     "entertainment_industry": [("经营农田", -3), ("领地", -3), ("宗门", -3), ("丧尸", -3)],
+}
+
+
+KEYWORD_CONTEXT_BLOCKS = {
+    "game_system": {
+        "系统": ("操作系统", "文件系统", "生态系统", "系统化", "系统性", "系统工程"),
+        "等级": ("职业等级", "等级制度", "等级森严"),
+        "天灾": ("第四天灾",),
+    },
+    "urban_power": {
+        "系统": ("操作系统", "文件系统", "生态系统", "系统化", "系统性", "系统工程"),
+        "修仙": ("修仙种田", "修仙聊天群"),
+    },
+    "apocalypse_survival": {
+        "天灾": ("第四天灾",),
+        "异能": ("异能者", "都市异能"),
+    },
+    "mystery_detective": {
+        "证据": ("证据链", "物证",),
+    },
+    "farming_management": {
+        "工厂": ("兵工厂", "军工厂"),
+    },
+    "xianxia_fantasy": {
+        "修仙": ("修仙种田",),
+    },
+}
+
+
+PROFILE_MIN_SCORE_OVERRIDES = {
+    "cosmic_horror": 5,
+    "hard_sci_fi": 5,
+    "entertainment_industry": 5,
+    "campus_youth": 5,
+    "harem": 5,
+    "steampunk_fantasy": 5,
+    "urban_power": 7,
+    "game_system": 7,
+}
+
+KEYWORD_NEGATION_HINTS = (
+    "没有", "没", "无", "未见", "并无", "并未", "不含", "不是", "并非", "缺少", "缺乏",
+)
+
+PROFILE_GENERIC_ONLY_KEYWORDS = {
+    "game_system": {"系统"},
+    "urban_power": {"系统"},
 }
 
 
@@ -405,13 +453,52 @@ def _keywords_from_manifest(profile_name: str) -> List[Tuple[str, int]]:
     return keywords
 
 
-def _score_keyword_matches(text: str, keywords: List[Tuple[str, int]]) -> Tuple[int, List[str]]:
+def _keyword_negated_at(text: str, index: int) -> bool:
+    window = text[max(0, index - 8):index]
+    return any(hint in window for hint in KEYWORD_NEGATION_HINTS)
+
+
+def _keyword_occurrences(text: str, needle: str) -> int:
+    if not needle:
+        return 0
+    count = 0
+    start = 0
+    while True:
+        index = text.find(needle, start)
+        if index < 0:
+            break
+        if not _keyword_negated_at(text, index):
+            count += 1
+        start = index + len(needle)
+    return count
+
+
+def _keyword_effectively_present(text: str, needle: str, profile_name: str = "") -> bool:
+    needle = str(needle or "").lower()
+    return bool(
+        needle
+        and not _keyword_context_blocked(text, profile_name, needle)
+        and _keyword_occurrences(text, needle) > 0
+    )
+
+
+def _keyword_context_blocked(text: str, profile_name: str, needle: str) -> bool:
+    blocked_phrases = (KEYWORD_CONTEXT_BLOCKS.get(profile_name, {}) or {}).get(needle, ())
+    return any(phrase.lower() in text for phrase in blocked_phrases)
+
+
+def _score_keyword_matches(text: str, keywords: List[Tuple[str, int]], profile_name: str = "") -> Tuple[int, List[str]]:
     score = 0
     matches = []
     for word, weight in keywords:
         needle = str(word or "").lower()
-        if needle and needle in text:
+        if not needle or _keyword_context_blocked(text, profile_name, needle):
+            continue
+        count = _keyword_occurrences(text, needle)
+        if count:
             score += weight
+            if count >= 3 and weight >= 3:
+                score += min(3, count - 1)
             matches.append(word)
     return score, matches
 
@@ -421,7 +508,7 @@ def _score_combo_bonuses(text: str, profile_name: str) -> Tuple[int, List[str]]:
     matches = []
     for words, bonus in COMBO_BONUSES.get(profile_name, []):
         normalized_words = [str(word or "").lower() for word in words if str(word or "").strip()]
-        if normalized_words and all(word in text for word in normalized_words):
+        if normalized_words and all(_keyword_effectively_present(text, word, profile_name) for word in normalized_words):
             score += int(bonus)
             matches.append("组合:" + "+".join(sorted(words)))
     return score, matches
@@ -438,6 +525,22 @@ def _score_negative_keywords(text: str, profile_name: str) -> Tuple[int, List[st
     return score, matches
 
 
+def _profile_match_guard(profile_name: str, matches: List[str]) -> bool:
+    generic_only = PROFILE_GENERIC_ONLY_KEYWORDS.get(profile_name)
+    if not generic_only:
+        return True
+    positive_matches = [
+        str(match)
+        for match in matches
+        if match and not str(match).startswith("负向:")
+    ]
+    if not positive_matches:
+        return True
+    if all(match in generic_only for match in positive_matches):
+        return False
+    return True
+
+
 def infer_profile_candidates_for_text(title: str, text: str, min_score: int = 1) -> List[Dict[str, Any]]:
     title_text = str(title or "")
     body_text = str(text or "")[:20000]
@@ -446,12 +549,13 @@ def infer_profile_candidates_for_text(title: str, text: str, min_score: int = 1)
     for profile in list_available_profiles():
         if profile.name == "general":
             continue
-        keyword_score, matches = _score_keyword_matches(blob, _keywords_from_manifest(profile.name))
+        keyword_score, matches = _score_keyword_matches(blob, _keywords_from_manifest(profile.name), profile.name)
         combo_score, combo_matches = _score_combo_bonuses(blob, profile.name)
         negative_score, negative_matches = _score_negative_keywords(blob, profile.name)
         score = max(0, keyword_score + combo_score + negative_score)
-        if score >= min_score:
-            raw.append((profile, score, [*matches, *combo_matches, *negative_matches]))
+        all_matches = [*matches, *combo_matches, *negative_matches]
+        if score >= min_score and _profile_match_guard(profile.name, all_matches):
+            raw.append((profile, score, all_matches))
 
     total_score = sum(score for _profile, score, _matches in raw)
     candidates = [
@@ -509,11 +613,19 @@ def infer_profile_for_novel(novel_path: str, book_name: str = "") -> str:
     return "general"
 
 
+def _min_score_for_profile(profile_name: str, requested_min_score: int) -> int:
+    requested = int(requested_min_score or AUTO_PROFILE_MIN_SCORE)
+    if requested != AUTO_PROFILE_MIN_SCORE:
+        return requested
+    return int(PROFILE_MIN_SCORE_OVERRIDES.get(profile_name, requested))
+
+
 def infer_profiles_for_text(title: str, text: str, min_score: int = AUTO_PROFILE_MIN_SCORE) -> List[str]:
     names = [
         item["name"]
         for item in infer_profile_candidates_for_text(title, text, min_score=1)
-        if item.get("name") != "general" and int(item.get("score") or 0) >= min_score
+        if item.get("name") != "general"
+        and int(item.get("score") or 0) >= _min_score_for_profile(item.get("name"), min_score)
     ]
     return names[:AUTO_PROFILE_MAX_PROFILES] or ["general"]
 

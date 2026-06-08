@@ -1857,6 +1857,36 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(entertainment[0]["name"], "entertainment_industry")
         self.assertNotIn("farming_management", [item["name"] for item in entertainment[:3]])
 
+    def test_auto_profile_filters_context_pollution_and_counts_frequency(self):
+        operating_system = analysis_profiles.infer_profile_candidates_for_text(
+            "操作系统教程",
+            "本书讲解计算机操作系统、文件系统、系统调用和系统化工程管理。",
+        )
+        operating_names = [item["name"] for item in operating_system]
+        self.assertNotIn("game_system", operating_names)
+        self.assertNotIn("urban_power", operating_names)
+
+        fourth_disaster = analysis_profiles.infer_profile_candidates_for_text(
+            "第四天灾篮球队",
+            "玩家作为第四天灾参加篮球联赛，教练安排战术训练。",
+        )
+        self.assertEqual(fourth_disaster[0]["name"], "sports_competition")
+        self.assertNotIn("apocalypse_survival", [item["name"] for item in fourth_disaster[:3]])
+
+        repeated = analysis_profiles.infer_profile_candidates_for_text(
+            "系统副本",
+            "系统面板显示系统任务，进入副本后继续获得系统奖励。",
+        )
+        game_score = next(item["score"] for item in repeated if item["name"] == "game_system")
+        single = analysis_profiles.infer_profile_candidates_for_text("系统副本", "系统面板显示任务。")
+        single_score = next(item["score"] for item in single if item["name"] == "game_system")
+        self.assertGreater(game_score, single_score)
+
+        self.assertEqual(
+            analysis_profiles.infer_profiles_for_text("单系统日常", "主角获得系统，但没有面板、副本或任务规则。"),
+            ["general"],
+        )
+
     def test_kimi_recommended_auto_profile_boundary_samples(self):
         self.assertEqual(
             analysis_profiles.infer_profile_for_text(
