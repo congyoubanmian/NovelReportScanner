@@ -43,6 +43,8 @@ RESCAN_MAX_PROMPT_HEROINES=4
 GENERAL_SCAN_MAX_CHUNKS=80
 # 通用/专项剧情扫描低密度片段轻量抽取；1=开启，0=关闭
 GENERAL_SCAN_SMART_DENSITY=1
+# 通用/专项剧情扫描 chunk hash 增量复用；1=复用未变片段，0=每次全量重扫
+GENERAL_SCAN_INCREMENTAL_REUSE=1
 
 # 后宫增强模式：1=后宫排雷后额外运行通用剧情扫描，并在报告末尾追加作品整体评价；0=关闭
 HAREM_PLUS_GENERAL_SCAN=0

@@ -389,8 +389,9 @@ SSE_MAX_CONNECTION_SECONDS=300
 - `MAX_WORKERS`：并发规模基线。
 - `ANALYSIS_PROFILE`：分析模式。`harem` 为默认后宫/男性向排雷模式；`auto` 可按每本书自动识别；`general`、`history`、`hard_sci_fi` 为通用和类型专长入口。
 - `HAREM_PLUS_GENERAL_SCAN`：后宫增强模式开关。设为 `1` 时，`harem` 流程会在后宫排雷后额外运行一次通用剧情扫描，并在后宫报告末尾追加“作品整体评价”；默认 `0`，不增加额外调用。
-- `GENERAL_SCAN_MAX_CHUNKS`：通用/专项剧情扫描的基础片段预算，默认 `80`。程序会按小说长度自动提高有效上限：100 万字内 80、100-300 万字 120、300-500 万字 160、500-1000 万字 300、1000 万字以上 400；手动配置更高值时会尊重配置，设为 `0` 表示不限制。超出预算时会按全书时间线均匀抽样，而不是只扫描开头。
+- `GENERAL_SCAN_MAX_CHUNKS`：通用/专项剧情扫描的基础片段预算，默认 `80`。程序会按小说长度自动提高有效上限：100 万字内 80、100-300 万字 120、300-500 万字 160、500-1000 万字含 1000 万字 300、超过 1000 万字 400；手动配置更高值时会尊重配置，设为 `0` 表示不限制。超出预算时会按全书时间线均匀抽样，而不是只扫描开头。
 - `GENERAL_SCAN_SMART_DENSITY`：通用/专项剧情扫描的片段密度分级开关，默认 `1`。开启后低密度过渡/日常片段会走轻量抽取 prompt，只保留真实新增信息；不会跳过片段，结果会记录 `density_profile` 和汇总 `density_counts`。设为 `0` 可恢复所有片段完整抽取。
+- `GENERAL_SCAN_INCREMENTAL_REUSE`：通用/专项剧情扫描的 chunk hash 增量复用开关，默认 `1`。当同一本书已有旧 summary 且 prompt/配置兼容时，未变化片段会复用旧 `chunk_results`，只扫描新增或修改片段，最后重新生成整书 summary；设为 `0` 可强制全量重扫。
 - `LOG_MAX_BYTES` / `LOG_BACKUP_COUNT`：扫描日志轮转配置，默认单个 `analysis.log` / `reviewer.log` 最大 `10485760` 字节并保留 `5` 份历史；`LOG_MAX_BYTES=0` 表示不按大小轮转。
 - `RPM_LIMIT` / `TPM_LIMIT`：程序本地预限流配置，用来在请求发出前控制最近 60 秒内的请求数和预估 token 数。
 - `RATE_LIMIT_SCOPE`：本地限流作用域。`auto` 表示多个 API Key 时每个 key 单独计数、单个 key 时使用全局桶；`global` 表示当前进程内所有线程和 key 共用一个限流桶；`per_key` 表示每个 key 单独计数。默认推荐 `auto`，能减少多 key 场景下的无谓串行等待，同时避免单 key 场景误放大并发。
@@ -411,7 +412,7 @@ Web 管理端常用配置：
 - `SSE_SYNC_INTERVAL_SECONDS`：SSE 状态流触发 `novels/` 目录同步的最短间隔，默认 `5` 秒；多个 SSE 连接会共用这个节流。
 - `SSE_MAX_CONNECTION_SECONDS`：单个 SSE 连接最大生命周期，默认 `300` 秒；到期后浏览器 `EventSource` 会自动重连，避免服务端线程长期占用。
 
-Web 页面顶部可直接调整部分非敏感运行配置，包括 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`GENERAL_SCAN_MAX_CHUNKS` 和 `HAREM_PLUS_GENERAL_SCAN`。这些修改会立即影响当前 Web 服务进程及其后续扫描子进程，并会安全写回 `.env` 文件以便重启后继续生效；写回时只更新白名单内的非敏感字段，保留注释、空行和 API Key 等敏感信息，不会展示或修改 API Key。`setting.txt` 仍作为样例/兼容配置来源，不会被 Web 配置页写回。
+Web 页面顶部可直接调整部分非敏感运行配置，包括 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`GENERAL_SCAN_MAX_CHUNKS`、`GENERAL_SCAN_SMART_DENSITY`、`GENERAL_SCAN_INCREMENTAL_REUSE` 和 `HAREM_PLUS_GENERAL_SCAN`。这些修改会立即影响当前 Web 服务进程及其后续扫描子进程，并会安全写回 `.env` 文件以便重启后继续生效；写回时只更新白名单内的非敏感字段，保留注释、空行和 API Key 等敏感信息，不会展示或修改 API Key。`setting.txt` 仍作为样例/兼容配置来源，不会被 Web 配置页写回。
 
 前端开发检查：
 

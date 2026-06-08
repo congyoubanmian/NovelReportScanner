@@ -48,6 +48,7 @@ const configForm = ref({
   rate_limit_scope: 'auto',
   general_scan_max_chunks: '',
   general_scan_smart_density: true,
+  general_scan_incremental_reuse: true,
   harem_plus_general_scan: false
 })
 const savingRuntimeConfig = ref(false)
@@ -118,6 +119,7 @@ function syncConfigForm(config) {
     rate_limit_scope: config.rate_limit_scope || 'auto',
     general_scan_max_chunks: config.general_scan_max_chunks || '80',
     general_scan_smart_density: config.general_scan_smart_density !== false,
+    general_scan_incremental_reuse: config.general_scan_incremental_reuse !== false,
     harem_plus_general_scan: Boolean(config.harem_plus_general_scan)
   }
 }
@@ -132,6 +134,7 @@ async function saveRuntimeConfig() {
       rate_limit_scope: configForm.value.rate_limit_scope,
       general_scan_max_chunks: configForm.value.general_scan_max_chunks,
       general_scan_smart_density: configForm.value.general_scan_smart_density,
+      general_scan_incremental_reuse: configForm.value.general_scan_incremental_reuse,
       harem_plus_general_scan: configForm.value.harem_plus_general_scan
     })
     runtimeConfig.value = response.config || runtimeConfig.value
@@ -396,6 +399,14 @@ useStateEvents(applyState, {
           @change="runtimeConfigDirty = true"
         />
         <span>智能密度</span>
+      </label>
+      <label class="runtime-toggle">
+        <input
+          v-model="configForm.general_scan_incremental_reuse"
+          type="checkbox"
+          @change="runtimeConfigDirty = true"
+        />
+        <span>增量复用</span>
       </label>
       <label class="runtime-toggle">
         <input

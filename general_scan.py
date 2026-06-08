@@ -18,6 +18,7 @@ CHUNK_SIZE = int(os.environ.get("GENERAL_SCAN_CHUNK_SIZE", "12000"))
 CHUNK_OVERLAP = int(os.environ.get("GENERAL_SCAN_CHUNK_OVERLAP", "1000"))
 MAX_CHUNKS = int(os.environ.get("GENERAL_SCAN_MAX_CHUNKS", "80"))
 SMART_DENSITY = os.environ.get("GENERAL_SCAN_SMART_DENSITY", "1").strip() == "1"
+INCREMENTAL_REUSE = os.environ.get("GENERAL_SCAN_INCREMENTAL_REUSE", "1").strip() == "1"
 LOW_DENSITY_TERMS = (
     "睡觉", "起床", "吃饭", "喝茶", "闲聊", "聊天", "休息", "赶路", "路上", "返回",
     "日常", "家常", "客栈", "修炼打坐", "打坐", "闭关", "练功", "整理物品",
@@ -88,6 +89,10 @@ def _chunk_density_profile(text: str) -> Dict[str, Any]:
         "low_terms": low_hits[:12],
         "strategy": "light" if SMART_DENSITY and level == "low" else "full",
     }
+
+
+def _chunk_text_hash(text: str) -> str:
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
 
 
 def _sample_chunk_entries_for_budget(chunk_entries: List[Dict[str, Any]], max_chunks: int) -> List[Dict[str, Any]]:
@@ -233,6 +238,8 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
         return False
     if data.get("smart_density") not in {None, SMART_DENSITY}:
         return False
+    if data.get("incremental_reuse") not in {None, INCREMENTAL_REUSE}:
+        return False
     stored_prompt_templates = data.get("prompt_templates")
     if isinstance(stored_prompt_templates, dict):
         current_prompt_templates = prompt_templates_metadata("general_scan_chunk", "general_summary")
@@ -248,6 +255,53 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
     if not isinstance(stored_signature, dict) or current_signature != stored_signature:
         return False
     return bool(_summary_field_text(data.get("summary") or {}, "story_overview") or data.get("chunk_results"))
+
+
+def _summary_can_reuse_chunk_results(data: Dict[str, Any], profile_name: str = "general") -> bool:
+    if not isinstance(data, dict):
+        return False
+    if data.get("schema_version") != 1:
+        return False
+    if data.get("analysis_profile") not in {"general", profile_name}:
+        return False
+    if data.get("specialty_profile", data.get("analysis_profile", "general")) != profile_name:
+        return False
+    if data.get("chunk_size") != CHUNK_SIZE or data.get("chunk_overlap") != CHUNK_OVERLAP:
+        return False
+    if data.get("smart_density") not in {None, SMART_DENSITY}:
+        return False
+    stored_prompt_templates = data.get("prompt_templates")
+    if isinstance(stored_prompt_templates, dict):
+        current_prompt_templates = prompt_templates_metadata("general_scan_chunk", "general_summary")
+        for name, current_meta in current_prompt_templates.items():
+            stored_meta = stored_prompt_templates.get(name)
+            if isinstance(stored_meta, dict) and stored_meta.get("version") != current_meta.get("version"):
+                return False
+    return bool(data.get("chunk_results"))
+
+
+def _reusable_chunk_result_map(data: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    reusable = {}
+    if not isinstance(data, dict):
+        return reusable
+    for item in data.get("chunk_results") or []:
+        if not isinstance(item, dict):
+            continue
+        chunk_hash = item.get("chunk_hash")
+        if isinstance(chunk_hash, str) and chunk_hash:
+            reusable.setdefault(chunk_hash, item)
+    return reusable
+
+
+def _copy_reused_chunk_result(result: Dict[str, Any], sample_index: int, original_chunk_index: int, chunk_hash: str, density_profile: Dict[str, Any]) -> Dict[str, Any]:
+    copied = json.loads(json.dumps(result, ensure_ascii=False))
+    copied["sample_index"] = sample_index
+    copied["original_chunk_index"] = original_chunk_index
+    copied["chunk_index"] = original_chunk_index - 1
+    copied["chunk_hash"] = chunk_hash
+    copied["density_profile"] = density_profile
+    copied["reused_from_previous"] = True
+    return copied
 
 
 def _safe_list(value: Any, limit: int = 20) -> List[str]:
@@ -452,6 +506,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         "chunk_index": chunk_index,
         "prompt_template": template_meta,
         "density_profile": density_profile,
+        "chunk_hash": _chunk_text_hash(text_chunk),
         "plot_events": _safe_list(data.get("plot_events")),
         "conflicts": _safe_list(data.get("conflicts")),
         "worldbuilding": _safe_list(data.get("worldbuilding")),
@@ -685,10 +740,30 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         sampling_strategy = "full"
 
     print(f"★ {profile.display_name}：{clean_name}，共 {len(chunks)} 个片段（原始 {source_chunk_count} 个，策略={sampling_strategy}）")
+    reusable_results = {}
+    if INCREMENTAL_REUSE and _summary_can_reuse_chunk_results(latest_data, profile.name):
+        reusable_results = _reusable_chunk_result_map(latest_data)
     chunk_results = []
     failed = []
+    reused_chunk_count = 0
+    scanned_chunk_count = 0
     for idx, chunk in enumerate(tqdm(chunks, desc="通用扫描")):
         original_chunk_index = selected_original_indices[idx] if idx < len(selected_original_indices) else idx + 1
+        chunk_hash = _chunk_text_hash(chunk)
+        density_profile = _chunk_density_profile(chunk)
+        reusable_result = reusable_results.get(chunk_hash)
+        if reusable_result:
+            chunk_results.append(
+                _copy_reused_chunk_result(
+                    reusable_result,
+                    idx,
+                    original_chunk_index,
+                    chunk_hash,
+                    density_profile,
+                )
+            )
+            reused_chunk_count += 1
+            continue
         try:
             result = _scan_chunk_with_context_overflow_fallback(
                 chunk,
@@ -698,8 +773,10 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
             )
             result["sample_index"] = idx
             result["original_chunk_index"] = original_chunk_index
-            result.setdefault("density_profile", _chunk_density_profile(chunk))
+            result["chunk_hash"] = chunk_hash
+            result.setdefault("density_profile", density_profile)
             chunk_results.append(result)
+            scanned_chunk_count += 1
         except Exception as exc:
             failed.append({
                 "chunk_index": original_chunk_index - 1,
@@ -738,6 +815,9 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "sampled_chunk_indices": selected_original_indices,
         "smart_density": SMART_DENSITY,
         "density_counts": density_counts,
+        "incremental_reuse": INCREMENTAL_REUSE,
+        "reused_chunk_count": reused_chunk_count,
+        "scanned_chunk_count": scanned_chunk_count,
         "prompt_templates": prompt_templates_metadata("general_scan_chunk", "general_summary"),
         "failed_chunks": failed,
         "chunk_results": chunk_results,
