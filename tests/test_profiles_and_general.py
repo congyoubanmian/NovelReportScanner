@@ -394,6 +394,22 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertNotIn("frontend/src", dockerignore_lines)
         self.assertNotIn("COPY . .", dockerfile_text)
 
+    def test_docker_image_build_exposes_app_version_metadata(self):
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        dockerfile_path = os.path.join(base_dir, "Dockerfile")
+        workflow_path = os.path.join(base_dir, ".github", "workflows", "docker-publish.yml")
+        with open(dockerfile_path, "r", encoding="utf-8") as f:
+            dockerfile_text = f.read()
+        with open(workflow_path, "r", encoding="utf-8") as f:
+            workflow_text = f.read()
+
+        for name in ("APP_VERSION", "APP_COMMIT", "APP_BUILD_DATE"):
+            self.assertIn(f"ARG {name}", dockerfile_text)
+            self.assertIn(f"{name}=${{{name}}}", dockerfile_text)
+            self.assertIn(name, workflow_text)
+        self.assertIn("github.sha", workflow_text)
+        self.assertIn("date -u", workflow_text)
+
     def test_gitignore_blocks_runtime_inputs_and_keeps_templates(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
         gitignore_path = os.path.join(base_dir, ".gitignore")
@@ -5523,24 +5539,50 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager._scan_log_heartbeat("t1", "扫描进度 50%\n")
 
             task = web_manager.STATE["tasks"][0]
+            book = web_manager.STATE["books"]["book"]
             self.assertEqual(task["message"], "扫描中")
             self.assertIn("updated_at", task)
             self.assertIn("last_log_at", task)
             self.assertEqual(task["last_log"], "扫描进度 50%")
+            self.assertEqual(book["message"], "扫描中")
+            self.assertIn("updated_at", book)
+            self.assertIn("last_log_at", book)
+            self.assertEqual(book["last_log"], "扫描进度 50%")
             self.assertTrue(saves)
 
             task["status"] = "canceled"
             previous_updated_at = task["updated_at"]
+            previous_book_updated_at = book["updated_at"]
             web_manager._scan_log_heartbeat("t1", "不应覆盖\n")
             self.assertEqual(task["updated_at"], previous_updated_at)
             self.assertEqual(task["last_log"], "扫描进度 50%")
+            self.assertEqual(book["updated_at"], previous_book_updated_at)
+            self.assertEqual(book["last_log"], "扫描进度 50%")
         finally:
             web_manager.STATE = old_state
             web_manager._save_state = old_save_state
 
     def test_web_manager_public_state_includes_profiles_and_suggestions(self):
         old_state = web_manager.STATE
-        old_env = {key: os.environ.get(key) for key in ("API_KEY", "API_KEY_POOL", "BASE_URL", "MODEL_NAME", "MAX_WORKERS")}
+        old_env = {
+            key: os.environ.get(key)
+            for key in (
+                "API_KEY",
+                "API_KEY_POOL",
+                "BASE_URL",
+                "MODEL_NAME",
+                "MAX_WORKERS",
+                "APP_VERSION",
+                "APP_COMMIT",
+                "APP_BUILD_DATE",
+            )
+        }
+        old_app_version = web_manager.APP_VERSION
+        old_app_commit = web_manager.APP_COMMIT
+        old_app_build_date = web_manager.APP_BUILD_DATE
+        old_stall_timeout = web_manager.SCAN_STALL_TIMEOUT_SECONDS
+        old_heartbeat_interval = web_manager.SCAN_HEARTBEAT_INTERVAL_SECONDS
+        old_cancel_timeout = web_manager.SCAN_CANCEL_TIMEOUT_SECONDS
         with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as f:
             f.write("皇帝与朝廷争论，男主和红颜卷入后宫风波。")
             novel_path = f.name
@@ -5550,6 +5592,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             os.environ["BASE_URL"] = "https://example.test/v1"
             os.environ["MODEL_NAME"] = "test-model"
             os.environ["MAX_WORKERS"] = "3"
+            web_manager.APP_VERSION = "main"
+            web_manager.APP_COMMIT = "abc123"
+            web_manager.APP_BUILD_DATE = "2026-06-09T00:00:00Z"
+            web_manager.SCAN_STALL_TIMEOUT_SECONDS = 1200
+            web_manager.SCAN_HEARTBEAT_INTERVAL_SECONDS = 10
+            web_manager.SCAN_CANCEL_TIMEOUT_SECONDS = 5
             web_manager.STATE = {
                 "books": {"book": {"id": "book", "name": "book", "path": novel_path, "profile": "auto", "status": "idle"}},
                 "tasks": [],
@@ -5563,6 +5611,16 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(state["config"]["max_workers"], "3")
             self.assertTrue(state["config"]["api_key_configured"])
             self.assertEqual(state["config"]["api_key_count"], 2)
+            self.assertEqual(state["config"]["app"]["version"], "main")
+            self.assertEqual(state["config"]["app"]["commit"], "abc123")
+            self.assertEqual(state["config"]["app"]["build_date"], "2026-06-09T00:00:00Z")
+            self.assertEqual(state["config"]["web"]["scan_stall_timeout_seconds"], 1200)
+            self.assertEqual(state["config"]["web"]["scan_heartbeat_interval_seconds"], 10)
+            self.assertEqual(state["config"]["web"]["scan_cancel_timeout_seconds"], 5)
+            self.assertTrue(state["config"]["web"]["scan_stall_watchdog_enabled"])
+            health = web_manager._health_summary()
+            self.assertEqual(health["app"]["commit"], "abc123")
+            self.assertTrue(health["scan_stall_watchdog_enabled"])
             self.assertNotIn("sk-one", json.dumps(state, ensure_ascii=False))
             self.assertTrue(any(item["name"] == "history" for item in state["books"][0]["profile_suggestions"]))
             self.assertTrue(any(item["name"] == "harem" for item in state["books"][0]["profile_suggestions"]))
@@ -5570,6 +5628,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertTrue(any(item.get("auto_selected") for item in state["books"][0]["profile_suggestions"]))
         finally:
             web_manager.STATE = old_state
+            web_manager.APP_VERSION = old_app_version
+            web_manager.APP_COMMIT = old_app_commit
+            web_manager.APP_BUILD_DATE = old_app_build_date
+            web_manager.SCAN_STALL_TIMEOUT_SECONDS = old_stall_timeout
+            web_manager.SCAN_HEARTBEAT_INTERVAL_SECONDS = old_heartbeat_interval
+            web_manager.SCAN_CANCEL_TIMEOUT_SECONDS = old_cancel_timeout
             for key, value in old_env.items():
                 if value is None:
                     os.environ.pop(key, None)

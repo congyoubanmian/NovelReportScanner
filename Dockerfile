@@ -23,6 +23,13 @@ WORKDIR /app
 ARG PIP_INDEX_URL=https://pypi.org/simple
 ARG APP_UID=1000
 ARG APP_GID=1000
+ARG APP_VERSION=dev
+ARG APP_COMMIT=unknown
+ARG APP_BUILD_DATE=
+
+ENV APP_VERSION=${APP_VERSION} \
+    APP_COMMIT=${APP_COMMIT} \
+    APP_BUILD_DATE=${APP_BUILD_DATE}
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --timeout 120 --retries 5 -i "$PIP_INDEX_URL" -r requirements.txt

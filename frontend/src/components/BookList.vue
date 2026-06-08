@@ -35,6 +35,15 @@ function renderSuggestions(book) {
   })
 }
 
+function runningLogText(book) {
+  if (book.status !== 'running' || !book.last_log) return ''
+  return book.last_log_at ? `${book.last_log_at} ${book.last_log}` : book.last_log
+}
+
+function messageText(book) {
+  return runningLogText(book) || book.message || ''
+}
+
 function isBusy(book) {
   return book.status === 'queued' || book.status === 'running'
 }
@@ -229,7 +238,7 @@ function confirmDelete(book) {
               <span v-else class="muted">暂无</span>
             </td>
             <td><StatusTag :status="book.status || 'idle'" /></td>
-            <td class="col-msg">{{ book.message || '' }}</td>
+            <td class="col-msg" :title="messageText(book)">{{ messageText(book) }}</td>
             <td style="text-align: right">
               <div class="actions">
                 <button class="btn btn-sm" @click="emit('scan', book.id)" :disabled="isBusy(book)">

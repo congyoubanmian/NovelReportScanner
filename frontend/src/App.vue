@@ -78,6 +78,18 @@ const storageStatus = computed(() => {
   }
 })
 
+const appVersionText = computed(() => {
+  const app = runtimeConfig.value?.app || {}
+  const version = app.version || 'dev'
+  const commit = app.commit && app.commit !== 'unknown' ? app.commit.slice(0, 7) : 'unknown'
+  return `${version} / ${commit}`
+})
+
+const stallWatchdogText = computed(() => {
+  const seconds = Number(runtimeConfig.value?.web?.scan_stall_timeout_seconds || 0)
+  return seconds > 0 ? `${seconds}s` : '关闭'
+})
+
 // Race-condition guard for detail loading
 let detailRequestId = 0
 
@@ -344,10 +356,18 @@ useStateEvents(applyState, {
 
     <div class="runtime-strip" v-if="runtimeConfig">
       <span class="runtime-item"><b>模型</b>{{ runtimeConfig.model_name || '—' }}</span>
+      <span class="runtime-item" :title="runtimeConfig.app?.build_date || ''"
+        ><b>版本</b>{{ appVersionText }}</span
+      >
       <span class="runtime-item"><b>并发</b>{{ runtimeConfig.max_workers || '—' }}</span>
       <span class="runtime-item"
         ><b>限流</b>{{ runtimeConfig.rpm_limit || '—' }} RPM /
         {{ runtimeConfig.tpm_limit || '—' }} TPM</span
+      >
+      <span
+        class="runtime-item"
+        :class="{ danger: !runtimeConfig.web?.scan_stall_watchdog_enabled }"
+        ><b>卡死保护</b>{{ stallWatchdogText }}</span
       >
       <span class="runtime-item"
         ><b>Key</b

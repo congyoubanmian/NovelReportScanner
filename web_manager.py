@@ -47,6 +47,9 @@ SSE_MAX_CONNECTION_SECONDS = float(os.environ.get("SSE_MAX_CONNECTION_SECONDS", 
 SCAN_CANCEL_TIMEOUT_SECONDS = float(os.environ.get("SCAN_CANCEL_TIMEOUT_SECONDS", "5"))
 SCAN_HEARTBEAT_INTERVAL_SECONDS = float(os.environ.get("SCAN_HEARTBEAT_INTERVAL_SECONDS", "10"))
 SCAN_STALL_TIMEOUT_SECONDS = float(os.environ.get("SCAN_STALL_TIMEOUT_SECONDS", "0"))
+APP_VERSION = os.environ.get("APP_VERSION", "dev").strip() or "dev"
+APP_COMMIT = os.environ.get("APP_COMMIT", "").strip() or "unknown"
+APP_BUILD_DATE = os.environ.get("APP_BUILD_DATE", "").strip()
 LAST_BOOK_SYNC_AT = 0.0
 LAST_SSE_SYNC_AT = 0.0
 OUTPUTS_CACHE = {}
@@ -468,11 +471,16 @@ def _runtime_config_summary():
         "runtime_only": True,
         "api_key_configured": bool(key_pool or has_single_key),
         "api_key_count": len(key_pool) if key_pool else (1 if has_single_key else 0),
+        "app": _app_version_summary(),
         "web": {
             "max_upload_size": MAX_UPLOAD_SIZE,
             "max_json_body_size": MAX_JSON_BODY_SIZE,
             "file_response_chunk_size": FILE_RESPONSE_CHUNK_SIZE,
             "request_timeout": WEB_REQUEST_TIMEOUT_SECONDS,
+            "scan_cancel_timeout_seconds": SCAN_CANCEL_TIMEOUT_SECONDS,
+            "scan_heartbeat_interval_seconds": SCAN_HEARTBEAT_INTERVAL_SECONDS,
+            "scan_stall_timeout_seconds": SCAN_STALL_TIMEOUT_SECONDS,
+            "scan_stall_watchdog_enabled": SCAN_STALL_TIMEOUT_SECONDS > 0,
             "cors_allow_origin": os.environ.get("WEB_CORS_ALLOW_ORIGIN", "*"),
             "sync_books_ttl_seconds": SYNC_BOOKS_TTL_SECONDS,
             "outputs_cache_ttl_seconds": OUTPUTS_CACHE_TTL_SECONDS,
@@ -484,6 +492,24 @@ def _runtime_config_summary():
             "api_key_required_on_start": _env_bool_value(os.environ.get("NOVEL_REPORT_SCANNER_REQUIRE_API_KEY", "1")),
             "storage": _storage_health_summary(),
         },
+    }
+
+
+def _app_version_summary():
+    return {
+        "version": APP_VERSION,
+        "commit": APP_COMMIT,
+        "build_date": APP_BUILD_DATE,
+    }
+
+
+def _health_summary():
+    return {
+        "ok": True,
+        "config_ready": CONFIG_READY,
+        "app": _app_version_summary(),
+        "scan_stall_timeout_seconds": SCAN_STALL_TIMEOUT_SECONDS,
+        "scan_stall_watchdog_enabled": SCAN_STALL_TIMEOUT_SECONDS > 0,
     }
 
 
@@ -1408,6 +1434,10 @@ def _scan_log_heartbeat(task_id, line):
             task["last_log"] = text[:240]
         if book and book.get("status") == "running":
             book["message"] = "扫描中"
+            book["updated_at"] = now_text
+            book["last_log_at"] = now_text
+            if text:
+                book["last_log"] = text[:240]
         _save_state()
 
 
@@ -1720,7 +1750,7 @@ class Handler(BaseHTTPRequestHandler):
         if self._serve_static(parsed.path):
             return
         if parsed.path == "/healthz":
-            self._send_json({"ok": True, "config_ready": CONFIG_READY})
+            self._send_json(_health_summary())
             return
         if parsed.path == "/api/state":
             if not self._require_auth(parsed):

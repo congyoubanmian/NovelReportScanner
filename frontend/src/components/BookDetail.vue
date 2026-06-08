@@ -60,6 +60,10 @@ function formatNumber(value) {
   return Number.isFinite(num) ? num.toLocaleString() : '0'
 }
 
+function taskLastLogText(task) {
+  return task.last_log || task.message || ''
+}
+
 const preview = ref({
   url: '',
   name: '',
@@ -255,13 +259,14 @@ watch(
                 <th>实际分类</th>
                 <th>状态</th>
                 <th>创建时间</th>
+                <th>最后日志</th>
                 <th>结束/错误</th>
                 <th style="text-align: center">日志</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!tasks.length">
-                <td colspan="7" class="empty-cell">暂无任务</td>
+                <td colspan="8" class="empty-cell">暂无任务</td>
               </tr>
               <tr v-for="t in tasks" :key="t.id">
                 <td class="mono">{{ t.id }}</td>
@@ -269,6 +274,10 @@ watch(
                 <td>{{ resolvedProfilesText(t) }}</td>
                 <td><StatusTag :status="t.displayStatus" /></td>
                 <td class="mono nowrap">{{ t.created_at || '—' }}</td>
+                <td class="task-log-cell" :title="taskLastLogText(t)">
+                  <div class="mono nowrap">{{ t.last_log_at || t.updated_at || '—' }}</div>
+                  <div class="muted task-log-text">{{ taskLastLogText(t) || '—' }}</div>
+                </td>
                 <td class="muted">{{ t.finished_at || t.error || '—' }}</td>
                 <td style="text-align: center">
                   <a
@@ -347,6 +356,16 @@ watch(
 }
 .usage-runs table {
   font-size: 0.82rem;
+}
+.task-log-cell {
+  min-width: 220px;
+  max-width: 360px;
+}
+.task-log-text {
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 @media (max-width: 768px) {
   .usage-summary {
