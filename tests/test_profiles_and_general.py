@@ -1144,6 +1144,49 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             novel_scan.CHUNK_SUMMARIES = old_summaries
             novel_scan.CHUNK_FAILURE_DIAGNOSTICS = old_diagnostics
 
+    def test_detail_lookup_accepts_explicit_book_context(self):
+        old_name = novel_scan.clean_filename
+        old_detail_path = getattr(novel_scan, "_ACTIVE_DETAIL_PATH", None)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                results_dir = os.path.join(tmpdir, "results", "scan")
+                os.makedirs(results_dir, exist_ok=True)
+                book_a_path = os.path.join(results_dir, "甲书_detailed_20260608.json")
+                book_b_path = os.path.join(results_dir, "乙书_detailed_20260608.json")
+                with open(book_a_path, "w", encoding="utf-8") as f:
+                    json.dump({
+                        "all_female_characters": {
+                            "甲女": {"avg_score": 9, "count": 3},
+                        },
+                        "male_protagonist": {"name": "甲男"},
+                    }, f, ensure_ascii=False)
+                with open(book_b_path, "w", encoding="utf-8") as f:
+                    json.dump({
+                        "all_female_characters": {
+                            "乙女": {"avg_score": 9, "count": 3},
+                        },
+                        "male_protagonist": {"name": "乙男"},
+                    }, f, ensure_ascii=False)
+
+                novel_scan.clean_filename = "全局书名"
+                novel_scan._ACTIVE_DETAIL_PATH = book_b_path
+
+                self.assertEqual(
+                    novel_scan._find_latest_detail_file(book_name="甲书", base_dir=tmpdir),
+                    book_a_path,
+                )
+                heroines, male = novel_scan.find_heroines(
+                    book_name="甲书",
+                    base_dir=tmpdir,
+                    use_global_active=False,
+                )
+
+                self.assertEqual(heroines, ["甲女"])
+                self.assertEqual(male["name"], "甲男")
+        finally:
+            novel_scan.clean_filename = old_name
+            novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
+
     def test_chunk_failure_diagnostic_flags_problematic_text(self):
         diagnostic = novel_scan._build_chunk_failure_diagnostic(
             "正常开头\x00异常控制\x1b字符\n" + ("很长" * 1100) + "\ufffd",

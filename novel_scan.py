@@ -167,25 +167,46 @@ def find_latest_scan_checkpoint(prefix: str):
     return os.path.dirname(latest)
 
 
-def _resolve_detail_path(explicit_detail_path=None, checkpoint_detail_path=None):
+def _resolve_detail_path(explicit_detail_path=None, checkpoint_detail_path=None,
+                         active_detail_path=None, book_name=None, base_dir=None,
+                         use_global_active=True):
     if explicit_detail_path:
         return explicit_detail_path
     if checkpoint_detail_path:
         return checkpoint_detail_path
-    if _ACTIVE_DETAIL_PATH:
-        return _ACTIVE_DETAIL_PATH
-    return _find_latest_detail_file()
+    effective_active_path = active_detail_path
+    if effective_active_path is None and use_global_active:
+        effective_active_path = _ACTIVE_DETAIL_PATH
+    if effective_active_path:
+        return effective_active_path
+    return _find_latest_detail_file(book_name=book_name, base_dir=base_dir)
 
 
-def _peek_checkpoint_detail_path():
-    if not CHECKPOINT_FILE or not os.path.exists(CHECKPOINT_FILE):
+def _peek_checkpoint_detail_path(checkpoint_file=None):
+    effective_checkpoint = checkpoint_file if checkpoint_file is not None else CHECKPOINT_FILE
+    if not effective_checkpoint or not os.path.exists(effective_checkpoint):
         return None
     try:
-        with open(CHECKPOINT_FILE, "r", encoding="utf-8") as f:
+        with open(effective_checkpoint, "r", encoding="utf-8") as f:
             data = json.load(f)
     except Exception:
         return None
     return (data or {}).get("detail_path")
+
+
+def _detail_file_patterns(base, book_name=None):
+    _results_dir = os.path.join(base, "results")
+    patterns = []
+    if book_name:
+        patterns.extend([
+            os.path.join(_results_dir, "**", f"{book_name}*_detailed_*.json"),
+            os.path.join(base, "**", f"{book_name}*_detailed_*.json"),
+        ])
+    patterns.extend([
+        os.path.join(_results_dir, "**", "*_detailed_*.json"),
+        os.path.join(base, "**", "*_detailed_*.json"),
+    ])
+    return patterns
 
 
 def _dedupe_names(values):
@@ -657,28 +678,30 @@ def _close_chunk_progress(progress_state):
 # 兼容 novel4.py 输出的路径与数据结构的女主/男主提取
 # 优先使用本函数，覆盖上方旧版 find_heroines 定义
 
-def find_heroines(detail_path=None):
+def find_heroines(detail_path=None, book_name=None, base_dir=None, active_detail_path=None,
+                  use_global_active=True):
     """自动查找此前分析生成的详细报告，提取女主名单和男主姓名
     兼容 novel4.py 的输出路径与数据格式
     返回: (heroines: list[str], male_protagonist: dict|None)
     """
-    latest_file = _resolve_detail_path(explicit_detail_path=detail_path)
-    base = get_base_dir()
-    _results_dir = os.path.join(base, "results")
-    patterns = [
-        os.path.join(_results_dir, "**", f"{clean_filename}*_detailed_*.json"),
-        os.path.join(_results_dir, "**", "*_detailed_*.json"),
-        os.path.join(base, "**", f"{clean_filename}*_detailed_*.json"),
-        os.path.join(base, "**", "*_detailed_*.json"),
-    ]
+    effective_book_name = book_name if book_name is not None else clean_filename
+    latest_file = _resolve_detail_path(
+        explicit_detail_path=detail_path,
+        book_name=effective_book_name,
+        base_dir=base_dir,
+        active_detail_path=active_detail_path,
+        use_global_active=use_global_active,
+    )
+    base = base_dir or get_base_dir()
+    patterns = _detail_file_patterns(base, book_name=effective_book_name)
     files = []
     for p in patterns:
         files.extend(glob.glob(p, recursive=True))
     files = [f for f in files if os.path.isfile(f)]
 
     # 优先保留文件名中包含 clean_filename 的文件
-    if clean_filename:
-        filtered = [f for f in files if clean_filename in os.path.basename(f)]
+    if effective_book_name:
+        filtered = [f for f in files if effective_book_name in os.path.basename(f)]
         if filtered:
             files = filtered
 
@@ -3706,16 +3729,11 @@ def generate_report(all_issues, all_heroine_facts, heroines):
 
 
 # ---------------- 追加 detail.json 交叉取证 ----------------
-def _find_latest_detail_file():
+def _find_latest_detail_file(book_name=None, base_dir=None):
     """寻找当前小说对应的 *_detailed_*.json（protagonist.py 生成）"""
-    base = get_base_dir()
-    _results_dir = os.path.join(base, "results")
-    patterns = [
-        os.path.join(_results_dir, "**", f"{clean_filename}*_detailed_*.json"),
-        os.path.join(_results_dir, "**", "*_detailed_*.json"),
-        os.path.join(base, "**", f"{clean_filename}*_detailed_*.json"),
-        os.path.join(base, "**", "*_detailed_*.json"),
-    ]
+    effective_book_name = book_name if book_name is not None else clean_filename
+    base = base_dir or get_base_dir()
+    patterns = _detail_file_patterns(base, book_name=effective_book_name)
     files = []
     for p in patterns:
         files.extend(glob.glob(p, recursive=True))
@@ -3723,7 +3741,7 @@ def _find_latest_detail_file():
     if not files:
         return None
     # 优先包含 clean_filename 的文件，再取最近修改
-    prioritized = [f for f in files if clean_filename in os.path.basename(f)]
+    prioritized = [f for f in files if effective_book_name and effective_book_name in os.path.basename(f)]
     if prioritized:
         files = prioritized
     latest = max(files, key=os.path.getmtime)
