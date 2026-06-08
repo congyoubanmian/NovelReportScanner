@@ -145,11 +145,12 @@ def _build_chunk_failure_diagnostic(text_chunk, err_msg="", max_preview=220):
     }
 
 
-def _record_chunk_failure_diagnostic(idx, text_chunk, err_msg=""):
+def _record_chunk_failure_diagnostic(idx, text_chunk, err_msg="", chunk_failure_diagnostics=None):
     if text_chunk is None:
         return None
+    diagnostics = chunk_failure_diagnostics if chunk_failure_diagnostics is not None else CHUNK_FAILURE_DIAGNOSTICS
     diagnostic = _build_chunk_failure_diagnostic(text_chunk, err_msg=err_msg)
-    CHUNK_FAILURE_DIAGNOSTICS[int(idx)] = diagnostic
+    diagnostics[int(idx)] = diagnostic
     if diagnostic.get("flags"):
         logger.warning(f"chunk {idx} 内容诊断：{','.join(diagnostic['flags'])} severity={diagnostic['severity']}")
     return diagnostic
@@ -2428,10 +2429,12 @@ def generate_context_summary(text_chunk, heroines=None, male_protagonist=None, p
 def _process_thread_block(block_id, block_indices, chunks, system_prompt, heroines, male_protagonist=None,
                           fact_boost_prompt=None, all_issues=None, all_heroine_facts=None,
                           extra_relations_all=None, processed_chunks=None, failed_chunks=None,
-                          chunk_summaries=None):
+                          chunk_summaries=None, chunk_failure_diagnostics=None):
     global _middle_summary_calls
     explicit_chunk_summaries = chunk_summaries is not None
     summaries = chunk_summaries if chunk_summaries is not None else CHUNK_SUMMARIES
+    explicit_failure_diagnostics = chunk_failure_diagnostics is not None
+    diagnostics = chunk_failure_diagnostics if chunk_failure_diagnostics is not None else CHUNK_FAILURE_DIAGNOSTICS
     if not block_indices:
         return {
             "block_id": block_id,
@@ -2525,7 +2528,7 @@ def _process_thread_block(block_id, block_indices, chunks, system_prompt, heroin
         if fatal:
             with CHECKPOINT_LOCK:
                 failed_chunks.add(idx)
-                _record_chunk_failure_diagnostic(idx, chunks[idx], err_msg=err_msg)
+                _record_chunk_failure_diagnostic(idx, chunks[idx], err_msg=err_msg, chunk_failure_diagnostics=diagnostics)
                 save_checkpoint(
                     all_issues,
                     all_heroine_facts,
@@ -2533,6 +2536,7 @@ def _process_thread_block(block_id, block_indices, chunks, system_prompt, heroin
                     extra_relations_all,
                     failed_chunks=failed_chunks,
                     current_chunk_idx=idx,
+                    chunk_failure_diagnostics=diagnostics if explicit_failure_diagnostics else None,
                 )
             fatal_error = err_msg or "所有 API_KEY 均不可用"
             break
@@ -2551,6 +2555,7 @@ def _process_thread_block(block_id, block_indices, chunks, system_prompt, heroin
             failed_chunks=failed_chunks,
             chunk_text=chunks[idx],
             chunk_summaries=summaries if explicit_chunk_summaries else None,
+            chunk_failure_diagnostics=diagnostics if explicit_failure_diagnostics else None,
         )
         if ok and next_summary:
             carry_summary = next_summary or carry_summary
@@ -2566,7 +2571,8 @@ def _process_thread_block(block_id, block_indices, chunks, system_prompt, heroin
 
 
 def _merge_scan_success(all_issues, all_heroine_facts, extra_relations_all, processed_chunks, failed_chunks,
-                        idx, issues, heroine_facts, extra_rel, ok, err_msg=""):
+                        idx, issues, heroine_facts, extra_rel, ok, err_msg="", chunk_failure_diagnostics=None):
+    diagnostics = chunk_failure_diagnostics if chunk_failure_diagnostics is not None else CHUNK_FAILURE_DIAGNOSTICS
     if ok:
         if issues:
             all_issues.extend(issues)
@@ -2576,7 +2582,7 @@ def _merge_scan_success(all_issues, all_heroine_facts, extra_relations_all, proc
             extra_relations_all.extend(extra_rel)
         processed_chunks.add(idx)
         failed_chunks.discard(idx)
-        CHUNK_FAILURE_DIAGNOSTICS.pop(int(idx), None)
+        diagnostics.pop(int(idx), None)
         return
     failed_chunks.add(idx)
     if err_msg:
@@ -2586,7 +2592,7 @@ def _merge_scan_success(all_issues, all_heroine_facts, extra_relations_all, proc
 def _commit_chunk_result(idx, issues, heroine_facts, extra_rel, next_summary, ok, err_msg="",
                          all_issues=None, all_heroine_facts=None, extra_relations_all=None,
                          processed_chunks=None, failed_chunks=None, progress_state=None, chunk_text=None,
-                         chunk_summaries=None):
+                         chunk_summaries=None, chunk_failure_diagnostics=None):
     all_issues = all_issues if all_issues is not None else []
     all_heroine_facts = all_heroine_facts if all_heroine_facts is not None else []
     extra_relations_all = extra_relations_all if extra_relations_all is not None else []
@@ -2594,9 +2600,11 @@ def _commit_chunk_result(idx, issues, heroine_facts, extra_rel, next_summary, ok
     failed_chunks = failed_chunks if failed_chunks is not None else set()
     explicit_chunk_summaries = chunk_summaries is not None
     summaries = chunk_summaries if chunk_summaries is not None else CHUNK_SUMMARIES
+    explicit_failure_diagnostics = chunk_failure_diagnostics is not None
+    diagnostics = chunk_failure_diagnostics if chunk_failure_diagnostics is not None else CHUNK_FAILURE_DIAGNOSTICS
     with CHECKPOINT_LOCK:
         if not ok:
-            _record_chunk_failure_diagnostic(idx, chunk_text, err_msg=err_msg)
+            _record_chunk_failure_diagnostic(idx, chunk_text, err_msg=err_msg, chunk_failure_diagnostics=diagnostics)
         _merge_scan_success(
             all_issues,
             all_heroine_facts,
@@ -2609,6 +2617,7 @@ def _commit_chunk_result(idx, issues, heroine_facts, extra_rel, next_summary, ok
             extra_rel,
             ok,
             err_msg,
+            chunk_failure_diagnostics=diagnostics,
         )
         if ok and next_summary:
             summaries[idx] = next_summary
@@ -2625,16 +2634,19 @@ def _commit_chunk_result(idx, issues, heroine_facts, extra_rel, next_summary, ok
             delta_extra_relations=extra_rel if ok else [],
             delta_chunk_summary=next_summary if ok else "",
             chunk_summaries=summaries if explicit_chunk_summaries else None,
+            chunk_failure_diagnostics=diagnostics if explicit_failure_diagnostics else None,
         )
         _advance_chunk_progress(idx, processed_chunks, failed_chunks, progress_state or _ACTIVE_PROGRESS_STATE)
 
 
 def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protagonist, fact_boost_prompt,
                                    all_issues, all_heroine_facts, extra_relations_all, processed_chunks, failed_chunks,
-                                   chunk_summaries=None):
+                                   chunk_summaries=None, chunk_failure_diagnostics=None):
     global _ACTIVE_PROGRESS_STATE
     explicit_chunk_summaries = chunk_summaries is not None
     summaries = chunk_summaries if chunk_summaries is not None else CHUNK_SUMMARIES
+    explicit_failure_diagnostics = chunk_failure_diagnostics is not None
+    diagnostics = chunk_failure_diagnostics if chunk_failure_diagnostics is not None else CHUNK_FAILURE_DIAGNOSTICS
     if not chunks:
         return None
 
@@ -2673,6 +2685,7 @@ def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protago
                     processed_chunks,
                     failed_chunks,
                     summaries if explicit_chunk_summaries else None,
+                    diagnostics if explicit_failure_diagnostics else None,
                 ): block_id
                 for block_id, block_indices in enumerate(blocks)
                 if block_indices
@@ -2723,7 +2736,7 @@ def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protago
             if fatal:
                 with CHECKPOINT_LOCK:
                     failed_chunks.add(boundary_idx)
-                    _record_chunk_failure_diagnostic(boundary_idx, chunks[boundary_idx], err_msg=err_msg)
+                    _record_chunk_failure_diagnostic(boundary_idx, chunks[boundary_idx], err_msg=err_msg, chunk_failure_diagnostics=diagnostics)
                     save_checkpoint(
                         all_issues,
                         all_heroine_facts,
@@ -2731,6 +2744,7 @@ def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protago
                         extra_relations_all,
                         failed_chunks=failed_chunks,
                         current_chunk_idx=boundary_idx,
+                        chunk_failure_diagnostics=diagnostics if explicit_failure_diagnostics else None,
                     )
                     _advance_chunk_progress(boundary_idx, processed_chunks, failed_chunks, progress_state)
                 return err_msg or "所有 API_KEY 均不可用"
@@ -2750,6 +2764,7 @@ def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protago
                 progress_state=progress_state,
                 chunk_text=chunks[boundary_idx],
                 chunk_summaries=summaries if explicit_chunk_summaries else None,
+                chunk_failure_diagnostics=diagnostics if explicit_failure_diagnostics else None,
             )
 
         if fatal_error_msg:
@@ -3893,10 +3908,12 @@ def _append_to_detail_file(heroine_facts, extra_relations, male_protagonist=None
 
 def _run_scan_for_indices(chunks, indices, system_prompt, heroines, male_protagonist, fact_boost_prompt,
                           all_issues, all_heroine_facts, extra_relations_all, processed_chunks, failed_chunks,
-                          phase_name="补扫", chunk_summaries=None):
+                          phase_name="补扫", chunk_summaries=None, chunk_failure_diagnostics=None):
     global _ACTIVE_PROGRESS_STATE
     explicit_chunk_summaries = chunk_summaries is not None
     summaries = chunk_summaries if chunk_summaries is not None else CHUNK_SUMMARIES
+    explicit_failure_diagnostics = chunk_failure_diagnostics is not None
+    diagnostics = chunk_failure_diagnostics if chunk_failure_diagnostics is not None else CHUNK_FAILURE_DIAGNOSTICS
     """
     对指定 indices（0-based）执行扫描。
     - 成功：写入 all_issues/all_heroine_facts/extra_relations_all，并将 idx 加入 processed_chunks，且从 failed_chunks 移除
@@ -3951,7 +3968,7 @@ def _run_scan_for_indices(chunks, indices, system_prompt, heroines, male_protago
                     fatal_error = err_msg or "所有 API_KEY 均不可用"
                     with CHECKPOINT_LOCK:
                         failed_chunks.add(idx)
-                        _record_chunk_failure_diagnostic(idx, chunks[idx], err_msg=err_msg)
+                        _record_chunk_failure_diagnostic(idx, chunks[idx], err_msg=err_msg, chunk_failure_diagnostics=diagnostics)
                         save_checkpoint(
                             all_issues,
                             all_heroine_facts,
@@ -3959,6 +3976,7 @@ def _run_scan_for_indices(chunks, indices, system_prompt, heroines, male_protago
                             extra_relations_all,
                             failed_chunks=failed_chunks,
                             current_chunk_idx=idx,
+                            chunk_failure_diagnostics=diagnostics if explicit_failure_diagnostics else None,
                         )
                         _advance_chunk_progress(idx, processed_chunks, failed_chunks, progress_state)
                     logger.error(f"❌ 致命错误，终止{phase_name}：chunk={idx} err={fatal_error}")
@@ -3980,6 +3998,7 @@ def _run_scan_for_indices(chunks, indices, system_prompt, heroines, male_protago
                     progress_state=progress_state,
                     chunk_text=chunks[idx],
                     chunk_summaries=summaries if explicit_chunk_summaries else None,
+                    chunk_failure_diagnostics=diagnostics if explicit_failure_diagnostics else None,
                 )
 
             return fatal_error

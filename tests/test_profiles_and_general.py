@@ -1339,6 +1339,70 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             novel_scan.CHUNK_SUMMARIES = old_summaries
             novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
 
+    def test_commit_chunk_result_accepts_isolated_failure_diagnostics(self):
+        old_checkpoint = novel_scan.CHECKPOINT_FILE
+        old_plan = novel_scan.CURRENT_CHUNK_PLAN_METADATA
+        old_summaries = dict(novel_scan.CHUNK_SUMMARIES)
+        old_diagnostics = dict(novel_scan.CHUNK_FAILURE_DIAGNOSTICS)
+        old_detail_path = getattr(novel_scan, "_ACTIVE_DETAIL_PATH", None)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                novel_scan.CHECKPOINT_FILE = os.path.join(tmpdir, "latest_checkpoint.json")
+                novel_scan.CURRENT_CHUNK_PLAN_METADATA = {"chunk_count": 2}
+                novel_scan.CHUNK_SUMMARIES = {}
+                novel_scan.CHUNK_FAILURE_DIAGNOSTICS = {99: {"flags": ["global"]}}
+                novel_scan._ACTIVE_DETAIL_PATH = "/tmp/detail.json"
+                local_diagnostics = {}
+
+                novel_scan._commit_chunk_result(
+                    1,
+                    [],
+                    [],
+                    [],
+                    "",
+                    False,
+                    "parse failed",
+                    all_issues=[],
+                    all_heroine_facts=[],
+                    extra_relations_all=[],
+                    processed_chunks={0},
+                    failed_chunks=set(),
+                    chunk_text="第二块\x00异常",
+                    chunk_failure_diagnostics=local_diagnostics,
+                )
+
+                self.assertIn(1, local_diagnostics)
+                self.assertIn("nul_bytes", local_diagnostics[1]["flags"])
+                self.assertEqual(novel_scan.CHUNK_FAILURE_DIAGNOSTICS, {99: {"flags": ["global"]}})
+                with open(novel_scan.CHECKPOINT_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self.assertIn("1", data["chunk_failure_diagnostics"])
+
+                novel_scan._commit_chunk_result(
+                    1,
+                    [{"type": "补扫成功", "chunk_index": 2}],
+                    [],
+                    [],
+                    "第二块摘要",
+                    True,
+                    "",
+                    all_issues=[],
+                    all_heroine_facts=[],
+                    extra_relations_all=[],
+                    processed_chunks={0},
+                    failed_chunks={1},
+                    chunk_failure_diagnostics=local_diagnostics,
+                )
+
+                self.assertEqual(local_diagnostics, {})
+                self.assertEqual(novel_scan.CHUNK_FAILURE_DIAGNOSTICS, {99: {"flags": ["global"]}})
+        finally:
+            novel_scan.CHECKPOINT_FILE = old_checkpoint
+            novel_scan.CURRENT_CHUNK_PLAN_METADATA = old_plan
+            novel_scan.CHUNK_SUMMARIES = old_summaries
+            novel_scan.CHUNK_FAILURE_DIAGNOSTICS = old_diagnostics
+            novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
+
     def test_toxic_reviewer_prompt_locks_strict_harem_definitions(self):
         system_prompt, user_prompt = toxic_reviewer.build_review_prompts(
             {
