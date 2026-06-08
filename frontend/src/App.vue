@@ -93,19 +93,33 @@ const stallWatchdogText = computed(() => {
   return seconds > 0 ? `${seconds}s` : '关闭'
 })
 
+function formatElapsed(seconds) {
+  const total = Number(seconds || 0)
+  if (!Number.isFinite(total) || total <= 0) return '-'
+  if (total < 60) return `${Math.floor(total)}秒`
+  if (total < 3600) return `${Math.floor(total / 60)}分`
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  return minutes ? `${hours}时${minutes}分` : `${hours}时`
+}
+
 const diagnosticsStatus = computed(() => {
   const data = diagnostics.value || {}
   const stale = Number(data.stale_running_count || 0)
   const running = Number(data.running_count || 0)
   const queued = Number(data.queue_length || 0)
+  const longestRunningText = formatElapsed(data.longest_running_seconds)
+  const oldestQueueWaitText = formatElapsed(data.oldest_queue_wait_seconds)
   const firstStale = (data.running_tasks || []).find((task) => task.stale_without_log)
   return {
     ok: stale === 0,
     label: stale ? `${stale} 个卡住` : '正常',
     queued,
     running,
+    longestRunningText,
+    oldestQueueWaitText,
     title: firstStale
-      ? `${firstStale.book_name || firstStale.book_id || '运行任务'}\n${firstStale.last_log || ''}`
+      ? `${firstStale.book_name || firstStale.book_id || '运行任务'}\n无日志 ${formatElapsed(firstStale.seconds_since_last_log)}\n${firstStale.last_log || ''}`
       : ''
   }
 })
@@ -441,7 +455,9 @@ useStateEvents(applyState, {
 
     <div class="runtime-strip" v-if="diagnostics">
       <span class="runtime-item"><b>队列</b>{{ diagnosticsStatus.queued }}</span>
+      <span class="runtime-item"><b>最久等待</b>{{ diagnosticsStatus.oldestQueueWaitText }}</span>
       <span class="runtime-item"><b>运行中</b>{{ diagnosticsStatus.running }}</span>
+      <span class="runtime-item"><b>最长运行</b>{{ diagnosticsStatus.longestRunningText }}</span>
       <span
         class="runtime-item"
         :class="{ danger: !diagnosticsStatus.ok }"

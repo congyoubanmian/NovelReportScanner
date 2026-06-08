@@ -518,6 +518,8 @@ def _health_summary():
 def _task_diagnostic(task, book):
     last_log_at = task.get("last_log_at") or task.get("updated_at") or book.get("last_log_at") or book.get("updated_at")
     seconds_since_last_log = _seconds_since_state_time(last_log_at)
+    seconds_since_created = _seconds_since_state_time(task.get("created_at"))
+    seconds_since_started = _seconds_since_state_time(task.get("started_at"))
     stale = (
         SCAN_STALL_TIMEOUT_SECONDS > 0
         and seconds_since_last_log is not None
@@ -534,9 +536,25 @@ def _task_diagnostic(task, book):
         "updated_at": task.get("updated_at", ""),
         "last_log_at": last_log_at or "",
         "last_log": task.get("last_log") or book.get("last_log") or "",
+        "seconds_since_created": seconds_since_created,
+        "seconds_since_started": seconds_since_started,
         "seconds_since_last_log": seconds_since_last_log,
         "stale_without_log": stale,
         "log_path": task.get("log_path", ""),
+    }
+
+
+def _queued_task_diagnostic(task, book, position):
+    return {
+        "task_id": task.get("id"),
+        "book_id": task.get("book_id"),
+        "book_name": book.get("name") or task.get("book_id"),
+        "profile": task.get("profile"),
+        "status": task.get("status"),
+        "created_at": task.get("created_at", ""),
+        "updated_at": task.get("updated_at", ""),
+        "queue_position": position,
+        "seconds_since_created": _seconds_since_state_time(task.get("created_at")),
     }
 
 
@@ -554,10 +572,24 @@ def _diagnostics_summary():
             status = task.get("status") or "unknown"
             status_counts[status] = status_counts.get(status, 0) + 1
         queued_positions = _queued_task_positions()
+        queued_tasks = [
+            _queued_task_diagnostic(task, books_by_id.get(task.get("book_id"), {}), queued_positions.get(task.get("id")))
+            for task in tasks
+            if task.get("status") == "queued"
+        ]
 
     running_tasks.sort(key=lambda item: item.get("started_at") or item.get("created_at") or "")
+    queued_tasks.sort(key=lambda item: item.get("queue_position") or float("inf"))
     queued_count = status_counts.get("queued", 0)
     stale_running_count = sum(1 for item in running_tasks if item.get("stale_without_log"))
+    longest_running_seconds = max(
+        (item.get("seconds_since_started") or 0 for item in running_tasks),
+        default=0,
+    )
+    oldest_queue_wait_seconds = max(
+        (item.get("seconds_since_created") or 0 for item in queued_tasks),
+        default=0,
+    )
     return {
         "ok": stale_running_count == 0,
         "config_ready": CONFIG_READY,
@@ -569,7 +601,10 @@ def _diagnostics_summary():
         "queue_runtime_length": len(queued_positions),
         "running_count": len(running_tasks),
         "stale_running_count": stale_running_count,
+        "oldest_queue_wait_seconds": oldest_queue_wait_seconds,
+        "longest_running_seconds": longest_running_seconds,
         "running_tasks": running_tasks,
+        "queued_tasks": queued_tasks,
         "storage": _storage_health_summary(),
     }
 

@@ -5643,14 +5643,23 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(diagnostics["queue_length"], 1)
             self.assertEqual(diagnostics["running_count"], 1)
             self.assertEqual(diagnostics["stale_running_count"], 1)
+            self.assertEqual(diagnostics["oldest_queue_wait_seconds"], 3000)
+            self.assertEqual(diagnostics["longest_running_seconds"], 4200)
             self.assertEqual(diagnostics["task_counts"]["queued"], 1)
             self.assertEqual(diagnostics["task_counts"]["running"], 1)
             running = diagnostics["running_tasks"][0]
             self.assertEqual(running["task_id"], "task-running")
             self.assertEqual(running["book_name"], "运行书")
             self.assertEqual(running["last_log"], "Chunk 367 JSON解析失败")
+            self.assertEqual(running["seconds_since_created"], 4800)
+            self.assertEqual(running["seconds_since_started"], 4200)
             self.assertEqual(running["seconds_since_last_log"], 1800)
             self.assertTrue(running["stale_without_log"])
+            queued = diagnostics["queued_tasks"][0]
+            self.assertEqual(queued["task_id"], "task-queued")
+            self.assertEqual(queued["book_name"], "排队书")
+            self.assertEqual(queued["queue_position"], 1)
+            self.assertEqual(queued["seconds_since_created"], 3000)
             self.assertIn("storage", diagnostics)
         finally:
             web_manager.STATE = old_state
