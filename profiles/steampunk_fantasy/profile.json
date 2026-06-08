@@ -10,6 +10,14 @@
     "harem": {
       "import_categories": ["雷点（严重毒点）", "郁闷点"],
       "import_points": ["绿帽", "死女", "送女", "前世雷", "破鞋/非处/非初", "漏女", "亵女"]
+    },
+    "mystery_detective": {
+      "import_categories": ["谜题与线索", "诡计与真相"],
+      "import_points": ["谜题设置", "线索公平", "诡计可行性", "动机逻辑", "案件主线连接"]
+    },
+    "cosmic_horror": {
+      "import_categories": ["异常规则", "调查推进", "超凡体系与组织"],
+      "import_points": ["规则稳定", "未知边界", "代价明确", "线索链", "揭示节奏", "力量边界"]
     }
   },
   "scan_focus": [

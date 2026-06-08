@@ -776,6 +776,46 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertIn("漏女", rules_text)
             self.assertNotIn("- 万人骑:", rules_text)
 
+    def test_selected_profiles_import_non_harem_cross_rules(self):
+        expected = {
+            "mystery_detective": [
+                "跨类型导入：刑侦/法医/案件专长分析",
+                "案情要素",
+                "推理路径",
+                "技术边界",
+                "跨类型导入：克苏鲁/诡秘/怪谈专长分析",
+                "规则稳定",
+                "线索链",
+            ],
+            "history": [
+                "跨类型导入：军事/战争专长分析",
+                "时代定位",
+                "战略目标",
+                "战役结构",
+                "后勤通信",
+            ],
+            "farming_management": [
+                "跨类型导入：末世/灾变/生存专长分析",
+                "资源消耗",
+                "据点建设",
+                "秩序重建",
+                "末世经济",
+            ],
+            "steampunk_fantasy": [
+                "跨类型导入：悬疑/推理专长分析",
+                "谜题设置",
+                "案件主线连接",
+                "跨类型导入：克苏鲁/诡秘/怪谈专长分析",
+                "力量边界",
+            ],
+        }
+
+        for profile_name, fragments in expected.items():
+            profile = analysis_profiles.load_analysis_profile(profile_name)
+            rules_text = general_scan._profile_rules_text(profile)
+            for fragment in fragments:
+                self.assertIn(fragment, rules_text, profile_name)
+
     def test_military_apocalypse_and_crime_rules_include_kimi_categories(self):
         rule_paths = {
             "military_war": os.path.join("profiles", "military_war", "rules.json"),

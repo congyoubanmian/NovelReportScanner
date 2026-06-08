@@ -165,6 +165,31 @@
         "漏女",
         "亵女"
       ]
+    },
+    "crime_forensics": {
+      "import_categories": [
+        "案件结构",
+        "证据链",
+        "程序现实"
+      ],
+      "import_points": [
+        "案情要素",
+        "推理路径",
+        "技术边界",
+        "法律风险"
+      ]
+    },
+    "cosmic_horror": {
+      "import_categories": [
+        "异常规则",
+        "调查推进"
+      ],
+      "import_points": [
+        "规则稳定",
+        "未知边界",
+        "线索链",
+        "揭示节奏"
+      ]
     }
   }
 }
