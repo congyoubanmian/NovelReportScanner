@@ -73,10 +73,84 @@ OUTPUT_DIR = None
 logger = logging.getLogger(__name__)
 CURRENT_CHUNK_PLAN_METADATA = None
 CHUNK_SUMMARIES = {}
+CHUNK_FAILURE_DIAGNOSTICS = {}
 _ACTIVE_PROGRESS_STATE = None
 _middle_summary_calls = 0
 _ACTIVE_DETAIL_PATH = None
 CHECKPOINT_FULL_MERGE_INTERVAL = 10
+
+
+def _sanitize_chunk_preview(text, max_chars=220):
+    raw = str(text or "")[:max_chars]
+    return (
+        raw.replace("\\", "\\\\")
+        .replace("\x00", "\\x00")
+        .replace("\x1b", "\\x1b")
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+    )
+
+
+def _build_chunk_failure_diagnostic(text_chunk, err_msg="", max_preview=220):
+    text = str(text_chunk or "")
+    length = len(text)
+    allowed_controls = {"\n", "\r", "\t"}
+    control_chars = [ch for ch in text if ord(ch) < 32 and ch not in allowed_controls]
+    nul_count = text.count("\x00")
+    escape_count = text.count("\x1b")
+    replacement_count = text.count("\ufffd")
+    lines = text.splitlines() or [text]
+    max_line_length = max((len(line) for line in lines), default=0)
+    long_line_count = sum(1 for line in lines if len(line) > 2000)
+    non_printable_count = sum(
+        1
+        for ch in text
+        if (ord(ch) < 32 and ch not in allowed_controls) or ord(ch) in (0x7f, 0xfffd)
+    )
+    non_printable_ratio = round(non_printable_count / max(length, 1), 4)
+    flags = []
+    if nul_count:
+        flags.append("nul_bytes")
+    if escape_count:
+        flags.append("escape_chars")
+    if len(control_chars):
+        flags.append("control_chars")
+    if replacement_count:
+        flags.append("replacement_chars")
+    if long_line_count:
+        flags.append("very_long_lines")
+    if non_printable_ratio >= 0.01 or (length > 0 and non_printable_count >= 50):
+        flags.append("high_non_printable_ratio")
+    likely_binary = bool(nul_count or non_printable_ratio >= 0.05)
+    if likely_binary:
+        flags.append("likely_binary_fragment")
+
+    severity = "high" if likely_binary or nul_count or non_printable_ratio >= 0.05 else "medium" if flags else "low"
+    return {
+        "severity": severity,
+        "flags": sorted(set(flags)),
+        "length": length,
+        "control_char_count": len(control_chars),
+        "nul_count": nul_count,
+        "escape_count": escape_count,
+        "replacement_char_count": replacement_count,
+        "max_line_length": max_line_length,
+        "long_line_count": long_line_count,
+        "non_printable_ratio": non_printable_ratio,
+        "error": str(err_msg or "")[:300],
+        "preview": _sanitize_chunk_preview(text, max_chars=max_preview),
+    }
+
+
+def _record_chunk_failure_diagnostic(idx, text_chunk, err_msg=""):
+    if text_chunk is None:
+        return None
+    diagnostic = _build_chunk_failure_diagnostic(text_chunk, err_msg=err_msg)
+    CHUNK_FAILURE_DIAGNOSTICS[int(idx)] = diagnostic
+    if diagnostic.get("flags"):
+        logger.warning(f"chunk {idx} 内容诊断：{','.join(diagnostic['flags'])} severity={diagnostic['severity']}")
+    return diagnostic
 
 
 def find_latest_scan_checkpoint(prefix: str):
@@ -275,7 +349,7 @@ def _checkpoint_delta_file():
 def _build_checkpoint_data(all_issues, all_heroine_facts, processed_chunks, extra_relations_all=None,
                            failed_chunks=None, chunk_plan_metadata=None, chunk_summaries=None,
                            heroine_profiles=None, detail_path=None, rescan_done_chunks=None,
-                           rescan_completed=None):
+                           rescan_completed=None, chunk_failure_diagnostics=None):
     data = {
         "issues": all_issues,
         "heroine_facts": all_heroine_facts,
@@ -286,10 +360,21 @@ def _build_checkpoint_data(all_issues, all_heroine_facts, processed_chunks, extr
     }
     effective_chunk_plan = chunk_plan_metadata if chunk_plan_metadata is not None else CURRENT_CHUNK_PLAN_METADATA
     effective_chunk_summaries = chunk_summaries if chunk_summaries is not None else CHUNK_SUMMARIES
+    effective_failure_diagnostics = (
+        chunk_failure_diagnostics
+        if chunk_failure_diagnostics is not None
+        else CHUNK_FAILURE_DIAGNOSTICS
+    )
     if effective_chunk_plan:
         data["chunk_plan"] = effective_chunk_plan
     if effective_chunk_summaries:
         data["chunk_summaries"] = {str(k): v for k, v in sorted(effective_chunk_summaries.items()) if v}
+    if effective_failure_diagnostics:
+        data["chunk_failure_diagnostics"] = {
+            str(k): v
+            for k, v in sorted(effective_failure_diagnostics.items())
+            if isinstance(v, dict)
+        }
     if heroine_profiles is not None:
         data["heroine_profiles"] = heroine_profiles
     effective_detail_path = detail_path if detail_path is not None else _ACTIVE_DETAIL_PATH
@@ -312,7 +397,7 @@ def _write_full_checkpoint_data(data):
 
 def _append_checkpoint_delta(current_chunk_idx, *, delta_issues=None, delta_heroine_facts=None,
                              delta_extra_relations=None, processed=False, failed=False,
-                             chunk_summary=""):
+                             chunk_summary="", failure_diagnostic=None):
     delta_file = _checkpoint_delta_file()
     if not delta_file:
         return
@@ -328,6 +413,8 @@ def _append_checkpoint_delta(current_chunk_idx, *, delta_issues=None, delta_hero
     }
     if chunk_summary:
         delta["chunk_summaries"] = {str(current_chunk_idx): chunk_summary}
+    if failure_diagnostic:
+        delta["chunk_failure_diagnostics"] = {str(current_chunk_idx): failure_diagnostic}
     with open(delta_file, 'a', encoding='utf-8') as f:
         f.write(json.dumps(delta, ensure_ascii=False, separators=(",", ":")) + "\n")
 
@@ -372,6 +459,13 @@ def _merge_checkpoint_deltas(data):
             data["processed_chunks"] = list(sorted(merged_processed))
             merged_failed = set(data.get("failed_chunks", [])) - delta_processed
             data["failed_chunks"] = list(sorted(merged_failed))
+            diagnostics = data.get("chunk_failure_diagnostics") or {}
+            for processed_idx in delta_processed:
+                diagnostics.pop(str(processed_idx), None)
+            if diagnostics:
+                data["chunk_failure_diagnostics"] = diagnostics
+            else:
+                data.pop("chunk_failure_diagnostics", None)
         if delta_failed:
             merged_failed = set(data.get("failed_chunks", [])) | delta_failed
             data["failed_chunks"] = list(sorted(merged_failed))
@@ -382,6 +476,9 @@ def _merge_checkpoint_deltas(data):
         delta_summaries = delta.get("chunk_summaries") or {}
         if delta_summaries:
             data.setdefault("chunk_summaries", {}).update(delta_summaries)
+        delta_diagnostics = delta.get("chunk_failure_diagnostics") or {}
+        if delta_diagnostics:
+            data.setdefault("chunk_failure_diagnostics", {}).update(delta_diagnostics)
     return data
 
 
@@ -433,6 +530,7 @@ def save_checkpoint(all_issues, all_heroine_facts, processed_chunks, extra_relat
                     processed=current_chunk_idx in set(processed_chunks or []),
                     failed=current_chunk_idx in current_failed_chunks,
                     chunk_summary=delta_chunk_summary,
+                    failure_diagnostic=CHUNK_FAILURE_DIAGNOSTICS.get(int(current_chunk_idx)),
                 )
             else:
                 _write_full_checkpoint_data(data)
@@ -450,10 +548,11 @@ def save_checkpoint(all_issues, all_heroine_facts, processed_chunks, extra_relat
 
 def load_checkpoint():
     """加载扫描进度，若不存在返回空"""
-    global CHUNK_SUMMARIES
+    global CHUNK_SUMMARIES, CHUNK_FAILURE_DIAGNOSTICS
     delta_file = _checkpoint_delta_file()
     if not CHECKPOINT_FILE or (not os.path.exists(CHECKPOINT_FILE) and not (delta_file and os.path.exists(delta_file))):
         CHUNK_SUMMARIES = {}
+        CHUNK_FAILURE_DIAGNOSTICS = {}
         return [], [], set(), [], set(), None, None, set(), False
     try:
         if os.path.exists(CHECKPOINT_FILE):
@@ -479,16 +578,23 @@ def load_checkpoint():
             for k, v in (data.get("chunk_summaries", {}) or {}).items()
             if str(k).strip() and str(v).strip()
         }
+        CHUNK_FAILURE_DIAGNOSTICS = {
+            int(k): v
+            for k, v in (data.get("chunk_failure_diagnostics", {}) or {}).items()
+            if str(k).strip() and isinstance(v, dict)
+        }
         saved_chunk_plan = data.get("chunk_plan")
         if saved_chunk_plan and CURRENT_CHUNK_PLAN_METADATA and saved_chunk_plan != CURRENT_CHUNK_PLAN_METADATA:
             logger.warning("⚠️ 检测到切块配置或文本长度变化，旧断点不再复用，将从头开始扫描。")
             CHUNK_SUMMARIES = {}
+            CHUNK_FAILURE_DIAGNOSTICS = {}
             return [], [], set(), [], set(), None, None, set(), False
         logger.info(f"📂 已加载断点，已完成 {len(processed_chunks)} 个片段，失败 {len(failed_chunks)} 个片段")
         return issues, heroine_facts, processed_chunks, extra_relations, failed_chunks, heroine_profiles, detail_path, rescan_done_chunks, rescan_completed
     except Exception as e:
         logger.error(f"加载断点失败: {e}，将从头开始")
         CHUNK_SUMMARIES = {}
+        CHUNK_FAILURE_DIAGNOSTICS = {}
         return [], [], set(), [], set(), None, None, set(), False
 
 
@@ -2360,6 +2466,7 @@ def _process_thread_block(block_id, block_indices, chunks, system_prompt, heroin
         if fatal:
             with CHECKPOINT_LOCK:
                 failed_chunks.add(idx)
+                _record_chunk_failure_diagnostic(idx, chunks[idx], err_msg=err_msg)
                 save_checkpoint(
                     all_issues,
                     all_heroine_facts,
@@ -2383,6 +2490,7 @@ def _process_thread_block(block_id, block_indices, chunks, system_prompt, heroin
             extra_relations_all=extra_relations_all,
             processed_chunks=processed_chunks,
             failed_chunks=failed_chunks,
+            chunk_text=chunks[idx],
         )
         if ok and next_summary:
             carry_summary = next_summary or carry_summary
@@ -2408,6 +2516,7 @@ def _merge_scan_success(all_issues, all_heroine_facts, extra_relations_all, proc
             extra_relations_all.extend(extra_rel)
         processed_chunks.add(idx)
         failed_chunks.discard(idx)
+        CHUNK_FAILURE_DIAGNOSTICS.pop(int(idx), None)
         return
     failed_chunks.add(idx)
     if err_msg:
@@ -2416,13 +2525,15 @@ def _merge_scan_success(all_issues, all_heroine_facts, extra_relations_all, proc
 
 def _commit_chunk_result(idx, issues, heroine_facts, extra_rel, next_summary, ok, err_msg="",
                          all_issues=None, all_heroine_facts=None, extra_relations_all=None,
-                         processed_chunks=None, failed_chunks=None, progress_state=None):
+                         processed_chunks=None, failed_chunks=None, progress_state=None, chunk_text=None):
     all_issues = all_issues if all_issues is not None else []
     all_heroine_facts = all_heroine_facts if all_heroine_facts is not None else []
     extra_relations_all = extra_relations_all if extra_relations_all is not None else []
     processed_chunks = processed_chunks if processed_chunks is not None else set()
     failed_chunks = failed_chunks if failed_chunks is not None else set()
     with CHECKPOINT_LOCK:
+        if not ok:
+            _record_chunk_failure_diagnostic(idx, chunk_text, err_msg=err_msg)
         _merge_scan_success(
             all_issues,
             all_heroine_facts,
@@ -2544,6 +2655,7 @@ def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protago
             if fatal:
                 with CHECKPOINT_LOCK:
                     failed_chunks.add(boundary_idx)
+                    _record_chunk_failure_diagnostic(boundary_idx, chunks[boundary_idx], err_msg=err_msg)
                     save_checkpoint(
                         all_issues,
                         all_heroine_facts,
@@ -2568,6 +2680,7 @@ def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protago
                 processed_chunks=processed_chunks,
                 failed_chunks=failed_chunks,
                 progress_state=progress_state,
+                chunk_text=chunks[boundary_idx],
             )
 
         if fatal_error_msg:
@@ -3769,6 +3882,7 @@ def _run_scan_for_indices(chunks, indices, system_prompt, heroines, male_protago
                     fatal_error = err_msg or "所有 API_KEY 均不可用"
                     with CHECKPOINT_LOCK:
                         failed_chunks.add(idx)
+                        _record_chunk_failure_diagnostic(idx, chunks[idx], err_msg=err_msg)
                         save_checkpoint(
                             all_issues,
                             all_heroine_facts,
@@ -3795,6 +3909,7 @@ def _run_scan_for_indices(chunks, indices, system_prompt, heroines, male_protago
                     processed_chunks=processed_chunks,
                     failed_chunks=failed_chunks,
                     progress_state=progress_state,
+                    chunk_text=chunks[idx],
                 )
 
             return fatal_error
@@ -3836,7 +3951,7 @@ def _rescan_worker_task(idx, chunks, system_prompt, heroines, male_protagonist=N
     return idx, issues, heroine_facts, extra_rel, next_summary, ok, fatal, err_msg
 
 def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
-    global NOVEL_FILE_PATH, clean_filename, OUTPUT_DIR, CHECKPOINT_FILE, logger, CURRENT_CHUNK_PLAN_METADATA, CHUNK_SUMMARIES, _middle_summary_calls, _ACTIVE_DETAIL_PATH
+    global NOVEL_FILE_PATH, clean_filename, OUTPUT_DIR, CHECKPOINT_FILE, logger, CURRENT_CHUNK_PLAN_METADATA, CHUNK_SUMMARIES, CHUNK_FAILURE_DIAGNOSTICS, _middle_summary_calls, _ACTIVE_DETAIL_PATH
 
     # ---- 彻底重新初始化，防止跨小说状态残留 ----
     NOVEL_FILE_PATH = None
@@ -3844,6 +3959,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     OUTPUT_DIR = None
     CHECKPOINT_FILE = None
     CHUNK_SUMMARIES = {}
+    CHUNK_FAILURE_DIAGNOSTICS = {}
     _middle_summary_calls = 0
     _ACTIVE_DETAIL_PATH = None
 

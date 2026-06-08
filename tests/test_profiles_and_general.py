@@ -1048,6 +1048,103 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             novel_scan.CHUNK_SUMMARIES = old_summaries
             novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
 
+    def test_chunk_failure_diagnostic_flags_problematic_text(self):
+        diagnostic = novel_scan._build_chunk_failure_diagnostic(
+            "正常开头\x00异常控制\x1b字符\n" + ("很长" * 1100) + "\ufffd",
+            err_msg="JSON parse failed",
+            max_preview=40,
+        )
+
+        self.assertEqual(diagnostic["severity"], "high")
+        self.assertIn("nul_bytes", diagnostic["flags"])
+        self.assertIn("escape_chars", diagnostic["flags"])
+        self.assertIn("replacement_chars", diagnostic["flags"])
+        self.assertIn("very_long_lines", diagnostic["flags"])
+        self.assertIn("\\x00", diagnostic["preview"])
+        self.assertIn("\\x1b", diagnostic["preview"])
+        self.assertEqual(diagnostic["error"], "JSON parse failed")
+
+    def test_chunk_failure_diagnostic_keeps_normal_text_low_risk(self):
+        diagnostic = novel_scan._build_chunk_failure_diagnostic("第一章\n甲女正常出场，男主开始行动。")
+
+        self.assertEqual(diagnostic["severity"], "low")
+        self.assertEqual(diagnostic["flags"], [])
+        self.assertEqual(diagnostic["control_char_count"], 0)
+        self.assertIn("甲女正常出场", diagnostic["preview"])
+
+    def test_scan_checkpoint_records_and_clears_failure_diagnostics(self):
+        old_checkpoint = novel_scan.CHECKPOINT_FILE
+        old_plan = novel_scan.CURRENT_CHUNK_PLAN_METADATA
+        old_summaries = dict(novel_scan.CHUNK_SUMMARIES)
+        old_diagnostics = dict(novel_scan.CHUNK_FAILURE_DIAGNOSTICS)
+        old_detail_path = getattr(novel_scan, "_ACTIVE_DETAIL_PATH", None)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                novel_scan.CHECKPOINT_FILE = os.path.join(tmpdir, "latest_checkpoint.json")
+                novel_scan.CURRENT_CHUNK_PLAN_METADATA = {"chunk_count": 2}
+                novel_scan.CHUNK_SUMMARIES = {}
+                novel_scan.CHUNK_FAILURE_DIAGNOSTICS = {}
+                novel_scan._ACTIVE_DETAIL_PATH = "/tmp/detail.json"
+
+                novel_scan.save_checkpoint(
+                    [],
+                    [],
+                    {0},
+                    [],
+                    failed_chunks=set(),
+                    current_chunk_idx=0,
+                )
+                novel_scan._commit_chunk_result(
+                    1,
+                    [],
+                    [],
+                    [],
+                    "",
+                    False,
+                    "model parse failed",
+                    all_issues=[],
+                    all_heroine_facts=[],
+                    extra_relations_all=[],
+                    processed_chunks={0},
+                    failed_chunks=set(),
+                    chunk_text="第二块\x00含异常字符",
+                )
+
+                novel_scan.CHUNK_FAILURE_DIAGNOSTICS = {}
+                loaded = novel_scan.load_checkpoint()
+                self.assertEqual(loaded[2], {0})
+                self.assertEqual(loaded[4], {1})
+                self.assertIn(1, novel_scan.CHUNK_FAILURE_DIAGNOSTICS)
+                self.assertIn("nul_bytes", novel_scan.CHUNK_FAILURE_DIAGNOSTICS[1]["flags"])
+
+                novel_scan._commit_chunk_result(
+                    1,
+                    [{"type": "补扫成功", "chunk_index": 2}],
+                    [],
+                    [],
+                    "第二块摘要",
+                    True,
+                    "",
+                    all_issues=[],
+                    all_heroine_facts=[],
+                    extra_relations_all=[],
+                    processed_chunks={0},
+                    failed_chunks={1},
+                    chunk_text="第二块正常文本",
+                )
+
+                novel_scan.CHUNK_FAILURE_DIAGNOSTICS = {}
+                loaded = novel_scan.load_checkpoint()
+                self.assertEqual(loaded[2], {0, 1})
+                self.assertEqual(loaded[4], set())
+                self.assertEqual(novel_scan.CHUNK_FAILURE_DIAGNOSTICS, {})
+        finally:
+            novel_scan.CHECKPOINT_FILE = old_checkpoint
+            novel_scan.CURRENT_CHUNK_PLAN_METADATA = old_plan
+            novel_scan.CHUNK_SUMMARIES = old_summaries
+            novel_scan.CHUNK_FAILURE_DIAGNOSTICS = old_diagnostics
+            novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
+
     def test_toxic_reviewer_prompt_locks_strict_harem_definitions(self):
         system_prompt, user_prompt = toxic_reviewer.build_review_prompts(
             {
