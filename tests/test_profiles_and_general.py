@@ -1727,6 +1727,37 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertEqual(blocks, [[0], [1], [2]])
 
+    def test_cancel_pending_futures_cancels_unfinished_work(self):
+        class FakeFuture:
+            def __init__(self, done=False):
+                self._done = done
+                self.cancelled = False
+
+            def done(self):
+                return self._done
+
+            def cancel(self):
+                self.cancelled = True
+
+        class FakeExecutor:
+            def __init__(self):
+                self.shutdown_args = None
+
+            def shutdown(self, **kwargs):
+                self.shutdown_args = kwargs
+
+        current = FakeFuture(done=True)
+        pending = FakeFuture(done=False)
+        already_done = FakeFuture(done=True)
+        executor = FakeExecutor()
+
+        novel_scan._cancel_pending_futures([current, pending, already_done], current_future=current, executor=executor)
+
+        self.assertFalse(current.cancelled)
+        self.assertTrue(pending.cancelled)
+        self.assertFalse(already_done.cancelled)
+        self.assertEqual(executor.shutdown_args, {"wait": False, "cancel_futures": True})
+
     def test_scan_checkpoint_incremental_delta_merges_on_load(self):
         old_checkpoint = novel_scan.CHECKPOINT_FILE
         old_plan = novel_scan.CURRENT_CHUNK_PLAN_METADATA

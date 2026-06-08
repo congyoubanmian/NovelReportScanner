@@ -2940,6 +2940,18 @@ def _commit_chunk_result(idx, issues, heroine_facts, extra_rel, next_summary, ok
         _advance_chunk_progress(idx, processed_chunks, failed_chunks, progress_state or _ACTIVE_PROGRESS_STATE)
 
 
+def _cancel_pending_futures(futures, current_future=None, executor=None):
+    for future in futures:
+        if future is current_future or future.done():
+            continue
+        future.cancel()
+    if executor is not None:
+        try:
+            executor.shutdown(wait=False, cancel_futures=True)
+        except TypeError:
+            executor.shutdown(wait=False)
+
+
 def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protagonist, fact_boost_prompt,
                                    all_issues, all_heroine_facts, extra_relations_all, processed_chunks, failed_chunks,
                                    chunk_summaries=None, chunk_failure_diagnostics=None, middle_summary_state=None,
@@ -2970,7 +2982,9 @@ def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protago
     previous_progress_state = _ACTIVE_PROGRESS_STATE
     _ACTIVE_PROGRESS_STATE = progress_state
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
+        executor_cancelled = False
+        try:
             futures = {
                 executor.submit(
                     _process_thread_block,
@@ -3002,10 +3016,21 @@ def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protago
                     logger.error(f"线程块 {block_id} 崩溃: {exc}", exc_info=True)
                     if not fatal_error_msg:
                         fatal_error_msg = str(exc)
+                        _cancel_pending_futures(futures, current_future=future, executor=executor)
+                        executor_cancelled = True
+                        break
                     continue
                 block_results[block_id] = result
                 if result.get("fatal_error"):
+                    _cancel_pending_futures(futures, current_future=future, executor=executor)
+                    executor_cancelled = True
                     return result.get("fatal_error")
+        finally:
+            if not executor_cancelled:
+                executor.shutdown(wait=True)
+
+        if fatal_error_msg:
+            return fatal_error_msg
 
         for block_id in sorted(block_results.keys()):
             if block_id <= 0:
@@ -4247,7 +4272,9 @@ def _run_scan_for_indices(chunks, indices, system_prompt, heroines, male_protago
     previous_progress_state = _ACTIVE_PROGRESS_STATE
     _ACTIVE_PROGRESS_STATE = progress_state
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
+        executor_cancelled = False
+        try:
             futures = {
                 executor.submit(
                     _rescan_worker_task,
@@ -4288,6 +4315,8 @@ def _run_scan_for_indices(chunks, indices, system_prompt, heroines, male_protago
                         )
                         _advance_chunk_progress(idx, processed_chunks, failed_chunks, progress_state)
                     logger.error(f"❌ 致命错误，终止{phase_name}：chunk={idx} err={fatal_error}")
+                    _cancel_pending_futures(futures, current_future=future, executor=executor)
+                    executor_cancelled = True
                     break
 
                 _commit_chunk_result(
@@ -4311,6 +4340,9 @@ def _run_scan_for_indices(chunks, indices, system_prompt, heroines, male_protago
                 )
 
             return fatal_error
+        finally:
+            if not executor_cancelled:
+                executor.shutdown(wait=True)
     finally:
         _close_chunk_progress(progress_state)
         _ACTIVE_PROGRESS_STATE = previous_progress_state
