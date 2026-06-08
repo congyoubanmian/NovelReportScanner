@@ -42,6 +42,8 @@ RESCAN_ROUNDS = int(os.environ.get("RESCAN_ROUNDS", "3"))
 RESCAN_MAX_WORKERS = int(os.environ.get("RESCAN_MAX_WORKERS", "4"))
 ENABLE_GLOBAL_RESCAN = os.environ.get("ENABLE_GLOBAL_RESCAN", "1").strip() == "1"
 MAX_MIDDLE_SUMMARY_CALLS = int(os.environ.get("MAX_MIDDLE_SUMMARY_CALLS", "10"))
+INITIAL_SCAN_BLOCK_MULTIPLIER = int(os.environ.get("INITIAL_SCAN_BLOCK_MULTIPLIER", "3"))
+INITIAL_SCAN_MIN_BLOCK_SIZE = int(os.environ.get("INITIAL_SCAN_MIN_BLOCK_SIZE", "6"))
 # ---- 全局补扫优化 配置 ----
 RESCAN_MAX_HITS = int(os.environ.get("RESCAN_MAX_HITS", "4"))
 RESCAN_PRE_FILTER_THRESHOLD = float(os.environ.get("RESCAN_PRE_FILTER_THRESHOLD", "1.0"))
@@ -2296,16 +2298,25 @@ def _fact_signature(dimension, item):
     )
 
 
-def _partition_indices_for_thread_blocks(total_chunks, max_workers):
+def _partition_indices_for_thread_blocks(total_chunks, max_workers, block_multiplier=None, min_block_size=None):
     total_chunks = max(0, int(total_chunks or 0))
     if total_chunks <= 0:
         return []
     worker_count = max(1, min(int(max_workers or 1), total_chunks))
-    base, extra = divmod(total_chunks, worker_count)
+    if total_chunks <= worker_count:
+        block_count = total_chunks
+    else:
+        multiplier = max(1, int(block_multiplier or INITIAL_SCAN_BLOCK_MULTIPLIER or 1))
+        minimum_size = max(1, int(min_block_size or INITIAL_SCAN_MIN_BLOCK_SIZE or 1))
+        target_blocks = min(total_chunks, worker_count * multiplier)
+        max_blocks_by_min_size = max(worker_count, (total_chunks + minimum_size - 1) // minimum_size)
+        block_count = min(target_blocks, max_blocks_by_min_size, total_chunks)
+
+    base, extra = divmod(total_chunks, block_count)
     blocks = []
     start = 0
-    for worker_idx in range(worker_count):
-        block_size = base + (1 if worker_idx < extra else 0)
+    for block_idx in range(block_count):
+        block_size = base + (1 if block_idx < extra else 0)
         if block_size <= 0:
             continue
         stop = start + block_size
@@ -2576,7 +2587,7 @@ def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protago
         return None
 
     workers = min(len(blocks), max(1, int(MAX_WORKERS or 1)))
-    logger.info(f"首轮线程块扫描：blocks={len(blocks)} workers={workers}")
+    logger.info(f"首轮动态线程块扫描：blocks={len(blocks)} workers={workers}")
     block_results = {}
     fatal_error_msg = ""
     progress_state = _init_chunk_progress(

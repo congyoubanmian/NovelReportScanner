@@ -469,7 +469,7 @@ profiles/
 
 旧的 `rules2.json` 仍然保留，用于兼容历史路径；新的后宫规则主路径是 `profiles/harem/rules.json`。
 
-其余几个 `RESCAN_*`、`DIM_BOOST_*`、`MAX_MIDDLE_SUMMARY_CALLS` 主要用于扫描阶段的补扫和增强策略，属于进阶调优项。
+其余几个 `RESCAN_*`、`DIM_BOOST_*`、`MAX_MIDDLE_SUMMARY_CALLS`、`INITIAL_SCAN_*` 主要用于扫描阶段的补扫、增强策略和首扫并发调度，属于进阶调优项。
 
 ### 扫描阶段调优参数说明
 
@@ -490,6 +490,8 @@ profiles/
 - `DIM_BOOST_MAX_PER_CHUNK`：每个正文片段最多做多少次“按维度补抽”。数值越大，越容易把某个维度里漏掉的事实再补出来，但每个片段可能触发更多额外调用。
 - `RESCAN_ROUNDS`：扫描完成后，针对遗漏片段或失败片段最多再补扫几轮。数值越大，整体更稳，但耗时和 token 成本都会继续增加。
 - `MAX_MIDDLE_SUMMARY_CALLS`：扫描过程中最多生成多少次“中间上下文摘要”。它主要用来改善长文本跨片段承接，适合上下文依赖强的小说，但会直接增加额外模型调用。
+- `INITIAL_SCAN_BLOCK_MULTIPLIER`：首扫时把正文切成约 `MAX_WORKERS` 多少倍的连续小段，线程池会动态领取小段，减少某个大段特别慢导致其他线程空等的问题。
+- `INITIAL_SCAN_MIN_BLOCK_SIZE`：首扫动态小段的目标最小 chunk 数。值越小负载越均衡，但段边界补扫和上下文摘要开销会略增。
 - `RESCAN_MAX_HITS`：全局补扫时，每个“女主 + 维度”最多保留多少个候选命中片段。越大越容易补到遗漏，但也意味着后续要处理更多候选片段；设为 `0` 可视为关闭这部分增强。
 - `RESCAN_PRE_FILTER_THRESHOLD`：全局补扫前，对候选命中的最低预过滤分数。值越高越严格，进入后续补扫的片段越少；值越低则更激进，召回更高，但 token 消耗通常也会更高。
 - `RESCAN_MAX_WINDOW`：全局补扫时，允许截取的最大上下文窗口长度。值越大，单次 prompt 的上下文更完整，但 prompt 本身也会更长、更费 token。

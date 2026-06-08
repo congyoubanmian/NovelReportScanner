@@ -20,6 +20,12 @@ RESCAN_ROUNDS=3
 # 扫描过程中最多额外生成多少次“中间上下文摘要”；越大越利于承接上下文，但会增加额外调用
 MAX_MIDDLE_SUMMARY_CALLS=10
 
+# 首扫动态线程块数量倍率；默认 3 表示把 chunk 切成约 worker 数 3 倍的小连续块，便于快线程继续领取后续块
+INITIAL_SCAN_BLOCK_MULTIPLIER=3
+
+# 首扫动态线程块的目标最小块大小；值越小越均衡，但段边界补扫和摘要开销会更多
+INITIAL_SCAN_MIN_BLOCK_SIZE=6
+
 # 全局补扫里每个“女主+维度”最多保留多少个候选命中片段；越大越容易补到遗漏，但额外扫描也会更多，设置为0不开启
 RESCAN_MAX_HITS=4
 

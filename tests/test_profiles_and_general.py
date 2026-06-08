@@ -923,6 +923,31 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertNotIn("输出前自检", second_user_prompt)
         self.assertNotIn("每个条目的五个维度", second_user_prompt)
 
+    def test_initial_scan_partition_uses_dynamic_small_blocks(self):
+        blocks = novel_scan._partition_indices_for_thread_blocks(
+            40,
+            4,
+            block_multiplier=3,
+            min_block_size=5,
+        )
+
+        flattened = [idx for block in blocks for idx in block]
+        self.assertGreater(len(blocks), 4)
+        self.assertLessEqual(len(blocks), 12)
+        self.assertEqual(flattened, list(range(40)))
+        self.assertTrue(all(block == list(range(block[0], block[-1] + 1)) for block in blocks))
+        self.assertTrue(all(len(block) >= 3 for block in blocks))
+
+    def test_initial_scan_partition_keeps_small_books_one_chunk_per_block(self):
+        blocks = novel_scan._partition_indices_for_thread_blocks(
+            3,
+            10,
+            block_multiplier=3,
+            min_block_size=5,
+        )
+
+        self.assertEqual(blocks, [[0], [1], [2]])
+
     def test_scan_checkpoint_incremental_delta_merges_on_load(self):
         old_checkpoint = novel_scan.CHECKPOINT_FILE
         old_plan = novel_scan.CURRENT_CHUNK_PLAN_METADATA
