@@ -30,6 +30,8 @@ FORESHADOWING_ENGINEERING_ENABLED = os.environ.get("GENERAL_SCAN_FORESHADOWING_E
 FORESHADOWING_ENGINEERING_SCHEMA_VERSION = 1
 SEMANTIC_LAYERS_ENABLED = os.environ.get("GENERAL_SCAN_SEMANTIC_LAYERS", "1").strip() == "1"
 SEMANTIC_LAYERS_SCHEMA_VERSION = 1
+READER_EXPERIENCE_ENABLED = os.environ.get("GENERAL_SCAN_READER_EXPERIENCE", "1").strip() == "1"
+READER_EXPERIENCE_SCHEMA_VERSION = 1
 LOW_DENSITY_TERMS = (
     "睡觉", "起床", "吃饭", "喝茶", "闲聊", "聊天", "休息", "赶路", "路上", "返回",
     "日常", "家常", "客栈", "修炼打坐", "打坐", "闭关", "练功", "整理物品",
@@ -382,6 +384,13 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
             return False
     elif data.get("semantic_layers_enabled") not in {None, False}:
         return False
+    if READER_EXPERIENCE_ENABLED:
+        if data.get("reader_experience_enabled") is not True:
+            return False
+        if data.get("reader_experience_schema_version") != READER_EXPERIENCE_SCHEMA_VERSION:
+            return False
+    elif data.get("reader_experience_enabled") not in {None, False}:
+        return False
     stored_prompt_templates = data.get("prompt_templates")
     if isinstance(stored_prompt_templates, dict):
         current_prompt_templates = prompt_templates_metadata("general_scan_chunk", "general_summary")
@@ -426,6 +435,8 @@ def _summary_can_reuse_chunk_results(data: Dict[str, Any], profile_name: str = "
         return False
     if data.get("semantic_layers_enabled") not in {None, SEMANTIC_LAYERS_ENABLED}:
         return False
+    if data.get("reader_experience_enabled") not in {None, READER_EXPERIENCE_ENABLED}:
+        return False
     stored_prompt_templates = data.get("prompt_templates")
     if isinstance(stored_prompt_templates, dict):
         current_prompt_templates = prompt_templates_metadata("general_scan_chunk", "general_summary")
@@ -456,6 +467,8 @@ def _reusable_chunk_result_map(data: Dict[str, Any]) -> Dict[str, Dict[str, Any]
         if FORESHADOWING_ENGINEERING_ENABLED and not item.get("foreshadowing_engineering"):
             continue
         if SEMANTIC_LAYERS_ENABLED and not item.get("semantic_layers"):
+            continue
+        if READER_EXPERIENCE_ENABLED and not item.get("reader_experience"):
             continue
         chunk_hash = item.get("chunk_hash")
         if isinstance(chunk_hash, str) and chunk_hash:
@@ -673,6 +686,61 @@ def _normalize_semantic_layers(value: Any) -> Dict[str, Any]:
             limit=5,
         ),
         "confidence": confidence,
+    }
+
+
+def _normalize_reader_experience_point(value: Any) -> Dict[str, Any]:
+    raw = _safe_dict(value)
+    if not raw and isinstance(value, str):
+        raw = {"description": value}
+    description = str(raw.get("description") or raw.get("desc") or raw.get("point") or "").strip()[:180]
+    if not description:
+        return {}
+    return {
+        "type": str(raw.get("type") or raw.get("kind") or "").strip()[:30],
+        "description": description,
+        "intensity": _clamp_score(raw.get("intensity"), default=0.0),
+        "evidence": str(raw.get("evidence") or raw.get("quote") or "").strip()[:100],
+    }
+
+
+def _normalize_reader_experience(value: Any) -> Dict[str, Any]:
+    raw = _safe_dict(value)
+    emotion = _safe_dict(raw.get("immediate_emotion"))
+    anticipation = _safe_dict(raw.get("anticipation"))
+    satisfaction_points = []
+    for item in raw.get("satisfaction_points") or raw.get("payoff_points") or []:
+        normalized = _normalize_reader_experience_point(item)
+        if normalized:
+            satisfaction_points.append(normalized)
+        if len(satisfaction_points) >= 5:
+            break
+    frustration_points = []
+    for item in raw.get("frustration_points") or raw.get("risk_points") or raw.get("poison_points") or []:
+        normalized = _normalize_reader_experience_point(item)
+        if normalized:
+            frustration_points.append(normalized)
+        if len(frustration_points) >= 5:
+            break
+    engagement = str(raw.get("engagement_level") or raw.get("reader_engagement") or "").strip().lower()
+    if engagement not in {"high", "medium", "low"}:
+        engagement = ""
+    return {
+        "immediate_emotion": {
+            "emotion": str(emotion.get("emotion") or emotion.get("type") or "").strip()[:30],
+            "intensity": _clamp_score(emotion.get("intensity"), default=0.0),
+            "trigger": str(emotion.get("trigger") or emotion.get("trigger_quote") or "").strip()[:100],
+        },
+        "immersion_anchor": str(raw.get("immersion_anchor") or raw.get("substitution_anchor") or "").strip()[:160],
+        "anticipation": {
+            "expected": str(anticipation.get("expected") or anticipation.get("expectation") or "").strip()[:160],
+            "intensity": _clamp_score(anticipation.get("intensity"), default=0.0),
+            "hook_type": str(anticipation.get("hook_type") or anticipation.get("type") or "").strip()[:40],
+        },
+        "satisfaction_points": satisfaction_points,
+        "frustration_points": frustration_points,
+        "engagement_level": engagement,
+        "experience_notes": _safe_list(raw.get("experience_notes") or raw.get("notes"), limit=5),
     }
 
 
@@ -1082,6 +1150,41 @@ def _compact_semantic_layers_for_summary(chunk_results: List[Dict[str, Any]], li
             "technique": semantic.get("technique"),
             "subtext_or_irony": semantic.get("subtext_or_irony") or [],
             "confidence": semantic.get("confidence"),
+        })
+        if len(compact) >= limit:
+            break
+    return compact
+
+
+def _compact_reader_experience_for_summary(chunk_results: List[Dict[str, Any]], limit: int = 120) -> List[Dict[str, Any]]:
+    compact = []
+    for item in chunk_results:
+        if not isinstance(item, dict):
+            continue
+        experience = _normalize_reader_experience(item.get("reader_experience"))
+        emotion = _safe_dict(experience.get("immediate_emotion"))
+        anticipation = _safe_dict(experience.get("anticipation"))
+        if not any([
+            emotion.get("emotion"),
+            emotion.get("trigger"),
+            experience.get("immersion_anchor"),
+            anticipation.get("expected"),
+            experience.get("satisfaction_points"),
+            experience.get("frustration_points"),
+            experience.get("engagement_level"),
+            experience.get("experience_notes"),
+        ]):
+            continue
+        compact.append({
+            "chunk_index": item.get("original_chunk_index", item.get("chunk_index")),
+            "summary": item.get("one_sentence_summary"),
+            "immediate_emotion": emotion,
+            "immersion_anchor": experience.get("immersion_anchor"),
+            "anticipation": anticipation,
+            "satisfaction_points": experience.get("satisfaction_points") or [],
+            "frustration_points": experience.get("frustration_points") or [],
+            "engagement_level": experience.get("engagement_level"),
+            "experience_notes": experience.get("experience_notes") or [],
         })
         if len(compact) >= limit:
             break
@@ -1538,6 +1641,55 @@ def _semantic_layers_summary_json_hint() -> str:
   },"""
 
 
+def _reader_experience_system_instruction() -> str:
+    if not READER_EXPERIENCE_ENABLED:
+        return ""
+    return """
+
+【读者体验、爽虐点与期待管理】
+请额外输出 reader_experience。它用于评估当前片段对目标网文读者的即时阅读体验，不等同于写作质量评分，也不要使用后宫专项排雷标准。
+
+判断要点：
+- immediate_emotion：读者读到本片段最可能产生的即时情绪及强度，例如爽、燃、紧张、压抑、困惑、厌烦、共情、期待。
+- immersion_anchor：读者代入或关注的锚点，例如主角收益、角色处境、悬念问题、势力对抗、感情进展。
+- anticipation：读完本片段后被引导期待什么，以及期待强度和钩子类型。
+- satisfaction_points：记录明确带来满足感的爽点、燃点、甜点、解谜满足、成长兑现等。
+- frustration_points：记录可能削弱体验的憋屈、拖延、重复解释、期待落空、逻辑卡顿、情绪疲劳等；不确定时不要扩大化。
+- engagement_level：按当前片段估计读者投入度 high/medium/low。
+每类最多保留关键项，必须基于片段证据。"""
+
+
+def _reader_experience_json_hint() -> str:
+    if not READER_EXPERIENCE_ENABLED:
+        return ""
+    return """,
+  "reader_experience": {
+    "immediate_emotion": {"emotion": "爽|燃|紧张|压抑|困惑|厌烦|共情|期待|平", "intensity": 0-10, "trigger": "触发情绪的短证据"},
+    "immersion_anchor": "读者代入/关注锚点",
+    "anticipation": {"expected": "读者读完后期待什么", "intensity": 0-10, "hook_type": "悬念|反击|成长|感情|解谜|危机|设定|其他"},
+    "satisfaction_points": [{"type": "爽点|燃点|甜点|解谜|成长兑现|其他", "description": "满足感来源", "intensity": 0-10, "evidence": "短证据"}],
+    "frustration_points": [{"type": "憋屈|拖延|重复|期待落空|逻辑卡顿|情绪疲劳|其他", "description": "可能削弱体验的点", "intensity": 0-10, "evidence": "短证据"}],
+    "engagement_level": "high|medium|low",
+    "experience_notes": ["读者体验补充判断"]
+  }"""
+
+
+def _reader_experience_summary_json_hint() -> str:
+    if not READER_EXPERIENCE_ENABLED:
+        return ""
+    return """
+  "reader_experience_analysis": {
+    "engagement_curve": "整书读者投入度曲线",
+    "dominant_emotions": ["主导阅读情绪"],
+    "satisfaction_design": ["主要爽点/燃点/甜点/解谜满足如何设计"],
+    "anticipation_management": "期待钩子的设置、延迟和兑现情况",
+    "immersion_anchors": ["读者主要代入或关注的锚点"],
+    "frustration_risks": ["可能导致读者疲劳、憋屈或弃书的体验风险"],
+    "reader_experience_rating": "excellent|good|average|weak",
+    "improvement_suggestions": ["读者体验层面的改进建议"]
+  },"""
+
+
 def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None, context_snapshot=None) -> Dict[str, Any]:
     profile = profile or load_analysis_profile("general")
     density_profile = density_profile or _chunk_density_profile(text_chunk)
@@ -1567,6 +1719,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 {_narrative_architecture_system_instruction()}
 {_foreshadowing_engineering_system_instruction()}
 {_semantic_layers_system_instruction()}
+{_reader_experience_system_instruction()}
 {_rolling_context_instruction(context_snapshot or {})}
 
 要求：
@@ -1588,7 +1741,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
   "themes": ["..."],
   "foreshadowing": ["..."],
   "quality_notes": ["..."],
-  "specialty_notes": ["专项规则相关要点"]{_writing_quality_json_hint()}{_narrative_architecture_json_hint()}{_foreshadowing_engineering_json_hint()}{_semantic_layers_json_hint()}{_context_state_json_hint()},
+  "specialty_notes": ["专项规则相关要点"]{_writing_quality_json_hint()}{_narrative_architecture_json_hint()}{_foreshadowing_engineering_json_hint()}{_semantic_layers_json_hint()}{_reader_experience_json_hint()}{_context_state_json_hint()},
   "one_sentence_summary": "本片段一句话概要"
 }}"""
     data = _call_json(
@@ -1617,6 +1770,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         "outline_architecture": _normalize_outline_architecture(data.get("outline_architecture")) if NARRATIVE_ARCHITECTURE_ENABLED else {},
         "foreshadowing_engineering": _normalize_foreshadowing_engineering(data.get("foreshadowing_engineering")) if FORESHADOWING_ENGINEERING_ENABLED else {},
         "semantic_layers": _normalize_semantic_layers(data.get("semantic_layers")) if SEMANTIC_LAYERS_ENABLED else {},
+        "reader_experience": _normalize_reader_experience(data.get("reader_experience")) if READER_EXPERIENCE_ENABLED else {},
         "context_snapshot_used": context_snapshot or {},
         "context_state_update": _normalize_context_state_update(data.get("context_state_update")) if ROLLING_CONTEXT_ENABLED else {},
         "one_sentence_summary": str(data.get("one_sentence_summary", "") or "").strip(),
@@ -1650,6 +1804,7 @@ def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int,
         "outline_architecture": {},
         "foreshadowing_engineering": {},
         "semantic_layers": {},
+        "reader_experience": {},
         "one_sentence_summary": "",
         "partial_result": True,
         "partial_reason": reason,
@@ -1688,6 +1843,7 @@ def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int,
             "narrative_structure",
             "outline_architecture",
             "semantic_layers",
+            "reader_experience",
         ):
             if not merged.get(object_field) and isinstance(result.get(object_field), dict):
                 merged[object_field] = result.get(object_field) or {}
@@ -1776,6 +1932,8 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         material["foreshadowing_engineering_chunks"] = _compact_foreshadowing_engineering_for_summary(chunk_results)
     if SEMANTIC_LAYERS_ENABLED:
         material["semantic_layers_chunks"] = _compact_semantic_layers_for_summary(chunk_results)
+    if READER_EXPERIENCE_ENABLED:
+        material["reader_experience_chunks"] = _compact_reader_experience_for_summary(chunk_results)
     if ROLLING_CONTEXT_ENABLED:
         material["rolling_context_timeline"] = _compact_rolling_context_timeline(chunk_results)
     base_summary_fields = {
@@ -1792,6 +1950,7 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         "outline_architecture_overall",
         "foreshadowing_engineering_analysis",
         "semantic_layers_analysis",
+        "reader_experience_analysis",
         "strengths",
         "risks_or_issues",
     }
@@ -1819,6 +1978,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 开启叙事架构分析时，请基于 narrative_architecture_chunks 判断整书结构模式、阶段转折、因果链、成长曲线和大纲风险；不要把单个片段孤证当成整书结论。
 开启伏笔工程追踪时，请结合 foreshadowing_engineering_chunks 和 rolling_context_timeline 判断伏笔设置、活跃线索、回收质量、烟雾弹和风险；不要把普通未完成剧情目标都算作伏笔。
 开启深层语义分析时，请基于 semantic_layers_chunks 归纳事实层、意图层、效果层和技法层的稳定模式；潜台词/反讽必须来自分块证据，不要强行拔高主题。
+开启读者体验分析时，请基于 reader_experience_chunks 判断投入度曲线、爽点/燃点/甜点/解谜满足、期待管理和体验风险；不要把单个片段的挫败点扩大成整书结论。
 开启滚动上下文时，请基于 rolling_context_timeline 理解全书阶段推进、人物关系延续、未解问题和回收情况；不要要求或引用 context_snapshot_used 这类逐块内部快照。"""
     user_prompt = f"""书名：{book_name}
 
@@ -1833,7 +1993,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
   "worldbuilding": ["世界观/设定要点"],
   "themes": ["主题表达"],
   "foreshadowing_and_payoff": ["伏笔、悬念、回收情况"],
-{specialty_json_hint}{_narrative_architecture_summary_json_hint()}{_foreshadowing_engineering_summary_json_hint()}{_semantic_layers_summary_json_hint()}{_writing_quality_summary_json_hint()}
+{specialty_json_hint}{_narrative_architecture_summary_json_hint()}{_foreshadowing_engineering_summary_json_hint()}{_semantic_layers_summary_json_hint()}{_reader_experience_summary_json_hint()}{_writing_quality_summary_json_hint()}
   "strengths": ["作品优点"],
   "risks_or_issues": ["可能的问题或阅读门槛"],
   "reader_fit": "适合什么读者",
@@ -1870,6 +2030,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         "outline_architecture_overall": _normalize_object_summary(data.get("outline_architecture_overall")),
         "foreshadowing_engineering_analysis": _normalize_object_summary(data.get("foreshadowing_engineering_analysis")),
         "semantic_layers_analysis": _normalize_object_summary(data.get("semantic_layers_analysis")),
+        "reader_experience_analysis": _normalize_object_summary(data.get("reader_experience_analysis")),
         "strengths": _summary_field_value(data, "strengths"),
         "risks_or_issues": _summary_field_value(data, "risks_or_issues"),
         "reader_fit": "；".join(_summary_field_value(data, "reader_fit")),
@@ -2036,6 +2197,9 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "semantic_layers_enabled": SEMANTIC_LAYERS_ENABLED,
         "semantic_layers_schema_version": SEMANTIC_LAYERS_SCHEMA_VERSION if SEMANTIC_LAYERS_ENABLED else None,
         "semantic_layers_timeline_count": len(_compact_semantic_layers_for_summary(chunk_results)) if SEMANTIC_LAYERS_ENABLED else 0,
+        "reader_experience_enabled": READER_EXPERIENCE_ENABLED,
+        "reader_experience_schema_version": READER_EXPERIENCE_SCHEMA_VERSION if READER_EXPERIENCE_ENABLED else None,
+        "reader_experience_timeline_count": len(_compact_reader_experience_for_summary(chunk_results)) if READER_EXPERIENCE_ENABLED else 0,
         "density_counts": density_counts,
         "incremental_reuse": INCREMENTAL_REUSE,
         "reused_chunk_count": reused_chunk_count,

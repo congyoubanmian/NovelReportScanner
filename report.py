@@ -43,6 +43,7 @@ SUMMARY_FIELD_TITLES = {
     "foreshadowing_and_payoff": "伏笔与回收",
     "foreshadowing_engineering_analysis": "伏笔工程分析",
     "semantic_layers_analysis": "深层语义分析",
+    "reader_experience_analysis": "读者体验分析",
     "scientific_assumptions": "科学假设",
     "technology_chain": "技术链与工程约束",
     "science_consistency": "科学设定自洽性",
@@ -280,6 +281,11 @@ SUMMARY_FIELD_ALIASES = {
     "subtext_analysis": "semantic_layers_analysis",
     "reader_effect_analysis": "semantic_layers_analysis",
     "semantic_analysis": "semantic_layers_analysis",
+    "reader_experience": "reader_experience_analysis",
+    "reader_effects": "reader_experience_analysis",
+    "engagement_analysis": "reader_experience_analysis",
+    "anticipation_analysis": "reader_experience_analysis",
+    "satisfaction_analysis": "reader_experience_analysis",
     "foreshadowing": "foreshadowing_and_payoff",
     "plot_threads": "foreshadowing_and_payoff",
     "payoff": "foreshadowing_and_payoff",
@@ -3410,6 +3416,11 @@ GENERAL_SEMANTIC_LAYER_FIELDS = {
 }
 
 
+GENERAL_READER_EXPERIENCE_FIELDS = {
+    "reader_experience_analysis",
+}
+
+
 def _append_text_block(lines: list, title: str, value, *, limit: int = 8):
     lines.extend(["", f"【{title}】"])
     if isinstance(value, list):
@@ -3589,6 +3600,30 @@ def _append_general_semantic_layers_sections(lines: list, general_summary: dict)
         _append_text_block(lines, "语义细项", rest)
 
 
+def _append_general_reader_experience_sections(lines: list, general_summary: dict):
+    summary = (general_summary or {}).get("summary") or {}
+    experience = summary.get("reader_experience_analysis")
+    if not isinstance(experience, dict) or not experience:
+        return
+    lines.extend(["", "【读者体验分析】"])
+    rating = str(experience.get("reader_experience_rating") or "").strip()
+    engagement_curve = str(experience.get("engagement_curve") or "").strip()
+    anticipation = str(experience.get("anticipation_management") or "").strip()
+    if rating:
+        lines.append(f"体验评级：{rating}")
+    if engagement_curve:
+        lines.append(f"投入曲线：{engagement_curve[:220]}")
+    if anticipation:
+        lines.append(f"期待管理：{anticipation[:220]}")
+    rest = {
+        key: value
+        for key, value in experience.items()
+        if key not in {"reader_experience_rating", "engagement_curve", "anticipation_management"}
+    }
+    if rest:
+        _append_text_block(lines, "体验细项", rest)
+
+
 def _text_signal_count(*items) -> int:
     count = 0
     for item in items:
@@ -3728,6 +3763,7 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
     add_list("世界观/设定", summary_field_values(summary, "worldbuilding"))
     add_list("主题表达", summary_field_values(summary, "themes"))
     _append_general_semantic_layers_sections(lines, general_summary)
+    _append_general_reader_experience_sections(lines, general_summary)
     add_list("伏笔与回收", summary_field_values(summary, "foreshadowing_and_payoff"))
     _append_general_foreshadowing_engineering_sections(lines, general_summary)
     _append_general_narrative_architecture_sections(lines, general_summary)
@@ -3740,6 +3776,7 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
         "foreshadowing_and_payoff",
         *GENERAL_FORESHADOWING_ENGINEERING_FIELDS,
         *GENERAL_SEMANTIC_LAYER_FIELDS,
+        *GENERAL_READER_EXPERIENCE_FIELDS,
         *GENERAL_CRAFT_SUMMARY_FIELDS,
         *GENERAL_NARRATIVE_ARCHITECTURE_FIELDS,
         "strengths",

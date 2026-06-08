@@ -401,6 +401,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("GENERAL_SCAN_NARRATIVE_ARCHITECTURE", text)
         self.assertIn("GENERAL_SCAN_FORESHADOWING_ENGINEERING", text)
         self.assertIn("GENERAL_SCAN_SEMANTIC_LAYERS", text)
+        self.assertIn("GENERAL_SCAN_READER_EXPERIENCE", text)
         self.assertIn("GENERAL_SCAN_CONTENT_AWARE_SAMPLING", text)
         self.assertIn("GENERAL_SCAN_ROLLING_CONTEXT", text)
         self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS", text)
@@ -830,6 +831,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("general_scan_semantic_layers: true", text)
         self.assertIn("config.general_scan_semantic_layers !== false", text)
         self.assertIn("configForm.general_scan_semantic_layers", text)
+        self.assertIn("general_scan_reader_experience: true", text)
+        self.assertIn("config.general_scan_reader_experience !== false", text)
+        self.assertIn("configForm.general_scan_reader_experience", text)
         self.assertIn("general_scan_content_aware_sampling: true", text)
         self.assertIn("config.general_scan_content_aware_sampling !== false", text)
         self.assertIn("configForm.general_scan_content_aware_sampling", text)
@@ -4234,6 +4238,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_NARRATIVE_ARCHITECTURE",
             "GENERAL_SCAN_FORESHADOWING_ENGINEERING",
             "GENERAL_SCAN_SEMANTIC_LAYERS",
+            "GENERAL_SCAN_READER_EXPERIENCE",
             "GENERAL_SCAN_ROLLING_CONTEXT",
             "GENERAL_SCAN_CONTEXT_MAX_CHARS",
             "HAREM_PLUS_GENERAL_SCAN",
@@ -4255,6 +4260,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "general_scan_narrative_architecture": False,
                 "general_scan_foreshadowing_engineering": False,
                 "general_scan_semantic_layers": False,
+                "general_scan_reader_experience": False,
                 "general_scan_rolling_context": False,
                 "general_scan_context_max_chars": "800",
                 "harem_plus_general_scan": True,
@@ -4273,6 +4279,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["GENERAL_SCAN_NARRATIVE_ARCHITECTURE"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_FORESHADOWING_ENGINEERING"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_SEMANTIC_LAYERS"], "0")
+            self.assertEqual(os.environ["GENERAL_SCAN_READER_EXPERIENCE"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_ROLLING_CONTEXT"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_CONTEXT_MAX_CHARS"], "800")
             self.assertEqual(os.environ["HAREM_PLUS_GENERAL_SCAN"], "1")
@@ -4284,6 +4291,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertFalse(result["general_scan_narrative_architecture"])
             self.assertFalse(result["general_scan_foreshadowing_engineering"])
             self.assertFalse(result["general_scan_semantic_layers"])
+            self.assertFalse(result["general_scan_reader_experience"])
             self.assertFalse(result["general_scan_rolling_context"])
             self.assertEqual(result["general_scan_context_max_chars"], "800")
             self.assertTrue(result["harem_plus_general_scan"])
@@ -4461,6 +4469,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_NARRATIVE_ARCHITECTURE": "general_scan_narrative_architecture",
             "GENERAL_SCAN_FORESHADOWING_ENGINEERING": "general_scan_foreshadowing_engineering",
             "GENERAL_SCAN_SEMANTIC_LAYERS": "general_scan_semantic_layers",
+            "GENERAL_SCAN_READER_EXPERIENCE": "general_scan_reader_experience",
             "GENERAL_SCAN_ROLLING_CONTEXT": "general_scan_rolling_context",
             "GENERAL_SCAN_CONTEXT_MAX_CHARS": "general_scan_context_max_chars",
             "HAREM_PLUS_GENERAL_SCAN": "harem_plus_general_scan",
@@ -4498,6 +4507,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "general_scan_narrative_architecture": False,
                     "general_scan_foreshadowing_engineering": False,
                     "general_scan_semantic_layers": False,
+                    "general_scan_reader_experience": False,
                     "general_scan_rolling_context": False,
                     "general_scan_context_max_chars": 800,
                     "harem_plus_general_scan": True,
@@ -4515,6 +4525,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("GENERAL_SCAN_NARRATIVE_ARCHITECTURE=0", lines)
                 self.assertIn("GENERAL_SCAN_FORESHADOWING_ENGINEERING=0", lines)
                 self.assertIn("GENERAL_SCAN_SEMANTIC_LAYERS=0", lines)
+                self.assertIn("GENERAL_SCAN_READER_EXPERIENCE=0", lines)
                 self.assertIn("GENERAL_SCAN_ROLLING_CONTEXT=0", lines)
                 self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS=800", lines)
                 self.assertIn("HAREM_PLUS_GENERAL_SCAN=1", lines)
@@ -5999,6 +6010,39 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("先抑后扬", text)
         self.assertEqual(text.count("【深层语义分析】"), 1)
         self.assertNotIn("【semantic layers analysis】", text)
+
+    def test_general_report_includes_reader_experience_sections(self):
+        general_summary = {
+            "profile_display_name": "通用小说分析",
+            "summary_fields": [
+                "main_plot",
+                "reader_experience_analysis",
+            ],
+            "summary": {
+                "story_overview": "主角连续受压后完成反击。",
+                "main_plot": ["主角反击"],
+                "reader_experience_analysis": {
+                    "engagement_curve": "前期压抑，中段悬念拉高，反击段释放明显",
+                    "dominant_emotions": ["压抑", "期待", "爽"],
+                    "satisfaction_design": ["反派误判后被主角翻盘形成爽点"],
+                    "anticipation_management": "用反派压制制造翻盘期待，并在本段兑现",
+                    "immersion_anchors": ["主角反击收益", "反派误判"],
+                    "frustration_risks": ["压抑段过长会降低耐心"],
+                    "reader_experience_rating": "good",
+                    "improvement_suggestions": ["缩短重复压制段"],
+                },
+            },
+        }
+
+        text = report.build_general_report("测试书", {}, general_summary)
+
+        self.assertIn("【读者体验分析】", text)
+        self.assertIn("体验评级：good", text)
+        self.assertIn("投入曲线：前期压抑", text)
+        self.assertIn("期待管理：用反派压制制造翻盘期待", text)
+        self.assertIn("反派误判后被主角翻盘形成爽点", text)
+        self.assertEqual(text.count("【读者体验分析】"), 1)
+        self.assertNotIn("【reader experience analysis】", text)
 
     def test_general_report_does_not_repeat_footer_summary_fields(self):
         general_summary = {
@@ -9360,6 +9404,51 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("反派自以为胜利形成反讽", result["semantic_layers"]["subtext_or_irony"])
         self.assertEqual(result["semantic_layers"]["confidence"], "high")
 
+    def test_general_scan_outputs_reader_experience(self):
+        profile = analysis_profiles.load_analysis_profile("general")
+        prompts = []
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(messages, max_tokens=3000):
+                prompts.append("\n".join(item.get("content", "") for item in messages))
+                return {
+                    "plot_events": ["主角被压制后反手破局"],
+                    "conflicts": ["主角与反派对抗"],
+                    "worldbuilding": [],
+                    "themes": ["反击"],
+                    "foreshadowing": [],
+                    "quality_notes": [],
+                    "specialty_notes": [],
+                    "reader_experience": {
+                        "immediate_emotion": {"emotion": "爽", "intensity": 8, "trigger": "主角反手破局"},
+                        "immersion_anchor": "主角从劣势翻盘",
+                        "anticipation": {"expected": "反派被彻底清算", "intensity": 7, "hook_type": "反击"},
+                        "satisfaction_points": [
+                            {"type": "爽点", "description": "压制后反杀", "intensity": 8, "evidence": "反手破局"}
+                        ],
+                        "frustration_points": [
+                            {"type": "憋屈", "description": "前半段压制较长", "intensity": 4, "evidence": "被连续羞辱"}
+                        ],
+                        "engagement_level": "high",
+                        "experience_notes": ["期待后续清算"],
+                    },
+                    "one_sentence_summary": "主角从被压制转为反手破局。",
+                }
+
+            general_scan._call_json = fake_call_json
+            result = general_scan._scan_chunk("主角被连续羞辱后反手破局。", 0, 1, profile=profile)
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertTrue(any("读者体验" in prompt for prompt in prompts))
+        self.assertTrue(any("期待管理" in prompt for prompt in prompts))
+        self.assertEqual(result["reader_experience"]["immediate_emotion"]["emotion"], "爽")
+        self.assertEqual(result["reader_experience"]["immediate_emotion"]["intensity"], 8.0)
+        self.assertEqual(result["reader_experience"]["anticipation"]["expected"], "反派被彻底清算")
+        self.assertEqual(result["reader_experience"]["satisfaction_points"][0]["description"], "压制后反杀")
+        self.assertEqual(result["reader_experience"]["frustration_points"][0]["type"], "憋屈")
+        self.assertEqual(result["reader_experience"]["engagement_level"], "high")
+
     def test_general_scan_uses_rolling_context_in_chunk_prompt(self):
         profile = analysis_profiles.load_analysis_profile("general")
         prompts = []
@@ -9849,6 +9938,64 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(summary["semantic_layers_analysis"]["dominant_author_intent"], "先压后扬制造翻盘爽点")
         self.assertIn("先抑后扬", summary["semantic_layers_analysis"]["technique_pattern"])
         self.assertIn("反派自信带有反讽", summary["semantic_layers_analysis"]["subtext_or_irony"])
+
+    def test_general_scan_summary_includes_reader_experience_material(self):
+        profile = analysis_profiles.load_analysis_profile("general")
+        prompts = []
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(messages, max_tokens=3000):
+                prompt = "\n".join(item.get("content", "") for item in messages)
+                prompts.append(prompt)
+                return {
+                    "story_overview": "主角通过压抑后的反击制造爽点。",
+                    "main_plot": ["压抑反击"],
+                    "core_conflicts": ["主角与反派对抗"],
+                    "worldbuilding": [],
+                    "themes": ["反击"],
+                    "foreshadowing_and_payoff": [],
+                    "reader_experience_analysis": {
+                        "engagement_curve": "压抑后释放",
+                        "dominant_emotions": ["压抑", "期待", "爽"],
+                        "satisfaction_design": ["压制后反杀形成爽点"],
+                        "anticipation_management": "期待反派清算并在高潮段兑现",
+                        "immersion_anchors": ["主角翻盘"],
+                        "frustration_risks": ["压抑铺垫过长"],
+                        "reader_experience_rating": "good",
+                        "improvement_suggestions": ["减少重复羞辱"],
+                    },
+                    "strengths": ["爽点兑现清楚"],
+                    "risks_or_issues": ["压抑段稍长"],
+                    "reader_fit": "喜欢反击爽点的读者",
+                    "overall_assessment": "读者体验较稳定",
+                }
+
+            general_scan._call_json = fake_call_json
+            summary = general_scan._summarize_book(
+                "读者体验测试",
+                [{
+                    "one_sentence_summary": "主角被压制后反手破局。",
+                    "reader_experience": {
+                        "immediate_emotion": {"emotion": "爽", "intensity": 8, "trigger": "反手破局"},
+                        "immersion_anchor": "主角翻盘",
+                        "anticipation": {"expected": "反派清算", "intensity": 7, "hook_type": "反击"},
+                        "satisfaction_points": [{"type": "爽点", "description": "压制后反杀", "intensity": 8}],
+                        "frustration_points": [{"type": "憋屈", "description": "前置压制偏长", "intensity": 4}],
+                        "engagement_level": "high",
+                        "experience_notes": ["爽点兑现明确"],
+                    },
+                }],
+                profile=profile,
+            )
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertTrue(any('"reader_experience_chunks"' in prompt for prompt in prompts))
+        self.assertTrue(any('"reader_experience_analysis"' in prompt for prompt in prompts))
+        self.assertTrue(any("压制后反杀" in prompt for prompt in prompts))
+        self.assertEqual(summary["reader_experience_analysis"]["reader_experience_rating"], "good")
+        self.assertIn("压制后反杀形成爽点", summary["reader_experience_analysis"]["satisfaction_design"])
+        self.assertIn("压抑铺垫过长", summary["reader_experience_analysis"]["frustration_risks"])
 
     def test_general_scan_summary_uses_rolling_context_timeline_only(self):
         profile = analysis_profiles.load_analysis_profile("general")
@@ -10703,6 +10850,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(data["foreshadowing_engineering_schema_version"], general_scan.FORESHADOWING_ENGINEERING_SCHEMA_VERSION)
             self.assertTrue(data["semantic_layers_enabled"])
             self.assertEqual(data["semantic_layers_schema_version"], general_scan.SEMANTIC_LAYERS_SCHEMA_VERSION)
+            self.assertTrue(data["reader_experience_enabled"])
+            self.assertEqual(data["reader_experience_schema_version"], general_scan.READER_EXPERIENCE_SCHEMA_VERSION)
             self.assertEqual(sum(data["density_counts"].values()), 300)
             self.assertEqual(data["prompt_templates"]["general_scan_chunk"]["version"], "v1")
             self.assertEqual(data["prompt_templates"]["general_summary"]["version"], "v1")
@@ -10742,6 +10891,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "smart_density": general_scan.SMART_DENSITY,
                     "foreshadowing_engineering_enabled": general_scan.FORESHADOWING_ENGINEERING_ENABLED,
                     "semantic_layers_enabled": general_scan.SEMANTIC_LAYERS_ENABLED,
+                    "reader_experience_enabled": general_scan.READER_EXPERIENCE_ENABLED,
                     "prompt_templates": {
                         "general_scan_chunk": {"name": "general_scan_chunk", "version": "v1"},
                         "general_summary": {"name": "general_summary", "version": "v1"},
@@ -10757,6 +10907,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         "outline_architecture": {"causal_chain": {"causal_strength": "自然发展"}},
                         "foreshadowing_engineering": {"new_foreshadowing": [{"description": "旧伏笔"}]},
                         "semantic_layers": {"literal_meaning": "旧片段事实", "author_intent": "旧片段意图"},
+                        "reader_experience": {
+                            "immediate_emotion": {"emotion": "期待", "intensity": 6, "trigger": "旧片段推进"},
+                            "immersion_anchor": "旧片段主角目标",
+                            "anticipation": {"expected": "旧线索继续推进", "intensity": 6, "hook_type": "悬念"},
+                            "satisfaction_points": [{"type": "解谜", "description": "旧线索给出进展", "intensity": 6}],
+                            "frustration_points": [],
+                            "engagement_level": "medium",
+                            "experience_notes": ["旧片段体验可复用"],
+                        },
                         "one_sentence_summary": "旧摘要",
                     }],
                 }, f, ensure_ascii=False)
@@ -10792,6 +10951,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertTrue(data["narrative_architecture_enabled"])
             self.assertTrue(data["foreshadowing_engineering_enabled"])
             self.assertTrue(data["semantic_layers_enabled"])
+            self.assertTrue(data["reader_experience_enabled"])
             self.assertEqual(data["reused_chunk_count"], 1)
             self.assertEqual(data["scanned_chunk_count"], 1)
             self.assertTrue(data["chunk_results"][0]["reused_from_previous"])
@@ -10832,6 +10992,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "rolling_context_max_chars": general_scan.CONTEXT_MAX_CHARS,
                     "foreshadowing_engineering_enabled": general_scan.FORESHADOWING_ENGINEERING_ENABLED,
                     "semantic_layers_enabled": general_scan.SEMANTIC_LAYERS_ENABLED,
+                    "reader_experience_enabled": general_scan.READER_EXPERIENCE_ENABLED,
                     "prompt_templates": {
                         "general_scan_chunk": {"name": "general_scan_chunk", "version": "v1"},
                         "general_summary": {"name": "general_summary", "version": "v1"},
@@ -10847,6 +11008,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         "outline_architecture": {"causal_chain": {"causal_strength": "自然发展"}},
                         "foreshadowing_engineering": {"new_foreshadowing": [{"description": "旧伏笔"}]},
                         "semantic_layers": {"literal_meaning": "旧片段事实", "author_intent": "旧片段意图"},
+                        "reader_experience": {
+                            "immediate_emotion": {"emotion": "期待", "intensity": 6, "trigger": "旧片段推进"},
+                            "immersion_anchor": "旧片段主角目标",
+                            "anticipation": {"expected": "旧线索继续推进", "intensity": 6, "hook_type": "悬念"},
+                            "satisfaction_points": [{"type": "解谜", "description": "旧线索给出进展", "intensity": 6}],
+                            "frustration_points": [],
+                            "engagement_level": "medium",
+                            "experience_notes": ["旧片段体验可复用"],
+                        },
                         "context_state_update": {"progress_summary": "旧摘要"},
                         "one_sentence_summary": "旧摘要",
                     }],
@@ -11025,6 +11195,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "foreshadowing_engineering_schema_version": general_scan.FORESHADOWING_ENGINEERING_SCHEMA_VERSION,
                 "semantic_layers_enabled": general_scan.SEMANTIC_LAYERS_ENABLED,
                 "semantic_layers_schema_version": general_scan.SEMANTIC_LAYERS_SCHEMA_VERSION,
+                "reader_experience_enabled": general_scan.READER_EXPERIENCE_ENABLED,
+                "reader_experience_schema_version": general_scan.READER_EXPERIENCE_SCHEMA_VERSION,
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }
@@ -11044,6 +11216,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             data_without_semantic_meta = dict(data)
             data_without_semantic_meta.pop("semantic_layers_enabled", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_semantic_meta, novel_path, "history"))
+            data_without_reader_experience_meta = dict(data)
+            data_without_reader_experience_meta.pop("reader_experience_enabled", None)
+            self.assertFalse(general_scan._is_fresh_summary(data_without_reader_experience_meta, novel_path, "history"))
             data_without_content_sampling_meta = dict(data)
             data_without_content_sampling_meta.pop("content_aware_sampling_schema_version", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_content_sampling_meta, novel_path, "history"))
@@ -11095,6 +11270,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "foreshadowing_engineering_schema_version": general_scan.FORESHADOWING_ENGINEERING_SCHEMA_VERSION,
                 "semantic_layers_enabled": general_scan.SEMANTIC_LAYERS_ENABLED,
                 "semantic_layers_schema_version": general_scan.SEMANTIC_LAYERS_SCHEMA_VERSION,
+                "reader_experience_enabled": general_scan.READER_EXPERIENCE_ENABLED,
+                "reader_experience_schema_version": general_scan.READER_EXPERIENCE_SCHEMA_VERSION,
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }
