@@ -7235,6 +7235,125 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         finally:
             os.unlink(novel_path)
 
+    def test_find_detailed_json_strict_does_not_fallback_to_other_book(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            other_path = os.path.join(tmpdir, "乙书_detailed_20260609.json")
+            with open(other_path, "w", encoding="utf-8") as f:
+                json.dump({"book": "乙书"}, f)
+
+            self.assertIsNone(report.find_detailed_json("甲书", base_dir=tmpdir, strict=True))
+            self.assertEqual(report.find_detailed_json("甲书", base_dir=tmpdir, strict=False), other_path)
+
+    def test_report_main_with_novel_path_does_not_use_other_book_detail(self):
+        old_results_dir = report.RESULTS_DIR
+        old_checkpoint = report.REPORT_CHECKPOINT_FILE
+        old_novel_path = os.environ.get("NOVEL_PATH")
+        old_profile = os.environ.get("ANALYSIS_PROFILE")
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                report.RESULTS_DIR = tmpdir
+                report.REPORT_CHECKPOINT_FILE = os.path.join(tmpdir, "report_checkpoint.json")
+                os.environ["ANALYSIS_PROFILE"] = "harem"
+                novel_path = os.path.join(tmpdir, "甲书.txt")
+                with open(novel_path, "w", encoding="utf-8") as f:
+                    f.write("甲书正文")
+                other_detail = os.path.join(tmpdir, "乙书_detailed_20260609.json")
+                with open(other_detail, "w", encoding="utf-8") as f:
+                    json.dump({"male_protagonist": {"name": "乙男"}}, f, ensure_ascii=False)
+
+                captured = {}
+
+                def fake_build(book_key, detailed_data, reviewer):
+                    captured["book_key"] = book_key
+                    captured["detailed_data"] = detailed_data
+                    captured["reviewer"] = reviewer
+                    return "报告正文"
+
+                with mock.patch.object(report, "find_latest", return_value=None), \
+                        mock.patch.object(report, "init_token_tracker"), \
+                        mock.patch.object(report, "build_report_v2", side_effect=fake_build):
+                    report.main(novel_path=novel_path, book_name="甲书")
+
+                self.assertEqual(captured["book_key"], "甲书")
+                self.assertIsNone(captured["detailed_data"])
+        finally:
+            report.RESULTS_DIR = old_results_dir
+            report.REPORT_CHECKPOINT_FILE = old_checkpoint
+            if old_novel_path is None:
+                os.environ.pop("NOVEL_PATH", None)
+            else:
+                os.environ["NOVEL_PATH"] = old_novel_path
+            if old_profile is None:
+                os.environ.pop("ANALYSIS_PROFILE", None)
+            else:
+                os.environ["ANALYSIS_PROFILE"] = old_profile
+
+    def test_find_general_summary_json_requires_exact_book_key_from_scan_dir(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            wrong_dir = os.path.join(tmpdir, "九锡外传_scan_20260609")
+            right_dir = os.path.join(tmpdir, "九锡_scan_20260609")
+            os.makedirs(wrong_dir)
+            os.makedirs(right_dir)
+            wrong_path = os.path.join(wrong_dir, "GENERAL_SUMMARY.json")
+            right_path = os.path.join(right_dir, "GENERAL_SUMMARY.json")
+            with open(wrong_path, "w", encoding="utf-8") as f:
+                json.dump({"book": "九锡外传"}, f)
+            with open(right_path, "w", encoding="utf-8") as f:
+                json.dump({"book": "九锡"}, f)
+
+            self.assertEqual(report.find_general_summary_json("九锡", base_dir=tmpdir), right_path)
+            os.unlink(right_path)
+            self.assertIsNone(report.find_general_summary_json("九锡", base_dir=tmpdir))
+
+    def test_report_main_general_ignores_summary_for_other_novel(self):
+        old_results_dir = report.RESULTS_DIR
+        old_checkpoint = report.REPORT_CHECKPOINT_FILE
+        old_novel_path = os.environ.get("NOVEL_PATH")
+        old_profile = os.environ.get("ANALYSIS_PROFILE")
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                report.RESULTS_DIR = tmpdir
+                report.REPORT_CHECKPOINT_FILE = os.path.join(tmpdir, "report_checkpoint.json")
+                os.environ["ANALYSIS_PROFILE"] = "general"
+                novel_path = os.path.join(tmpdir, "甲书.txt")
+                with open(novel_path, "w", encoding="utf-8") as f:
+                    f.write("甲书正文")
+                summary_path = os.path.join(tmpdir, "甲书_GENERAL_SUMMARY_latest.json")
+                with open(summary_path, "w", encoding="utf-8") as f:
+                    json.dump({
+                        "analysis_profile": "general",
+                        "specialty_profile": "general",
+                        "novel_path": os.path.join(tmpdir, "乙书.txt"),
+                        "novel_mtime": 1,
+                        "novel_signature": {"size": 1, "mtime_ns": 1, "sample_sha256": "bad"},
+                        "summary": {"story_overview": "乙书概要"},
+                    }, f, ensure_ascii=False)
+
+                captured = {}
+
+                def fake_build(book_key, detailed_data, general_summary=None):
+                    captured["book_key"] = book_key
+                    captured["general_summary"] = general_summary
+                    return "通用报告正文"
+
+                with mock.patch.object(report, "init_token_tracker"), \
+                        mock.patch.object(report, "build_general_report", side_effect=fake_build):
+                    report.main(novel_path=novel_path, book_name="甲书")
+
+                self.assertEqual(captured["book_key"], "甲书")
+                self.assertIsNone(captured["general_summary"])
+        finally:
+            report.RESULTS_DIR = old_results_dir
+            report.REPORT_CHECKPOINT_FILE = old_checkpoint
+            if old_novel_path is None:
+                os.environ.pop("NOVEL_PATH", None)
+            else:
+                os.environ["NOVEL_PATH"] = old_novel_path
+            if old_profile is None:
+                os.environ.pop("ANALYSIS_PROFILE", None)
+            else:
+                os.environ["ANALYSIS_PROFILE"] = old_profile
+
     def test_harem_report_adds_romance_overview_and_past_risk(self):
         old_openai = report.OpenAI
         old_api_key_pool = report.API_KEY_POOL

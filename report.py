@@ -560,7 +560,7 @@ def find_latest(pattern: str, base_dir: str = RESULTS_DIR):
     return max(paths, key=os.path.getmtime)
 
 
-def find_detailed_json(book_key: str, base_dir: str = RESULTS_DIR, detail_path: str = None):
+def find_detailed_json(book_key: str, base_dir: str = RESULTS_DIR, detail_path: str = None, strict: bool = False):
     """
     根据书名 key 查找对应的 *_detailed_*.json 文件
     优先匹配同名书籍的文件
@@ -575,7 +575,10 @@ def find_detailed_json(book_key: str, base_dir: str = RESULTS_DIR, detail_path: 
     paths = glob.glob(pattern, recursive=True)
     if paths:
         return max(paths, key=os.path.getmtime)
-    
+
+    if strict:
+        return None
+
     # 降级：查找任意 detailed 文件
     return find_latest("*_detailed_*.json", base_dir)
 
@@ -591,7 +594,11 @@ def find_general_summary_json(book_key: str, base_dir: str = RESULTS_DIR, profil
     if os.path.exists(latest_path):
         return latest_path
     paths = glob.glob(os.path.join(base_dir, "**", "GENERAL_SUMMARY.json"), recursive=True)
-    paths = [p for p in paths if book_key in os.path.basename(os.path.dirname(p))]
+    paths = [
+        p
+        for p in paths
+        if infer_book_key_from_results_dir(p) == book_key
+    ]
     if paths:
         return max(paths, key=os.path.getmtime)
     return None
@@ -4152,13 +4159,14 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     reviewer = None if profile.report_mode == "general" else load_json(reviewer_path)
     
     # 先从环境变量/文件名尝试推断书名；若 reviewer 是 VERIFIED_SUMMARY_*.json，则需要进一步纠正
-    book_key = env_book_key or extract_book_key_from_path(reviewer_path)
+    explicit_book_context = bool((book_name or "").strip() or env_book_key)
+    book_key = (book_name or "").strip() or env_book_key or extract_book_key_from_path(reviewer_path)
     detailed_path = None
     if book_key:
-        detailed_path = find_detailed_json(book_key, detail_path=detail_path)
+        detailed_path = find_detailed_json(book_key, detail_path=detail_path, strict=explicit_book_context)
     elif detail_path:
         detailed_path = detail_path
-    if not detailed_path:
+    if not detailed_path and not explicit_book_context:
         detailed_path = find_latest("*_detailed_*.json")
     
     detailed_data = load_json(detailed_path)
@@ -4182,6 +4190,10 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     log_report(f"book key: {book_key or '<unknown>'}")
     general_summary_path = find_general_summary_json(book_key, profile_name=profile.name) if profile.report_mode == "general" else None
     general_summary = load_json(general_summary_path) if general_summary_path else None
+    if general_summary and not _general_summary_matches_novel(general_summary, novel_path or novel_path_env, profile.name):
+        log_report(f"general summary does not match current novel, ignored: {general_summary_path}")
+        general_summary = None
+        general_summary_path = None
     if profile.report_mode == "general":
         log_report(f"using general summary: {general_summary_path or '<not found>'}")
 
