@@ -3682,9 +3682,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         old_state = web_manager.STATE
         old_sync = web_manager._sync_books_from_disk
         old_interval = web_manager.SSE_STATE_INTERVAL_SECONDS
+        old_last_sse_sync = web_manager.LAST_SSE_SYNC_AT
         try:
             web_manager.STATE = {"books": {}, "tasks": []}
             web_manager._sync_books_from_disk = lambda: None
+            web_manager.LAST_SSE_SYNC_AT = 0.0
             web_manager.SSE_STATE_INTERVAL_SECONDS = 0
             handler = FakeHandler()
 
@@ -3699,6 +3701,71 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.STATE = old_state
             web_manager._sync_books_from_disk = old_sync
             web_manager.SSE_STATE_INTERVAL_SECONDS = old_interval
+            web_manager.LAST_SSE_SYNC_AT = old_last_sse_sync
+
+    def test_web_manager_sse_state_stream_expires_and_throttles_disk_sync(self):
+        class BufferWFile:
+            def __init__(self):
+                self.data = b""
+
+            def write(self, data):
+                self.data += data
+
+            def flush(self):
+                pass
+
+        class FakeHandler(web_manager.Handler):
+            def __init__(self):
+                self.headers_sent = []
+                self.wfile = BufferWFile()
+
+            def send_response(self, code):
+                self.response = code
+
+            def send_header(self, key, value):
+                self.headers_sent.append((key, value))
+
+            def end_headers(self):
+                pass
+
+        old_state = web_manager.STATE
+        old_sync = web_manager._sync_books_from_disk
+        old_interval = web_manager.SSE_STATE_INTERVAL_SECONDS
+        old_sync_interval = web_manager.SSE_SYNC_INTERVAL_SECONDS
+        old_max_connection = web_manager.SSE_MAX_CONNECTION_SECONDS
+        old_last_sse_sync = web_manager.LAST_SSE_SYNC_AT
+        old_monotonic = web_manager.time.monotonic
+        old_sleep = web_manager.time.sleep
+        sync_calls = []
+        now = [100.0]
+        try:
+            web_manager.STATE = {"books": {}, "tasks": []}
+            web_manager._sync_books_from_disk = lambda: sync_calls.append(now[0])
+            web_manager.SSE_STATE_INTERVAL_SECONDS = 0.01
+            web_manager.SSE_SYNC_INTERVAL_SECONDS = 0.03
+            web_manager.SSE_MAX_CONNECTION_SECONDS = 0.035
+            web_manager.LAST_SSE_SYNC_AT = 0.0
+            web_manager.time.monotonic = lambda: now[0]
+            web_manager.time.sleep = lambda seconds: now.__setitem__(0, now[0] + seconds)
+            handler = FakeHandler()
+
+            web_manager.Handler._send_sse_state_stream(handler)
+
+            body = handler.wfile.data.decode("utf-8")
+            self.assertGreater(body.count("event: state"), len(sync_calls))
+            self.assertEqual(len(sync_calls), 2)
+            self.assertAlmostEqual(sync_calls[0], 100.0)
+            self.assertAlmostEqual(sync_calls[1], 100.03)
+            self.assertGreaterEqual(now[0], 100.035)
+        finally:
+            web_manager.STATE = old_state
+            web_manager._sync_books_from_disk = old_sync
+            web_manager.SSE_STATE_INTERVAL_SECONDS = old_interval
+            web_manager.SSE_SYNC_INTERVAL_SECONDS = old_sync_interval
+            web_manager.SSE_MAX_CONNECTION_SECONDS = old_max_connection
+            web_manager.LAST_SSE_SYNC_AT = old_last_sse_sync
+            web_manager.time.monotonic = old_monotonic
+            web_manager.time.sleep = old_sleep
 
     def test_web_manager_read_json_payload_limits_size_and_validates_json(self):
         class FakeHandler(web_manager.Handler):

@@ -38,7 +38,10 @@ WEB_REQUEST_TIMEOUT_SECONDS = float(os.environ.get("WEB_REQUEST_TIMEOUT", "60"))
 SYNC_BOOKS_TTL_SECONDS = float(os.environ.get("SYNC_BOOKS_TTL_SECONDS", "5"))
 OUTPUTS_CACHE_TTL_SECONDS = float(os.environ.get("OUTPUTS_CACHE_TTL_SECONDS", "5"))
 SSE_STATE_INTERVAL_SECONDS = float(os.environ.get("SSE_STATE_INTERVAL_SECONDS", "3"))
+SSE_SYNC_INTERVAL_SECONDS = float(os.environ.get("SSE_SYNC_INTERVAL_SECONDS", str(max(SYNC_BOOKS_TTL_SECONDS, SSE_STATE_INTERVAL_SECONDS))))
+SSE_MAX_CONNECTION_SECONDS = float(os.environ.get("SSE_MAX_CONNECTION_SECONDS", "300"))
 LAST_BOOK_SYNC_AT = 0.0
+LAST_SSE_SYNC_AT = 0.0
 OUTPUTS_CACHE = {}
 EDITABLE_RUNTIME_CONFIG = {
     "max_workers": {"env": "MAX_WORKERS", "type": "int", "min": 1, "max": 64},
@@ -337,6 +340,17 @@ def _public_state():
     }
 
 
+def _sync_books_from_disk_for_sse():
+    global LAST_SSE_SYNC_AT
+    now = time.monotonic()
+    with STATE_LOCK:
+        if LAST_SSE_SYNC_AT and SSE_SYNC_INTERVAL_SECONDS > 0 and now - LAST_SSE_SYNC_AT < SSE_SYNC_INTERVAL_SECONDS:
+            return False
+        LAST_SSE_SYNC_AT = now
+    _sync_books_from_disk()
+    return True
+
+
 def _runtime_config_summary():
     key_pool = [key for key in os.environ.get("API_KEY_POOL", "").split(",") if key.strip()]
     has_single_key = bool(os.environ.get("API_KEY", "").strip())
@@ -363,6 +377,8 @@ def _runtime_config_summary():
             "sync_books_ttl_seconds": SYNC_BOOKS_TTL_SECONDS,
             "outputs_cache_ttl_seconds": OUTPUTS_CACHE_TTL_SECONDS,
             "sse_state_interval_seconds": SSE_STATE_INTERVAL_SECONDS,
+            "sse_sync_interval_seconds": SSE_SYNC_INTERVAL_SECONDS,
+            "sse_max_connection_seconds": SSE_MAX_CONNECTION_SECONDS,
             "auth_enabled": _web_auth_enabled(),
             "api_key_required_on_start": _env_bool_value(os.environ.get("NOVEL_REPORT_SCANNER_REQUIRE_API_KEY", "1")),
             "storage": _storage_health_summary(),
@@ -1347,17 +1363,19 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
         self.end_headers()
-        while True:
+        started_at = time.monotonic()
+        while SSE_MAX_CONNECTION_SECONDS <= 0 or time.monotonic() - started_at < SSE_MAX_CONNECTION_SECONDS:
             try:
-                _sync_books_from_disk()
+                _sync_books_from_disk_for_sse()
                 payload = json.dumps(_public_state(), ensure_ascii=False)
                 self.wfile.write(f"event: state\ndata: {payload}\n\n".encode("utf-8"))
                 self.wfile.flush()
-                time.sleep(SSE_STATE_INTERVAL_SECONDS)
+                time.sleep(max(SSE_STATE_INTERVAL_SECONDS, 0.01))
             except (BrokenPipeError, ConnectionResetError, TimeoutError):
                 return
             except OSError:
                 return
+        return
 
     def _send_public_file(self, path):
         if not _is_safe_public_file(path):
