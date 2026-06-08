@@ -1008,6 +1008,7 @@ def build_purity_map(reviewer: dict) -> dict:
         if not name:
             continue
         data = {
+            "is_clean": item.get("is_clean"),
             "is_virgin": item.get("is_virgin"),
             "is_spirit_clean": item.get("is_spirit_clean"),
             "no_partner": item.get("no_partner"),
@@ -2315,6 +2316,65 @@ def _harem_issue_consistency_warnings(detailed_data: dict, reviewer: dict) -> li
     return [f"扫描阶段发现但二审输出未覆盖的雷点/郁闷点：{', '.join(samples)}"]
 
 
+def _mermaid_label(text: str, max_len: int = 24) -> str:
+    text = re.sub(r"[\r\n\t]+", " ", str(text or "")).strip()
+    text = text.replace('"', "'").replace("[", "【").replace("]", "】")
+    if len(text) > max_len:
+        text = text[:max_len].rstrip() + "..."
+    return text or "未知"
+
+
+def _relationship_graph_clean_label(purity_info: dict) -> str:
+    if not purity_info:
+        return "洁度: 未知"
+    if purity_info.get("is_clean") is False:
+        return "洁度: 有瑕"
+    clean_flags = [
+        purity_info.get("is_virgin"),
+        purity_info.get("is_spirit_clean"),
+        purity_info.get("no_partner"),
+    ]
+    no_other_contact = purity_info.get("has_other_contact") is False
+    if all(flag is True for flag in clean_flags) and no_other_contact:
+        return "洁度: 全初"
+    return "洁度: 未知"
+
+
+def _build_harem_relationship_graph_lines(
+    male_name: str,
+    heroines: list,
+    all_female_characters: dict,
+    profile_cache: dict,
+    purity_map: dict,
+) -> list:
+    if not heroines:
+        return []
+    lines = ["", "【关系图谱】", "```mermaid", "graph TD"]
+    lines.append(f'    ML["男主: {_mermaid_label(male_name)}"]')
+
+    for index, heroine in enumerate((heroines or [])[:12], 1):
+        if not isinstance(heroine, dict):
+            continue
+        name = str(heroine.get("name") or "").strip()
+        if not name:
+            continue
+        aliases = heroine.get("aliases") or heroine.get("other_names") or []
+        evidence = _match_female_evidence(name, aliases, all_female_characters) or {}
+        profile = _normalize_profile_for_report(profile_cache.get(name, {}))
+        purity_info = purity_map.get(name) or purity_map.get(_heroine_name_key(name)) or {}
+        node_id = f"H{index}"
+        level = _heroine_position_level(heroine, profile, evidence, purity_info).split("：", 1)[0]
+        clean_label = _relationship_graph_clean_label(purity_info)
+        contact_level = purity_info.get("contact_level") or "L?"
+        relation = str(heroine.get("relationship_type") or profile.get("relationship_with_protagonist") or level or "关系未明").strip()
+        edge_label = _mermaid_label(f"{level} / {clean_label} / {contact_level}", 36)
+        node_label = _mermaid_label(f"{name}\\n{relation}", 36)
+        lines.append(f'    {node_id}["{node_label}"]')
+        lines.append(f'    ML -->|"{edge_label}"| {node_id}')
+    lines.append("```")
+    return lines
+
+
 def _heroine_candidate_duplicate_groups(heroines: list, all_female_characters: dict) -> list:
     groups = []
     used = set()
@@ -3061,6 +3121,13 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
     if consistency_warnings:
         romance_lines.extend(["", "【交叉验证提示】"])
         romance_lines.extend(f"- {item}" for item in consistency_warnings)
+    relationship_graph_lines = _build_harem_relationship_graph_lines(
+        male_name,
+        heroines,
+        all_female_characters,
+        profile_cache,
+        purity_map,
+    )
 
     # ---------------- 毒点/雷点（原样输出，不润色） ----------------
     heroine_contexts = _build_heroine_position_contexts(heroines, all_female_characters, profile_cache, purity_map)
@@ -3078,7 +3145,7 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
     else:
         risk_lines.append("（无）")
 
-    return "\n".join([*header, "", *male_lines, *heroine_lines, *romance_lines, *risk_lines])
+    return "\n".join([*header, "", *male_lines, *heroine_lines, *romance_lines, *relationship_graph_lines, *risk_lines])
 
 
 def _clean_text_items(items, limit=5, max_len=120):
