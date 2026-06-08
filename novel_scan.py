@@ -4083,26 +4083,28 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
 
     NOVEL_FILE_PATH = novel_path or os.environ.get("NOVEL_PATH", os.path.join(base, "novels", "default.txt"))
     clean_filename = (book_name or os.path.splitext(os.path.basename(NOVEL_FILE_PATH))[0]).strip()
-    init_token_tracker(clean_filename, run_id=run_id)
+    current_book_name = clean_filename
+    init_token_tracker(current_book_name, run_id=run_id)
 
-    resume_dir = find_latest_scan_checkpoint(clean_filename)
+    resume_dir = find_latest_scan_checkpoint(current_book_name)
     if resume_dir:
         OUTPUT_DIR = resume_dir
         CHECKPOINT_FILE = os.path.join(OUTPUT_DIR, "latest_checkpoint.json")
         print(f"★ 发现断点，将复用目录: {OUTPUT_DIR}")
     else:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-        OUTPUT_DIR = os.path.join(results_base, f"{clean_filename}_scan_{timestamp}")
+        OUTPUT_DIR = os.path.join(results_base, f"{current_book_name}_scan_{timestamp}")
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         CHECKPOINT_FILE = os.path.join(OUTPUT_DIR, "latest_checkpoint.json")
         print(f"★ 未找到断点，创建新目录: {OUTPUT_DIR}")
+    output_dir = OUTPUT_DIR
 
     # 重新配置 logger（支持多次调用不残留旧 handler）
     logger = logging.getLogger("novel_scan")
     logger.handlers.clear()
     logger.setLevel(logging.INFO)
     _fmt = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    _fh = logging.FileHandler(os.path.join(OUTPUT_DIR, "scan.log"), encoding='utf-8')
+    _fh = logging.FileHandler(os.path.join(output_dir, "scan.log"), encoding='utf-8')
     _fh.setFormatter(_fmt)
     _sh = logging.StreamHandler()
     _sh.setFormatter(_fmt)
@@ -4113,7 +4115,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         checkpoint_detail_path=_peek_checkpoint_detail_path(checkpoint_file=CHECKPOINT_FILE),
     )
 
-    print(f"🚀 开始深度扫描《{clean_filename}》...")
+    print(f"🚀 开始深度扫描《{current_book_name}》...")
     
     # 1. 加载规则
     categories, glossary = load_rules()
@@ -4134,7 +4136,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         return
     text = read_novel(NOVEL_FILE_PATH)
     chunk_manifest = build_chunk_manifest(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
-    chunk_manifest_path = os.path.join(OUTPUT_DIR, "chunk_manifest.json")
+    chunk_manifest_path = os.path.join(output_dir, "chunk_manifest.json")
     save_chunk_manifest(chunk_manifest, chunk_manifest_path)
     chunks = [entry.get("text", "") for entry in chunk_manifest.get("chunks", [])]
     CURRENT_CHUNK_PLAN_METADATA = _build_chunk_plan_metadata(chunk_manifest=chunk_manifest)
@@ -4158,6 +4160,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         explicit_detail_path=detail_path,
         checkpoint_detail_path=checkpoint_detail_path,
     )
+    active_detail_path = _ACTIVE_DETAIL_PATH
     if processed_chunks:
         print(f"⏸️ 检测到断点，已完成 {len(processed_chunks)} 个片段，将继续首扫剩余片段")
     else:
@@ -4244,13 +4247,13 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
                 heroine_profiles=_kwargs.get("heroine_profiles"),
                 checkpoint_file=checkpoint_file,
                 chunk_plan_metadata=chunk_plan_metadata,
-                detail_path=_ACTIVE_DETAIL_PATH,
+                detail_path=active_detail_path,
                 chunk_summaries=CHUNK_SUMMARIES,
                 chunk_failure_diagnostics=CHUNK_FAILURE_DIAGNOSTICS,
             ),
         )
     if heroine_profiles:
-        _save_heroine_profiles_to_detail(heroine_profiles, detail_path=_ACTIVE_DETAIL_PATH)
+        _save_heroine_profiles_to_detail(heroine_profiles, detail_path=active_detail_path)
 
     if ENABLE_GLOBAL_RESCAN and not rescan_completed:
         all_heroine_facts = global_dimension_rescan(
@@ -4270,12 +4273,12 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
                 rescan_done_chunks=rescan_done_chunks,
                 checkpoint_file=checkpoint_file,
                 chunk_plan_metadata=chunk_plan_metadata,
-                detail_path=_ACTIVE_DETAIL_PATH,
+                detail_path=active_detail_path,
                 chunk_summaries=CHUNK_SUMMARIES,
                 chunk_failure_diagnostics=CHUNK_FAILURE_DIAGNOSTICS,
             ),
             rescan_done_chunks=rescan_done_chunks,
-            novel_name=clean_filename,
+            novel_name=current_book_name,
         )
         rescan_completed = True
         save_checkpoint(
@@ -4289,7 +4292,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
             rescan_completed=True,
             checkpoint_file=checkpoint_file,
             chunk_plan_metadata=chunk_plan_metadata,
-            detail_path=_ACTIVE_DETAIL_PATH,
+            detail_path=active_detail_path,
             chunk_summaries=CHUNK_SUMMARIES,
             chunk_failure_diagnostics=CHUNK_FAILURE_DIAGNOSTICS,
         )
@@ -4297,7 +4300,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         logger.info("全局补扫：检测到断点标记 rescan_completed=true，跳过补扫阶段。")
 
     # 6. 追加 detail.json 结构化事实
-    _append_to_detail_file(all_heroine_facts, extra_relations_all, male_protagonist, detail_path=_ACTIVE_DETAIL_PATH)
+    _append_to_detail_file(all_heroine_facts, extra_relations_all, male_protagonist, detail_path=active_detail_path)
 
     # 7. 保存与报告
     raw_data = {
@@ -4305,15 +4308,15 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         "heroine_facts": all_heroine_facts,
         "extra_relations": extra_relations_all,
         "heroine_profiles": heroine_profiles,
-        "detail_path": _ACTIVE_DETAIL_PATH,
+        "detail_path": active_detail_path,
         "chunk_manifest_file": chunk_manifest_path,
-        "chunk_plan": CURRENT_CHUNK_PLAN_METADATA,
+        "chunk_plan": chunk_plan_metadata,
     }
-    with open(f"{OUTPUT_DIR}/raw_data.json", 'w', encoding='utf-8') as f:
+    with open(os.path.join(output_dir, "raw_data.json"), 'w', encoding='utf-8') as f:
         json.dump(raw_data, f, ensure_ascii=False, indent=2)
         
-    report = generate_report(all_issues, all_heroine_facts, heroines, book_name=clean_filename)
-    report_file = f"{OUTPUT_DIR}/FULL_REPORT.txt"
+    report = generate_report(all_issues, all_heroine_facts, heroines, book_name=current_book_name)
+    report_file = os.path.join(output_dir, "FULL_REPORT.txt")
     with open(report_file, 'w', encoding='utf-8') as f:
         f.write(report)
         

@@ -1462,6 +1462,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmpdir:
                 novel_path = os.path.join(tmpdir, "Book.txt")
                 wrong_checkpoint = os.path.join(tmpdir, "wrong_checkpoint.json")
+                wrong_output_dir = os.path.join(tmpdir, "wrong_output")
                 with open(novel_path, "w", encoding="utf-8") as f:
                     f.write("甲女和男主同行。")
 
@@ -1471,8 +1472,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
                 def fake_generate_profiles(_facts, _heroines, _male, checkpoint_callback=None):
                     novel_scan.CHECKPOINT_FILE = wrong_checkpoint
+                    novel_scan.OUTPUT_DIR = wrong_output_dir
+                    novel_scan.clean_filename = "WrongBook"
+                    novel_scan.CURRENT_CHUNK_PLAN_METADATA = {"chunk_count": 99}
                     checkpoint_callback(heroine_profiles={"甲女": {"summary": "画像"}})
                     return {"甲女": {"summary": "画像"}}
+
+                def fake_generate_report(_issues, _facts, _heroines, book_name=None):
+                    return f"报告:{book_name}"
 
                 novel_scan.ENABLE_GLOBAL_RESCAN = False
                 novel_scan.token_tracker = None
@@ -1491,10 +1498,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         mock.patch.object(novel_scan, "generate_heroine_profiles", side_effect=fake_generate_profiles), \
                         mock.patch.object(novel_scan, "_save_heroine_profiles_to_detail"), \
                         mock.patch.object(novel_scan, "_append_to_detail_file"), \
-                        mock.patch.object(novel_scan, "generate_report", return_value="报告"):
+                        mock.patch.object(novel_scan, "generate_report", side_effect=fake_generate_report):
                     novel_scan.main(novel_path=novel_path, book_name="Book")
 
                 self.assertFalse(os.path.exists(wrong_checkpoint))
+                self.assertFalse(os.path.exists(os.path.join(wrong_output_dir, "raw_data.json")))
+                self.assertFalse(os.path.exists(os.path.join(wrong_output_dir, "FULL_REPORT.txt")))
                 scan_dirs = [
                     os.path.join(tmpdir, "results", name)
                     for name in os.listdir(os.path.join(tmpdir, "results"))
@@ -1507,6 +1516,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     data = json.load(f)
                 self.assertEqual(data["heroine_profiles"], {"甲女": {"summary": "画像"}})
                 self.assertEqual(data["chunk_plan"]["chunk_count"], 1)
+                with open(os.path.join(scan_dirs[0], "raw_data.json"), "r", encoding="utf-8") as f:
+                    raw_data = json.load(f)
+                self.assertEqual(raw_data["chunk_plan"]["chunk_count"], 1)
+                with open(os.path.join(scan_dirs[0], "FULL_REPORT.txt"), "r", encoding="utf-8") as f:
+                    self.assertEqual(f.read(), "报告:Book")
         finally:
             for handler in list(novel_scan.logger.handlers):
                 handler.close()

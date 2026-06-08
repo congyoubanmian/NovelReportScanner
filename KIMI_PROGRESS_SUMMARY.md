@@ -1,6 +1,6 @@
 # Kimi 方案推进进度总结
 
-生成日期：2026-06-07（本版更新于 2026-06-08 16:15）
+生成日期：2026-06-07（本版更新于 2026-06-08 16:21）
 
 ## 总体完成度
 
@@ -12,7 +12,7 @@
 - **后宫/男性向排雷专项**：约 **82% - 86%**。核心定义、五维洁度、接触等级、partner 豁免、漏女三层判断、女主事实扩展、重复女主大模型合并等关键项已落地；仍需要更多真实书籍报告校准误判。
 - **多标签/混合类型扫描**：约 **91% - 93%**。已支持自动多标签、手动多选、后宫+其他类型补扫；历史、科幻、仙侠、都市、游戏、异世界、蒸汽西幻、国运、模拟器以及末世、军事、刑侦、克系、校园、文娱、种田、商战、推理、体育等副类型均已导入后宫交叉规则。自动识别已补充标题加权、组合关键词加成、负向关键词抑制、局部否定过滤、短词污染过滤、有限频次加分和 profile 自适应阈值，降低次要标签漏标与跨类误判。
 - **报告输出和字段标题**：约 **95% - 97%**。通用报告、专项报告、后宫报告的字段标题和收尾字段已多轮补齐；所有 20 个 profile 的 summary_fields 均已补全中文标题（含主线剧情、核心冲突、世界观、主题、优点与亮点、风险与问题、适合读者、总体评价等通用字段，以及女主群像、候选女主、漏女、洁度评估、毒点、郁闷点、男主定位、感情线推进等后宫字段）；通用总评、作品概览、伏笔回收、适合读者、总体评价以及常见专项字段均已支持旧字段名别名读取，并有回归测试覆盖。
-- **Web/部署/GitHub Actions/Docker**：约 **98%**。前后端分离、SSE 实时状态、队列管理、删除/批量删除、Token 展示、配置摘要、非敏感运行配置编辑并自动持久化到 `.env`、可选访问令牌、Docker/GHCR/DockerHub 流程、请求体限制、文件流式输出、任务日志隔离、前端 ESLint/Prettier 检查、CI 自动验证、输出文件索引、Docker 最终镜像瘦身、容器 API Key 启动校验、书籍同步减少无变化状态写入、API 客户端工厂统一、扫描 checkpoint 增量写入、失败片段内容诊断、首扫动态线程块调度、checkpoint 运行态显式注入、detail 路径显式书名解析、报告书名显式传入、chunk 摘要状态显式注入、失败诊断状态显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文和 detail 写入显式路径等工程项已完成；剩余主要是进一步生产化部署细节（反向代理、TLS、更细粒度访问控制）。
+- **Web/部署/GitHub Actions/Docker**：约 **98%**。前后端分离、SSE 实时状态、队列管理、删除/批量删除、Token 展示、配置摘要、非敏感运行配置编辑并自动持久化到 `.env`、可选访问令牌、Docker/GHCR/DockerHub 流程、请求体限制、文件流式输出、任务日志隔离、前端 ESLint/Prettier 检查、CI 自动验证、输出文件索引、Docker 最终镜像瘦身、容器 API Key 启动校验、书籍同步减少无变化状态写入、API 客户端工厂统一、扫描 checkpoint 增量写入、失败片段内容诊断、首扫动态线程块调度、checkpoint 运行态显式注入、detail 路径显式书名解析、报告书名显式传入、chunk 摘要状态显式注入、失败诊断状态显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文、detail 写入显式路径和主流程最终输出局部上下文等工程项已完成；剩余主要是进一步生产化部署细节（反向代理、TLS、更细粒度访问控制）。
 
 ## 已完成的主要工作
 
@@ -182,6 +182,7 @@
 - 首扫、补扫和 chunk 提交路径已支持显式 `checkpoint_file`；主流程会把当前书籍断点文件传入底层提交函数，默认路径继续兼容模块级 `CHECKPOINT_FILE`，降低多书并发时提交结果写入错误断点文件的风险。
 - 主流程的断点读取、女主画像 checkpoint callback、全局补扫 checkpoint callback 和补扫完成标记已显式传入当前书籍的 `checkpoint_file/chunk_plan_metadata/detail_path/chunk_summaries/chunk_failure_diagnostics`；即使模块级 `CHECKPOINT_FILE` 在回调过程中被其他任务改写，当前书的回调仍会写入自己的断点文件。
 - 女主画像写回 detail 文件和扫描结构化事实追加 detail 文件已支持显式 `detail_path`；主流程会传入当前书籍 detail 路径，默认直接调用仍兼容 `_ACTIVE_DETAIL_PATH`，降低多书并发时 detail 写入串书风险。
+- 主流程最终输出已使用局部 `output_dir/current_book_name/chunk_plan_metadata/active_detail_path` 写入 `raw_data.json` 和 `FULL_REPORT.txt`；即使模块级 `OUTPUT_DIR`、`clean_filename` 或 `CURRENT_CHUNK_PLAN_METADATA` 在回调中被改写，当前书的最终输出仍会落在自己的扫描目录并使用正确书名。
 
 ### 6. 测试覆盖
 
@@ -211,9 +212,10 @@
 - chunk 提交 checkpoint 文件显式传入，验证模块级 `CHECKPOINT_FILE` 指向其他路径时仍优先写入调用方传入的断点文件。
 - main 级 checkpoint 回调显式上下文，验证女主画像回调期间模块级 `CHECKPOINT_FILE` 被改写时仍写入当前书籍断点文件，并保留当前 chunk plan。
 - detail 写入显式路径，验证全局 `_ACTIVE_DETAIL_PATH` 指向其他 detail 文件时，女主画像和结构化事实仍只写入调用方传入的 detail 文件。
+- 主流程最终输出局部上下文，验证模块级 `OUTPUT_DIR`、`clean_filename` 和 `CURRENT_CHUNK_PLAN_METADATA` 被回调改写后，`raw_data.json` 与 `FULL_REPORT.txt` 仍写入当前书扫描目录并保留正确 chunk plan 和报告书名。
 - API 客户端工厂统一和默认 `BASE_URL` 一致性。
 
-最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **179 个测试 OK**；蒸汽西幻 scan_focus、组合关键词和专项规则维度已增加到现有 profile/自动分类回归测试中。国运/文明对抗与模拟器/人生推演的 profile 发现、自动识别、后宫交叉规则、后宫增强补扫、字段中文标题、都市爽文跨类边界、置信度校准、扫描 checkpoint 增量恢复、prompt 自检清单去重、失败 chunk 内容诊断、首扫动态线程块分区、checkpoint 显式路径隔离、detail 显式书名查找、报告显式书名、chunk 摘要显式注入、失败诊断显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文和 detail 写入显式路径已有目标测试覆盖；profile manifest 的 `name` 字段与目录名一致性、通用规则核心维度、历史/硬科幻专项规则补强、API 客户端工厂统一和默认 `BASE_URL` 一致性也已有回归测试覆盖。
+最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **179 个测试 OK**；蒸汽西幻 scan_focus、组合关键词和专项规则维度已增加到现有 profile/自动分类回归测试中。国运/文明对抗与模拟器/人生推演的 profile 发现、自动识别、后宫交叉规则、后宫增强补扫、字段中文标题、都市爽文跨类边界、置信度校准、扫描 checkpoint 增量恢复、prompt 自检清单去重、失败 chunk 内容诊断、首扫动态线程块分区、checkpoint 显式路径隔离、detail 显式书名查找、报告显式书名、chunk 摘要显式注入、失败诊断显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文、detail 写入显式路径和主流程最终输出局部上下文已有目标测试覆盖；profile manifest 的 `name` 字段与目录名一致性、通用规则核心维度、历史/硬科幻专项规则补强、API 客户端工厂统一和默认 `BASE_URL` 一致性也已有回归测试覆盖。
 
 ## 已推送的关键提交
 
