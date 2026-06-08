@@ -5589,53 +5589,59 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         old_app_commit = web_manager.APP_COMMIT
         old_time = web_manager.time.time
         try:
-            web_manager.SCAN_STALL_TIMEOUT_SECONDS = 1200
-            web_manager.APP_COMMIT = "abc123"
-            base_time = web_manager.datetime.strptime(
-                "2026-06-09 06:50:00",
-                "%Y-%m-%d %H:%M:%S",
-            ).timestamp()
-            web_manager.time.time = lambda: base_time + 1800
-            web_manager.STATE = {
-                "books": {
-                    "running-book": {
-                        "id": "running-book",
-                        "name": "运行书",
-                        "status": "running",
-                        "task_id": "task-running",
-                        "last_log": "Chunk 367 JSON解析失败",
-                        "last_log_at": "2026-06-09 06:50:00",
+            with tempfile.TemporaryDirectory() as tmpdir, \
+                    mock.patch.object(web_manager, "get_base_dir", return_value=tmpdir):
+                log_path = os.path.join(tmpdir, "results", "web_logs", "task-running.log")
+                os.makedirs(os.path.dirname(log_path), exist_ok=True)
+                with open(log_path, "w", encoding="utf-8") as f:
+                    f.write("Chunk 367 JSON解析失败")
+                web_manager.SCAN_STALL_TIMEOUT_SECONDS = 1200
+                web_manager.APP_COMMIT = "abc123"
+                base_time = web_manager.datetime.strptime(
+                    "2026-06-09 06:50:00",
+                    "%Y-%m-%d %H:%M:%S",
+                ).timestamp()
+                web_manager.time.time = lambda: base_time + 1800
+                web_manager.STATE = {
+                    "books": {
+                        "running-book": {
+                            "id": "running-book",
+                            "name": "运行书",
+                            "status": "running",
+                            "task_id": "task-running",
+                            "last_log": "Chunk 367 JSON解析失败",
+                            "last_log_at": "2026-06-09 06:50:00",
+                        },
+                        "queued-book": {
+                            "id": "queued-book",
+                            "name": "排队书",
+                            "status": "queued",
+                            "task_id": "task-queued",
+                        },
                     },
-                    "queued-book": {
-                        "id": "queued-book",
-                        "name": "排队书",
-                        "status": "queued",
-                        "task_id": "task-queued",
-                    },
-                },
-                "tasks": [
-                    {
-                        "id": "task-running",
-                        "book_id": "running-book",
-                        "profile": "harem",
-                        "status": "running",
-                        "created_at": "2026-06-09 06:00:00",
-                        "started_at": "2026-06-09 06:10:00",
-                        "last_log": "Chunk 367 JSON解析失败",
-                        "last_log_at": "2026-06-09 06:50:00",
-                        "log_path": "/app/results/web_logs/task-running.log",
-                    },
-                    {
-                        "id": "task-queued",
-                        "book_id": "queued-book",
-                        "profile": "general",
-                        "status": "queued",
-                        "created_at": "2026-06-09 06:30:00",
-                    },
-                ],
-            }
+                    "tasks": [
+                        {
+                            "id": "task-running",
+                            "book_id": "running-book",
+                            "profile": "harem",
+                            "status": "running",
+                            "created_at": "2026-06-09 06:00:00",
+                            "started_at": "2026-06-09 06:10:00",
+                            "last_log": "Chunk 367 JSON解析失败",
+                            "last_log_at": "2026-06-09 06:50:00",
+                            "log_path": log_path,
+                        },
+                        {
+                            "id": "task-queued",
+                            "book_id": "queued-book",
+                            "profile": "general",
+                            "status": "queued",
+                            "created_at": "2026-06-09 06:30:00",
+                        },
+                    ],
+                }
 
-            diagnostics = web_manager._diagnostics_summary()
+                diagnostics = web_manager._diagnostics_summary()
 
             self.assertFalse(diagnostics["ok"])
             self.assertEqual(diagnostics["app"]["commit"], "abc123")
@@ -5655,6 +5661,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(running["seconds_since_started"], 4200)
             self.assertEqual(running["seconds_since_last_log"], 1800)
             self.assertTrue(running["stale_without_log"])
+            self.assertTrue(running["log_file"]["url"].startswith("/files?path="))
             queued = diagnostics["queued_tasks"][0]
             self.assertEqual(queued["task_id"], "task-queued")
             self.assertEqual(queued["book_name"], "排队书")

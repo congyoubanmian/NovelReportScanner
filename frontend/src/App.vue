@@ -11,6 +11,7 @@ import {
   getState,
   getDiagnostics,
   getBookDetail,
+  withAccessToken,
   setProfile,
   updateRuntimeConfig,
   enqueueBook,
@@ -118,11 +119,16 @@ const diagnosticsStatus = computed(() => {
     running,
     longestRunningText,
     oldestQueueWaitText,
+    logUrl: firstStale?.log_file?.url || '',
     title: firstStale
-      ? `${firstStale.book_name || firstStale.book_id || '运行任务'}\n无日志 ${formatElapsed(firstStale.seconds_since_last_log)}\n${firstStale.last_log || ''}`
+      ? `${firstStale.book_name || firstStale.book_id || '运行任务'}\n无日志 ${formatElapsed(firstStale.seconds_since_last_log)}\n${firstStale.log_file?.url ? `日志: ${firstStale.log_file.url}\n` : ''}${firstStale.last_log || ''}`
       : ''
   }
 })
+
+function fileHref(url) {
+  return withAccessToken(url || '')
+}
 
 // Race-condition guard for detail loading
 let detailRequestId = 0
@@ -463,6 +469,13 @@ useStateEvents(applyState, {
         :class="{ danger: !diagnosticsStatus.ok }"
         :title="diagnosticsStatus.title"
         ><b>诊断</b>{{ diagnosticsStatus.label }}</span
+      >
+      <a
+        v-if="diagnosticsStatus.logUrl"
+        class="runtime-item runtime-link"
+        :href="fileHref(diagnosticsStatus.logUrl)"
+        target="_blank"
+        ><b>卡住日志</b>打开</a
       >
     </div>
 

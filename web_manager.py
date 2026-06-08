@@ -520,6 +520,7 @@ def _task_diagnostic(task, book):
     seconds_since_last_log = _seconds_since_state_time(last_log_at)
     seconds_since_created = _seconds_since_state_time(task.get("created_at"))
     seconds_since_started = _seconds_since_state_time(task.get("started_at"))
+    log_path = task.get("log_path", "")
     stale = (
         SCAN_STALL_TIMEOUT_SECONDS > 0
         and seconds_since_last_log is not None
@@ -540,7 +541,8 @@ def _task_diagnostic(task, book):
         "seconds_since_started": seconds_since_started,
         "seconds_since_last_log": seconds_since_last_log,
         "stale_without_log": stale,
-        "log_path": task.get("log_path", ""),
+        "log_path": log_path,
+        "log_file": _file_link(log_path) if log_path else None,
     }
 
 
