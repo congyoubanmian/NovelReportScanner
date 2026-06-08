@@ -400,6 +400,7 @@ SSE_MAX_CONNECTION_SECONDS=300
 - `GENERAL_SCAN_READER_EXPERIENCE`：通用/专项剧情扫描的读者体验分析开关，默认 `1`。开启后每个片段会额外抽取即时情绪、代入锚点、期待钩子、爽点/燃点/甜点、挫败点和投入度，整书报告会增加“读者体验分析”；设为 `0` 可降低 prompt 长度和 token 成本。
 - `GENERAL_SCAN_CONTINUITY_AUDIT`：通用/专项剧情扫描的整书连续性与一致性审计开关，默认 `1`。开启后总评会结合滚动上下文、伏笔工程和大纲架构材料检查人物关系、设定规则、伏笔回收、因果链和战力/规则跳变，报告会增加“连续性与一致性审计”；设为 `0` 可降低总评 prompt 长度。
 - `GENERAL_SCAN_ROLLING_CONTEXT`：通用/专项剧情扫描的跨片段滚动上下文开关，默认 `1`。开启后每个片段会收到前序片段压缩状态，并输出 `context_state_update`，用于减少人物指代、关系阶段、未解问题和设定连续性的误判。由于后续片段结果依赖前序上下文，开启时 chunk 级增量复用会自动禁用；整份 summary 完全新鲜时仍会直接复用。
+- `GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE`：通用/专项剧情扫描知识库的大模型语义合并开关，默认 `0`。开启后会在整书总评前额外调用一次模型，合并同一人物、同一设定、同一伏笔/线索的重复表达；如果合并失败会自动回退到程序汇总的知识库，不中断扫描。
 - `GENERAL_SCAN_CONTEXT_MAX_CHARS`：滚动上下文注入 prompt 的最大字符数，默认 `1600`。调高可保留更多前序状态，但会增加 token 成本和超长风险；设为 `0` 时不注入上下文快照。
 - 通用/专项剧情扫描会基于分块结果生成 `knowledge_base` 知识库摘要，汇总重要实体、关系变化、设定事实、伏笔线程、事件时间线和未解/已回收线索；总评 prompt 会优先参考该知识库，最终 TXT 报告也会展示紧凑版“知识库摘要”。
 - `LOG_MAX_BYTES` / `LOG_BACKUP_COUNT`：扫描日志轮转配置，默认单个 `analysis.log` / `reviewer.log` 最大 `10485760` 字节并保留 `5` 份历史；`LOG_MAX_BYTES=0` 表示不按大小轮转。
@@ -422,7 +423,7 @@ Web 管理端常用配置：
 - `SSE_SYNC_INTERVAL_SECONDS`：SSE 状态流触发 `novels/` 目录同步的最短间隔，默认 `5` 秒；多个 SSE 连接会共用这个节流。
 - `SSE_MAX_CONNECTION_SECONDS`：单个 SSE 连接最大生命周期，默认 `300` 秒；到期后浏览器 `EventSource` 会自动重连，避免服务端线程长期占用。
 
-Web 页面顶部可直接调整部分非敏感运行配置，包括 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`GENERAL_SCAN_MAX_CHUNKS`、`GENERAL_SCAN_SMART_DENSITY`、`GENERAL_SCAN_CONTENT_AWARE_SAMPLING`、`GENERAL_SCAN_INCREMENTAL_REUSE`、`GENERAL_SCAN_WRITING_QUALITY`、`GENERAL_SCAN_NARRATIVE_ARCHITECTURE`、`GENERAL_SCAN_FORESHADOWING_ENGINEERING`、`GENERAL_SCAN_SEMANTIC_LAYERS`、`GENERAL_SCAN_READER_EXPERIENCE`、`GENERAL_SCAN_CONTINUITY_AUDIT`、`GENERAL_SCAN_ROLLING_CONTEXT`、`GENERAL_SCAN_CONTEXT_MAX_CHARS` 和 `HAREM_PLUS_GENERAL_SCAN`。这些修改会立即影响当前 Web 服务进程及其后续扫描子进程，并会安全写回 `.env` 文件以便重启后继续生效；写回时只更新白名单内的非敏感字段，保留注释、空行和 API Key 等敏感信息，不会展示或修改 API Key。`setting.txt` 仍作为样例/兼容配置来源，不会被 Web 配置页写回。
+Web 页面顶部可直接调整部分非敏感运行配置，包括 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`GENERAL_SCAN_MAX_CHUNKS`、`GENERAL_SCAN_SMART_DENSITY`、`GENERAL_SCAN_CONTENT_AWARE_SAMPLING`、`GENERAL_SCAN_INCREMENTAL_REUSE`、`GENERAL_SCAN_WRITING_QUALITY`、`GENERAL_SCAN_NARRATIVE_ARCHITECTURE`、`GENERAL_SCAN_FORESHADOWING_ENGINEERING`、`GENERAL_SCAN_SEMANTIC_LAYERS`、`GENERAL_SCAN_READER_EXPERIENCE`、`GENERAL_SCAN_CONTINUITY_AUDIT`、`GENERAL_SCAN_ROLLING_CONTEXT`、`GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE`、`GENERAL_SCAN_CONTEXT_MAX_CHARS` 和 `HAREM_PLUS_GENERAL_SCAN`。这些修改会立即影响当前 Web 服务进程及其后续扫描子进程，并会安全写回 `.env` 文件以便重启后继续生效；写回时只更新白名单内的非敏感字段，保留注释、空行和 API Key 等敏感信息，不会展示或修改 API Key。`setting.txt` 仍作为样例/兼容配置来源，不会被 Web 配置页写回。
 
 前端开发检查：
 
@@ -641,7 +642,7 @@ results/<书名>扫书报告_<timestamp>.txt
 它们分别对应：
 
 - 最终可读报告
-- 通用/专项剧情扫描 summary，包含 `knowledge_base`、`knowledge_base_counts`、`knowledge_base_enabled` 和 `knowledge_base_schema_version`
+- 通用/专项剧情扫描 summary，包含 `knowledge_base`、`knowledge_base_counts`、`knowledge_base_enabled`、`knowledge_base_schema_version`、`knowledge_base_llm_merge_enabled` 和 `knowledge_base_llm_merge_applied`
 - reviewer 阶段总结
 - 扫描阶段原始结构化结果
 - 角色与事实的详细中间产物

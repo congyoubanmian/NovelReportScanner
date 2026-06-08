@@ -405,6 +405,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("GENERAL_SCAN_CONTINUITY_AUDIT", text)
         self.assertIn("GENERAL_SCAN_CONTENT_AWARE_SAMPLING", text)
         self.assertIn("GENERAL_SCAN_ROLLING_CONTEXT", text)
+        self.assertIn("GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE", text)
         self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS", text)
 
     def test_profile_aliases_and_stages(self):
@@ -838,6 +839,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("general_scan_continuity_audit: true", text)
         self.assertIn("config.general_scan_continuity_audit !== false", text)
         self.assertIn("configForm.general_scan_continuity_audit", text)
+        self.assertIn("general_scan_knowledge_base_llm_merge: false", text)
+        self.assertIn("Boolean(config.general_scan_knowledge_base_llm_merge)", text)
+        self.assertIn("configForm.general_scan_knowledge_base_llm_merge", text)
         self.assertIn("general_scan_content_aware_sampling: true", text)
         self.assertIn("config.general_scan_content_aware_sampling !== false", text)
         self.assertIn("configForm.general_scan_content_aware_sampling", text)
@@ -4245,6 +4249,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_READER_EXPERIENCE",
             "GENERAL_SCAN_CONTINUITY_AUDIT",
             "GENERAL_SCAN_ROLLING_CONTEXT",
+            "GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE",
             "GENERAL_SCAN_CONTEXT_MAX_CHARS",
             "HAREM_PLUS_GENERAL_SCAN",
             "API_KEY",
@@ -4268,6 +4273,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "general_scan_reader_experience": False,
                 "general_scan_continuity_audit": False,
                 "general_scan_rolling_context": False,
+                "general_scan_knowledge_base_llm_merge": True,
                 "general_scan_context_max_chars": "800",
                 "harem_plus_general_scan": True,
             })
@@ -4288,6 +4294,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["GENERAL_SCAN_READER_EXPERIENCE"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_CONTINUITY_AUDIT"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_ROLLING_CONTEXT"], "0")
+            self.assertEqual(os.environ["GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE"], "1")
             self.assertEqual(os.environ["GENERAL_SCAN_CONTEXT_MAX_CHARS"], "800")
             self.assertEqual(os.environ["HAREM_PLUS_GENERAL_SCAN"], "1")
             self.assertEqual(result["max_workers"], "4")
@@ -4301,6 +4308,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertFalse(result["general_scan_reader_experience"])
             self.assertFalse(result["general_scan_continuity_audit"])
             self.assertFalse(result["general_scan_rolling_context"])
+            self.assertTrue(result["general_scan_knowledge_base_llm_merge"])
             self.assertEqual(result["general_scan_context_max_chars"], "800")
             self.assertTrue(result["harem_plus_general_scan"])
             self.assertIn("max_workers", result["editable"])
@@ -4480,6 +4488,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_READER_EXPERIENCE": "general_scan_reader_experience",
             "GENERAL_SCAN_CONTINUITY_AUDIT": "general_scan_continuity_audit",
             "GENERAL_SCAN_ROLLING_CONTEXT": "general_scan_rolling_context",
+            "GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE": "general_scan_knowledge_base_llm_merge",
             "GENERAL_SCAN_CONTEXT_MAX_CHARS": "general_scan_context_max_chars",
             "HAREM_PLUS_GENERAL_SCAN": "harem_plus_general_scan",
         }
@@ -4519,6 +4528,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "general_scan_reader_experience": False,
                     "general_scan_continuity_audit": False,
                     "general_scan_rolling_context": False,
+                    "general_scan_knowledge_base_llm_merge": True,
                     "general_scan_context_max_chars": 800,
                     "harem_plus_general_scan": True,
                 })
@@ -4538,6 +4548,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("GENERAL_SCAN_READER_EXPERIENCE=0", lines)
                 self.assertIn("GENERAL_SCAN_CONTINUITY_AUDIT=0", lines)
                 self.assertIn("GENERAL_SCAN_ROLLING_CONTEXT=0", lines)
+                self.assertIn("GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE=1", lines)
                 self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS=800", lines)
                 self.assertIn("HAREM_PLUS_GENERAL_SCAN=1", lines)
                 # 旧值不应残留
@@ -9721,6 +9732,38 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(active_foreshadowing.count("密信背面的旧印记"), 1)
         self.assertIn("旧钥匙用途", [x["description"] for x in knowledge_base["foreshadowing_threads"]])
 
+    def test_general_scan_llm_merge_normalizes_knowledge_base(self):
+        fallback = {
+            "schema_version": general_scan.KNOWLEDGE_BASE_SCHEMA_VERSION,
+            "entities": [{"name": "林澈", "first_seen_chunk": 1}],
+            "relationships": [],
+            "worldbuilding_facts": [],
+            "foreshadowing_threads": [],
+            "plot_timeline": [],
+            "open_threads": [{"thread": "旧钥匙用途", "chunk_index": 1}],
+            "resolved_threads": [],
+        }
+        merged = general_scan._normalize_llm_knowledge_base(
+            {
+                "entities": [{"name": "林澈", "role": "侦探"}, {"name": "林澈", "role": "主角"}],
+                "relationships": ["林澈与沈青合作"],
+                "worldbuilding_facts": ["旧城由巡夜司管辖"],
+                "foreshadowing_threads": [{"description": "密信背面的旧印记", "status": "active"}],
+                "plot_timeline": ["林澈接手旧案"],
+                "open_threads": ["旧钥匙用途", "密信来源仍未揭开"],
+                "resolved_threads": ["旧钥匙用途"],
+            },
+            fallback,
+        )
+
+        self.assertEqual([x["name"] for x in merged["entities"]], ["林澈"])
+        self.assertEqual(merged["relationships"][0]["description"], "林澈与沈青合作")
+        self.assertEqual(merged["worldbuilding_facts"][0]["fact"], "旧城由巡夜司管辖")
+        self.assertEqual(merged["foreshadowing_threads"][0]["description"], "密信背面的旧印记")
+        self.assertEqual(merged["plot_timeline"][0]["event"], "林澈接手旧案")
+        self.assertEqual([x["thread"] for x in merged["open_threads"]], ["密信来源仍未揭开"])
+        self.assertEqual([x["thread"] for x in merged["resolved_threads"]], ["旧钥匙用途"])
+
     def test_general_scan_density_profile_detects_high_signal_chunks(self):
         profile = general_scan._chunk_density_profile("案件出现尸体，凶手线索揭露，随后发生战斗和反转。")
         self.assertEqual(profile["level"], "high")
@@ -11085,6 +11128,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     mock.patch.object(general_scan, "build_chunk_manifest", return_value=manifest), \
                     mock.patch.object(general_scan, "save_chunk_manifest"), \
                     mock.patch.object(general_scan, "tqdm", side_effect=lambda items, desc=None: items), \
+                    mock.patch.object(general_scan, "KNOWLEDGE_BASE_LLM_MERGE_ENABLED", True), \
+                    mock.patch.object(general_scan, "_merge_knowledge_base_with_llm", side_effect=lambda book, kb, profile=None: kb) as merge_mock, \
                     mock.patch.object(general_scan, "_scan_chunk", side_effect=fake_scan) as scan_mock, \
                     mock.patch.object(general_scan, "_summarize_book", return_value={"story_overview": "ok"}):
                 self.assertEqual(general_scan.main(novel_path=novel_path, book_name="ten_million"), 0)
@@ -11113,10 +11158,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(data["continuity_audit_schema_version"], general_scan.CONTINUITY_AUDIT_SCHEMA_VERSION)
             self.assertTrue(data["knowledge_base_enabled"])
             self.assertEqual(data["knowledge_base_schema_version"], general_scan.KNOWLEDGE_BASE_SCHEMA_VERSION)
+            self.assertTrue(data["knowledge_base_llm_merge_enabled"])
+            self.assertTrue(data["knowledge_base_llm_merge_applied"])
+            self.assertEqual(data["knowledge_base_llm_merge_error"], "")
+            self.assertGreater(data["raw_knowledge_base_counts"]["entities"], 0)
             self.assertGreater(data["knowledge_base_counts"]["entities"], 0)
             self.assertGreater(data["knowledge_base_counts"]["worldbuilding_facts"], 0)
             self.assertGreater(data["knowledge_base_counts"]["plot_timeline"], 0)
             self.assertEqual(data["knowledge_base"]["schema_version"], general_scan.KNOWLEDGE_BASE_SCHEMA_VERSION)
+            self.assertEqual(merge_mock.call_count, 1)
             self.assertEqual(sum(data["density_counts"].values()), 300)
             self.assertEqual(data["prompt_templates"]["general_scan_chunk"]["version"], "v1")
             self.assertEqual(data["prompt_templates"]["general_summary"]["version"], "v1")
@@ -11466,6 +11516,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "continuity_audit_schema_version": general_scan.CONTINUITY_AUDIT_SCHEMA_VERSION,
                 "knowledge_base_enabled": True,
                 "knowledge_base_schema_version": general_scan.KNOWLEDGE_BASE_SCHEMA_VERSION,
+                "knowledge_base_llm_merge_enabled": general_scan.KNOWLEDGE_BASE_LLM_MERGE_ENABLED,
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }
@@ -11494,6 +11545,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             data_without_knowledge_base_meta = dict(data)
             data_without_knowledge_base_meta.pop("knowledge_base_schema_version", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_knowledge_base_meta, novel_path, "history"))
+            data_wrong_knowledge_base_merge = dict(data)
+            data_wrong_knowledge_base_merge["knowledge_base_llm_merge_enabled"] = not general_scan.KNOWLEDGE_BASE_LLM_MERGE_ENABLED
+            self.assertFalse(general_scan._is_fresh_summary(data_wrong_knowledge_base_merge, novel_path, "history"))
             data_without_content_sampling_meta = dict(data)
             data_without_content_sampling_meta.pop("content_aware_sampling_schema_version", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_content_sampling_meta, novel_path, "history"))
@@ -11551,6 +11605,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "continuity_audit_schema_version": general_scan.CONTINUITY_AUDIT_SCHEMA_VERSION,
                 "knowledge_base_enabled": True,
                 "knowledge_base_schema_version": general_scan.KNOWLEDGE_BASE_SCHEMA_VERSION,
+                "knowledge_base_llm_merge_enabled": general_scan.KNOWLEDGE_BASE_LLM_MERGE_ENABLED,
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }

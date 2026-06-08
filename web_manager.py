@@ -62,6 +62,7 @@ EDITABLE_RUNTIME_CONFIG = {
     "general_scan_reader_experience": {"env": "GENERAL_SCAN_READER_EXPERIENCE", "type": "bool"},
     "general_scan_continuity_audit": {"env": "GENERAL_SCAN_CONTINUITY_AUDIT", "type": "bool"},
     "general_scan_rolling_context": {"env": "GENERAL_SCAN_ROLLING_CONTEXT", "type": "bool"},
+    "general_scan_knowledge_base_llm_merge": {"env": "GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE", "type": "bool"},
     "general_scan_context_max_chars": {"env": "GENERAL_SCAN_CONTEXT_MAX_CHARS", "type": "int", "min": 0, "max": 10000},
     "harem_plus_general_scan": {"env": "HAREM_PLUS_GENERAL_SCAN", "type": "bool"},
 }
@@ -453,6 +454,7 @@ def _runtime_config_summary():
         "general_scan_reader_experience": _env_bool_value(os.environ.get("GENERAL_SCAN_READER_EXPERIENCE", "1")),
         "general_scan_continuity_audit": _env_bool_value(os.environ.get("GENERAL_SCAN_CONTINUITY_AUDIT", "1")),
         "general_scan_rolling_context": _env_bool_value(os.environ.get("GENERAL_SCAN_ROLLING_CONTEXT", "1")),
+        "general_scan_knowledge_base_llm_merge": _env_bool_value(os.environ.get("GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE", "0")),
         "general_scan_context_max_chars": os.environ.get("GENERAL_SCAN_CONTEXT_MAX_CHARS", "1600"),
         "harem_plus_general_scan": _env_bool_value(os.environ.get("HAREM_PLUS_GENERAL_SCAN", "0")),
         "editable": sorted(EDITABLE_RUNTIME_CONFIG.keys()),

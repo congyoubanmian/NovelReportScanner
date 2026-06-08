@@ -57,6 +57,7 @@ const configForm = ref({
   general_scan_reader_experience: true,
   general_scan_continuity_audit: true,
   general_scan_rolling_context: true,
+  general_scan_knowledge_base_llm_merge: false,
   general_scan_context_max_chars: '1600',
   harem_plus_general_scan: false
 })
@@ -137,6 +138,7 @@ function syncConfigForm(config) {
     general_scan_reader_experience: config.general_scan_reader_experience !== false,
     general_scan_continuity_audit: config.general_scan_continuity_audit !== false,
     general_scan_rolling_context: config.general_scan_rolling_context !== false,
+    general_scan_knowledge_base_llm_merge: Boolean(config.general_scan_knowledge_base_llm_merge),
     general_scan_context_max_chars: config.general_scan_context_max_chars || '1600',
     harem_plus_general_scan: Boolean(config.harem_plus_general_scan)
   }
@@ -162,6 +164,7 @@ async function saveRuntimeConfig() {
       general_scan_reader_experience: configForm.value.general_scan_reader_experience,
       general_scan_continuity_audit: configForm.value.general_scan_continuity_audit,
       general_scan_rolling_context: configForm.value.general_scan_rolling_context,
+      general_scan_knowledge_base_llm_merge: configForm.value.general_scan_knowledge_base_llm_merge,
       general_scan_context_max_chars: configForm.value.general_scan_context_max_chars,
       harem_plus_general_scan: configForm.value.harem_plus_general_scan
     })
@@ -499,6 +502,14 @@ useStateEvents(applyState, {
           @change="runtimeConfigDirty = true"
         />
         <span>滚动上下文</span>
+      </label>
+      <label class="runtime-toggle">
+        <input
+          v-model="configForm.general_scan_knowledge_base_llm_merge"
+          type="checkbox"
+          @change="runtimeConfigDirty = true"
+        />
+        <span>知识库合并</span>
       </label>
       <label>
         <span>上下文</span>

@@ -35,6 +35,7 @@ READER_EXPERIENCE_SCHEMA_VERSION = 1
 CONTINUITY_AUDIT_ENABLED = os.environ.get("GENERAL_SCAN_CONTINUITY_AUDIT", "1").strip() == "1"
 CONTINUITY_AUDIT_SCHEMA_VERSION = 1
 KNOWLEDGE_BASE_SCHEMA_VERSION = 1
+KNOWLEDGE_BASE_LLM_MERGE_ENABLED = os.environ.get("GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE", "0").strip() == "1"
 LOW_DENSITY_TERMS = (
     "睡觉", "起床", "吃饭", "喝茶", "闲聊", "聊天", "休息", "赶路", "路上", "返回",
     "日常", "家常", "客栈", "修炼打坐", "打坐", "闭关", "练功", "整理物品",
@@ -404,6 +405,8 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
     if data.get("knowledge_base_enabled") is not True:
         return False
     if data.get("knowledge_base_schema_version") != KNOWLEDGE_BASE_SCHEMA_VERSION:
+        return False
+    if data.get("knowledge_base_llm_merge_enabled") != KNOWLEDGE_BASE_LLM_MERGE_ENABLED:
         return False
     stored_prompt_templates = data.get("prompt_templates")
     if isinstance(stored_prompt_templates, dict):
@@ -933,6 +936,140 @@ def _build_knowledge_base(chunk_results: List[Dict[str, Any]], limit: int = 120)
             if item.get("thread") not in resolved_texts
         ]
     return base
+
+
+def _knowledge_base_counts(knowledge_base: Dict[str, Any]) -> Dict[str, int]:
+    return {
+        "entities": len((knowledge_base or {}).get("entities") or []),
+        "relationships": len((knowledge_base or {}).get("relationships") or []),
+        "worldbuilding_facts": len((knowledge_base or {}).get("worldbuilding_facts") or []),
+        "foreshadowing_threads": len((knowledge_base or {}).get("foreshadowing_threads") or []),
+        "plot_timeline": len((knowledge_base or {}).get("plot_timeline") or []),
+        "open_threads": len((knowledge_base or {}).get("open_threads") or []),
+        "resolved_threads": len((knowledge_base or {}).get("resolved_threads") or []),
+    }
+
+
+def _normalize_llm_knowledge_base(value: Any, fallback: Dict[str, Any], limit: int = 120) -> Dict[str, Any]:
+    raw = _safe_dict(value)
+    if not raw:
+        return fallback
+    base = {
+        "schema_version": KNOWLEDGE_BASE_SCHEMA_VERSION,
+        "entities": [],
+        "relationships": [],
+        "worldbuilding_facts": [],
+        "foreshadowing_threads": [],
+        "plot_timeline": [],
+        "open_threads": [],
+        "resolved_threads": [],
+    }
+    for item in raw.get("entities") or []:
+        record = _safe_dict(item)
+        if not record and isinstance(item, str):
+            record = {"name": item}
+        _append_unique_record(
+            base["entities"],
+            {
+                "name": str(record.get("name") or "").strip()[:80],
+                "role_or_note": str(record.get("role_or_note") or record.get("role") or record.get("note") or "").strip()[:120],
+                "first_seen_chunk": record.get("first_seen_chunk") or record.get("chunk_index"),
+                "evidence": str(record.get("evidence") or "").strip()[:180],
+            },
+            ("name",),
+            limit=limit,
+        )
+    for item in raw.get("relationships") or []:
+        record = _safe_dict(item)
+        text = record.get("description") if record else item
+        _append_unique_record(
+            base["relationships"],
+            {"chunk_index": record.get("chunk_index") if record else None, "description": str(text or "").strip()[:180], "evidence": str(record.get("evidence") or "").strip()[:180] if record else ""},
+            ("description",),
+            limit=limit,
+        )
+    for item in raw.get("worldbuilding_facts") or []:
+        record = _safe_dict(item)
+        text = record.get("fact") if record else item
+        _append_unique_record(
+            base["worldbuilding_facts"],
+            {"chunk_index": record.get("chunk_index") if record else None, "fact": str(text or "").strip()[:180], "evidence": str(record.get("evidence") or "").strip()[:180] if record else ""},
+            ("fact",),
+            limit=limit,
+        )
+    for item in raw.get("foreshadowing_threads") or []:
+        record = _safe_dict(item)
+        text = record.get("description") if record else item
+        status = str(record.get("status") or "active").strip()[:30] if record else "active"
+        _append_unique_record(
+            base["foreshadowing_threads"],
+            {
+                "chunk_index": record.get("chunk_index") if record else None,
+                "type": str(record.get("type") or "").strip()[:60] if record else "",
+                "description": str(text or "").strip()[:180],
+                "status": status,
+                "importance": str(record.get("importance") or "").strip()[:60] if record else "",
+                "evidence": str(record.get("evidence") or "").strip()[:180] if record else "",
+            },
+            ("description", "status"),
+            limit=limit,
+        )
+    for item in raw.get("plot_timeline") or []:
+        record = _safe_dict(item)
+        text = record.get("event") if record else item
+        _append_unique_record(
+            base["plot_timeline"],
+            {"chunk_index": record.get("chunk_index") if record else None, "event": str(text or "").strip()[:180], "summary": str(record.get("summary") or "").strip()[:180] if record else ""},
+            ("event",),
+            limit=limit,
+        )
+    for key in ("open_threads", "resolved_threads"):
+        for item in raw.get(key) or []:
+            record = _safe_dict(item)
+            text = record.get("thread") if record else item
+            _append_unique_record(
+                base[key],
+                {"chunk_index": record.get("chunk_index") if record else None, "thread": str(text or "").strip()[:180], "evidence": str(record.get("evidence") or "").strip()[:180] if record else ""},
+                ("thread",),
+                limit=limit,
+            )
+    if not any(base.get(key) for key in ("entities", "relationships", "worldbuilding_facts", "foreshadowing_threads", "plot_timeline", "open_threads", "resolved_threads")):
+        return fallback
+    resolved_texts = {x.get("thread") for x in base["resolved_threads"] if x.get("thread")}
+    if resolved_texts:
+        base["open_threads"] = [item for item in base["open_threads"] if item.get("thread") not in resolved_texts]
+    return base
+
+
+def _merge_knowledge_base_with_llm(book_name: str, knowledge_base: Dict[str, Any], profile=None) -> Dict[str, Any]:
+    if not KNOWLEDGE_BASE_LLM_MERGE_ENABLED or not isinstance(knowledge_base, dict):
+        return knowledge_base
+    profile = profile or load_analysis_profile("general")
+    material = _compact_knowledge_base_for_summary(knowledge_base, limit=80)
+    system_prompt = f"""你是{profile.display_name}知识库合并器。请只基于输入 knowledge_base 做语义合并，不要添加输入中不存在的新事实。
+
+目标：
+1. 合并同一人物、同一设定、同一关系、同一伏笔/线索的重复表达。
+2. 保留足够支撑整书总评的关键实体、关系变化、设定事实、伏笔线程、事件时间线、未解线索和已回收线索。
+3. 如果 open_threads 与 resolved_threads 语义上指向同一线索，应从 open_threads 删除已回收项。
+
+输出必须是 JSON 对象，字段固定为：
+entities, relationships, worldbuilding_facts, foreshadowing_threads, plot_timeline, open_threads, resolved_threads。
+各字段保持数组；数组元素优先沿用输入对象字段。"""
+    user_prompt = f"""书名：{book_name}
+
+knowledge_base:
+{json.dumps(material, ensure_ascii=False, indent=2)}
+
+请输出合并后的 knowledge_base JSON。"""
+    data = _call_json(
+        [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=4200,
+    )
+    return _normalize_llm_knowledge_base(data, knowledge_base)
 
 
 def _compact_knowledge_base_for_summary(knowledge_base: Dict[str, Any], limit: int = 40) -> Dict[str, Any]:
@@ -2396,7 +2533,18 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
                 "error_type": "context_overflow" if is_context_overflow_error(exc) else "api_error",
             })
 
-    knowledge_base = _build_knowledge_base(chunk_results) if chunk_results else {}
+    raw_knowledge_base = _build_knowledge_base(chunk_results) if chunk_results else {}
+    knowledge_base = raw_knowledge_base
+    knowledge_base_llm_merge_error = ""
+    knowledge_base_llm_merge_applied = False
+    if chunk_results and KNOWLEDGE_BASE_LLM_MERGE_ENABLED:
+        try:
+            merged_knowledge_base = _merge_knowledge_base_with_llm(clean_name, raw_knowledge_base, profile=profile)
+            if isinstance(merged_knowledge_base, dict):
+                knowledge_base = merged_knowledge_base
+                knowledge_base_llm_merge_applied = True
+        except Exception as exc:
+            knowledge_base_llm_merge_error = str(exc) or exc.__class__.__name__
     summary = _summarize_book(clean_name, chunk_results, profile=profile, knowledge_base=knowledge_base) if chunk_results else {}
     density_counts = {"low": 0, "medium": 0, "high": 0}
     for item in chunk_results:
@@ -2450,6 +2598,10 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "continuity_audit_timeline_count": len(_compact_continuity_for_summary(chunk_results)) if CONTINUITY_AUDIT_ENABLED else 0,
         "knowledge_base_enabled": True,
         "knowledge_base_schema_version": KNOWLEDGE_BASE_SCHEMA_VERSION,
+        "knowledge_base_llm_merge_enabled": KNOWLEDGE_BASE_LLM_MERGE_ENABLED,
+        "knowledge_base_llm_merge_applied": knowledge_base_llm_merge_applied,
+        "knowledge_base_llm_merge_error": knowledge_base_llm_merge_error,
+        "raw_knowledge_base_counts": _knowledge_base_counts(raw_knowledge_base),
         "density_counts": density_counts,
         "incremental_reuse": INCREMENTAL_REUSE,
         "reused_chunk_count": reused_chunk_count,
@@ -2457,15 +2609,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "prompt_templates": prompt_templates_metadata("general_scan_chunk", "general_summary"),
         "failed_chunks": failed,
         "knowledge_base": knowledge_base,
-        "knowledge_base_counts": {
-            "entities": len(knowledge_base.get("entities") or []),
-            "relationships": len(knowledge_base.get("relationships") or []),
-            "worldbuilding_facts": len(knowledge_base.get("worldbuilding_facts") or []),
-            "foreshadowing_threads": len(knowledge_base.get("foreshadowing_threads") or []),
-            "plot_timeline": len(knowledge_base.get("plot_timeline") or []),
-            "open_threads": len(knowledge_base.get("open_threads") or []),
-            "resolved_threads": len(knowledge_base.get("resolved_threads") or []),
-        },
+        "knowledge_base_counts": _knowledge_base_counts(knowledge_base),
         "chunk_results": chunk_results,
         "summary": summary,
     }
