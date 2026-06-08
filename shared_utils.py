@@ -116,6 +116,22 @@ DEFAULT_MAX_RETRIES = 5
 DEFAULT_MAX_403_RETRIES = 3  # 连续 3 次 403 才标记为不可用
 DEFAULT_MAX_TIMEOUT_RETRIES = 3  # 连续超时 3 次则标记 key 不可用
 DEFAULT_REQUEST_TIMEOUT = 120  # 请求超时时间（秒）
+CONTEXT_OVERFLOW_ERROR_HINTS = (
+    "context length",
+    "maximum context",
+    "context window",
+    "context overflow",
+    "maximum tokens",
+    "too many tokens",
+    "tokens exceed",
+    "token limit",
+    "prompt too long",
+    "input too long",
+    "request too large",
+    "string too long",
+    "maximum request",
+    "context_length_exceeded",
+)
 
 # Backward-compatible aliases for older imports.
 MAX_403_RETRIES = DEFAULT_MAX_403_RETRIES
@@ -185,6 +201,11 @@ def create_chat_completion(
         base_delay=base_delay,
         logger=logger,
     )
+
+
+def is_context_overflow_error(exc: Exception) -> bool:
+    text = str(exc or "").lower()
+    return any(hint in text for hint in CONTEXT_OVERFLOW_ERROR_HINTS)
 
 
 chat_completion = create_chat_completion(logger=logger)

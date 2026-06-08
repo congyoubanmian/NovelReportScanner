@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 from tqdm import tqdm
 
 from analysis_profiles import load_analysis_profile
-from shared_utils import MODEL, chat_completion, get_base_dir, init_token_tracker, read_file_safely, record_usage
+from shared_utils import MODEL, chat_completion, get_base_dir, init_token_tracker, is_context_overflow_error, read_file_safely, record_usage
 from shared_utils import _safe_json_loads_maybe
 from text_anchor import build_chunk_manifest, save_chunk_manifest
 
@@ -385,6 +385,67 @@ def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=No
     }
 
 
+def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int, reason: str) -> Dict[str, Any]:
+    merged = {
+        "chunk_index": chunk_index,
+        "plot_events": [],
+        "conflicts": [],
+        "worldbuilding": [],
+        "themes": [],
+        "foreshadowing": [],
+        "quality_notes": [],
+        "specialty_notes": [],
+        "one_sentence_summary": "",
+        "partial_result": True,
+        "partial_reason": reason,
+        "partial_count": len(results),
+    }
+    seen_by_field = {field: set() for field in (
+        "plot_events",
+        "conflicts",
+        "worldbuilding",
+        "themes",
+        "foreshadowing",
+        "quality_notes",
+        "specialty_notes",
+    )}
+    summaries = []
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        for field, seen in seen_by_field.items():
+            for item in _safe_list(result.get(field), limit=20):
+                if item in seen:
+                    continue
+                seen.add(item)
+                merged[field].append(item)
+        summary = str(result.get("one_sentence_summary") or "").strip()
+        if summary:
+            summaries.append(summary)
+    merged["one_sentence_summary"] = "；".join(summaries[:3])
+    return merged
+
+
+def _scan_chunk_with_context_overflow_fallback(text_chunk: str, chunk_index: int, total_chunks: int, profile=None) -> Dict[str, Any]:
+    try:
+        return _scan_chunk(text_chunk, chunk_index, total_chunks, profile=profile)
+    except Exception as exc:
+        if not is_context_overflow_error(exc) or len(text_chunk or "") < 2:
+            raise
+        midpoint = max(1, len(text_chunk) // 2)
+        parts = [text_chunk[:midpoint], text_chunk[midpoint:]]
+        partial_results = []
+        for part_index, part in enumerate(parts, 1):
+            if not part.strip():
+                continue
+            result = _scan_chunk(part, chunk_index, total_chunks, profile=profile)
+            result["partial_index"] = part_index
+            partial_results.append(result)
+        if not partial_results:
+            raise
+        return _merge_partial_scan_results(partial_results, chunk_index, "context_overflow_split")
+
+
 def _merge_items(chunk_results: List[Dict[str, Any]], key: str, limit: int = 80) -> List[str]:
     seen = set()
     out = []
@@ -537,12 +598,21 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
     for idx, chunk in enumerate(tqdm(chunks, desc="通用扫描")):
         original_chunk_index = selected_original_indices[idx] if idx < len(selected_original_indices) else idx + 1
         try:
-            result = _scan_chunk(chunk, original_chunk_index - 1, source_chunk_count or len(chunks), profile=profile)
+            result = _scan_chunk_with_context_overflow_fallback(
+                chunk,
+                original_chunk_index - 1,
+                source_chunk_count or len(chunks),
+                profile=profile,
+            )
             result["sample_index"] = idx
             result["original_chunk_index"] = original_chunk_index
             chunk_results.append(result)
         except Exception as exc:
-            failed.append({"chunk_index": original_chunk_index - 1, "error": str(exc)})
+            failed.append({
+                "chunk_index": original_chunk_index - 1,
+                "error": str(exc),
+                "error_type": "context_overflow" if is_context_overflow_error(exc) else "api_error",
+            })
 
     summary = _summarize_book(clean_name, chunk_results, profile=profile) if chunk_results else {}
     out = {

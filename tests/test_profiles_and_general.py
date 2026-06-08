@@ -8737,6 +8737,43 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(summary["radar_scores"]["pacing"]["score"], 0.0)
         self.assertEqual(summary["radar_scores"]["writing"]["score"], 7.0)
 
+    def test_general_scan_splits_chunk_on_context_overflow(self):
+        old_scan_chunk = general_scan._scan_chunk
+        calls = []
+        try:
+            def fake_scan(chunk, chunk_index, total_chunks, profile=None):
+                calls.append(chunk)
+                if len(calls) == 1:
+                    raise RuntimeError("maximum context length exceeded")
+                return {
+                    "chunk_index": chunk_index,
+                    "plot_events": [f"事件{len(calls) - 1}"],
+                    "conflicts": [],
+                    "worldbuilding": [],
+                    "themes": [],
+                    "foreshadowing": [],
+                    "quality_notes": [],
+                    "specialty_notes": [],
+                    "one_sentence_summary": f"摘要{len(calls) - 1}",
+                }
+
+            general_scan._scan_chunk = fake_scan
+            result = general_scan._scan_chunk_with_context_overflow_fallback(
+                "甲" * 20,
+                4,
+                10,
+                profile=analysis_profiles.load_analysis_profile("general"),
+            )
+        finally:
+            general_scan._scan_chunk = old_scan_chunk
+
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(result["partial_result"])
+        self.assertEqual(result["partial_reason"], "context_overflow_split")
+        self.assertEqual(result["partial_count"], 2)
+        self.assertEqual(result["plot_events"], ["事件1", "事件2"])
+        self.assertEqual(result["one_sentence_summary"], "摘要1；摘要2")
+
     def test_general_scan_summary_accepts_kimi_field_aliases(self):
         profile = analysis_profiles.load_analysis_profile("apocalypse_survival")
         old_call_json = general_scan._call_json
@@ -9475,6 +9512,54 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(sampled_indices[0], 1)
             self.assertEqual(sampled_indices[-1], 1000)
             self.assertTrue(any(450 <= idx <= 550 for idx in sampled_indices))
+
+    def test_general_scan_main_records_context_overflow_partial_result(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            novels_dir = os.path.join(tmpdir, "novels")
+            results_dir = os.path.join(tmpdir, "results")
+            os.makedirs(novels_dir, exist_ok=True)
+            os.makedirs(results_dir, exist_ok=True)
+            novel_path = os.path.join(novels_dir, "overflow.txt")
+            with open(novel_path, "w", encoding="utf-8") as f:
+                f.write("stub")
+
+            manifest = {
+                "text_length": 20_000,
+                "chunks": [{"chunk_index": 1, "text": "甲" * 100}],
+            }
+            calls = []
+
+            def fake_scan(chunk, chunk_index, total_chunks, profile=None):
+                calls.append(chunk)
+                if len(calls) == 1:
+                    raise RuntimeError("context_length_exceeded")
+                return {
+                    "chunk_index": chunk_index,
+                    "plot_events": [f"半段{len(calls) - 1}"],
+                    "one_sentence_summary": f"半段摘要{len(calls) - 1}",
+                }
+
+            with mock.patch.object(general_scan, "get_base_dir", return_value=tmpdir), \
+                    mock.patch.object(general_scan, "init_token_tracker"), \
+                    mock.patch.object(general_scan, "_read_novel", return_value="stub"), \
+                    mock.patch.object(general_scan, "build_chunk_manifest", return_value=manifest), \
+                    mock.patch.object(general_scan, "save_chunk_manifest"), \
+                    mock.patch.object(general_scan, "tqdm", side_effect=lambda items, desc=None: items), \
+                    mock.patch.object(general_scan, "_scan_chunk", side_effect=fake_scan), \
+                    mock.patch.object(general_scan, "_summarize_book", return_value={"story_overview": "ok"}):
+                self.assertEqual(general_scan.main(novel_path=novel_path, book_name="overflow"), 0)
+
+            latest_path = os.path.join(results_dir, "overflow_GENERAL_SUMMARY_latest.json")
+            with open(latest_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            self.assertEqual(data["failed_chunks"], [])
+            self.assertEqual(len(calls), 3)
+            result = data["chunk_results"][0]
+            self.assertTrue(result["partial_result"])
+            self.assertEqual(result["partial_reason"], "context_overflow_split")
+            self.assertEqual(result["partial_count"], 2)
+            self.assertEqual(result["original_chunk_index"], 1)
 
     def test_general_scan_fresh_summary(self):
         with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
