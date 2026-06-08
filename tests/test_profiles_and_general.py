@@ -316,6 +316,26 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(compose_vars)
         self.assertEqual(set(), compose_vars - env_sample_vars)
 
+    def test_docker_entrypoint_requires_web_token_and_writable_volumes(self):
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        entrypoint_path = os.path.join(base_dir, "docker-entrypoint.sh")
+        compose_path = os.path.join(base_dir, "docker-compose.yml")
+        env_sample_path = os.path.join(base_dir, ".env.sample")
+        with open(entrypoint_path, "r", encoding="utf-8") as f:
+            entrypoint_text = f.read()
+        with open(compose_path, "r", encoding="utf-8") as f:
+            compose_text = f.read()
+        with open(env_sample_path, "r", encoding="utf-8") as f:
+            env_sample_text = f.read()
+
+        self.assertIn("WEB_ACCESS_TOKEN must be set", entrypoint_text)
+        self.assertIn("WEB_ALLOW_NO_AUTH", entrypoint_text)
+        self.assertIn("check_writable_dir /app/novels", entrypoint_text)
+        self.assertIn("check_writable_dir /app/results", entrypoint_text)
+        self.assertIn("chown -R ${PUID:-1000}:${PGID:-1000} novels results", entrypoint_text)
+        self.assertIn("WEB_ALLOW_NO_AUTH: ${WEB_ALLOW_NO_AUTH:-0}", compose_text)
+        self.assertIn("WEB_ALLOW_NO_AUTH=0", env_sample_text)
+
     def test_dockerignore_keeps_frontend_sources_for_builder_stage(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
         dockerfile_path = os.path.join(base_dir, "Dockerfile")
@@ -388,7 +408,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertIn("公网反向代理 / TLS 建议", text)
         self.assertIn("127.0.0.1:${WEB_PORT:-8765}:8765", text)
+        self.assertIn("Docker 部署默认还要求设置 `WEB_ACCESS_TOKEN`", text)
+        self.assertIn("WEB_ALLOW_NO_AUTH=1", text)
+        self.assertIn("容器启动时会对 `/app/novels` 和 `/app/results` 做写入自检", text)
         self.assertIn("WEB_ACCESS_TOKEN=换成一段长随机字符串", text)
+        self.assertIn("WEB_ALLOW_NO_AUTH=0", text)
         self.assertIn("WEB_CORS_ALLOW_ORIGIN=https://scanner.example.com", text)
         self.assertIn("reverse_proxy 127.0.0.1:8765", text)
         self.assertIn("return 301 https://$host$request_uri", text)
@@ -4193,18 +4217,22 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
     def test_web_manager_access_token_auth_is_optional_and_secret(self):
         old_token = os.environ.get("WEB_ACCESS_TOKEN")
         old_key_required = os.environ.get("NOVEL_REPORT_SCANNER_REQUIRE_API_KEY")
+        old_allow_no_auth = os.environ.get("WEB_ALLOW_NO_AUTH")
         try:
             os.environ.pop("WEB_ACCESS_TOKEN", None)
             os.environ["NOVEL_REPORT_SCANNER_REQUIRE_API_KEY"] = "0"
+            os.environ["WEB_ALLOW_NO_AUTH"] = "1"
             self.assertTrue(web_manager._is_authorized_request({}, ""))
             self.assertFalse(web_manager._unsafe_write_confirmed({}))
             self.assertTrue(web_manager._unsafe_write_confirmed({"X-Web-Unsafe-Action": "confirm"}))
             summary = web_manager._runtime_config_summary()
             self.assertFalse(summary["web"]["auth_enabled"])
             self.assertFalse(summary["web"]["api_key_required_on_start"])
+            self.assertTrue(summary["web"]["allow_no_auth"])
 
             os.environ["WEB_ACCESS_TOKEN"] = "secret-token"
             os.environ["NOVEL_REPORT_SCANNER_REQUIRE_API_KEY"] = "1"
+            os.environ["WEB_ALLOW_NO_AUTH"] = "0"
             self.assertFalse(web_manager._is_authorized_request({}, ""))
             self.assertFalse(web_manager._is_authorized_request({"Authorization": "Bearer wrong"}, ""))
             self.assertTrue(web_manager._is_authorized_request({"Authorization": "Bearer secret-token"}, ""))
@@ -4215,6 +4243,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             protected_summary = web_manager._runtime_config_summary()
             self.assertTrue(protected_summary["web"]["auth_enabled"])
             self.assertTrue(protected_summary["web"]["api_key_required_on_start"])
+            self.assertFalse(protected_summary["web"]["allow_no_auth"])
             self.assertNotIn("secret-token", json.dumps(protected_summary, ensure_ascii=False))
         finally:
             if old_token is None:
@@ -4225,6 +4254,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 os.environ.pop("NOVEL_REPORT_SCANNER_REQUIRE_API_KEY", None)
             else:
                 os.environ["NOVEL_REPORT_SCANNER_REQUIRE_API_KEY"] = old_key_required
+            if old_allow_no_auth is None:
+                os.environ.pop("WEB_ALLOW_NO_AUTH", None)
+            else:
+                os.environ["WEB_ALLOW_NO_AUTH"] = old_allow_no_auth
 
     def test_web_manager_runtime_config_reports_storage_writability(self):
         old_base_dir = web_manager.get_base_dir

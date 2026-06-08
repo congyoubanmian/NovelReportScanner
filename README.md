@@ -118,6 +118,8 @@ Docker 镜像默认启动 Web 管理端，监听容器内 `8765` 端口。小说
 
 容器入口会默认检查 `API_KEY` 或 `API_KEY_POOL`，至少需要配置其中一个，否则容器会直接退出，避免 Web 页面能打开但扫描任务启动后才失败。如果你只是临时启动 Web UI、不准备扫描，可以设置 `NOVEL_REPORT_SCANNER_REQUIRE_API_KEY=0` 跳过这个启动校验。
 
+Docker 部署默认还要求设置 `WEB_ACCESS_TOKEN`。这是为了避免把 Web 管理端暴露到公网后，读接口、报告文件和 SSE 状态流处于无鉴权状态。只有在确认服务只绑定本机或内网可信环境时，才建议设置 `WEB_ALLOW_NO_AUTH=1` 跳过该启动校验。
+
 容器默认不再以 root 身份运行，默认使用 `1000:1000`。首次部署前建议先创建宿主机挂载目录，并让运行容器的 UID / GID 拥有读写权限：
 
 ```bash
@@ -126,6 +128,8 @@ export PGID="${PGID:-1000}"
 mkdir -p novels results
 chown -R "$PUID:$PGID" novels results
 ```
+
+容器启动时会对 `/app/novels` 和 `/app/results` 做写入自检。如果宿主机挂载目录权限不匹配，容器会直接退出并提示类似上面的 `chown` 命令，避免上传或入队时才遇到 `PermissionError`。
 
 本地源码构建镜像：
 
@@ -362,7 +366,8 @@ API_KEY=sk-your-key
 WEB_HOST=0.0.0.0
 WEB_PORT=8765
 WEB_CORS_ALLOW_ORIGIN=*
-WEB_ACCESS_TOKEN=
+WEB_ACCESS_TOKEN=换成一段长随机字符串
+WEB_ALLOW_NO_AUTH=0
 WEB_REQUEST_TIMEOUT=60
 MAX_UPLOAD_SIZE=104857600
 MAX_JSON_BODY_SIZE=65536
@@ -411,7 +416,8 @@ Web 管理端常用配置：
 
 - `WEB_HOST` / `WEB_PORT`：Web 管理端监听地址和端口。
 - `WEB_CORS_ALLOW_ORIGIN`：CORS 允许来源，默认 `*`。
-- `WEB_ACCESS_TOKEN`：Web 管理端可选访问令牌。留空时读接口仍可访问，但上传、扫描、删除、队列调整和运行配置修改等写操作需要请求携带 `X-Web-Unsafe-Action: confirm`，Web 前端会自动携带；公网部署仍强烈建议设置令牌。设置后 `/api/*`、`/files`、`/upload` 和 SSE 状态流都需要携带 token。浏览器可在页面输入令牌保存，也可首次访问时使用 `http://host:port/?token=你的令牌` 自动保存。
+- `WEB_ACCESS_TOKEN`：Web 管理端访问令牌。Docker 入口默认要求设置该值，设置后 `/api/*`、`/files`、`/upload` 和 SSE 状态流都需要携带 token。浏览器可在页面输入令牌保存，也可首次访问时使用 `http://host:port/?token=你的令牌` 自动保存。
+- `WEB_ALLOW_NO_AUTH`：是否允许 Docker 容器在没有 `WEB_ACCESS_TOKEN` 时启动，默认 `0`。只建议在服务绑定本机回环地址或可信内网、且没有公网入口时临时设为 `1`。源码本地直接运行仍保留无 token 模式：读接口开放，写操作需要 `X-Web-Unsafe-Action: confirm`。
 - `WEB_REQUEST_TIMEOUT`：单个 HTTP 连接的 socket 超时时间，默认 `60` 秒；设为 `0` 可关闭。
 - Web 访问日志写入 `results/web_logs/web_access.log`，使用 `LOG_MAX_BYTES` / `LOG_BACKUP_COUNT` 控制轮转，并会脱敏 URL 中的访问令牌。
 - `MAX_UPLOAD_SIZE`：单个上传 `.txt` 文件大小上限，默认 `104857600` 字节。

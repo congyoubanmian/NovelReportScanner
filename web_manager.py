@@ -473,6 +473,7 @@ def _runtime_config_summary():
             "sse_sync_interval_seconds": SSE_SYNC_INTERVAL_SECONDS,
             "sse_max_connection_seconds": SSE_MAX_CONNECTION_SECONDS,
             "auth_enabled": _web_auth_enabled(),
+            "allow_no_auth": _env_bool_value(os.environ.get("WEB_ALLOW_NO_AUTH", "0")),
             "api_key_required_on_start": _env_bool_value(os.environ.get("NOVEL_REPORT_SCANNER_REQUIRE_API_KEY", "1")),
             "storage": _storage_health_summary(),
         },
