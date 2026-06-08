@@ -4991,6 +4991,36 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("第三方送人", family_send_issue["definition_review_hint"])
         self.assertIn("缺少男主主体", family_send_issue["definition_review_hint"])
 
+        reader_cp_send_issue = report._annotate_issue_for_report(
+            {"type": "送女", "content": "读者脑补强女和路人男组CP，正文没有事实，也没有男主主动撮合。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(reader_cp_send_issue["heroine_position_context"], "强女=强准女主")
+        self.assertIn("非事实或弱证据标记", reader_cp_send_issue["definition_review_hint"])
+        self.assertIn("缺少男主主体", reader_cp_send_issue["definition_review_hint"])
+
+        bystander_matchmaking_issue = report._annotate_issue_for_report(
+            {"type": "送女", "content": "旁人撮合强女嫁给路人男，男主没有参与。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(bystander_matchmaking_issue["heroine_position_context"], "强女=强准女主")
+        self.assertIn("第三方送人", bystander_matchmaking_issue["definition_review_hint"])
+        self.assertIn("缺少男主主体", bystander_matchmaking_issue["definition_review_hint"])
+
         active_send_issue = report._annotate_issue_for_report(
             {"type": "送女", "content": "男主主动安排强女嫁给路人男，强女被安排嫁给路人男。"},
             [
@@ -5004,6 +5034,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertEqual(active_send_issue["heroine_position_context"], "强女=强准女主")
         self.assertNotIn("definition_review_hint", active_send_issue)
+
+        negated_active_send_issue = report._annotate_issue_for_report(
+            {"type": "送女", "content": "强女被安排嫁给路人男，但男主没有主动安排，也没有默许。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(negated_active_send_issue["heroine_position_context"], "强女=强准女主")
+        self.assertIn("缺少男主主体", negated_active_send_issue["definition_review_hint"])
 
         victim_only_ntr_issue = report._annotate_issue_for_report(
             {"type": "绿帽", "content": "强女被反派绑走调戏，但没有性关系也没有情感背叛。"},
@@ -5063,6 +5107,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertEqual(factual_ntr_issue["heroine_position_context"], "强女=强准女主")
         self.assertNotIn("definition_review_hint", factual_ntr_issue)
+
+        reader_cp_ntr_issue = report._annotate_issue_for_report(
+            {"type": "绿帽", "content": "读者调侃强女和路人男有CP感，正文无暧昧也没有实锤。"},
+            [
+                {
+                    "name": "强女",
+                    "aliases": ["强女"],
+                    "label": "强准女主",
+                    "level": "强准女主：感情推进",
+                }
+            ],
+        )
+        self.assertEqual(reader_cp_ntr_issue["heroine_position_context"], "强女=强准女主")
+        self.assertIn("非事实或弱证据标记", reader_cp_ntr_issue["definition_review_hint"])
 
         male_lead_expansion_issue = report._annotate_issue_for_report(
             {"type": "绿帽", "content": "男主与强女的闺蜜发生关系，强女吃醋。"},
