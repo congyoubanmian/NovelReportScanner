@@ -3634,13 +3634,36 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(web_manager._safe_filename("book.txt"), "book.txt")
 
     def test_web_manager_public_file_guard(self):
-        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
-            f.write("secret")
-            outside_path = f.name
+        old_base_dir = web_manager.get_base_dir
         try:
-            self.assertFalse(web_manager._is_safe_public_file(outside_path))
+            with tempfile.TemporaryDirectory() as tmpdir:
+                web_manager.get_base_dir = lambda: tmpdir
+                os.makedirs(os.path.join(tmpdir, "results"), exist_ok=True)
+                os.makedirs(os.path.join(tmpdir, "novels"), exist_ok=True)
+                os.makedirs(os.path.join(tmpdir, "results2"), exist_ok=True)
+                os.makedirs(os.path.join(tmpdir, "frontend", "dist"), exist_ok=True)
+                os.makedirs(os.path.join(tmpdir, "frontend", "dist2"), exist_ok=True)
+
+                result_path = os.path.join(tmpdir, "results", "report.txt")
+                novel_path = os.path.join(tmpdir, "novels", "book.txt")
+                sibling_path = os.path.join(tmpdir, "results2", "secret.txt")
+                static_path = os.path.join(tmpdir, "frontend", "dist", "app.js")
+                static_sibling_path = os.path.join(tmpdir, "frontend", "dist2", "app.js")
+                for path in [result_path, novel_path, sibling_path, static_path, static_sibling_path]:
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write("data")
+
+                self.assertTrue(web_manager._is_safe_public_file(result_path))
+                self.assertTrue(web_manager._is_safe_public_file(novel_path))
+                self.assertFalse(web_manager._is_safe_public_file(sibling_path))
+                self.assertTrue(web_manager._is_safe_novel_file(novel_path))
+                self.assertFalse(web_manager._is_safe_novel_file(sibling_path))
+
+                self.assertEqual(web_manager._static_file_path("/app.js"), static_path)
+                self.assertIsNone(web_manager._static_file_path("../dist2/app.js"))
+                self.assertIsNone(web_manager._static_file_path(static_sibling_path))
         finally:
-            os.unlink(outside_path)
+            web_manager.get_base_dir = old_base_dir
 
     def test_web_manager_handler_adds_cors_headers(self):
         class FakeHandler(web_manager.Handler):
@@ -8631,9 +8654,25 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(general_scan._effective_max_chunks(500_000, 80), 80)
         self.assertEqual(general_scan._effective_max_chunks(1_500_000, 80), 120)
         self.assertEqual(general_scan._effective_max_chunks(4_000_000, 80), 160)
-        self.assertEqual(general_scan._effective_max_chunks(6_000_000, 80), 200)
+        self.assertEqual(general_scan._effective_max_chunks(6_000_000, 80), 300)
+        self.assertEqual(general_scan._effective_max_chunks(10_000_000, 80), 300)
+        self.assertEqual(general_scan._effective_max_chunks(60_000_000, 80), 400)
         self.assertEqual(general_scan._effective_max_chunks(6_000_000, 0), 0)
-        self.assertEqual(general_scan._effective_max_chunks(6_000_000, 240), 240)
+        self.assertEqual(general_scan._effective_max_chunks(10_000_000, 360), 360)
+
+    def test_general_scan_samples_long_books_across_timeline(self):
+        entries = [{"chunk_index": i + 1, "text": f"chunk-{i + 1}"} for i in range(1000)]
+        sampled = general_scan._sample_chunk_entries_for_budget(entries, 10)
+        sampled_indices = [item["chunk_index"] for item in sampled]
+
+        self.assertEqual(len(sampled), 10)
+        self.assertEqual(sampled_indices[0], 1)
+        self.assertEqual(sampled_indices[-1], 1000)
+        self.assertEqual(sampled_indices, sorted(sampled_indices))
+        self.assertTrue(any(440 <= idx <= 560 for idx in sampled_indices))
+
+        self.assertEqual(general_scan._sample_chunk_entries_for_budget(entries, 0), entries)
+        self.assertEqual(general_scan._sample_chunk_entries_for_budget(entries, 1), [entries[0]])
 
     def test_general_scan_fresh_summary(self):
         with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
@@ -8649,6 +8688,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "chunk_size": general_scan.CHUNK_SIZE,
                 "chunk_overlap": general_scan.CHUNK_OVERLAP,
                 "max_chunks": general_scan.MAX_CHUNKS,
+                "chunk_sampling_strategy": "full",
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }

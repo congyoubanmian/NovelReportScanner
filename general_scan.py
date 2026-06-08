@@ -27,9 +27,33 @@ def _effective_max_chunks(text_length: int, base_max_chunks: int = None) -> int:
         suggested = 120
     elif text_length <= 5_000_000:
         suggested = 160
+    elif text_length <= 10_000_000:
+        suggested = 300
     else:
-        suggested = 200
+        suggested = 400
     return max(base, suggested)
+
+
+def _sample_chunk_entries_for_budget(chunk_entries: List[Dict[str, Any]], max_chunks: int) -> List[Dict[str, Any]]:
+    entries = list(chunk_entries or [])
+    if max_chunks <= 0 or len(entries) <= max_chunks:
+        return entries
+    if max_chunks == 1:
+        return [entries[0]]
+    last_index = len(entries) - 1
+    selected_indices = {
+        round(i * last_index / (max_chunks - 1))
+        for i in range(max_chunks)
+    }
+    selected = [entries[idx] for idx in sorted(selected_indices)]
+    cursor = 0
+    while len(selected) < max_chunks and cursor < len(entries):
+        candidate = entries[cursor]
+        if candidate not in selected:
+            selected.append(candidate)
+        cursor += 1
+    selected.sort(key=lambda item: int(item.get("chunk_index", 0)))
+    return selected[:max_chunks]
 
 
 def _summary_field_label(field: str) -> str:
@@ -127,6 +151,8 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
     text_length = int(data.get("text_length") or 0)
     effective_max_chunks = _effective_max_chunks(text_length)
     if data.get("max_chunks") != effective_max_chunks:
+        return False
+    if data.get("chunk_sampling_strategy") not in {"full", "uniform_timeline"}:
         return False
     current_mtime = _novel_mtime(novel_file)
     if current_mtime is None or data.get("novel_mtime") != current_mtime:
@@ -423,19 +449,32 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
     text = _read_novel(novel_file)
     manifest = build_chunk_manifest(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
     save_chunk_manifest(manifest, os.path.join(output_dir, "chunk_manifest.json"))
-    chunks = [x.get("text", "") for x in manifest.get("chunks", [])]
+    source_chunk_entries = list(manifest.get("chunks", []) or [])
+    source_chunk_count = len(source_chunk_entries)
     effective_max_chunks = _effective_max_chunks(manifest.get("text_length") or len(text))
+    selected_chunk_entries = _sample_chunk_entries_for_budget(source_chunk_entries, effective_max_chunks)
+    chunks = [x.get("text", "") for x in selected_chunk_entries]
+    selected_original_indices = [
+        int(x.get("chunk_index", idx + 1))
+        for idx, x in enumerate(selected_chunk_entries)
+    ]
     if effective_max_chunks > 0:
-        chunks = chunks[:effective_max_chunks]
+        sampling_strategy = "full" if source_chunk_count <= effective_max_chunks else "uniform_timeline"
+    else:
+        sampling_strategy = "full"
 
-    print(f"★ {profile.display_name}：{clean_name}，共 {len(chunks)} 个片段")
+    print(f"★ {profile.display_name}：{clean_name}，共 {len(chunks)} 个片段（原始 {source_chunk_count} 个，策略={sampling_strategy}）")
     chunk_results = []
     failed = []
     for idx, chunk in enumerate(tqdm(chunks, desc="通用扫描")):
+        original_chunk_index = selected_original_indices[idx] if idx < len(selected_original_indices) else idx + 1
         try:
-            chunk_results.append(_scan_chunk(chunk, idx, len(chunks), profile=profile))
+            result = _scan_chunk(chunk, original_chunk_index - 1, source_chunk_count or len(chunks), profile=profile)
+            result["sample_index"] = idx
+            result["original_chunk_index"] = original_chunk_index
+            chunk_results.append(result)
         except Exception as exc:
-            failed.append({"chunk_index": idx, "error": str(exc)})
+            failed.append({"chunk_index": original_chunk_index - 1, "error": str(exc)})
 
     summary = _summarize_book(clean_name, chunk_results, profile=profile) if chunk_results else {}
     out = {
@@ -455,7 +494,10 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "max_chunks": effective_max_chunks,
         "base_max_chunks": MAX_CHUNKS,
         "text_length": manifest.get("text_length") or len(text),
+        "source_chunk_count": source_chunk_count,
         "chunk_count": len(chunks),
+        "chunk_sampling_strategy": sampling_strategy,
+        "sampled_chunk_indices": selected_original_indices,
         "failed_chunks": failed,
         "chunk_results": chunk_results,
         "summary": summary,

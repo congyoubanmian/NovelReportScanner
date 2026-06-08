@@ -62,6 +62,15 @@ def _static_dir():
     return os.path.join(get_base_dir(), "frontend", "dist")
 
 
+def _is_path_inside(path, root):
+    try:
+        ap = os.path.abspath(path)
+        ar = os.path.abspath(root)
+        return os.path.commonpath([ap, ar]) == ar
+    except (OSError, ValueError):
+        return False
+
+
 def _static_file_path(path):
     """安全解析静态文件路径，防止目录穿越"""
     base = os.path.abspath(_static_dir())
@@ -71,7 +80,7 @@ def _static_file_path(path):
     rel = path.lstrip("/")
     target = os.path.abspath(os.path.join(base, rel))
     # 安全检查：确保在 base 目录内
-    if not target.startswith(base + os.sep) and target != base:
+    if not _is_path_inside(target, base):
         return None
     if os.path.isfile(target):
         return target
@@ -641,7 +650,7 @@ def _is_safe_public_file(path):
         os.path.abspath(os.path.join(base, "novels")),
     ]
     ap = os.path.abspath(path)
-    return any(ap == root or ap.startswith(root + os.sep) for root in allowed) and os.path.isfile(ap)
+    return any(_is_path_inside(ap, root) for root in allowed) and os.path.isfile(ap)
 
 
 def _is_safe_novel_file(path):
@@ -649,7 +658,7 @@ def _is_safe_novel_file(path):
         return False
     root = os.path.abspath(_novels_dir())
     ap = os.path.abspath(path)
-    return (ap == root or ap.startswith(root + os.sep)) and os.path.isfile(ap)
+    return _is_path_inside(ap, root) and os.path.isfile(ap)
 
 
 def _file_link(path):
