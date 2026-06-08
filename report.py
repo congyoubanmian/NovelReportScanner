@@ -1437,6 +1437,11 @@ def _has_low_presence_or_tooling_signal(text: str) -> bool:
         "不是背景板", "并非背景板", "非背景板",
         "不是客串", "并非客串", "非客串", "不算客串", "没有客串",
         "不是神隐", "并非神隐", "非神隐", "没有神隐", "并未神隐", "未神隐", "不再神隐",
+        "不是低存在感", "并非低存在感", "非低存在感", "不算低存在感", "没有低存在感",
+        "没有低存在感问题", "没有低存在感风险", "没有低存在感线索",
+        "无低存在感", "无低存在感问题", "无低存在感风险", "无低存在感线索",
+        "不存在低存在感", "不存在低存在感问题", "存在感不低", "存在感并不低", "存在感不算低",
+        "存在感没有那么低", "存在感不是很低", "存在感不是较低", "存在感不是偏低",
     )
     protected_text = text
     for pattern in negated_tooling_patterns:
@@ -1461,7 +1466,7 @@ def _has_low_presence_or_tooling_signal(text: str) -> bool:
         "存在感约等于没有", "存在感约等于无", "存在感等于没有", "存在感几乎没有",
         "存在感几乎为零", "存在感接近没有", "存在感接近于无", "存在感稀薄",
     )
-    return any(pattern in text for pattern in low_presence_patterns)
+    return any(pattern in protected_text for pattern in low_presence_patterns)
 
 
 def _build_heroine_position_contexts(

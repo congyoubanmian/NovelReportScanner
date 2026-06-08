@@ -688,6 +688,30 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("男主主动或默许", poison_points["送女"])
         self.assertIn("反派计划把女性送人", poison_points["送女"])
 
+    def test_root_rules2_keeps_harem_fallback_rules_in_sync(self):
+        with open(os.path.join("profiles", "harem", "rules.json"), "r", encoding="utf-8") as f:
+            harem_rules = json.load(f)
+        with open("rules2.json", "r", encoding="utf-8") as f:
+            fallback_rules = json.load(f)
+
+        self.assertEqual(harem_rules, fallback_rules)
+
+        categories = {item["name"]: item for item in fallback_rules["categories"]}
+        poison_points = {item["name"]: item["description"] for item in categories["雷点（严重毒点）"]["points"]}
+        depressing_points = {item["name"]: item["description"] for item in categories["郁闷点"]["points"]}
+        glossary = {item["term"]: item["definition"] for item in fallback_rules["glossary"]}
+
+        self.assertIn("群交/多人运动", poison_points)
+        self.assertIn("雌堕/洗脑改造", poison_points)
+        self.assertIn("工具人女主", depressing_points)
+        self.assertIn("漏女三层判定", glossary)
+        self.assertIn("仅限男主视角", poison_points["绿帽"])
+        self.assertIn("女主被非男主男性强迫", poison_points["绿帽"])
+        self.assertIn("只有出现明确性关系或女主主观情感背叛时才可判为绿帽", poison_points["绿帽"])
+        self.assertNotIn("任何男性发生肢体接触或暧昧包括被强迫", poison_points["绿帽"])
+        self.assertIn("男主主动或默许", poison_points["送女"])
+        self.assertIn("反派计划把女性送人、但男主没有主动参与，不是送女", poison_points["送女"])
+
     def test_harem_scan_prompt_mentions_leak_layers_and_tooling(self):
         categories = [
             {
@@ -4306,6 +4330,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertNotIn("低存在感/工具人线索", negated_absence)
         self.assertIn("感情/亲密推进", negated_absence)
+
+        negated_low_presence = report._heroine_position_level(
+            {"importance_rank": 2},
+            {
+                "identity": "主线女配",
+                "relationship_with_protagonist": "与男主长期暧昧并共同处理主线。",
+                "features": "存在感不低，不是低存在感角色。",
+                "key_events": "多次推进主线，没有低存在感问题。",
+            },
+            {"count": 11, "summaries": ["存在感并不低，也不是背景板。"]},
+            {},
+        )
+        self.assertNotIn("低存在感/工具人线索", negated_low_presence)
+        self.assertIn("感情/亲密推进", negated_low_presence)
 
         exposition_role = report._heroine_position_level(
             {"importance_rank": 5},
