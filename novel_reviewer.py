@@ -90,6 +90,43 @@ _EXTENDED_FACT_DIMENSIONS = [
 _FACT_DIMENSIONS = _CORE_FACT_DIMENSIONS + _EXTENDED_FACT_DIMENSIONS
 
 
+def _call_json_chat_completion(messages, *, model: str = None, temperature: float = 0.1, max_tokens: int = None) -> Dict[str, Any]:
+    kwargs = {
+        "model": model or MODEL,
+        "messages": messages,
+        "temperature": temperature,
+        "response_format": {"type": "json_object"},
+    }
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    response = chat_completion(**kwargs)
+    record_usage(response)
+    data, err = _safe_json_loads_maybe(response.choices[0].message.content)
+    if data is not None:
+        return data
+
+    fallback_messages = list(messages) + [{
+        "role": "user",
+        "content": (
+            "上一次回复不是可解析的 JSON 对象。请只重新输出一个合法 JSON 对象，"
+            "不要 Markdown、不要代码块、不要解释。"
+        ),
+    }]
+    fallback_kwargs = {
+        "model": model or MODEL,
+        "messages": fallback_messages,
+        "temperature": 0.0,
+    }
+    if max_tokens is not None:
+        fallback_kwargs["max_tokens"] = max_tokens
+    fallback_response = chat_completion(**fallback_kwargs)
+    record_usage(fallback_response)
+    fallback_data, fallback_err = _safe_json_loads_maybe(fallback_response.choices[0].message.content)
+    if fallback_data is None:
+        raise ValueError(f"{err}; fallback={fallback_err}")
+    return fallback_data
+
+
 def _empty_purity_fact_bucket() -> Dict[str, List[Any]]:
     return {key: [] for key in _FACT_DIMENSIONS}
 
@@ -287,17 +324,13 @@ def judge_novel_finished(text_tail: str) -> Tuple[Optional[bool], str]:
     )
     user_prompt = f"以下为小说尾部节选，请输出 JSON {{\"finished\":true/false, \"reason\":\"简述\"}}：\n{text_tail}"
     try:
-        resp = chat_completion(
-            model=MODEL,
+        data = _call_json_chat_completion(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.1,
-            response_format={"type": "json_object"},
         )
-        record_usage(resp)
-        data = json.loads(resp.choices[0].message.content)
         return data.get("finished"), data.get("reason", "")
     except Exception as e:
         return None, f"判定失败: {e}"
@@ -8170,14 +8203,10 @@ def judge_character_purity_llm(name, evidence_list, male_lead):
     last_err = None
     for attempt in range(3):
         try:
-            response = chat_completion(
-                model=MODEL,
+            result = _call_json_chat_completion(
                 messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
                 temperature=0.1,
-                response_format={"type": "json_object"}
             )
-            record_usage(response)
-            result = json.loads(response.choices[0].message.content)
             result["name"] = name
             # 兼容旧字段：生成 body_status 供报告使用
             virgin_status = result.get("virgin_status", "❓ 未知")
