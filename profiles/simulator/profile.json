@@ -1,0 +1,62 @@
+{
+  "name": "simulator",
+  "display_name": "模拟器/人生推演专长分析",
+  "description": "关注模拟器推演人生、未来或多分支选择，检查推演-验证-反哺现实循环是否成立，避免只把模拟器当普通系统面板。",
+  "enabled_stages": [
+    "character_analysis",
+    "general_scan",
+    "general_report"
+  ],
+  "rules_file": "rules.json",
+  "report_mode": "general",
+  "cross_profile_rules": {
+    "harem": {
+      "import_categories": ["雷点（严重毒点）", "郁闷点"],
+      "import_points": ["绿帽", "死女", "送女", "前世雷", "破鞋/非处/非初", "漏女", "亵女"]
+    }
+  },
+  "scan_focus": [
+    "模拟器规则：开启条件、消耗资源、冷却、次数限制、结算方式和可控变量",
+    "推演-验证循环：模拟结果如何改变现实行动，现实反馈如何修正下一轮模拟",
+    "分支选择与因果链：不同选项是否带来可信分歧，结果是否有前因后果",
+    "奖励与代价：天赋、词条、属性、记忆和资源继承是否平衡",
+    "未来信息边界：预知、读档、重开和时间线信息是否破坏悬念或逻辑",
+    "现实线人物关系：模拟中建立的关系、死亡和背叛是否影响现实情感投入",
+    "模拟文本可读性：结算日志、事件摘要和正文行动之间是否重复或割裂",
+    "常见风险：无成本无限试错、结算奖励通胀、模拟结果万能、现实剧情被日志替代"
+  ],
+  "summary_fields": [
+    "main_plot",
+    "core_conflicts",
+    "worldbuilding",
+    "simulation_rules",
+    "simulation_reality_loop",
+    "branching_causality",
+    "reward_and_cost",
+    "future_information_boundary",
+    "relationship_carryover",
+    "simulation_readability",
+    "strengths",
+    "risks_or_issues",
+    "reader_fit",
+    "overall_assessment"
+  ],
+  "inference_keywords": [
+    {"word": "模拟器", "weight": 5},
+    {"word": "人生模拟", "weight": 5},
+    {"word": "未来推演", "weight": 5},
+    {"word": "模拟人生", "weight": 5},
+    {"word": "推演", "weight": 4},
+    {"word": "模拟结果", "weight": 5},
+    {"word": "模拟结算", "weight": 5},
+    {"word": "结算奖励", "weight": 4},
+    {"word": "天赋词条", "weight": 5},
+    {"word": "词条", "weight": 3},
+    {"word": "重开", "weight": 4},
+    {"word": "读档", "weight": 4},
+    {"word": "人生轨迹", "weight": 4},
+    {"word": "分支选择", "weight": 4},
+    {"word": "未来情报", "weight": 4},
+    {"word": "预知未来", "weight": 3}
+  ]
+}

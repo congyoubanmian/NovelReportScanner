@@ -1,0 +1,66 @@
+{
+  "name": "nation_fate",
+  "display_name": "国运/文明对抗专长分析",
+  "description": "关注国运绑定、文明选拔、历史人物召唤/代战、国家兴亡与个体命运的关系，覆盖国运擂台、文明试炼、全球对抗等类型。",
+  "enabled_stages": [
+    "character_analysis",
+    "general_scan",
+    "general_report"
+  ],
+  "rules_file": "rules.json",
+  "report_mode": "general",
+  "cross_profile_rules": {
+    "harem": {
+      "import_categories": ["雷点（严重毒点）", "郁闷点"],
+      "import_points": ["绿帽", "死女", "送女", "前世雷", "破鞋/非处/非初", "漏女", "亵女"]
+    }
+  },
+  "scan_focus": [
+    "国运绑定机制：主角与国家/文明的绑定方式、能力传递路径、国运数值体系",
+    "文明选拔规则：选拔标准、试炼内容、胜负条件、淘汰机制和晋级路径",
+    "历史人物召唤/代战体系：召唤条件、人物实力还原度、历史战绩与小说表现的匹配",
+    "国家兴亡与个体命运的关联：主角行动如何影响国运，国运变化如何反馈个体",
+    "文明特色展示：华夏、西方、埃及、玛雅等文明差异是否鲜明合理",
+    "全球/诸天对抗的规模和节奏：对抗频次、强度递进、高潮设计",
+    "直播、榜单、观众舆论和国家反应是否推动剧情，而不是只做背景解说",
+    "常见风险：历史人物OOC、国运数值崩坏、文明特色流于表面、对手降智"
+  ],
+  "summary_fields": [
+    "main_plot",
+    "core_conflicts",
+    "worldbuilding",
+    "nation_fate_mechanics",
+    "civilization_selection",
+    "historical_figures",
+    "nation_individual_link",
+    "civilization_diversity",
+    "confrontation_pacing",
+    "audience_and_state_reaction",
+    "strengths",
+    "risks_or_issues",
+    "reader_fit",
+    "overall_assessment"
+  ],
+  "inference_keywords": [
+    {"word": "国运", "weight": 5},
+    {"word": "文明选拔", "weight": 5},
+    {"word": "国运绑定", "weight": 5},
+    {"word": "召唤先贤", "weight": 5},
+    {"word": "历史人物代战", "weight": 5},
+    {"word": "国运擂台", "weight": 5},
+    {"word": "文明试炼", "weight": 5},
+    {"word": "国运直播", "weight": 5},
+    {"word": "神话擂台", "weight": 5},
+    {"word": "长城守望", "weight": 5},
+    {"word": "龙国", "weight": 4},
+    {"word": "华夏", "weight": 4},
+    {"word": "九州", "weight": 4},
+    {"word": "神明召唤", "weight": 4},
+    {"word": "历史武将", "weight": 4},
+    {"word": "兵马俑", "weight": 4},
+    {"word": "文明等级", "weight": 4},
+    {"word": "国运奖励", "weight": 4},
+    {"word": "国家命运", "weight": 3},
+    {"word": "全球对抗", "weight": 3}
+  ]
+}

@@ -77,6 +77,8 @@ _PROFILE_ORDER = {
     "farming_management": 170,
     "isekai_lightnovel": 180,
     "steampunk_fantasy": 190,
+    "nation_fate": 200,
+    "simulator": 220,
 }
 
 
@@ -87,8 +89,19 @@ COMBO_BONUSES = {
         ({"无限流", "副本", "主神"}, 10),
         ({"主神空间", "轮回空间"}, 8),
         ({"诸天", "万界", "穿梭"}, 8),
-        ({"模拟器", "人生", "推演"}, 8),
         ({"签到", "加点", "面板"}, 7),
+    ],
+    "simulator": [
+        ({"模拟器", "人生模拟"}, 8),
+        ({"模拟器", "未来推演"}, 8),
+        ({"模拟结果", "结算奖励"}, 8),
+        ({"天赋词条", "重开", "推演"}, 8),
+    ],
+    "nation_fate": [
+        ({"国运", "文明试炼"}, 8),
+        ({"国运擂台", "历史人物代战"}, 8),
+        ({"神话擂台", "神明召唤"}, 8),
+        ({"华夏", "全球对抗", "国运奖励"}, 7),
     ],
     "apocalypse_survival": [
         ({"末世", "丧尸", "基地"}, 8),
@@ -187,6 +200,8 @@ NEGATIVE_KEYWORDS = {
     "mystery_detective": [("法医", -3), ("尸检", -3), ("刑警", -2), ("系统", -3), ("超能力", -3)],
     "crime_forensics": [("侦探", -2), ("暴风雪山庄", -3), ("红鲱鱼", -3), ("魔法", -3), ("系统", -3)],
     "entertainment_industry": [("经营农田", -3), ("领地", -3), ("宗门", -3), ("丧尸", -3)],
+    "simulator": [("副本", -4), ("主神空间", -4), ("轮回空间", -4), ("玩家", -3), ("NBA", -3)],
+    "nation_fate": [("公司", -3), ("校园", -3), ("娱乐圈", -3), ("操作系统", -4)],
 }
 
 
@@ -223,6 +238,8 @@ PROFILE_MIN_SCORE_OVERRIDES = {
     "campus_youth": 5,
     "harem": 5,
     "steampunk_fantasy": 5,
+    "nation_fate": 5,
+    "simulator": 5,
     "urban_power": 7,
     "game_system": 7,
 }
@@ -265,6 +282,15 @@ def normalize_profile_name(value: str) -> str:
         "系统": "game_system",
         "无限流": "game_system",
         "游戏系统": "game_system",
+        "模拟器": "simulator",
+        "人生模拟": "simulator",
+        "模拟器流": "simulator",
+        "未来推演": "simulator",
+        "国运": "nation_fate",
+        "文明": "nation_fate",
+        "国运文": "nation_fate",
+        "文明对抗": "nation_fate",
+        "国运流": "nation_fate",
         "都市": "urban_power",
         "都市异能": "urban_power",
         "都市爽文": "urban_power",

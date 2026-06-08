@@ -137,6 +137,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         farming_management = analysis_profiles.load_analysis_profile("种田经营")
         isekai_lightnovel = analysis_profiles.load_analysis_profile("异世界")
         steampunk_fantasy = analysis_profiles.load_analysis_profile("蒸汽西幻")
+        nation_fate = analysis_profiles.load_analysis_profile("国运")
+        simulator = analysis_profiles.load_analysis_profile("人生模拟")
 
         self.assertEqual(harem.name, "harem")
         self.assertTrue(harem.uses_harem_reviewer)
@@ -297,6 +299,16 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(any("炼金工业的经济逻辑" in item for item in steampunk_fantasy.scan_focus))
         self.assertTrue(any("技术-魔法的平衡" in item for item in steampunk_fantasy.scan_focus))
 
+        self.assertEqual(nation_fate.name, "nation_fate")
+        self.assertTrue(nation_fate.uses_general_scan)
+        self.assertIn("nation_fate_mechanics", nation_fate.summary_fields)
+        self.assertTrue(any("文明选拔规则" in item for item in nation_fate.scan_focus))
+
+        self.assertEqual(simulator.name, "simulator")
+        self.assertTrue(simulator.uses_general_scan)
+        self.assertIn("simulation_reality_loop", simulator.summary_fields)
+        self.assertTrue(any("推演-验证循环" in item for item in simulator.scan_focus))
+
         for profile in [
             general,
             history,
@@ -316,6 +328,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             farming_management,
             isekai_lightnovel,
             steampunk_fantasy,
+            nation_fate,
+            simulator,
         ]:
             self.assertIn("reader_fit", profile.summary_fields, profile.name)
             self.assertIn("overall_assessment", profile.summary_fields, profile.name)
@@ -358,6 +372,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("farming_management", names)
         self.assertIn("isekai_lightnovel", names)
         self.assertIn("steampunk_fantasy", names)
+        self.assertIn("nation_fate", names)
+        self.assertIn("simulator", names)
 
     def test_auto_inference_keywords_are_profile_owned(self):
         for profile in analysis_profiles.list_available_profiles():
@@ -474,6 +490,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "business_career",
             "mystery_detective",
             "sports_competition",
+            "nation_fate",
+            "simulator",
         ]:
             profile = analysis_profiles.load_analysis_profile(profile_name)
             rules_text = general_scan._profile_rules_text(profile)
@@ -1652,6 +1670,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "game_system",
         )
         self.assertEqual(
+            analysis_profiles.infer_profile_for_text("人生模拟器", "主角通过人生模拟和未来推演获得模拟结果，结算奖励里保留天赋词条。"),
+            "simulator",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text("国运擂台", "龙国选手参加文明试炼，召唤先贤和历史武将在神话擂台赢得国运奖励。"),
+            "nation_fate",
+        )
+        self.assertEqual(
             analysis_profiles.infer_profile_for_text("都市神医", "赘婿神医在豪门集团商战中扮猪吃虎，连续打脸反派。"),
             "urban_power",
         )
@@ -1845,6 +1871,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertIn("isekai_lightnovel", isekai_entertainment)
         self.assertIn("entertainment_industry", isekai_entertainment)
+
+        nation_simulator = analysis_profiles.infer_profiles_for_text(
+            "国运人生模拟",
+            "主角绑定国运后进入文明试炼，用人生模拟器推演未来，靠模拟结果选择召唤先贤路线。",
+        )
+        self.assertIn("nation_fate", nation_simulator)
+        self.assertIn("simulator", nation_simulator)
 
         self.assertEqual(
             analysis_profiles.infer_profiles_for_text("小镇旧事", "他回到故乡，重新面对童年的朋友。"),
@@ -2234,6 +2267,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "business_career",
             "mystery_detective",
             "sports_competition",
+            "nation_fate",
+            "simulator",
         ]:
             self.assertIn(profile_name, overrides)
             self.assertTrue(overrides[profile_name], profile_name)
@@ -2244,12 +2279,16 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         apocalypse = analysis_profiles.load_analysis_profile("apocalypse_survival")
         entertainment = analysis_profiles.load_analysis_profile("entertainment_industry")
         crime = analysis_profiles.load_analysis_profile("crime_forensics")
+        nation_fate = analysis_profiles.load_analysis_profile("nation_fate")
+        simulator = analysis_profiles.load_analysis_profile("simulator")
         sci_fi_override = main._with_harem_plus_secondary_focus(sci_fi, harem)
         isekai_override = main._with_harem_plus_secondary_focus(isekai, harem)
         steampunk_override = main._with_harem_plus_secondary_focus(steampunk, harem)
         apocalypse_override = main._with_harem_plus_secondary_focus(apocalypse, harem)
         entertainment_override = main._with_harem_plus_secondary_focus(entertainment, harem)
         crime_override = main._with_harem_plus_secondary_focus(crime, harem)
+        nation_fate_override = main._with_harem_plus_secondary_focus(nation_fate, harem)
+        simulator_override = main._with_harem_plus_secondary_focus(simulator, harem)
 
         self.assertTrue(any("意识上传" in item and "洁度" in item for item in sci_fi_override.scan_focus))
         self.assertTrue(any("勇者" in item and "送女" in item for item in isekai_override.scan_focus))
@@ -2257,6 +2296,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(any("末世秩序崩塌" in item and "送女" in item for item in apocalypse_override.scan_focus))
         self.assertTrue(any("CP营销" in item and "绿帽" in item for item in entertainment_override.scan_focus))
         self.assertTrue(any("受害未遂" in item and "绿帽" in item for item in crime_override.scan_focus))
+        self.assertTrue(any("国运绑定" in item and "送女" in item for item in nation_fate_override.scan_focus))
+        self.assertTrue(any("读档" in item and "前世雷" in item for item in simulator_override.scan_focus))
 
     def test_requested_profiles_accepts_manual_multi_select(self):
         self.assertEqual(main._normalize_requested_profiles(["历史", "科幻"]), ["history", "hard_sci_fi"])
