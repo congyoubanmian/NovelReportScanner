@@ -3782,6 +3782,102 @@ def _append_general_radar_score_section(lines: list, general_summary: dict, deta
     ])
 
 
+def _knowledge_base_count_line(counts: dict) -> str:
+    labels = [
+        ("entities", "实体"),
+        ("relationships", "关系"),
+        ("worldbuilding_facts", "设定"),
+        ("foreshadowing_threads", "伏笔"),
+        ("plot_timeline", "事件"),
+        ("open_threads", "未解线索"),
+        ("resolved_threads", "已回收线索"),
+    ]
+    parts = []
+    for key, label in labels:
+        try:
+            value = int((counts or {}).get(key) or 0)
+        except (TypeError, ValueError):
+            value = 0
+        parts.append(f"{label}{value}")
+    return "；".join(parts)
+
+
+def _append_general_knowledge_base_sections(lines: list, general_summary: dict):
+    knowledge_base = (general_summary or {}).get("knowledge_base") or {}
+    if not isinstance(knowledge_base, dict):
+        return
+    has_material = any(knowledge_base.get(key) for key in (
+        "entities",
+        "relationships",
+        "worldbuilding_facts",
+        "foreshadowing_threads",
+        "plot_timeline",
+        "open_threads",
+        "resolved_threads",
+    ))
+    if not has_material:
+        return
+
+    lines.extend([
+        "",
+        "【知识库摘要】",
+        _knowledge_base_count_line((general_summary or {}).get("knowledge_base_counts") or {}),
+    ])
+
+    entities = [x for x in (knowledge_base.get("entities") or []) if isinstance(x, dict)][:12]
+    if entities:
+        lines.extend(["", "重要实体：", "| 名称 | 备注 | 首次片段 |", "|---|---|---:|"])
+        for item in entities:
+            lines.append(
+                f"| {_markdown_cell(item.get('name'), 24)} | {_markdown_cell(item.get('role_or_note') or item.get('evidence') or '未描述', 70)} | {_markdown_cell(item.get('first_seen_chunk'), 12)} |"
+            )
+
+    relationships = [x for x in (knowledge_base.get("relationships") or []) if isinstance(x, dict)][:8]
+    if relationships:
+        lines.extend(["", "关系变化："])
+        for item in relationships:
+            prefix = f"片段{item.get('chunk_index')}：" if item.get("chunk_index") is not None else ""
+            lines.append(f"- {prefix}{_markdown_cell(item.get('description'), 120)}")
+
+    facts = [x for x in (knowledge_base.get("worldbuilding_facts") or []) if isinstance(x, dict)][:8]
+    if facts:
+        lines.extend(["", "设定事实："])
+        for item in facts:
+            prefix = f"片段{item.get('chunk_index')}：" if item.get("chunk_index") is not None else ""
+            lines.append(f"- {prefix}{_markdown_cell(item.get('fact'), 120)}")
+
+    timeline = [x for x in (knowledge_base.get("plot_timeline") or []) if isinstance(x, dict)][:10]
+    if timeline:
+        lines.extend(["", "事件时间线："])
+        for item in timeline:
+            prefix = f"片段{item.get('chunk_index')}：" if item.get("chunk_index") is not None else ""
+            lines.append(f"- {prefix}{_markdown_cell(item.get('event'), 120)}")
+
+    open_threads = [x for x in (knowledge_base.get("open_threads") or []) if isinstance(x, dict)][:8]
+    if open_threads:
+        lines.extend(["", "未解线索："])
+        for item in open_threads:
+            prefix = f"片段{item.get('chunk_index')}：" if item.get("chunk_index") is not None else ""
+            lines.append(f"- {prefix}{_markdown_cell(item.get('thread'), 120)}")
+
+    resolved_threads = [x for x in (knowledge_base.get("resolved_threads") or []) if isinstance(x, dict)][:8]
+    if resolved_threads:
+        lines.extend(["", "已回收线索："])
+        for item in resolved_threads:
+            prefix = f"片段{item.get('chunk_index')}：" if item.get("chunk_index") is not None else ""
+            lines.append(f"- {prefix}{_markdown_cell(item.get('thread'), 120)}")
+
+    foreshadowing = [x for x in (knowledge_base.get("foreshadowing_threads") or []) if isinstance(x, dict)][:10]
+    if foreshadowing:
+        lines.extend(["", "伏笔线程：", "| 状态 | 重要度/效果 | 描述 |", "|---|---|---|"])
+        for item in foreshadowing:
+            status = item.get("status") or "unknown"
+            importance = item.get("importance") or item.get("type") or "未描述"
+            lines.append(
+                f"| {_markdown_cell(status, 12)} | {_markdown_cell(importance, 24)} | {_markdown_cell(item.get('description'), 100)} |"
+            )
+
+
 def _append_general_scan_section(lines: list, general_summary: dict, detailed_data: dict = None):
     summary = (general_summary or {}).get("summary") or {}
     if not summary:
@@ -3800,6 +3896,7 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
     lines.extend(["", "【作品概览】"])
     lines.append(summary_field_text(summary, "story_overview"))
     _append_general_radar_score_section(lines, general_summary, detailed_data)
+    _append_general_knowledge_base_sections(lines, general_summary)
     add_list("主线剧情", summary_field_values(summary, "main_plot"))
     add_list("核心冲突", summary_field_values(summary, "core_conflicts"))
     add_list("世界观/设定", summary_field_values(summary, "worldbuilding"))

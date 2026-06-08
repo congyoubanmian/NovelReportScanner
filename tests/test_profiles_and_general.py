@@ -6481,6 +6481,57 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("节奏与情绪曲线", text)
         self.assertIn("后宫报告外补充剧情评价", text)
 
+    def test_general_report_includes_knowledge_base_sections(self):
+        text = report.build_general_report(
+            "知识库测试",
+            {},
+            {
+                "profile_display_name": "通用小说分析",
+                "summary_fields": ["main_plot"],
+                "knowledge_base_counts": {
+                    "entities": 2,
+                    "relationships": 1,
+                    "worldbuilding_facts": 1,
+                    "foreshadowing_threads": 1,
+                    "plot_timeline": 2,
+                    "open_threads": 1,
+                    "resolved_threads": 1,
+                },
+                "knowledge_base": {
+                    "entities": [
+                        {"name": "林澈", "role_or_note": "侦探", "first_seen_chunk": 1, "evidence": "接手旧案"},
+                        {"name": "沈青", "first_seen_chunk": 2, "evidence": "旧案证人"},
+                    ],
+                    "relationships": [{"chunk_index": 2, "description": "林澈与沈青从互相试探转为合作"}],
+                    "worldbuilding_facts": [{"chunk_index": 1, "fact": "旧城由巡夜司管辖"}],
+                    "plot_timeline": [{"chunk_index": 1, "event": "林澈接手旧案"}],
+                    "open_threads": [{"chunk_index": 2, "thread": "密信来源仍未揭开"}],
+                    "resolved_threads": [{"chunk_index": 3, "thread": "旧钥匙用途"}],
+                    "foreshadowing_threads": [
+                        {"status": "active", "importance": "high", "description": "密信背面的旧印记"}
+                    ],
+                },
+                "summary": {
+                    "story_overview": "主角调查旧案。",
+                    "main_plot": ["调查旧案"],
+                    "strengths": ["线索明确"],
+                    "risks_or_issues": [],
+                    "reader_fit": "悬疑读者",
+                    "overall_assessment": "可读",
+                },
+            },
+        )
+
+        self.assertIn("【知识库摘要】", text)
+        self.assertIn("实体2；关系1；设定1；伏笔1", text)
+        self.assertIn("林澈", text)
+        self.assertIn("林澈与沈青从互相试探转为合作", text)
+        self.assertIn("旧城由巡夜司管辖", text)
+        self.assertIn("林澈接手旧案", text)
+        self.assertIn("密信来源仍未揭开", text)
+        self.assertIn("旧钥匙用途", text)
+        self.assertIn("密信背面的旧印记", text)
+
     def test_harem_plus_general_summary_requires_current_novel(self):
         with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
             f.write("novel")
@@ -9609,6 +9660,67 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(result["foreshadowing_engineering"]["foreshadowing_resolutions"][0]["resolved_item"], "旧钥匙用途")
         self.assertIn("嫌疑人假口供", result["foreshadowing_engineering"]["false_foreshadowing"])
 
+    def test_general_scan_builds_knowledge_base_from_chunk_results(self):
+        knowledge_base = general_scan._build_knowledge_base([
+            {
+                "chunk_index": 0,
+                "original_chunk_index": 1,
+                "one_sentence_summary": "林澈接手旧案并发现密信。",
+                "plot_events": ["林澈接手旧案", "林澈接手旧案"],
+                "worldbuilding": ["旧城由巡夜司管辖", "旧城由巡夜司管辖"],
+                "context_state_update": {
+                    "active_characters": ["林澈(侦探)", "沈青(证人)"],
+                    "relationship_updates": ["林澈与沈青从互相试探转为合作"],
+                    "open_threads": ["密信来源仍未揭开", "旧钥匙用途"],
+                    "worldbuilding_updates": ["巡夜司负责夜间案件"],
+                },
+                "foreshadowing_engineering": {
+                    "new_foreshadowing": [
+                        {"description": "密信背面的旧印记", "estimated_importance": "high", "evidence": "印记反复出现"},
+                        {"description": "密信背面的旧印记", "estimated_importance": "high", "evidence": "重复印记"},
+                    ],
+                },
+            },
+            {
+                "chunk_index": 1,
+                "original_chunk_index": 2,
+                "one_sentence_summary": "林澈使用旧钥匙打开档案室。",
+                "plot_events": ["林澈接手旧案", "旧钥匙打开档案室"],
+                "worldbuilding": "档案室封存二十年前卷宗",
+                "context_state_update": {
+                    "active_characters": ["林澈(主角)"],
+                    "relationship_updates": ["林澈与沈青从互相试探转为合作"],
+                    "resolved_threads": ["旧钥匙用途"],
+                },
+                "foreshadowing_engineering": {
+                    "foreshadowing_resolutions": [
+                        {"resolved_item": "旧钥匙用途", "resolution_description": "打开档案室", "satisfaction": "natural"}
+                    ],
+                },
+            },
+        ])
+
+        self.assertEqual(knowledge_base["schema_version"], general_scan.KNOWLEDGE_BASE_SCHEMA_VERSION)
+        self.assertEqual([x["name"] for x in knowledge_base["entities"]], ["林澈", "沈青"])
+        self.assertEqual(len(knowledge_base["relationships"]), 1)
+        self.assertEqual(knowledge_base["relationships"][0]["description"], "林澈与沈青从互相试探转为合作")
+        facts = [x["fact"] for x in knowledge_base["worldbuilding_facts"]]
+        self.assertIn("旧城由巡夜司管辖", facts)
+        self.assertIn("档案室封存二十年前卷宗", facts)
+        self.assertEqual(facts.count("旧城由巡夜司管辖"), 1)
+        self.assertNotIn("档", facts)
+        self.assertEqual([x["thread"] for x in knowledge_base["open_threads"]], ["密信来源仍未揭开"])
+        self.assertEqual([x["thread"] for x in knowledge_base["resolved_threads"]], ["旧钥匙用途"])
+        events = [x["event"] for x in knowledge_base["plot_timeline"]]
+        self.assertEqual(events.count("林澈接手旧案"), 1)
+        self.assertEqual(len(knowledge_base["plot_timeline"]), 2)
+        active_foreshadowing = [
+            x["description"] for x in knowledge_base["foreshadowing_threads"]
+            if x.get("status") == "active"
+        ]
+        self.assertEqual(active_foreshadowing.count("密信背面的旧印记"), 1)
+        self.assertIn("旧钥匙用途", [x["description"] for x in knowledge_base["foreshadowing_threads"]])
+
     def test_general_scan_density_profile_detects_high_signal_chunks(self):
         profile = general_scan._chunk_density_profile("案件出现尸体，凶手线索揭露，随后发生战斗和反转。")
         self.assertEqual(profile["level"], "high")
@@ -9674,13 +9786,29 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             general_scan._call_json = fake_call_json
             summary = general_scan._summarize_book(
                 "都市测试",
-                [{"one_sentence_summary": "主角获得系统。", "specialty_notes": ["系统任务稳定"]}],
+                [{
+                    "one_sentence_summary": "主角获得系统。",
+                    "specialty_notes": ["系统任务稳定"],
+                    "context_state_update": {
+                        "active_characters": ["林澈(主角)"],
+                        "relationship_updates": ["林澈与系统形成任务绑定"],
+                        "open_threads": ["系统来源仍未揭开"],
+                        "worldbuilding_updates": ["现代都市存在隐藏任务体系"],
+                    },
+                    "foreshadowing_engineering": {
+                        "new_foreshadowing": [{"description": "系统初始提示藏有旧编号", "estimated_importance": "medium"}],
+                    },
+                }],
                 profile=profile,
             )
         finally:
             general_scan._call_json = old_call_json
 
         self.assertIn("系统奖励稳定", summary["golden_finger_system"])
+        self.assertTrue(any('"knowledge_base"' in prompt for prompt in prompts))
+        self.assertTrue(any("林澈" in prompt for prompt in prompts))
+        self.assertTrue(any("系统来源仍未揭开" in prompt for prompt in prompts))
+        self.assertTrue(any("系统初始提示藏有旧编号" in prompt for prompt in prompts))
         self.assertTrue(any('"golden_finger_system": ["异能/金手指体系专项分析要点"]' in prompt for prompt in prompts))
         self.assertTrue(any('"relationships": ["关系线专项分析要点"]' in prompt for prompt in prompts))
 
@@ -10943,6 +11071,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 return {
                     "chunk_index": chunk_index,
                     "one_sentence_summary": f"{chunk}/{total_chunks}",
+                    "plot_events": [f"事件{chunk_index}"],
+                    "worldbuilding": ["长篇世界规则"],
+                    "context_state_update": {
+                        "active_characters": [f"角色{chunk_index}"],
+                        "open_threads": [f"线索{chunk_index}"],
+                    },
                 }
 
             with mock.patch.object(general_scan, "get_base_dir", return_value=tmpdir), \
@@ -10977,6 +11111,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(data["reader_experience_schema_version"], general_scan.READER_EXPERIENCE_SCHEMA_VERSION)
             self.assertTrue(data["continuity_audit_enabled"])
             self.assertEqual(data["continuity_audit_schema_version"], general_scan.CONTINUITY_AUDIT_SCHEMA_VERSION)
+            self.assertTrue(data["knowledge_base_enabled"])
+            self.assertEqual(data["knowledge_base_schema_version"], general_scan.KNOWLEDGE_BASE_SCHEMA_VERSION)
+            self.assertGreater(data["knowledge_base_counts"]["entities"], 0)
+            self.assertGreater(data["knowledge_base_counts"]["worldbuilding_facts"], 0)
+            self.assertGreater(data["knowledge_base_counts"]["plot_timeline"], 0)
+            self.assertEqual(data["knowledge_base"]["schema_version"], general_scan.KNOWLEDGE_BASE_SCHEMA_VERSION)
             self.assertEqual(sum(data["density_counts"].values()), 300)
             self.assertEqual(data["prompt_templates"]["general_scan_chunk"]["version"], "v1")
             self.assertEqual(data["prompt_templates"]["general_summary"]["version"], "v1")
@@ -11324,6 +11464,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "reader_experience_schema_version": general_scan.READER_EXPERIENCE_SCHEMA_VERSION,
                 "continuity_audit_enabled": general_scan.CONTINUITY_AUDIT_ENABLED,
                 "continuity_audit_schema_version": general_scan.CONTINUITY_AUDIT_SCHEMA_VERSION,
+                "knowledge_base_enabled": True,
+                "knowledge_base_schema_version": general_scan.KNOWLEDGE_BASE_SCHEMA_VERSION,
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }
@@ -11349,6 +11491,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             data_without_continuity_meta = dict(data)
             data_without_continuity_meta.pop("continuity_audit_enabled", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_continuity_meta, novel_path, "history"))
+            data_without_knowledge_base_meta = dict(data)
+            data_without_knowledge_base_meta.pop("knowledge_base_schema_version", None)
+            self.assertFalse(general_scan._is_fresh_summary(data_without_knowledge_base_meta, novel_path, "history"))
             data_without_content_sampling_meta = dict(data)
             data_without_content_sampling_meta.pop("content_aware_sampling_schema_version", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_content_sampling_meta, novel_path, "history"))
@@ -11404,6 +11549,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "reader_experience_schema_version": general_scan.READER_EXPERIENCE_SCHEMA_VERSION,
                 "continuity_audit_enabled": general_scan.CONTINUITY_AUDIT_ENABLED,
                 "continuity_audit_schema_version": general_scan.CONTINUITY_AUDIT_SCHEMA_VERSION,
+                "knowledge_base_enabled": True,
+                "knowledge_base_schema_version": general_scan.KNOWLEDGE_BASE_SCHEMA_VERSION,
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }

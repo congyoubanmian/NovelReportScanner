@@ -401,6 +401,7 @@ SSE_MAX_CONNECTION_SECONDS=300
 - `GENERAL_SCAN_CONTINUITY_AUDIT`：通用/专项剧情扫描的整书连续性与一致性审计开关，默认 `1`。开启后总评会结合滚动上下文、伏笔工程和大纲架构材料检查人物关系、设定规则、伏笔回收、因果链和战力/规则跳变，报告会增加“连续性与一致性审计”；设为 `0` 可降低总评 prompt 长度。
 - `GENERAL_SCAN_ROLLING_CONTEXT`：通用/专项剧情扫描的跨片段滚动上下文开关，默认 `1`。开启后每个片段会收到前序片段压缩状态，并输出 `context_state_update`，用于减少人物指代、关系阶段、未解问题和设定连续性的误判。由于后续片段结果依赖前序上下文，开启时 chunk 级增量复用会自动禁用；整份 summary 完全新鲜时仍会直接复用。
 - `GENERAL_SCAN_CONTEXT_MAX_CHARS`：滚动上下文注入 prompt 的最大字符数，默认 `1600`。调高可保留更多前序状态，但会增加 token 成本和超长风险；设为 `0` 时不注入上下文快照。
+- 通用/专项剧情扫描会基于分块结果生成 `knowledge_base` 知识库摘要，汇总重要实体、关系变化、设定事实、伏笔线程、事件时间线和未解/已回收线索；总评 prompt 会优先参考该知识库，最终 TXT 报告也会展示紧凑版“知识库摘要”。
 - `LOG_MAX_BYTES` / `LOG_BACKUP_COUNT`：扫描日志轮转配置，默认单个 `analysis.log` / `reviewer.log` 最大 `10485760` 字节并保留 `5` 份历史；`LOG_MAX_BYTES=0` 表示不按大小轮转。
 - `RPM_LIMIT` / `TPM_LIMIT`：程序本地预限流配置，用来在请求发出前控制最近 60 秒内的请求数和预估 token 数。
 - `RATE_LIMIT_SCOPE`：本地限流作用域。`auto` 表示多个 API Key 时每个 key 单独计数、单个 key 时使用全局桶；`global` 表示当前进程内所有线程和 key 共用一个限流桶；`per_key` 表示每个 key 单独计数。默认推荐 `auto`，能减少多 key 场景下的无谓串行等待，同时避免单 key 场景误放大并发。
@@ -453,7 +454,7 @@ npm run build
 - `history`：历史小说专长分析，在通用流程上额外关注时代制度、战争权谋、派系逻辑、人物立场和历史氛围。
 - `hard_sci_fi`：硬科幻专长分析，在通用流程上额外关注科学假设、技术链、工程约束、因果推演和设定自洽。
 
-当前所有 `report_mode=general` 的 profile 都会运行通用角色识别，并继续执行 `general_scan.py` 抽取剧情主线、核心冲突、世界观设定、主题表达、伏笔回收与伏笔工程追踪、优点和问题。角色明细 JSON 中会输出通用 `characters` 列表；后宫类 `harem` 才继续使用男主/女主、初处、漏女和毒点/雷点专长流程。
+当前所有 `report_mode=general` 的 profile 都会运行通用角色识别，并继续执行 `general_scan.py` 抽取剧情主线、核心冲突、世界观设定、主题表达、伏笔回收与伏笔工程追踪、优点和问题。通用/专项剧情扫描还会基于分块结果构建整书 `knowledge_base`，汇总重要实体、关系变化、世界观事实、伏笔线程、事件时间线、未解线索和已回收线索；整书总评会优先参考该知识库形成全局判断，最终通用报告会在作品概览后展示紧凑版“知识库摘要”。角色明细 JSON 中会输出通用 `characters` 列表；后宫类 `harem` 才继续使用男主/女主、初处、漏女和毒点/雷点专长流程。
 
 `auto` 不是强制唯一分类。代码会先给出候选建议，Web 管理端会展示多个候选；例如“开头是历史背景，同时又是后宫结构”的书，可以在 Web 页面里从建议中手动选择 `history`、`harem` 等一个或多个分类后再加入队列。命令行批量模式也会按得分阈值自动执行最多 3 个 profile；如果没有候选达到阈值，则回退到 `general`。
 
@@ -622,11 +623,14 @@ results/<书名>扫书报告_<timestamp>.txt
 
 另外，`report.py` 也会在 `results/` 根目录维护如 `report_generation.log`、`report_checkpoint.json` 之类的报告生成状态文件。
 
+通用/专项报告读取 `GENERAL_SUMMARY.json` 时，会展示“知识库摘要”。TXT 报告只展示摘要条目，完整结构化知识库保留在 JSON 中。
+
 ## 输出结果概览
 
 如果你只想快速找到最重要的结果文件，可以先看这些：
 
 - `results/<书名>扫书报告_<timestamp>.txt`
+- `results/<书名>_<profile>_<timestamp>/GENERAL_SUMMARY.json`
 - `results/<书名>_scan_<timestamp>/VERIFIED_SUMMARY_<timestamp>.json`
 - `results/<书名>_scan_<timestamp>/raw_data.json`
 - `results/<书名>_heroine_<timestamp>/*_detailed_*.json`
@@ -637,6 +641,7 @@ results/<书名>扫书报告_<timestamp>.txt
 它们分别对应：
 
 - 最终可读报告
+- 通用/专项剧情扫描 summary，包含 `knowledge_base`、`knowledge_base_counts`、`knowledge_base_enabled` 和 `knowledge_base_schema_version`
 - reviewer 阶段总结
 - 扫描阶段原始结构化结果
 - 角色与事实的详细中间产物
