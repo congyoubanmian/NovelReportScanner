@@ -21,6 +21,9 @@ SMART_DENSITY = os.environ.get("GENERAL_SCAN_SMART_DENSITY", "1").strip() == "1"
 INCREMENTAL_REUSE = os.environ.get("GENERAL_SCAN_INCREMENTAL_REUSE", "1").strip() == "1"
 WRITING_QUALITY_ENABLED = os.environ.get("GENERAL_SCAN_WRITING_QUALITY", "1").strip() == "1"
 NARRATIVE_ARCHITECTURE_ENABLED = os.environ.get("GENERAL_SCAN_NARRATIVE_ARCHITECTURE", "1").strip() == "1"
+ROLLING_CONTEXT_ENABLED = os.environ.get("GENERAL_SCAN_ROLLING_CONTEXT", "1").strip() == "1"
+CONTEXT_MAX_CHARS = int(os.environ.get("GENERAL_SCAN_CONTEXT_MAX_CHARS", "1600"))
+ROLLING_CONTEXT_SCHEMA_VERSION = 1
 LOW_DENSITY_TERMS = (
     "睡觉", "起床", "吃饭", "喝茶", "闲聊", "聊天", "休息", "赶路", "路上", "返回",
     "日常", "家常", "客栈", "修炼打坐", "打坐", "闭关", "练功", "整理物品",
@@ -260,6 +263,15 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
         return False
     if not NARRATIVE_ARCHITECTURE_ENABLED and data.get("narrative_architecture_enabled") not in {None, False}:
         return False
+    if ROLLING_CONTEXT_ENABLED:
+        if data.get("rolling_context_enabled") is not True:
+            return False
+        if data.get("rolling_context_schema_version") != ROLLING_CONTEXT_SCHEMA_VERSION:
+            return False
+        if data.get("rolling_context_max_chars") != CONTEXT_MAX_CHARS:
+            return False
+    elif data.get("rolling_context_enabled") not in {None, False}:
+        return False
     stored_prompt_templates = data.get("prompt_templates")
     if isinstance(stored_prompt_templates, dict):
         current_prompt_templates = prompt_templates_metadata("general_scan_chunk", "general_summary")
@@ -278,6 +290,8 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
 
 
 def _summary_can_reuse_chunk_results(data: Dict[str, Any], profile_name: str = "general") -> bool:
+    if ROLLING_CONTEXT_ENABLED:
+        return False
     if not isinstance(data, dict):
         return False
     if data.get("schema_version") != 1:
@@ -306,6 +320,8 @@ def _summary_can_reuse_chunk_results(data: Dict[str, Any], profile_name: str = "
 
 def _reusable_chunk_result_map(data: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     reusable = {}
+    if ROLLING_CONTEXT_ENABLED:
+        return reusable
     if not isinstance(data, dict):
         return reusable
     for item in data.get("chunk_results") or []:
@@ -447,6 +463,222 @@ def _normalize_information_density(value: Any) -> Dict[str, Any]:
         "key_information": _safe_list(raw.get("key_information") or raw.get("key_information_conveyed"), limit=5),
         "redundancy_flags": _safe_list(raw.get("redundancy_flags") or raw.get("water_chapter_indicators"), limit=5),
         "narrative_efficiency": str(raw.get("narrative_efficiency") or "").strip()[:160],
+    }
+
+
+def _normalize_context_state_update(value: Any) -> Dict[str, Any]:
+    raw = _safe_dict(value)
+    return {
+        "progress_summary": str(raw.get("progress_summary") or "").strip()[:220],
+        "active_characters": _safe_list(raw.get("active_characters"), limit=8),
+        "relationship_updates": _safe_list(raw.get("relationship_updates"), limit=6),
+        "open_threads": _safe_list(raw.get("open_threads"), limit=8),
+        "resolved_threads": _safe_list(raw.get("resolved_threads"), limit=6),
+        "worldbuilding_updates": _safe_list(raw.get("worldbuilding_updates"), limit=6),
+        "current_stage": str(raw.get("current_stage") or "").strip()[:120],
+    }
+
+
+def _dedupe_extend(existing: List[str], new_items: List[str], limit: int = 30) -> List[str]:
+    out = []
+    seen = set()
+    for item in list(existing or []) + list(new_items or []):
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+    return out[-limit:]
+
+
+def _empty_rolling_context_state() -> Dict[str, Any]:
+    return {
+        "progress_summaries": [],
+        "active_characters": [],
+        "relationship_updates": [],
+        "open_threads": [],
+        "resolved_threads": [],
+        "worldbuilding_updates": [],
+        "current_stage": "",
+        "last_chunk_index": None,
+    }
+
+
+def _rolling_context_snapshot(state: Dict[str, Any], max_chars: int = None) -> Dict[str, Any]:
+    if not ROLLING_CONTEXT_ENABLED:
+        return {}
+    max_chars = CONTEXT_MAX_CHARS if max_chars is None else int(max_chars or 0)
+    if max_chars <= 0 or not isinstance(state, dict):
+        return {}
+    snapshot = {
+        "previous_progress": "；".join(_safe_list(state.get("progress_summaries"), limit=6)[-6:]),
+        "current_stage": str(state.get("current_stage") or "").strip(),
+        "active_characters": _safe_list(state.get("active_characters"), limit=16),
+        "relationship_updates": _safe_list(state.get("relationship_updates"), limit=10),
+        "open_threads": _safe_list(state.get("open_threads"), limit=12),
+        "resolved_threads": _safe_list(state.get("resolved_threads"), limit=8),
+        "worldbuilding_updates": _safe_list(state.get("worldbuilding_updates"), limit=10),
+    }
+    while len(json.dumps(snapshot, ensure_ascii=False)) > max_chars:
+        reduced = False
+        for key in ("relationship_updates", "worldbuilding_updates", "resolved_threads", "open_threads", "active_characters"):
+            if len(snapshot.get(key) or []) > 3:
+                snapshot[key] = snapshot[key][1:]
+                reduced = True
+                break
+        if not reduced:
+            previous = snapshot.get("previous_progress") or ""
+            if len(previous) > 120:
+                snapshot["previous_progress"] = previous[-120:]
+                reduced = True
+        if not reduced:
+            break
+    return _trim_context_snapshot(snapshot, max_chars)
+
+
+def _trim_context_snapshot(snapshot: Dict[str, Any], max_chars: int = None) -> Dict[str, Any]:
+    max_chars = CONTEXT_MAX_CHARS if max_chars is None else int(max_chars or 0)
+    if max_chars <= 0 or not isinstance(snapshot, dict):
+        return {}
+    trimmed = json.loads(json.dumps(snapshot, ensure_ascii=False))
+    drop_order = [
+        "relationship_updates",
+        "worldbuilding_updates",
+        "resolved_threads",
+        "open_threads",
+        "active_characters",
+        "previous_progress",
+        "current_stage",
+        "sampling_note",
+    ]
+    while len(json.dumps(trimmed, ensure_ascii=False)) > max_chars:
+        reduced = False
+        for key in ("relationship_updates", "worldbuilding_updates", "resolved_threads", "open_threads", "active_characters"):
+            if len(trimmed.get(key) or []) > 2:
+                trimmed[key] = trimmed[key][1:]
+                reduced = True
+                break
+        if not reduced:
+            previous = str(trimmed.get("previous_progress") or "")
+            if len(previous) > 100:
+                trimmed["previous_progress"] = previous[-100:]
+                reduced = True
+        if not reduced:
+            for key in list(trimmed.keys()):
+                value = trimmed.get(key)
+                if isinstance(value, str) and len(value) > 80:
+                    trimmed[key] = value[:max(20, min(80, max_chars // 2))]
+                    reduced = True
+                    break
+        if not reduced:
+            for key in drop_order:
+                if key in trimmed and trimmed.get(key) not in (None, "", [], {}):
+                    trimmed[key] = [] if isinstance(trimmed.get(key), list) else ""
+                    reduced = True
+                    break
+        if not reduced:
+            break
+    if len(json.dumps(trimmed, ensure_ascii=False)) > max_chars:
+        minimal = {}
+        for key in ("sampled_context", "source_chunk_count", "current_original_chunk_index"):
+            if key in trimmed:
+                minimal[key] = trimmed[key]
+        if len(json.dumps(minimal, ensure_ascii=False)) <= max_chars:
+            return minimal
+        return {}
+    return trimmed
+
+
+def _rolling_context_instruction(context_snapshot: Dict[str, Any]) -> str:
+    if not ROLLING_CONTEXT_ENABLED:
+        return ""
+    if not context_snapshot:
+        return """
+
+【跨块上下文】
+这是本次扫描的开端或前序上下文为空。请额外输出 context_state_update，用于后续片段理解人物、关系、未解问题和当前阶段。"""
+    return f"""
+
+【跨块上下文】
+以下是前序片段的压缩状态，只用于辅助指代、别名、关系阶段、未解问题和设定连续性判断；不要把它当成当前片段事实证据。
+{json.dumps(context_snapshot, ensure_ascii=False, indent=2)}
+
+请额外输出 context_state_update，用于更新后续片段上下文。"""
+
+
+def _context_state_json_hint() -> str:
+    if not ROLLING_CONTEXT_ENABLED:
+        return ""
+    return """,
+  "context_state_update": {
+    "progress_summary": "本片段后全书进展的一句话增量摘要",
+    "active_characters": ["本片段明确活跃或重要的人物/别名/身份"],
+    "relationship_updates": ["人物关系阶段变化或重要互动"],
+    "open_threads": ["新增或仍未解决的问题/目标/悬念"],
+    "resolved_threads": ["本片段解决或回收的问题"],
+    "worldbuilding_updates": ["新增或修正的设定/规则/势力/地点"],
+    "current_stage": "当前主线阶段或篇章状态"
+  }"""
+
+
+def _update_rolling_context_state(state: Dict[str, Any], chunk_result: Dict[str, Any]) -> Dict[str, Any]:
+    state = json.loads(json.dumps(state or _empty_rolling_context_state(), ensure_ascii=False))
+    update = _normalize_context_state_update((chunk_result or {}).get("context_state_update"))
+    progress = update.get("progress_summary") or str((chunk_result or {}).get("one_sentence_summary") or "").strip()[:220]
+    if progress:
+        state["progress_summaries"] = _dedupe_extend(state.get("progress_summaries") or [], [progress], limit=10)
+    state["active_characters"] = _dedupe_extend(state.get("active_characters") or [], update.get("active_characters") or [], limit=40)
+    state["relationship_updates"] = _dedupe_extend(state.get("relationship_updates") or [], update.get("relationship_updates") or [], limit=30)
+    state["open_threads"] = _dedupe_extend(state.get("open_threads") or [], update.get("open_threads") or [], limit=40)
+    state["resolved_threads"] = _dedupe_extend(state.get("resolved_threads") or [], update.get("resolved_threads") or [], limit=30)
+    state["worldbuilding_updates"] = _dedupe_extend(state.get("worldbuilding_updates") or [], update.get("worldbuilding_updates") or [], limit=30)
+    resolved = set(update.get("resolved_threads") or [])
+    if resolved:
+        state["open_threads"] = [item for item in state.get("open_threads") or [] if item not in resolved]
+    if update.get("current_stage"):
+        state["current_stage"] = update["current_stage"]
+    state["last_chunk_index"] = (chunk_result or {}).get("original_chunk_index", (chunk_result or {}).get("chunk_index"))
+    return state
+
+
+def _compact_rolling_context_timeline(chunk_results: List[Dict[str, Any]], limit: int = 120) -> List[Dict[str, Any]]:
+    timeline = []
+    for item in chunk_results or []:
+        if not isinstance(item, dict):
+            continue
+        update = _normalize_context_state_update(item.get("context_state_update"))
+        if not any(update.values()):
+            continue
+        timeline.append({
+            "chunk_index": item.get("original_chunk_index", item.get("chunk_index")),
+            "summary": item.get("one_sentence_summary"),
+            "progress_summary": update.get("progress_summary"),
+            "active_characters": update.get("active_characters"),
+            "relationship_updates": update.get("relationship_updates"),
+            "open_threads": update.get("open_threads"),
+            "resolved_threads": update.get("resolved_threads"),
+            "worldbuilding_updates": update.get("worldbuilding_updates"),
+            "current_stage": update.get("current_stage"),
+        })
+        if len(timeline) >= limit:
+            break
+    return timeline
+
+
+def _merged_context_state_update(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    state = _empty_rolling_context_state()
+    for result in results or []:
+        if not isinstance(result, dict):
+            continue
+        state = _update_rolling_context_state(state, result)
+    return {
+        "progress_summary": "；".join(_safe_list(state.get("progress_summaries"), limit=4)[-4:])[:220],
+        "active_characters": _safe_list(state.get("active_characters"), limit=8),
+        "relationship_updates": _safe_list(state.get("relationship_updates"), limit=6),
+        "open_threads": _safe_list(state.get("open_threads"), limit=8),
+        "resolved_threads": _safe_list(state.get("resolved_threads"), limit=6),
+        "worldbuilding_updates": _safe_list(state.get("worldbuilding_updates"), limit=6),
+        "current_stage": str(state.get("current_stage") or "").strip()[:120],
     }
 
 
@@ -861,7 +1093,7 @@ def _narrative_architecture_summary_json_hint() -> str:
   },"""
 
 
-def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None) -> Dict[str, Any]:
+def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None, context_snapshot=None) -> Dict[str, Any]:
     profile = profile or load_analysis_profile("general")
     density_profile = density_profile or _chunk_density_profile(text_chunk)
     rules_text = _profile_rules_text(profile)
@@ -888,6 +1120,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 {_density_instruction(density_profile)}
 {_writing_quality_system_instruction()}
 {_narrative_architecture_system_instruction()}
+{_rolling_context_instruction(context_snapshot or {})}
 
 要求：
 1. 只根据片段内容输出，不要凭空补全。
@@ -906,11 +1139,11 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
   "conflicts": ["..."],
   "worldbuilding": ["..."],
   "themes": ["..."],
-	  "foreshadowing": ["..."],
-	  "quality_notes": ["..."],
-	  "specialty_notes": ["专项规则相关要点"]{_writing_quality_json_hint()}{_narrative_architecture_json_hint()},
-	  "one_sentence_summary": "本片段一句话概要"
-	}}"""
+  "foreshadowing": ["..."],
+  "quality_notes": ["..."],
+  "specialty_notes": ["专项规则相关要点"]{_writing_quality_json_hint()}{_narrative_architecture_json_hint()}{_context_state_json_hint()},
+  "one_sentence_summary": "本片段一句话概要"
+}}"""
     data = _call_json(
         [
             {"role": "system", "content": system_prompt},
@@ -935,15 +1168,20 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         "information_density": _normalize_information_density(data.get("information_density")) if WRITING_QUALITY_ENABLED else {},
         "narrative_structure": _normalize_narrative_structure(data.get("narrative_structure")) if NARRATIVE_ARCHITECTURE_ENABLED else {},
         "outline_architecture": _normalize_outline_architecture(data.get("outline_architecture")) if NARRATIVE_ARCHITECTURE_ENABLED else {},
+        "context_snapshot_used": context_snapshot or {},
+        "context_state_update": _normalize_context_state_update(data.get("context_state_update")) if ROLLING_CONTEXT_ENABLED else {},
         "one_sentence_summary": str(data.get("one_sentence_summary", "") or "").strip(),
     }
 
 
-def _call_scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None) -> Dict[str, Any]:
+def _call_scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None, context_snapshot=None) -> Dict[str, Any]:
     parameters = inspect.signature(_scan_chunk).parameters
+    kwargs = {"profile": profile}
     if "density_profile" in parameters:
-        return _scan_chunk(text_chunk, chunk_index, total_chunks, profile=profile, density_profile=density_profile)
-    return _scan_chunk(text_chunk, chunk_index, total_chunks, profile=profile)
+        kwargs["density_profile"] = density_profile
+    if "context_snapshot" in parameters:
+        kwargs["context_snapshot"] = context_snapshot
+    return _scan_chunk(text_chunk, chunk_index, total_chunks, **kwargs)
 
 
 def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int, reason: str) -> Dict[str, Any]:
@@ -965,6 +1203,8 @@ def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int,
         "partial_result": True,
         "partial_reason": reason,
         "partial_count": len(results),
+        "context_snapshot_used": {},
+        "context_state_update": {},
     }
     seen_by_field = {field: set() for field in (
         "plot_events",
@@ -988,6 +1228,8 @@ def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int,
         summary = str(result.get("one_sentence_summary") or "").strip()
         if summary:
             summaries.append(summary)
+        if not merged["context_snapshot_used"] and isinstance(result.get("context_snapshot_used"), dict):
+            merged["context_snapshot_used"] = result.get("context_snapshot_used") or {}
         for object_field in (
             "writing_quality",
             "pacing_analysis",
@@ -998,13 +1240,23 @@ def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int,
             if not merged.get(object_field) and isinstance(result.get(object_field), dict):
                 merged[object_field] = result.get(object_field) or {}
     merged["one_sentence_summary"] = "；".join(summaries[:3])
+    if ROLLING_CONTEXT_ENABLED:
+        merged["context_state_update"] = _merged_context_state_update(results)
     return merged
 
 
-def _scan_chunk_with_context_overflow_fallback(text_chunk: str, chunk_index: int, total_chunks: int, profile=None) -> Dict[str, Any]:
+def _scan_chunk_with_context_overflow_fallback(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, context_snapshot=None) -> Dict[str, Any]:
     density_profile = _chunk_density_profile(text_chunk)
+    context_snapshot = _trim_context_snapshot(context_snapshot or {}) if ROLLING_CONTEXT_ENABLED else {}
     try:
-        result = _call_scan_chunk(text_chunk, chunk_index, total_chunks, profile=profile, density_profile=density_profile)
+        result = _call_scan_chunk(
+            text_chunk,
+            chunk_index,
+            total_chunks,
+            profile=profile,
+            density_profile=density_profile,
+            context_snapshot=context_snapshot,
+        )
         result.setdefault("density_profile", density_profile)
         return result
     except Exception as exc:
@@ -1013,10 +1265,18 @@ def _scan_chunk_with_context_overflow_fallback(text_chunk: str, chunk_index: int
         midpoint = max(1, len(text_chunk) // 2)
         parts = [text_chunk[:midpoint], text_chunk[midpoint:]]
         partial_results = []
+        fallback_context = _trim_context_snapshot(context_snapshot, max(400, CONTEXT_MAX_CHARS // 2)) if ROLLING_CONTEXT_ENABLED else {}
         for part_index, part in enumerate(parts, 1):
             if not part.strip():
                 continue
-            result = _call_scan_chunk(part, chunk_index, total_chunks, profile=profile, density_profile=_chunk_density_profile(part))
+            result = _call_scan_chunk(
+                part,
+                chunk_index,
+                total_chunks,
+                profile=profile,
+                density_profile=_chunk_density_profile(part),
+                context_snapshot=fallback_context,
+            )
             result["partial_index"] = part_index
             partial_results.append(result)
         if not partial_results:
@@ -1058,6 +1318,8 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         material["writing_quality_chunks"] = _compact_writing_quality_for_summary(chunk_results)
     if NARRATIVE_ARCHITECTURE_ENABLED:
         material["narrative_architecture_chunks"] = _compact_narrative_architecture_for_summary(chunk_results)
+    if ROLLING_CONTEXT_ENABLED:
+        material["rolling_context_timeline"] = _compact_rolling_context_timeline(chunk_results)
     base_summary_fields = {
         "main_plot",
         "core_conflicts",
@@ -1094,7 +1356,8 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 {rules_text}
 
 输出必须是 JSON 对象。不要使用后宫、初处、漏女、排雷等专用标准。
-开启叙事架构分析时，请基于 narrative_architecture_chunks 判断整书结构模式、阶段转折、因果链、成长曲线和大纲风险；不要把单个片段孤证当成整书结论。"""
+开启叙事架构分析时，请基于 narrative_architecture_chunks 判断整书结构模式、阶段转折、因果链、成长曲线和大纲风险；不要把单个片段孤证当成整书结论。
+开启滚动上下文时，请基于 rolling_context_timeline 理解全书阶段推进、人物关系延续、未解问题和回收情况；不要要求或引用 context_snapshot_used 这类逐块内部快照。"""
     user_prompt = f"""书名：{book_name}
 
 分块材料：
@@ -1106,10 +1369,10 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
   "main_plot": ["主线剧情要点"],
   "core_conflicts": ["核心冲突"],
   "worldbuilding": ["世界观/设定要点"],
-	  "themes": ["主题表达"],
-	  "foreshadowing_and_payoff": ["伏笔、悬念、回收情况"],
-	{specialty_json_hint}{_narrative_architecture_summary_json_hint()}{_writing_quality_summary_json_hint()}
-	  "strengths": ["作品优点"],
+  "themes": ["主题表达"],
+  "foreshadowing_and_payoff": ["伏笔、悬念、回收情况"],
+{specialty_json_hint}{_narrative_architecture_summary_json_hint()}{_writing_quality_summary_json_hint()}
+  "strengths": ["作品优点"],
   "risks_or_issues": ["可能的问题或阅读门槛"],
   "reader_fit": "适合什么读者",
   "overall_assessment": "总体评价",
@@ -1127,8 +1390,8 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-	        max_tokens=5200,
-	    )
+        max_tokens=5200,
+    )
     summary = {
         "prompt_template": template_meta,
         "story_overview": _summary_field_text(data, "story_overview"),
@@ -1199,21 +1462,36 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
     failed = []
     reused_chunk_count = 0
     scanned_chunk_count = 0
+    rolling_context_state = _empty_rolling_context_state()
     for idx, chunk in enumerate(tqdm(chunks, desc="通用扫描")):
         original_chunk_index = selected_original_indices[idx] if idx < len(selected_original_indices) else idx + 1
         chunk_hash = _chunk_text_hash(chunk)
         density_profile = _chunk_density_profile(chunk)
+        context_snapshot = {}
+        if ROLLING_CONTEXT_ENABLED:
+            context_snapshot = _rolling_context_snapshot(rolling_context_state)
+            if sampling_strategy != "full":
+                context_snapshot = dict(context_snapshot)
+                context_snapshot.update({
+                    "sampled_context": True,
+                    "source_chunk_count": source_chunk_count,
+                    "current_original_chunk_index": original_chunk_index,
+                    "sampling_note": "当前扫描为全书均匀抽样，前序上下文来自已扫描样本，不代表原文连续章节。",
+                })
+            context_snapshot = _trim_context_snapshot(context_snapshot)
         reusable_result = reusable_results.get(chunk_hash)
         if reusable_result:
-            chunk_results.append(
-                _copy_reused_chunk_result(
-                    reusable_result,
-                    idx,
-                    original_chunk_index,
-                    chunk_hash,
-                    density_profile,
-                )
+            result = _copy_reused_chunk_result(
+                reusable_result,
+                idx,
+                original_chunk_index,
+                chunk_hash,
+                density_profile,
             )
+            if ROLLING_CONTEXT_ENABLED:
+                result["context_snapshot_used"] = context_snapshot
+                rolling_context_state = _update_rolling_context_state(rolling_context_state, result)
+            chunk_results.append(result)
             reused_chunk_count += 1
             continue
         try:
@@ -1222,11 +1500,15 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
                 original_chunk_index - 1,
                 source_chunk_count or len(chunks),
                 profile=profile,
+                context_snapshot=context_snapshot,
             )
             result["sample_index"] = idx
             result["original_chunk_index"] = original_chunk_index
             result["chunk_hash"] = chunk_hash
             result.setdefault("density_profile", density_profile)
+            if ROLLING_CONTEXT_ENABLED:
+                result.setdefault("context_snapshot_used", context_snapshot)
+                rolling_context_state = _update_rolling_context_state(rolling_context_state, result)
             chunk_results.append(result)
             scanned_chunk_count += 1
         except Exception as exc:
@@ -1268,6 +1550,11 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "smart_density": SMART_DENSITY,
         "writing_quality_enabled": WRITING_QUALITY_ENABLED,
         "narrative_architecture_enabled": NARRATIVE_ARCHITECTURE_ENABLED,
+        "rolling_context_enabled": ROLLING_CONTEXT_ENABLED,
+        "rolling_context_schema_version": ROLLING_CONTEXT_SCHEMA_VERSION if ROLLING_CONTEXT_ENABLED else None,
+        "rolling_context_max_chars": CONTEXT_MAX_CHARS if ROLLING_CONTEXT_ENABLED else 0,
+        "rolling_context_state": rolling_context_state if ROLLING_CONTEXT_ENABLED else {},
+        "rolling_context_timeline_count": len(_compact_rolling_context_timeline(chunk_results)) if ROLLING_CONTEXT_ENABLED else 0,
         "density_counts": density_counts,
         "incremental_reuse": INCREMENTAL_REUSE,
         "reused_chunk_count": reused_chunk_count,

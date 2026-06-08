@@ -399,6 +399,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("GENERAL_SCAN_INCREMENTAL_REUSE", text)
         self.assertIn("GENERAL_SCAN_WRITING_QUALITY", text)
         self.assertIn("GENERAL_SCAN_NARRATIVE_ARCHITECTURE", text)
+        self.assertIn("GENERAL_SCAN_ROLLING_CONTEXT", text)
+        self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS", text)
 
     def test_profile_aliases_and_stages(self):
         harem = analysis_profiles.load_analysis_profile("后宫")
@@ -4217,6 +4219,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_INCREMENTAL_REUSE",
             "GENERAL_SCAN_WRITING_QUALITY",
             "GENERAL_SCAN_NARRATIVE_ARCHITECTURE",
+            "GENERAL_SCAN_ROLLING_CONTEXT",
+            "GENERAL_SCAN_CONTEXT_MAX_CHARS",
             "HAREM_PLUS_GENERAL_SCAN",
             "API_KEY",
         ]
@@ -4233,6 +4237,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "general_scan_incremental_reuse": False,
                 "general_scan_writing_quality": False,
                 "general_scan_narrative_architecture": False,
+                "general_scan_rolling_context": False,
+                "general_scan_context_max_chars": "800",
                 "harem_plus_general_scan": True,
             })
 
@@ -4246,12 +4252,16 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["GENERAL_SCAN_INCREMENTAL_REUSE"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_WRITING_QUALITY"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_NARRATIVE_ARCHITECTURE"], "0")
+            self.assertEqual(os.environ["GENERAL_SCAN_ROLLING_CONTEXT"], "0")
+            self.assertEqual(os.environ["GENERAL_SCAN_CONTEXT_MAX_CHARS"], "800")
             self.assertEqual(os.environ["HAREM_PLUS_GENERAL_SCAN"], "1")
             self.assertEqual(result["max_workers"], "4")
             self.assertFalse(result["general_scan_smart_density"])
             self.assertFalse(result["general_scan_incremental_reuse"])
             self.assertFalse(result["general_scan_writing_quality"])
             self.assertFalse(result["general_scan_narrative_architecture"])
+            self.assertFalse(result["general_scan_rolling_context"])
+            self.assertEqual(result["general_scan_context_max_chars"], "800")
             self.assertTrue(result["harem_plus_general_scan"])
             self.assertIn("max_workers", result["editable"])
             self.assertNotIn("api_key", result["editable"])
@@ -4424,6 +4434,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_INCREMENTAL_REUSE": "general_scan_incremental_reuse",
             "GENERAL_SCAN_WRITING_QUALITY": "general_scan_writing_quality",
             "GENERAL_SCAN_NARRATIVE_ARCHITECTURE": "general_scan_narrative_architecture",
+            "GENERAL_SCAN_ROLLING_CONTEXT": "general_scan_rolling_context",
+            "GENERAL_SCAN_CONTEXT_MAX_CHARS": "general_scan_context_max_chars",
             "HAREM_PLUS_GENERAL_SCAN": "harem_plus_general_scan",
         }
         old_values = {env: os.environ.get(env) for env in env_field_map}
@@ -4456,6 +4468,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "general_scan_incremental_reuse": False,
                     "general_scan_writing_quality": False,
                     "general_scan_narrative_architecture": False,
+                    "general_scan_rolling_context": False,
+                    "general_scan_context_max_chars": 800,
                     "harem_plus_general_scan": True,
                 })
                 self.assertTrue(ok)
@@ -4468,6 +4482,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("GENERAL_SCAN_INCREMENTAL_REUSE=0", lines)
                 self.assertIn("GENERAL_SCAN_WRITING_QUALITY=0", lines)
                 self.assertIn("GENERAL_SCAN_NARRATIVE_ARCHITECTURE=0", lines)
+                self.assertIn("GENERAL_SCAN_ROLLING_CONTEXT=0", lines)
+                self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS=800", lines)
                 self.assertIn("HAREM_PLUS_GENERAL_SCAN=1", lines)
                 # 旧值不应残留
                 self.assertNotIn("MAX_WORKERS=4", lines)
@@ -9156,6 +9172,99 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(result["outline_architecture"]["causal_chain"]["causal_strength"], "自然发展")
         self.assertEqual(result["outline_architecture"]["architecture_integrity"]["integrity_score"], 7.6)
 
+    def test_general_scan_uses_rolling_context_in_chunk_prompt(self):
+        profile = analysis_profiles.load_analysis_profile("general")
+        prompts = []
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(messages, max_tokens=3000):
+                prompts.append("\n".join(item.get("content", "") for item in messages))
+                return {
+                    "plot_events": ["主角找到线索"],
+                    "conflicts": [],
+                    "worldbuilding": [],
+                    "themes": [],
+                    "foreshadowing": ["旧案真相仍未揭开"],
+                    "quality_notes": [],
+                    "specialty_notes": [],
+                    "context_state_update": {
+                        "progress_summary": "调查推进到旧案线索。",
+                        "active_characters": ["林澈", "许青"],
+                        "open_threads": ["旧案真相"],
+                        "current_stage": "调查旧案",
+                    },
+                    "one_sentence_summary": "主角找到旧案线索。",
+                }
+
+            general_scan._call_json = fake_call_json
+            result = general_scan._scan_chunk(
+                "主角继续调查旧案。",
+                1,
+                3,
+                profile=profile,
+                context_snapshot={
+                    "previous_progress": "主角进入城中调查。",
+                    "active_characters": ["林澈"],
+                    "open_threads": ["失踪案"],
+                },
+            )
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertTrue(any("跨块上下文" in prompt for prompt in prompts))
+        self.assertTrue(any("失踪案" in prompt for prompt in prompts))
+        self.assertEqual(result["context_state_update"]["current_stage"], "调查旧案")
+        self.assertIn("林澈", result["context_snapshot_used"]["active_characters"])
+
+    def test_general_scan_trims_rolling_context_snapshot_to_budget(self):
+        snapshot = {
+            "previous_progress": "前情" * 200,
+            "current_stage": "长阶段" * 80,
+            "active_characters": [f"人物{i}" for i in range(40)],
+            "relationship_updates": [f"关系{i}" for i in range(40)],
+            "open_threads": [f"悬念{i}" for i in range(40)],
+            "worldbuilding_updates": [f"设定{i}" for i in range(40)],
+            "sampled_context": True,
+            "source_chunk_count": 500,
+        }
+
+        trimmed = general_scan._trim_context_snapshot(snapshot, max_chars=180)
+
+        self.assertLessEqual(len(json.dumps(trimmed, ensure_ascii=False)), 180)
+        self.assertNotIn("前情" * 20, json.dumps(trimmed, ensure_ascii=False))
+
+    def test_general_scan_merge_partial_results_keeps_context_update(self):
+        result = general_scan._merge_partial_scan_results(
+            [
+                {
+                    "plot_events": ["前半事件"],
+                    "context_snapshot_used": {"previous_progress": "旧进展"},
+                    "context_state_update": {
+                        "progress_summary": "前半推进",
+                        "active_characters": ["林澈"],
+                        "open_threads": ["旧案"],
+                    },
+                    "one_sentence_summary": "前半摘要",
+                },
+                {
+                    "plot_events": ["后半事件"],
+                    "context_state_update": {
+                        "progress_summary": "后半推进",
+                        "resolved_threads": ["旧案"],
+                        "current_stage": "案件收束",
+                    },
+                    "one_sentence_summary": "后半摘要",
+                },
+            ],
+            0,
+            "context_overflow_split",
+        )
+
+        self.assertEqual(result["plot_events"], ["前半事件", "后半事件"])
+        self.assertEqual(result["context_snapshot_used"]["previous_progress"], "旧进展")
+        self.assertEqual(result["context_state_update"]["current_stage"], "案件收束")
+        self.assertIn("旧案", result["context_state_update"]["resolved_threads"])
+
     def test_general_scan_density_profile_detects_high_signal_chunks(self):
         profile = general_scan._chunk_density_profile("案件出现尸体，凶手线索揭露，随后发生战斗和反转。")
         self.assertEqual(profile["level"], "high")
@@ -9421,12 +9530,59 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(summary["outline_architecture_overall"]["architecture_score"], "7.5")
         self.assertEqual(summary["outline_architecture_overall"]["growth_curve"]["smoothness"], "natural")
 
+    def test_general_scan_summary_uses_rolling_context_timeline_only(self):
+        profile = analysis_profiles.load_analysis_profile("general")
+        prompts = []
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(messages, max_tokens=3000):
+                prompt = "\n".join(item.get("content", "") for item in messages)
+                prompts.append(prompt)
+                return {
+                    "story_overview": "主角调查旧案并回收悬念。",
+                    "main_plot": ["旧案调查"],
+                    "core_conflicts": ["真相与阻挠"],
+                    "worldbuilding": [],
+                    "themes": ["真相"],
+                    "foreshadowing_and_payoff": ["失踪案线索被回收"],
+                    "strengths": ["阶段推进清楚"],
+                    "risks_or_issues": [],
+                    "reader_fit": "悬疑读者",
+                    "overall_assessment": "可读",
+                }
+
+            general_scan._call_json = fake_call_json
+            summary = general_scan._summarize_book(
+                "滚动上下文测试",
+                [{
+                    "one_sentence_summary": "主角找到旧案线索。",
+                    "context_snapshot_used": {"previous_progress": "不应进入总评材料"},
+                    "context_state_update": {
+                        "progress_summary": "调查推进到旧案线索。",
+                        "active_characters": ["林澈"],
+                        "open_threads": ["失踪案"],
+                        "current_stage": "旧案调查",
+                    },
+                }],
+                profile=profile,
+            )
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertEqual(summary["story_overview"], "主角调查旧案并回收悬念。")
+        self.assertTrue(any('"rolling_context_timeline"' in prompt for prompt in prompts))
+        self.assertTrue(any("调查推进到旧案线索" in prompt for prompt in prompts))
+        self.assertFalse(any('"context_snapshot_used"' in prompt for prompt in prompts))
+        self.assertFalse(any("不应进入总评材料" in prompt for prompt in prompts))
+
     def test_general_scan_splits_chunk_on_context_overflow(self):
         old_scan_chunk = general_scan._scan_chunk
         calls = []
+        snapshots = []
         try:
-            def fake_scan(chunk, chunk_index, total_chunks, profile=None):
+            def fake_scan(chunk, chunk_index, total_chunks, profile=None, density_profile=None, context_snapshot=None):
                 calls.append(chunk)
+                snapshots.append(context_snapshot or {})
                 if len(calls) == 1:
                     raise RuntimeError("maximum context length exceeded")
                 return {
@@ -9447,11 +9603,16 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 4,
                 10,
                 profile=analysis_profiles.load_analysis_profile("general"),
+                context_snapshot={"previous_progress": "旧进展" * 200, "active_characters": ["林澈"]},
             )
         finally:
             general_scan._scan_chunk = old_scan_chunk
 
         self.assertEqual(len(calls), 3)
+        self.assertLessEqual(
+            len(json.dumps(snapshots[1], ensure_ascii=False)),
+            max(400, general_scan.CONTEXT_MAX_CHARS // 2),
+        )
         self.assertTrue(result["partial_result"])
         self.assertEqual(result["partial_reason"], "context_overflow_split")
         self.assertEqual(result["partial_count"], 2)
@@ -10264,6 +10425,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     mock.patch.object(general_scan, "build_chunk_manifest", return_value=manifest), \
                     mock.patch.object(general_scan, "save_chunk_manifest"), \
                     mock.patch.object(general_scan, "tqdm", side_effect=lambda items, desc=None: items), \
+                    mock.patch.object(general_scan, "ROLLING_CONTEXT_ENABLED", False), \
                     mock.patch.object(general_scan, "_scan_chunk", side_effect=fake_scan), \
                     mock.patch.object(general_scan, "_summarize_book", return_value={"story_overview": "ok"}):
                 self.assertEqual(general_scan.main(novel_path=novel_path, book_name="incremental"), 0)
@@ -10280,6 +10442,88 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertTrue(data["chunk_results"][0]["reused_from_previous"])
             self.assertEqual(data["chunk_results"][0]["plot_events"], ["旧事件"])
             self.assertEqual(data["chunk_results"][1]["plot_events"], ["新事件"])
+
+    def test_general_scan_main_disables_chunk_reuse_with_rolling_context(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            novels_dir = os.path.join(tmpdir, "novels")
+            results_dir = os.path.join(tmpdir, "results")
+            os.makedirs(novels_dir, exist_ok=True)
+            os.makedirs(results_dir, exist_ok=True)
+            novel_path = os.path.join(novels_dir, "rolling_incremental.txt")
+            with open(novel_path, "w", encoding="utf-8") as f:
+                f.write("changed")
+
+            reused_text = "第一段旧内容。"
+            changed_text = "第二段新增内容。"
+            reused_hash = general_scan._chunk_text_hash(reused_text)
+            manifest = {
+                "text_length": 20_000,
+                "chunks": [
+                    {"chunk_index": 1, "text": reused_text},
+                    {"chunk_index": 2, "text": changed_text},
+                ],
+            }
+            latest_path = os.path.join(results_dir, "rolling_incremental_GENERAL_SUMMARY_latest.json")
+            with open(latest_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "schema_version": 1,
+                    "analysis_profile": "general",
+                    "specialty_profile": "general",
+                    "chunk_size": general_scan.CHUNK_SIZE,
+                    "chunk_overlap": general_scan.CHUNK_OVERLAP,
+                    "smart_density": general_scan.SMART_DENSITY,
+                    "rolling_context_enabled": True,
+                    "rolling_context_schema_version": general_scan.ROLLING_CONTEXT_SCHEMA_VERSION,
+                    "rolling_context_max_chars": general_scan.CONTEXT_MAX_CHARS,
+                    "prompt_templates": {
+                        "general_scan_chunk": {"name": "general_scan_chunk", "version": "v1"},
+                        "general_summary": {"name": "general_summary", "version": "v1"},
+                    },
+                    "chunk_results": [{
+                        "chunk_index": 0,
+                        "chunk_hash": reused_hash,
+                        "plot_events": ["旧事件"],
+                        "writing_quality": {"prose_quality": {"score": 6}},
+                        "pacing_analysis": {"pacing_type": "transition"},
+                        "information_density": {"density_score": "medium"},
+                        "narrative_structure": {"structural_function_tag": "transition"},
+                        "outline_architecture": {"causal_chain": {"causal_strength": "自然发展"}},
+                        "context_state_update": {"progress_summary": "旧摘要"},
+                        "one_sentence_summary": "旧摘要",
+                    }],
+                }, f, ensure_ascii=False)
+
+            scanned = []
+
+            def fake_scan(chunk, chunk_index, total_chunks, profile=None):
+                scanned.append(chunk)
+                return {
+                    "chunk_index": chunk_index,
+                    "chunk_hash": general_scan._chunk_text_hash(chunk),
+                    "plot_events": [f"新事件{len(scanned)}"],
+                    "context_state_update": {"progress_summary": f"新摘要{len(scanned)}"},
+                    "one_sentence_summary": f"新摘要{len(scanned)}",
+                }
+
+            with mock.patch.object(general_scan, "get_base_dir", return_value=tmpdir), \
+                    mock.patch.object(general_scan, "init_token_tracker"), \
+                    mock.patch.object(general_scan, "_read_novel", return_value="changed"), \
+                    mock.patch.object(general_scan, "build_chunk_manifest", return_value=manifest), \
+                    mock.patch.object(general_scan, "save_chunk_manifest"), \
+                    mock.patch.object(general_scan, "tqdm", side_effect=lambda items, desc=None: items), \
+                    mock.patch.object(general_scan, "_scan_chunk", side_effect=fake_scan), \
+                    mock.patch.object(general_scan, "_summarize_book", return_value={"story_overview": "ok"}):
+                self.assertEqual(general_scan.main(novel_path=novel_path, book_name="rolling_incremental"), 0)
+
+            with open(latest_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            self.assertEqual(scanned, [reused_text, changed_text])
+            self.assertTrue(data["rolling_context_enabled"])
+            self.assertEqual(data["reused_chunk_count"], 0)
+            self.assertEqual(data["scanned_chunk_count"], 2)
+            self.assertFalse(any(item.get("reused_from_previous") for item in data["chunk_results"]))
+            self.assertEqual(data["rolling_context_timeline_count"], 2)
 
     def test_general_scan_does_not_reuse_chunks_without_writing_quality_when_enabled(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -10413,6 +10657,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "chunk_sampling_strategy": "full",
                 "writing_quality_enabled": general_scan.WRITING_QUALITY_ENABLED,
                 "narrative_architecture_enabled": general_scan.NARRATIVE_ARCHITECTURE_ENABLED,
+                "rolling_context_enabled": general_scan.ROLLING_CONTEXT_ENABLED,
+                "rolling_context_schema_version": general_scan.ROLLING_CONTEXT_SCHEMA_VERSION,
+                "rolling_context_max_chars": general_scan.CONTEXT_MAX_CHARS,
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }
@@ -10423,6 +10670,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             data_without_narrative_meta = dict(data)
             data_without_narrative_meta.pop("narrative_architecture_enabled", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_narrative_meta, novel_path, "history"))
+            data_without_rolling_meta = dict(data)
+            data_without_rolling_meta.pop("rolling_context_enabled", None)
+            self.assertFalse(general_scan._is_fresh_summary(data_without_rolling_meta, novel_path, "history"))
             data["summary"] = {"book_overview": "ok"}
             self.assertTrue(general_scan._is_fresh_summary(data, novel_path, "history"))
             self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "general"))
@@ -10462,6 +10712,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "chunk_sampling_strategy": "full",
                 "writing_quality_enabled": general_scan.WRITING_QUALITY_ENABLED,
                 "narrative_architecture_enabled": general_scan.NARRATIVE_ARCHITECTURE_ENABLED,
+                "rolling_context_enabled": general_scan.ROLLING_CONTEXT_ENABLED,
+                "rolling_context_schema_version": general_scan.ROLLING_CONTEXT_SCHEMA_VERSION,
+                "rolling_context_max_chars": general_scan.CONTEXT_MAX_CHARS,
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }

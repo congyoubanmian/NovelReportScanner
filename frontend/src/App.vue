@@ -51,6 +51,8 @@ const configForm = ref({
   general_scan_incremental_reuse: true,
   general_scan_writing_quality: true,
   general_scan_narrative_architecture: true,
+  general_scan_rolling_context: true,
+  general_scan_context_max_chars: '1600',
   harem_plus_general_scan: false
 })
 const savingRuntimeConfig = ref(false)
@@ -124,6 +126,8 @@ function syncConfigForm(config) {
     general_scan_incremental_reuse: config.general_scan_incremental_reuse !== false,
     general_scan_writing_quality: config.general_scan_writing_quality !== false,
     general_scan_narrative_architecture: config.general_scan_narrative_architecture !== false,
+    general_scan_rolling_context: config.general_scan_rolling_context !== false,
+    general_scan_context_max_chars: config.general_scan_context_max_chars || '1600',
     harem_plus_general_scan: Boolean(config.harem_plus_general_scan)
   }
 }
@@ -141,6 +145,8 @@ async function saveRuntimeConfig() {
       general_scan_incremental_reuse: configForm.value.general_scan_incremental_reuse,
       general_scan_writing_quality: configForm.value.general_scan_writing_quality,
       general_scan_narrative_architecture: configForm.value.general_scan_narrative_architecture,
+      general_scan_rolling_context: configForm.value.general_scan_rolling_context,
+      general_scan_context_max_chars: configForm.value.general_scan_context_max_chars,
       harem_plus_general_scan: configForm.value.harem_plus_general_scan
     })
     runtimeConfig.value = response.config || runtimeConfig.value
@@ -429,6 +435,24 @@ useStateEvents(applyState, {
           @change="runtimeConfigDirty = true"
         />
         <span>叙事架构</span>
+      </label>
+      <label class="runtime-toggle">
+        <input
+          v-model="configForm.general_scan_rolling_context"
+          type="checkbox"
+          @change="runtimeConfigDirty = true"
+        />
+        <span>滚动上下文</span>
+      </label>
+      <label>
+        <span>上下文</span>
+        <input
+          v-model="configForm.general_scan_context_max_chars"
+          type="number"
+          min="0"
+          max="10000"
+          @input="runtimeConfigDirty = true"
+        />
       </label>
       <label class="runtime-toggle">
         <input
