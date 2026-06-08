@@ -845,6 +845,17 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("general_scan_content_aware_sampling: true", text)
         self.assertIn("config.general_scan_content_aware_sampling !== false", text)
         self.assertIn("configForm.general_scan_content_aware_sampling", text)
+        book_list_path = os.path.join(base_dir, "frontend", "src", "components", "BookList.vue")
+        with open(book_list_path, "r", encoding="utf-8") as f:
+            book_list_text = f.read()
+        self.assertIn("autoSelected: Boolean(s.auto_selected)", book_list_text)
+        self.assertIn("Top{{ s.rank || i + 1 }}", book_list_text)
+        self.assertIn("Math.round(s.confidence * 100)", book_list_text)
+        book_detail_path = os.path.join(base_dir, "frontend", "src", "components", "BookDetail.vue")
+        with open(book_detail_path, "r", encoding="utf-8") as f:
+            book_detail_text = f.read()
+        self.assertIn("autoSelected: Boolean(s.auto_selected)", book_detail_text)
+        self.assertIn("Top{{ s.rank || i + 1 }}", book_detail_text)
 
     def test_rate_limit_scope_auto_resolves_by_key_count(self):
         self.assertEqual(Timerror.normalize_rate_limit_scope("auto", 1), "global")
@@ -3348,6 +3359,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("harem", names)
         self.assertGreater(candidates[0]["score"], 0)
         self.assertTrue(candidates[0]["matched_keywords"])
+        self.assertEqual(candidates[0]["rank"], 1)
+        self.assertIn("auto_selected", candidates[0])
 
         title_weighted = analysis_profiles.infer_profile_candidates_for_text("篮球冠军", "训练和战术很重要。")
         self.assertEqual(title_weighted[0]["name"], "sports_competition")
@@ -3429,6 +3442,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             analysis_profiles.infer_profiles_for_text("小镇旧事", "他回到故乡，重新面对童年的朋友。"),
             ["general"],
         )
+        general_candidates = analysis_profiles.infer_profile_candidates_for_text("小镇旧事", "他回到故乡。")
+        self.assertEqual(general_candidates[0]["rank"], 1)
+        self.assertTrue(general_candidates[0]["auto_selected"])
 
     def test_auto_profile_negative_keywords_reduce_cross_category_noise(self):
         basketball = analysis_profiles.infer_profile_candidates_for_text(
@@ -4956,6 +4972,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertNotIn("sk-one", json.dumps(state, ensure_ascii=False))
             self.assertTrue(any(item["name"] == "history" for item in state["books"][0]["profile_suggestions"]))
             self.assertTrue(any(item["name"] == "harem" for item in state["books"][0]["profile_suggestions"]))
+            self.assertTrue(all("rank" in item for item in state["books"][0]["profile_suggestions"]))
+            self.assertTrue(any(item.get("auto_selected") for item in state["books"][0]["profile_suggestions"]))
         finally:
             web_manager.STATE = old_state
             for key, value in old_env.items():

@@ -20,6 +20,9 @@ const suggestions = computed(() => {
   return list.map((s) => ({
     name: s.display_name || s.name,
     score: s.score,
+    rank: s.rank,
+    confidence: s.confidence,
+    autoSelected: Boolean(s.auto_selected),
     words: (s.matched_keywords || []).slice(0, 5).join('、')
   }))
 })
@@ -149,7 +152,12 @@ watch(
         <div class="section-title">🎯 自动建议</div>
         <div class="suggestion-chips">
           <span v-for="(s, i) in suggestions" :key="i" class="chip" :title="s.words">
-            {{ s.name }} <span class="score">{{ s.score }}</span>
+            <span v-if="s.autoSelected" class="rank">Top{{ s.rank || i + 1 }}</span>
+            {{ s.name }}
+            <span class="score">{{ s.score }}</span>
+            <span class="confidence" v-if="s.confidence"
+              >{{ Math.round(s.confidence * 100) }}%</span
+            >
           </span>
         </div>
       </div>

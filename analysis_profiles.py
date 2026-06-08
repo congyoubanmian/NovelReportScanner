@@ -663,6 +663,11 @@ def infer_profile_candidates_for_text(title: str, text: str, min_score: int = 1)
             raw.append((profile, score, all_matches))
 
     raw.sort(key=lambda item: (-item[1], item[0].sort_order, item[0].name))
+    selected_names = [
+        profile.name
+        for profile, score, _matches in raw
+        if score >= _min_score_for_profile(profile.name, AUTO_PROFILE_MIN_SCORE)
+    ][:AUTO_PROFILE_MAX_PROFILES]
     candidates = []
     for index, (profile, score, matches) in enumerate(raw):
         if index == 0:
@@ -680,20 +685,24 @@ def infer_profile_candidates_for_text(title: str, text: str, min_score: int = 1)
             nearest_competitor_score,
             evidence_count,
         )
-        candidates.append(
-            ProfileInference(
-                name=profile.name,
-                display_name=profile.display_name,
-                score=score,
-                confidence=confidence,
-                matched_keywords=matches[:12],
-                confidence_level=confidence_level,
-            ).to_dict()
-        )
+        item = ProfileInference(
+            name=profile.name,
+            display_name=profile.display_name,
+            score=score,
+            confidence=confidence,
+            matched_keywords=matches[:12],
+            confidence_level=confidence_level,
+        ).to_dict()
+        item["rank"] = index + 1
+        item["auto_selected"] = profile.name in selected_names
+        candidates.append(item)
 
     if not candidates:
         general = load_analysis_profile("general")
-        return [ProfileInference(general.name, general.display_name, 0, 1.0, [], "high").to_dict()]
+        item = ProfileInference(general.name, general.display_name, 0, 1.0, [], "high").to_dict()
+        item["rank"] = 1
+        item["auto_selected"] = True
+        return [item]
     return candidates
 
 

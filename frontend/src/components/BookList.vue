@@ -26,6 +26,9 @@ function renderSuggestions(book) {
     return {
       name: s.display_name || s.name,
       score: s.score,
+      rank: s.rank,
+      confidence: s.confidence,
+      autoSelected: Boolean(s.auto_selected),
       words,
       title: words
     }
@@ -211,7 +214,12 @@ function confirmDelete(book) {
             <td>
               <div class="suggestion-chips" v-if="book.suggestions.length">
                 <span v-for="(s, i) in book.suggestions" :key="i" class="chip" :title="s.title">
-                  {{ s.name }} <span class="score">{{ s.score }}</span>
+                  <span v-if="s.autoSelected" class="rank">Top{{ s.rank || i + 1 }}</span>
+                  {{ s.name }}
+                  <span class="score">{{ s.score }}</span>
+                  <span class="confidence" v-if="s.confidence"
+                    >{{ Math.round(s.confidence * 100) }}%</span
+                  >
                 </span>
               </div>
               <span v-else class="muted">暂无</span>

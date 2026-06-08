@@ -152,6 +152,11 @@ tbody tr:last-child td {
   font-weight: 600;
   color: var(--primary);
 }
+.chip .rank,
+.chip .confidence {
+  font-weight: 600;
+  color: var(--text-muted);
+}
 
 .profile-picker {
   display: grid;
