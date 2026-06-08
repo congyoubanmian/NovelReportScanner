@@ -4338,6 +4338,25 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 ],
                 {},
             )
+            victim_only = report._summarize_harem_romance_overview(
+                {
+                    "all_female_characters": {
+                        "丁女": {
+                            "count": 5,
+                            "summaries": ["被路人强行亲吻，差点被迫同房，最后被男主救下，没有感情戏。"],
+                        }
+                    }
+                },
+                {},
+                [
+                    {
+                        "name": "丁女",
+                        "relationship_type": "受害者",
+                        "summary": "强迫亲密未遂，没有恋爱推进。",
+                    }
+                ],
+                {},
+            )
         finally:
             report.OpenAI = old_openai
             report.API_KEY_POOL = old_api_key_pool
@@ -4346,6 +4365,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("未见明确恋爱推进", negated["romance_progression"])
         self.assertIn("中等或以上", positive["romance_density"])
         self.assertIn("中等或以上", negated_gap["romance_density"])
+        self.assertIn("极低", victim_only["romance_density"])
+        self.assertIn("未见明确恋爱推进", victim_only["romance_progression"])
 
     def test_harem_romance_overview_keeps_physical_event_from_inflating_romance(self):
         old_openai = report.OpenAI
@@ -4760,6 +4781,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(report._contains_positive_signal_text("游戏里有亲密度系统，她只是讲解规则。", ["亲密"]))
         self.assertTrue(report._contains_positive_signal_text("她与男主亲密互动并逐渐动心。", ["亲密"]))
         self.assertFalse(report._contains_positive_signal_text("她未同房，只是住在同一院落。", ["同房"]))
+        self.assertFalse(report._contains_positive_signal_text("她被路人强行亲吻。", ["亲吻"]))
+        self.assertFalse(report._contains_positive_signal_text("她差点被迫同房，最后被男主救下。", ["同房"]))
+        self.assertFalse(report._contains_positive_signal_text("反派企图推倒她但未遂。", ["推倒"]))
+        self.assertTrue(report._contains_positive_signal_text("她与男主亲吻后确认关系。", ["亲吻"]))
         self.assertTrue(report._has_romance_gap_signal_text("她没有感情戏，也没有恋爱线。"))
         self.assertTrue(report._has_romance_gap_signal_text("材料显示感情戏缺失。"))
         self.assertFalse(report._has_romance_gap_signal_text("她不是没有感情戏，也没有感情戏缺失问题。"))
