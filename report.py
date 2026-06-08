@@ -1167,6 +1167,12 @@ def _contains_positive_signal_text(value, keywords) -> bool:
     nonfactual_ending_contexts = ("梦见", "梦到", "梦境", "幻境", "假死", "制度", "结构", "讲解", "研究", "传说", "故事")
     non_ending_action_followers = ("线索", "证据", "伏笔", "案件", "调查", "评审", "报告", "评价", "评论", "后", "时", "期间", "过程")
     non_romantic_jealousy_contexts = ("厨房", "拌菜", "醋坛", "米醋", "陈醋", "香醋", "调料", "做菜", "事故")
+    familial_or_comrade_contexts = (
+        "亲情", "战友情", "友情", "家人式", "像兄妹", "像姐弟", "兄妹一样", "姐弟一样",
+        "当弟弟", "当哥哥", "当妹妹", "当姐姐", "爱护后辈", "照顾后辈", "照顾晚辈",
+        "姐姐照顾", "妹妹照顾", "师徒情", "同伴情", "伙伴情", "父女式", "母女式",
+        "兄妹式", "姐弟式",
+    )
     physical_intimacy_words = {
         "亲吻", "拥抱", "牵手", "同床", "同房", "双修", "推倒", "成亲", "成婚", "完婚",
         "大婚", "同居", "怀孕", "生下", "私通",
@@ -1232,6 +1238,12 @@ def _contains_positive_signal_text(value, keywords) -> bool:
                 hint in text[max(0, index - 8):index + len(word) + 8]
                 for hint in non_romantic_jealousy_contexts
             )
+            familial_or_comrade_emotion = word in (
+                "亲密", "喜欢", "爱", "爱慕", "动心", "倾心", "陪伴", "相伴", "跟随", "同行"
+            ) and any(
+                hint in text[max(0, index - 14):index + len(word) + 14]
+                for hint in familial_or_comrade_contexts
+            )
             forced_or_victim_intimacy = word in physical_intimacy_words and any(
                 hint in text[max(0, index - 12):index + len(word) + 12]
                 for hint in forced_or_victim_intimacy_contexts
@@ -1258,6 +1270,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
                 and not nonfactual_ending
                 and not non_ending_action
                 and not non_romantic_jealousy
+                and not familial_or_comrade_emotion
                 and not forced_or_victim_intimacy
                 and not past_relation_mention
             ):

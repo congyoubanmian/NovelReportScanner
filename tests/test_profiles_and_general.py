@@ -4785,6 +4785,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(report._contains_positive_signal_text("她差点被迫同房，最后被男主救下。", ["同房"]))
         self.assertFalse(report._contains_positive_signal_text("反派企图推倒她但未遂。", ["推倒"]))
         self.assertTrue(report._contains_positive_signal_text("她与男主亲吻后确认关系。", ["亲吻"]))
+        self.assertFalse(report._contains_positive_signal_text("她与男主像兄妹一样亲密，主要是亲情和战友情。", ["亲密"]))
+        self.assertFalse(report._contains_positive_signal_text("她把男主当弟弟照顾，爱护后辈。", ["爱"]))
+        self.assertTrue(report._contains_positive_signal_text("家人反对，但她明确爱男主。", ["爱"]))
         self.assertTrue(report._has_romance_gap_signal_text("她没有感情戏，也没有恋爱线。"))
         self.assertTrue(report._has_romance_gap_signal_text("材料显示感情戏缺失。"))
         self.assertFalse(report._has_romance_gap_signal_text("她不是没有感情戏，也没有感情戏缺失问题。"))
@@ -4823,6 +4826,19 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertIn("感情/亲密推进", negated_gap_level)
         self.assertNotIn("明确缺少恋爱/后宫推进", negated_gap_level)
+
+        familial_level = report._heroine_position_level(
+            {"importance_rank": 2},
+            {
+                "identity": "男主姐姐",
+                "relationship_with_protagonist": "与男主像兄妹一样亲密，主要是亲情和战友情。",
+                "key_events": "把男主当弟弟照顾，家人式陪伴，没有恋爱线。",
+            },
+            {"count": 8},
+            {},
+        )
+        self.assertNotIn("感情/亲密推进", familial_level)
+        self.assertIn("明确缺少恋爱/后宫推进", familial_level)
 
     def test_leak_three_layers_ignores_non_romantic_love_words(self):
         clean = report._summarize_leak_three_layers(
