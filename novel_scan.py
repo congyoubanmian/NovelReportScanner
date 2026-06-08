@@ -59,6 +59,7 @@ RESCAN_MAX_HITS = int(os.environ.get("RESCAN_MAX_HITS", "4"))
 RESCAN_PRE_FILTER_THRESHOLD = float(os.environ.get("RESCAN_PRE_FILTER_THRESHOLD", "1.0"))
 RESCAN_MAX_WINDOW = int(os.environ.get("RESCAN_MAX_WINDOW", "2000"))
 RESCAN_MAX_PROMPT_HEROINES = int(os.environ.get("RESCAN_MAX_PROMPT_HEROINES", "4"))
+RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER = int(os.environ.get("RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER", "2"))
 
 RULES_FILE = os.environ.get("ANALYSIS_RULES_FILE") or os.path.join(
     get_base_dir(),
@@ -229,11 +230,56 @@ def _record_chunk_failure_diagnostic(idx, text_chunk, err_msg="", chunk_failure_
     if text_chunk is None:
         return None
     diagnostics = chunk_failure_diagnostics if chunk_failure_diagnostics is not None else CHUNK_FAILURE_DIAGNOSTICS
+    previous = diagnostics.get(int(idx)) or {}
     diagnostic = _build_chunk_failure_diagnostic(text_chunk, err_msg=err_msg)
+    previous_error = str(previous.get("error") or "")
+    current_error = diagnostic.get("error") or ""
+    same_failure_family = (
+        _is_chronic_parse_failure_text(previous_error)
+        and _is_chronic_parse_failure_text(current_error)
+    )
+    previous_retry_count = int(previous.get("retry_count", 0) or 0)
+    diagnostic["retry_count"] = previous_retry_count + 1 if same_failure_family else 1
     diagnostics[int(idx)] = diagnostic
     if diagnostic.get("flags"):
         logger.warning(f"chunk {idx} 内容诊断：{','.join(diagnostic['flags'])} severity={diagnostic['severity']}")
     return diagnostic
+
+
+def _is_chronic_parse_failure_text(text):
+    raw = str(text or "")
+    markers = (
+        "response_flags=",
+        "likely_truncated",
+        "near_max_tokens_truncated",
+        "json_unbalanced",
+        "code_fence_unclosed",
+        "unable to parse json",
+    )
+    return any(marker in raw for marker in markers)
+
+
+def _is_chronic_parse_failure_diagnostic(diagnostic):
+    if not isinstance(diagnostic, dict):
+        return False
+    retry_count = int(diagnostic.get("retry_count", 0) or 0)
+    if retry_count < max(1, RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER):
+        return False
+    return _is_chronic_parse_failure_text(diagnostic.get("error", ""))
+
+
+def _filter_chronic_parse_failures(indices, diagnostics):
+    if RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER <= 0:
+        return list(indices), []
+    kept = []
+    skipped = []
+    for idx in indices:
+        diagnostic = (diagnostics or {}).get(int(idx)) or (diagnostics or {}).get(str(idx))
+        if _is_chronic_parse_failure_diagnostic(diagnostic):
+            skipped.append(idx)
+        else:
+            kept.append(idx)
+    return kept, skipped
 
 
 def find_latest_scan_checkpoint(prefix: str):
@@ -4290,6 +4336,17 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         for round_no in range(1, RESCAN_ROUNDS + 1):
             pending = sorted(list(all_indices - set(processed_chunks)))
             if not pending:
+                break
+            pending, skipped_chronic = _filter_chronic_parse_failures(pending, CHUNK_FAILURE_DIAGNOSTICS)
+            if skipped_chronic:
+                logger.warning(
+                    "补扫跳过 %s 个慢性 JSON/截断失败片段（达到阈值 %s）：%s",
+                    len(skipped_chronic),
+                    RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER,
+                    skipped_chronic[:50],
+                )
+            if not pending:
+                logger.warning("补扫待处理片段均为慢性 JSON/截断失败，保留 failed_chunks 并继续后续阶段。")
                 break
             print(f"🧩 补扫轮次 {round_no}/{RESCAN_ROUNDS}：待补扫 {len(pending)} 个片段（含失败/遗漏）")
             fatal = _run_scan_for_indices(

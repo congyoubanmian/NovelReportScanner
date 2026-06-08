@@ -59,6 +59,7 @@ const configForm = ref({
   general_scan_rolling_context: true,
   general_scan_knowledge_base_llm_merge: false,
   general_scan_context_max_chars: '1600',
+  rescan_skip_chronic_parse_failure_after: '2',
   harem_plus_general_scan: false
 })
 const savingRuntimeConfig = ref(false)
@@ -140,6 +141,8 @@ function syncConfigForm(config) {
     general_scan_rolling_context: config.general_scan_rolling_context !== false,
     general_scan_knowledge_base_llm_merge: Boolean(config.general_scan_knowledge_base_llm_merge),
     general_scan_context_max_chars: config.general_scan_context_max_chars || '1600',
+    rescan_skip_chronic_parse_failure_after:
+      config.rescan_skip_chronic_parse_failure_after || '2',
     harem_plus_general_scan: Boolean(config.harem_plus_general_scan)
   }
 }
@@ -166,6 +169,8 @@ async function saveRuntimeConfig() {
       general_scan_rolling_context: configForm.value.general_scan_rolling_context,
       general_scan_knowledge_base_llm_merge: configForm.value.general_scan_knowledge_base_llm_merge,
       general_scan_context_max_chars: configForm.value.general_scan_context_max_chars,
+      rescan_skip_chronic_parse_failure_after:
+        configForm.value.rescan_skip_chronic_parse_failure_after,
       harem_plus_general_scan: configForm.value.harem_plus_general_scan
     })
     runtimeConfig.value = response.config || runtimeConfig.value
@@ -518,6 +523,16 @@ useStateEvents(applyState, {
           type="number"
           min="0"
           max="10000"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>跳过失败</span>
+        <input
+          v-model="configForm.rescan_skip_chronic_parse_failure_after"
+          type="number"
+          min="0"
+          max="20"
           @input="runtimeConfigDirty = true"
         />
       </label>

@@ -522,6 +522,7 @@ profiles/
 - `RESCAN_PRE_FILTER_THRESHOLD`：全局补扫前，对候选命中的最低预过滤分数。值越高越严格，进入后续补扫的片段越少；值越低则更激进，召回更高，但 token 消耗通常也会更高。
 - `RESCAN_MAX_WINDOW`：全局补扫时，允许截取的最大上下文窗口长度。值越大，单次 prompt 的上下文更完整，但 prompt 本身也会更长、更费 token。
 - `RESCAN_MAX_PROMPT_HEROINES`：单次全局补扫 prompt 最多携带多少名女主。值越大，单次覆盖的人物更多，但 prompt 更拥挤，token 成本也更高。
+- `RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER`：同一片段连续多次因模型输出 JSON 截断、代码块未闭合或括号不平衡失败后，后续补扫轮跳过该片段并保留 failed_chunks 诊断。默认 `2`，可设为 `0` 关闭跳过。
 
 如果你的目标是“先稳定跑通、控制成本”，更推荐先用较保守的配置；只有在你明确发现漏扫比较严重、并且能接受成本上涨时，再逐步调高这些参数。
 

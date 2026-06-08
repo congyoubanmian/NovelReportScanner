@@ -2035,6 +2035,53 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             novel_scan.CHUNK_FAILURE_DIAGNOSTICS = old_diagnostics
             novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
 
+    def test_chronic_parse_failure_diagnostic_counts_retries(self):
+        diagnostics = {}
+        err_msg = "unable to parse json; response_flags=json_unbalanced,likely_truncated; response_len=6000"
+
+        first = novel_scan._record_chunk_failure_diagnostic(
+            2,
+            "普通正文",
+            err_msg=err_msg,
+            chunk_failure_diagnostics=diagnostics,
+        )
+        second = novel_scan._record_chunk_failure_diagnostic(
+            2,
+            "普通正文",
+            err_msg=err_msg,
+            chunk_failure_diagnostics=diagnostics,
+        )
+
+        self.assertEqual(first["retry_count"], 1)
+        self.assertEqual(second["retry_count"], 2)
+        self.assertTrue(novel_scan._is_chronic_parse_failure_diagnostic(diagnostics[2]))
+
+    def test_filter_chronic_parse_failures_keeps_other_failures(self):
+        old_threshold = novel_scan.RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER
+        try:
+            novel_scan.RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER = 2
+            diagnostics = {
+                1: {
+                    "retry_count": 2,
+                    "error": "unable to parse json; response_flags=json_unbalanced,likely_truncated; response_len=6000",
+                },
+                2: {
+                    "retry_count": 3,
+                    "error": "network timeout",
+                },
+                3: {
+                    "retry_count": 1,
+                    "error": "unable to parse json; response_flags=json_unbalanced; response_len=6000",
+                },
+            }
+
+            kept, skipped = novel_scan._filter_chronic_parse_failures([1, 2, 3, 4], diagnostics)
+
+            self.assertEqual(kept, [2, 3, 4])
+            self.assertEqual(skipped, [1])
+        finally:
+            novel_scan.RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER = old_threshold
+
     def test_commit_chunk_result_accepts_isolated_chunk_summaries(self):
         old_checkpoint = novel_scan.CHECKPOINT_FILE
         old_plan = novel_scan.CURRENT_CHUNK_PLAN_METADATA
@@ -4378,6 +4425,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_ROLLING_CONTEXT",
             "GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE",
             "GENERAL_SCAN_CONTEXT_MAX_CHARS",
+            "RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER",
             "HAREM_PLUS_GENERAL_SCAN",
             "API_KEY",
         ]
@@ -4402,6 +4450,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "general_scan_rolling_context": False,
                 "general_scan_knowledge_base_llm_merge": True,
                 "general_scan_context_max_chars": "800",
+                "rescan_skip_chronic_parse_failure_after": "3",
                 "harem_plus_general_scan": True,
             })
 
@@ -4423,6 +4472,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["GENERAL_SCAN_ROLLING_CONTEXT"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE"], "1")
             self.assertEqual(os.environ["GENERAL_SCAN_CONTEXT_MAX_CHARS"], "800")
+            self.assertEqual(os.environ["RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER"], "3")
             self.assertEqual(os.environ["HAREM_PLUS_GENERAL_SCAN"], "1")
             self.assertEqual(result["max_workers"], "4")
             self.assertFalse(result["general_scan_smart_density"])
@@ -4437,6 +4487,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertFalse(result["general_scan_rolling_context"])
             self.assertTrue(result["general_scan_knowledge_base_llm_merge"])
             self.assertEqual(result["general_scan_context_max_chars"], "800")
+            self.assertEqual(result["rescan_skip_chronic_parse_failure_after"], "3")
             self.assertTrue(result["harem_plus_general_scan"])
             self.assertIn("max_workers", result["editable"])
             self.assertNotIn("api_key", result["editable"])
@@ -4617,6 +4668,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_ROLLING_CONTEXT": "general_scan_rolling_context",
             "GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE": "general_scan_knowledge_base_llm_merge",
             "GENERAL_SCAN_CONTEXT_MAX_CHARS": "general_scan_context_max_chars",
+            "RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER": "rescan_skip_chronic_parse_failure_after",
             "HAREM_PLUS_GENERAL_SCAN": "harem_plus_general_scan",
         }
         old_values = {env: os.environ.get(env) for env in env_field_map}
@@ -4657,6 +4709,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "general_scan_rolling_context": False,
                     "general_scan_knowledge_base_llm_merge": True,
                     "general_scan_context_max_chars": 800,
+                    "rescan_skip_chronic_parse_failure_after": 3,
                     "harem_plus_general_scan": True,
                 })
                 self.assertTrue(ok)
@@ -4677,6 +4730,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("GENERAL_SCAN_ROLLING_CONTEXT=0", lines)
                 self.assertIn("GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE=1", lines)
                 self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS=800", lines)
+                self.assertIn("RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER=3", lines)
                 self.assertIn("HAREM_PLUS_GENERAL_SCAN=1", lines)
                 # 旧值不应残留
                 self.assertNotIn("MAX_WORKERS=4", lines)
