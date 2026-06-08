@@ -1,6 +1,6 @@
 # Kimi 方案推进进度总结
 
-生成日期：2026-06-07（本版更新于 2026-06-08 19:18）
+生成日期：2026-06-07（本版更新于 2026-06-08 19:31）
 
 ## 总体完成度
 
@@ -12,7 +12,7 @@
 - **后宫/男性向排雷专项**：约 **82% - 86%**。核心定义、五维洁度、接触等级、partner 豁免、漏女三层判断、女主事实扩展、重复女主大模型合并等关键项已落地；仍需要更多真实书籍报告校准误判。
 - **多标签/混合类型扫描**：约 **92% - 94%**。已支持自动多标签、手动多选、后宫+其他类型补扫；历史、科幻、仙侠、都市、游戏、异世界、蒸汽西幻、国运、模拟器以及末世、军事、刑侦、克系、校园、文娱、种田、商战、推理、体育等副类型均已导入后宫交叉规则；并已开始利用非后宫跨类型规则导入，覆盖推理+刑侦/克系调查、历史+军事战争、种田+末世资源建设、蒸汽西幻+推理/克系异常等高价值组合。通用/专项剧情补扫已支持 1000 万字级长篇的动态预算和全书均匀抽样，避免只扫描开头。自动识别已补充标题加权、组合关键词加成、负向关键词抑制、局部否定过滤、短词污染过滤、有限频次加分和 profile 自适应阈值，降低次要标签漏标与跨类误判。
 - **报告输出和字段标题**：约 **96% - 98%**。通用报告、专项报告、后宫报告的字段标题和收尾字段已多轮补齐；所有 23 个 profile 的 summary_fields 均已补全中文标题（含主线剧情、核心冲突、世界观、主题、优点与亮点、风险与问题、适合读者、总体评价等通用字段，以及女主群像、候选女主、漏女、洁度评估、毒点、郁闷点、男主定位、感情线推进等后宫字段）；Kimi 点名的 `unit_plot_mainline_link`、`cheat_detection_dependency` 已迁移为更自解释的 `episodic_mainline_integration`、`shortcut_detection_dependency`，旧字段继续作为别名兼容；通用总评、作品概览、伏笔回收、适合读者、总体评价以及常见专项字段均已支持旧字段名别名读取，并有回归测试覆盖。
-- **Web/部署/GitHub Actions/Docker**：约 **98% - 99%**。前后端分离、SSE 实时状态、SSE 连接生命周期与目录同步节流、标准访问日志、JSON 请求体 schema 校验、队列管理、删除/批量删除、Token 展示、配置摘要、限流作用域 `auto/global/per_key` 可配置、非敏感运行配置编辑并自动持久化到 `.env`、可选访问令牌、未设置访问令牌时写操作确认保护、Docker/GHCR/DockerHub 流程、请求体限制、文件流式输出、任务日志隔离、扫描日志轮转、前端 ESLint/Prettier 检查、CI 自动验证、输出文件索引、Docker 最终镜像瘦身、容器 API Key 启动校验、书籍同步减少无变化状态写入、Web 文件路径归属校验改用 `commonpath`、API 客户端工厂统一、API 重试/超时默认参数统一、扫描 checkpoint 增量写入、失败片段内容诊断、首扫动态线程块调度、checkpoint 运行态显式注入、detail 路径显式书名解析、报告书名显式传入、chunk 摘要状态显式注入、失败诊断状态显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文、detail 写入显式路径和主流程最终输出局部上下文等工程项已完成；剩余主要是进一步生产化部署细节（反向代理、TLS、更细粒度访问控制）。
+- **Web/部署/GitHub Actions/Docker**：约 **98% - 99%**。前后端分离、SSE 实时状态、SSE 连接生命周期与目录同步节流、标准访问日志、JSON 请求体 schema 校验、队列管理、删除/批量删除、Token 展示、配置摘要、限流作用域 `auto/global/per_key` 可配置、非敏感运行配置编辑并自动持久化到 `.env`、可选访问令牌、未设置访问令牌时写操作确认保护、Docker/GHCR/DockerHub 流程、请求体限制、文件流式输出、任务日志隔离、扫描日志轮转、前端 ESLint/Prettier 检查、CI 自动验证、输出文件索引、Docker 最终镜像瘦身、容器 API Key 启动校验、书籍同步减少无变化状态写入、Web 文件路径归属校验改用 `commonpath`、API 客户端工厂统一、API 重试/超时默认参数统一、通用 summary 缓存内容签名校验、扫描 checkpoint 增量写入、失败片段内容诊断、首扫动态线程块调度、checkpoint 运行态显式注入、detail 路径显式书名解析、报告书名显式传入、chunk 摘要状态显式注入、失败诊断状态显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文、detail 写入显式路径和主流程最终输出局部上下文等工程项已完成；剩余主要是进一步生产化部署细节（反向代理、TLS、更细粒度访问控制）。
 
 ## 已完成的主要工作
 
@@ -180,6 +180,7 @@
 - README 已补充公网反向代理/TLS 部署建议，包含本机端口绑定、`WEB_ACCESS_TOKEN`、CORS 收窄、Caddy/Nginx 示例和 SSE 代理配置。
 - `novel_scan.py`、`protagonist.py`、`report.py` 已统一使用 `shared_utils.create_chat_completion()` 创建 API 客户端，OpenAI client factory 只保留一份；`protagonist.py` 默认 `BASE_URL` 也已与其他阶段统一为 `https://api.deepseek.com`，避免未显式配置时不同阶段打到不同端点。
 - `novel_scan.py`、`protagonist.py`、`report.py` 的 API 重试和超时默认参数已统一引用 `shared_utils`：默认 `max_retries=5`、`max_403_retries=3`、`max_timeout_retries=3`、`request_timeout=120`，避免同一本书不同阶段使用不同容错策略。
+- 通用/专项剧情 summary 缓存已增加 `novel_signature` 校验，保存时记录文件大小、mtime_ns 和首尾采样 hash；复用时除 mtime 外还校验签名，避免正文被替换但 mtime 被保留时误用旧 summary。
 - 扫描阶段 checkpoint 已支持逐 chunk 增量写入：首个 checkpoint 和每 10 个 chunk 会写回完整 `latest_checkpoint.json` 并清理增量文件，中间 chunk 只追加 `latest_checkpoint.json.delta.jsonl`；恢复时会自动合并基线和增量记录，减少长篇扫描过程中每块重复序列化完整 `issues/heroine_facts/extra_relations` 的开销，同时保持旧版全量 checkpoint 兼容。
 - 扫描阶段 prompt 已减少重复发送：规则说明继续保留在 system prompt 中，自检清单从 system prompt 移出，只随第一个 chunk 的 user prompt 发送一次；后续 chunk 沿用同一要求但不再重复携带 13 条自检清单，降低长篇多 chunk 扫描的重复 token。
 - 扫描失败片段会在 checkpoint 中记录 `chunk_failure_diagnostics`：检测 NUL、ESC、替换字符、异常控制字符、超长行、不可打印字符比例和疑似二进制片段，只保留短预览与错误摘要；补扫成功后会自动清除对应诊断，便于排查“某个 chunk 内容导致模型反复失败”的问题。
@@ -232,13 +233,14 @@
 - 限流作用域 `auto`，验证单 key 自动解析为 `global`、多 key 自动解析为 `per_key`、显式参数/环境变量/default 的优先级正确，Web 运行配置和前端选择框均支持 `auto`。
 - Web 默认无访问令牌时的写操作确认保护，验证裸写请求会被拒绝，携带 `X-Web-Unsafe-Action: confirm` 或启用 `WEB_ACCESS_TOKEN` 后才允许继续。
 - Web 文件路径归属校验，验证 `results/novels/frontend/dist` 内文件可访问，相邻目录如 `results2/dist2` 不会被字符串前缀误判放行。
-- 通用/专项剧情扫描长篇抽样，验证 1000 万字级预算提升到 300、1000 万字以上提升到 400，且超预算时按全书时间线均匀抽样而不是截取前 N 块。
+- 通用/专项剧情扫描长篇抽样，验证 1000 万字级预算提升到 300、1000 万字以上提升到 400，且超预算时按全书时间线均匀抽样而不是截取前 N 块；主流程落盘测试已覆盖 1000 万字、1000 原始片段抽样为 300 片段的情况。
 - 扫描日志轮转，验证扫描日志使用 `RotatingFileHandler` 默认配置，且重新配置 logger 时会关闭旧 handler，避免重复输出和文件句柄泄漏。
 - Web 访问日志，验证 `web_access.log` 使用轮转 handler，且 `token/access_token` 查询参数会被脱敏。
 - Web JSON schema 校验，验证非对象 body、缺失 `book_id`、批量列表元素类型错误和非法队列移动方向会在进入业务逻辑前返回 400。
 - API 重试/超时默认参数共享，验证角色识别、首扫和报告阶段均引用 `shared_utils` 的同一组默认值。
+- 通用 summary 缓存签名，验证同 mtime 但正文内容变化时不会继续复用旧 summary。
 
-最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **195 个测试 OK**；蒸汽西幻 scan_focus、后宫/都市/刑侦 scan_focus 均衡化、组合关键词和专项规则维度已增加到现有 profile/自动分类回归测试中。国运/文明对抗、幕后流/马甲流、模拟器/人生推演和中式诡异/规则怪谈的 profile 发现、自动识别、后宫交叉规则、后宫增强补扫、字段中文标题、rules 审查点深度、首批非后宫跨类型规则导入、都市爽文跨类边界、置信度校准、通用/专项长篇动态预算和全书均匀抽样、扫描 checkpoint 增量恢复、prompt 自检清单去重、失败 chunk 内容诊断、首扫动态线程块分区、checkpoint 显式路径隔离、detail 显式书名查找、报告显式书名、chunk 摘要显式注入、失败诊断显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文、detail 写入显式路径、主流程最终输出局部上下文、SSE 状态流生命周期/目录同步节流、限流作用域 auto 解析、Web 文件路径归属校验、扫描日志轮转、Web 访问日志、Web JSON schema 校验、API 重试/超时默认参数共享和 Web 无 token 写操作确认保护已有目标测试覆盖；profile manifest 的 `name` 字段与目录名一致性、manifest 自治排序、通用规则核心维度、历史/硬科幻专项规则补强、API 客户端工厂统一和默认 `BASE_URL` 一致性也已有回归测试覆盖。
+最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **197 个测试 OK**；蒸汽西幻 scan_focus、后宫/都市/刑侦 scan_focus 均衡化、组合关键词和专项规则维度已增加到现有 profile/自动分类回归测试中。国运/文明对抗、幕后流/马甲流、模拟器/人生推演和中式诡异/规则怪谈的 profile 发现、自动识别、后宫交叉规则、后宫增强补扫、字段中文标题、rules 审查点深度、首批非后宫跨类型规则导入、都市爽文跨类边界、置信度校准、通用/专项长篇动态预算和全书均匀抽样、通用 summary 缓存签名、扫描 checkpoint 增量恢复、prompt 自检清单去重、失败 chunk 内容诊断、首扫动态线程块分区、checkpoint 显式路径隔离、detail 显式书名查找、报告显式书名、chunk 摘要显式注入、失败诊断显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文、detail 写入显式路径、主流程最终输出局部上下文、SSE 状态流生命周期/目录同步节流、限流作用域 auto 解析、Web 文件路径归属校验、扫描日志轮转、Web 访问日志、Web JSON schema 校验、API 重试/超时默认参数共享和 Web 无 token 写操作确认保护已有目标测试覆盖；profile manifest 的 `name` 字段与目录名一致性、manifest 自治排序、通用规则核心维度、历史/硬科幻专项规则补强、API 客户端工厂统一和默认 `BASE_URL` 一致性也已有回归测试覆盖。
 
 ## 已推送的关键提交
 

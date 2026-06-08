@@ -2,6 +2,7 @@ import os
 import glob
 import json
 import argparse
+import hashlib
 from datetime import datetime
 import concurrent.futures
 import time
@@ -540,6 +541,26 @@ def _safe_mtime(path: str):
     return None
 
 
+def _novel_file_signature(path: str, sample_size: int = 65536):
+    try:
+        stat = os.stat(path)
+        size = int(stat.st_size)
+        digest = hashlib.sha256()
+        digest.update(str(size).encode("ascii"))
+        with open(path, "rb") as f:
+            digest.update(f.read(sample_size))
+            if size > sample_size:
+                f.seek(max(0, size - sample_size))
+                digest.update(f.read(sample_size))
+        return {
+            "size": size,
+            "mtime_ns": int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))),
+            "sample_sha256": digest.hexdigest(),
+        }
+    except OSError:
+        return None
+
+
 def _general_summary_matches_novel(summary: dict, novel_path: str, profile_name: str = "general") -> bool:
     if not isinstance(summary, dict) or not novel_path:
         return False
@@ -550,7 +571,11 @@ def _general_summary_matches_novel(summary: dict, novel_path: str, profile_name:
     if os.path.abspath(str(summary.get("novel_path", "") or "")) != os.path.abspath(novel_path):
         return False
     current_mtime = _safe_mtime(novel_path)
-    return current_mtime is not None and summary.get("novel_mtime") == current_mtime
+    if current_mtime is None or summary.get("novel_mtime") != current_mtime:
+        return False
+    current_signature = _novel_file_signature(novel_path)
+    stored_signature = summary.get("novel_signature")
+    return isinstance(stored_signature, dict) and current_signature == stored_signature
 
 
 def load_report_checkpoint(path: str = REPORT_CHECKPOINT_FILE) -> dict:

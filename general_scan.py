@@ -1,5 +1,6 @@
 import json
 import os
+import hashlib
 from datetime import datetime
 from typing import Any, Dict, List
 
@@ -135,6 +136,27 @@ def _novel_mtime(path: str):
         return None
 
 
+def _novel_file_signature(path: str, sample_size: int = 65536):
+    try:
+        stat = os.stat(path)
+        size = int(stat.st_size)
+        digest = hashlib.sha256()
+        digest.update(str(size).encode("ascii"))
+        with open(path, "rb") as f:
+            head = f.read(sample_size)
+            digest.update(head)
+            if size > sample_size:
+                f.seek(max(0, size - sample_size))
+                digest.update(f.read(sample_size))
+        return {
+            "size": size,
+            "mtime_ns": int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))),
+            "sample_sha256": digest.hexdigest(),
+        }
+    except OSError:
+        return None
+
+
 def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str = "general") -> bool:
     if not isinstance(data, dict):
         return False
@@ -156,6 +178,10 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
         return False
     current_mtime = _novel_mtime(novel_file)
     if current_mtime is None or data.get("novel_mtime") != current_mtime:
+        return False
+    current_signature = _novel_file_signature(novel_file)
+    stored_signature = data.get("novel_signature")
+    if not isinstance(stored_signature, dict) or current_signature != stored_signature:
         return False
     return bool(_summary_field_text(data.get("summary") or {}, "story_overview") or data.get("chunk_results"))
 
@@ -488,6 +514,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "novel_path": novel_file,
         "novel_mtime": _novel_mtime(novel_file),
+        "novel_signature": _novel_file_signature(novel_file),
         "detail_path": detail_path,
         "chunk_size": CHUNK_SIZE,
         "chunk_overlap": CHUNK_OVERLAP,

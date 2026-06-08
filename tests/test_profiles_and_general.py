@@ -5793,15 +5793,19 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "specialty_profile": "general",
                 "novel_path": novel_path,
                 "novel_mtime": os.path.getmtime(novel_path),
+                "novel_signature": report._novel_file_signature(novel_path),
             }
             stale = dict(fresh)
             stale["novel_mtime"] = fresh["novel_mtime"] - 1
             wrong_profile = dict(fresh)
             wrong_profile["specialty_profile"] = "history"
+            wrong_signature = dict(fresh)
+            wrong_signature["novel_signature"] = {"size": 1, "mtime_ns": 1, "sample_sha256": "bad"}
 
             self.assertTrue(report._general_summary_matches_novel(fresh, novel_path, "general"))
             self.assertFalse(report._general_summary_matches_novel(stale, novel_path, "general"))
             self.assertFalse(report._general_summary_matches_novel(wrong_profile, novel_path, "general"))
+            self.assertFalse(report._general_summary_matches_novel(wrong_signature, novel_path, "general"))
         finally:
             os.unlink(novel_path)
 
@@ -8862,6 +8866,55 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(general_scan._sample_chunk_entries_for_budget(entries, 0), entries)
         self.assertEqual(general_scan._sample_chunk_entries_for_budget(entries, 1), [entries[0]])
 
+    def test_general_scan_main_supports_ten_million_word_books(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            novels_dir = os.path.join(tmpdir, "novels")
+            results_dir = os.path.join(tmpdir, "results")
+            os.makedirs(novels_dir, exist_ok=True)
+            os.makedirs(results_dir, exist_ok=True)
+            novel_path = os.path.join(novels_dir, "ten_million.txt")
+            with open(novel_path, "w", encoding="utf-8") as f:
+                f.write("stub")
+
+            manifest = {
+                "text_length": 10_000_000,
+                "chunks": [
+                    {"chunk_index": i + 1, "text": f"chunk-{i + 1}"}
+                    for i in range(1000)
+                ],
+            }
+
+            def fake_scan(chunk, chunk_index, total_chunks, profile=None):
+                return {
+                    "chunk_index": chunk_index,
+                    "one_sentence_summary": f"{chunk}/{total_chunks}",
+                }
+
+            with mock.patch.object(general_scan, "get_base_dir", return_value=tmpdir), \
+                    mock.patch.object(general_scan, "init_token_tracker"), \
+                    mock.patch.object(general_scan, "_read_novel", return_value="stub"), \
+                    mock.patch.object(general_scan, "build_chunk_manifest", return_value=manifest), \
+                    mock.patch.object(general_scan, "save_chunk_manifest"), \
+                    mock.patch.object(general_scan, "tqdm", side_effect=lambda items, desc=None: items), \
+                    mock.patch.object(general_scan, "_scan_chunk", side_effect=fake_scan) as scan_mock, \
+                    mock.patch.object(general_scan, "_summarize_book", return_value={"story_overview": "ok"}):
+                self.assertEqual(general_scan.main(novel_path=novel_path, book_name="ten_million"), 0)
+
+            latest_path = os.path.join(results_dir, "ten_million_GENERAL_SUMMARY_latest.json")
+            with open(latest_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            sampled_indices = data["sampled_chunk_indices"]
+            self.assertEqual(scan_mock.call_count, 300)
+            self.assertEqual(data["text_length"], 10_000_000)
+            self.assertEqual(data["source_chunk_count"], 1000)
+            self.assertEqual(data["chunk_count"], 300)
+            self.assertEqual(data["max_chunks"], 300)
+            self.assertEqual(data["chunk_sampling_strategy"], "uniform_timeline")
+            self.assertEqual(sampled_indices[0], 1)
+            self.assertEqual(sampled_indices[-1], 1000)
+            self.assertTrue(any(450 <= idx <= 550 for idx in sampled_indices))
+
     def test_general_scan_fresh_summary(self):
         with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
             f.write("test")
@@ -8873,6 +8926,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "specialty_profile": "history",
                 "novel_path": novel_path,
                 "novel_mtime": os.path.getmtime(novel_path),
+                "novel_signature": general_scan._novel_file_signature(novel_path),
                 "chunk_size": general_scan.CHUNK_SIZE,
                 "chunk_overlap": general_scan.CHUNK_OVERLAP,
                 "max_chunks": general_scan.MAX_CHUNKS,
@@ -8891,6 +8945,37 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertTrue(general_scan._is_fresh_summary(data, novel_path, "history"))
             data["max_chunks"] = general_scan.MAX_CHUNKS
             self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "history"))
+        finally:
+            os.unlink(novel_path)
+
+    def test_general_scan_fresh_summary_rejects_same_mtime_changed_content(self):
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
+            f.write("test")
+            novel_path = f.name
+        try:
+            original_stat = os.stat(novel_path)
+            data = {
+                "schema_version": 1,
+                "analysis_profile": "general",
+                "specialty_profile": "general",
+                "novel_path": novel_path,
+                "novel_mtime": os.path.getmtime(novel_path),
+                "novel_signature": general_scan._novel_file_signature(novel_path),
+                "chunk_size": general_scan.CHUNK_SIZE,
+                "chunk_overlap": general_scan.CHUNK_OVERLAP,
+                "max_chunks": general_scan.MAX_CHUNKS,
+                "chunk_sampling_strategy": "full",
+                "summary": {"story_overview": "ok"},
+                "chunk_results": [],
+            }
+            self.assertTrue(general_scan._is_fresh_summary(data, novel_path, "general"))
+
+            with open(novel_path, "w", encoding="utf-8") as f:
+                f.write("best")
+            os.utime(novel_path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+
+            self.assertEqual(data["novel_mtime"], os.path.getmtime(novel_path))
+            self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "general"))
         finally:
             os.unlink(novel_path)
 
