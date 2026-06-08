@@ -1,0 +1,68 @@
+{
+  "name": "mastermind_hidden",
+  "sort_order": 210,
+  "display_name": "幕后流/马甲流专长分析",
+  "description": "关注隐藏身份、多马甲切换、信息差操纵、幕后排局、多方势力博弈和掉马揭秘节奏，区别于单纯都市打脸或悬疑破案。",
+  "enabled_stages": [
+    "character_analysis",
+    "general_scan",
+    "general_report"
+  ],
+  "rules_file": "rules.json",
+  "report_mode": "general",
+  "cross_profile_rules": {
+    "harem": {
+      "import_categories": ["雷点（严重毒点）", "郁闷点"],
+      "import_points": ["绿帽", "死女", "送女", "前世雷", "破鞋/非处/非初", "漏女", "亵女"]
+    }
+  },
+  "scan_focus": [
+    "马甲体系设计：马甲数量、身份差异、权限边界、切换机制和保密逻辑是否成立",
+    "信息差操纵：主角如何利用隐藏身份、预知/全知优势和组织资源制造局势",
+    "幕后排局合理性：布局是否有过程、线索铺设和代价，而不是全靠巧合与降智",
+    "多方势力平衡：正邪、官方、财阀、宗门、组织和民间势力之间的制衡是否可信",
+    "身份暴露风险管理：暴露时机、暴露后的处理、读者预期和人物反应是否合理",
+    "各马甲关系网络：不同身份之间的互动、冲突、互相背书和信息隔离是否清楚",
+    "掉马与揭秘爽点：掉马、反转、幕后揭面是否有前文呼应和情绪爆点",
+    "常见风险：马甲无限套娃、操纵过于顺利、反派集体降智、揭秘缺乏铺垫、身份体系混乱"
+  ],
+  "summary_fields": [
+    "main_plot",
+    "core_conflicts",
+    "worldbuilding",
+    "alias_system",
+    "information_asymmetry",
+    "mastermind_schemes",
+    "faction_balance",
+    "exposure_risk",
+    "alias_network",
+    "reveal_payoff",
+    "strengths",
+    "risks_or_issues",
+    "reader_fit",
+    "overall_assessment"
+  ],
+  "inference_keywords": [
+    {"word": "幕后流", "weight": 5},
+    {"word": "马甲流", "weight": 5},
+    {"word": "幕后黑手", "weight": 5},
+    {"word": "幕后大佬", "weight": 5},
+    {"word": "多马甲", "weight": 5},
+    {"word": "马甲", "weight": 5},
+    {"word": "隐藏身份", "weight": 5},
+    {"word": "双重身份", "weight": 4},
+    {"word": "身份伪装", "weight": 4},
+    {"word": "掉马", "weight": 5},
+    {"word": "信息差", "weight": 4},
+    {"word": "操盘手", "weight": 5},
+    {"word": "暗中操控", "weight": 4},
+    {"word": "幕后操控", "weight": 5},
+    {"word": "暗棋", "weight": 4},
+    {"word": "布局", "weight": 4},
+    {"word": "多方博弈", "weight": 4},
+    {"word": "势力平衡", "weight": 4},
+    {"word": "幕后", "weight": 3},
+    {"word": "伪装", "weight": 3},
+    {"word": "面具", "weight": 3}
+  ]
+}

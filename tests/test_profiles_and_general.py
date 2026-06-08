@@ -142,6 +142,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         nation_fate = analysis_profiles.load_analysis_profile("国运")
         simulator = analysis_profiles.load_analysis_profile("人生模拟")
         chinese_weird = analysis_profiles.load_analysis_profile("中式诡异")
+        mastermind_hidden = analysis_profiles.load_analysis_profile("幕后流")
 
         self.assertEqual(harem.name, "harem")
         self.assertTrue(harem.uses_harem_reviewer)
@@ -319,6 +320,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(any("中式民俗底盘" in item for item in chinese_weird.scan_focus))
         self.assertTrue(any("现实侵蚀" in item for item in chinese_weird.scan_focus))
 
+        self.assertEqual(mastermind_hidden.name, "mastermind_hidden")
+        self.assertTrue(mastermind_hidden.uses_general_scan)
+        self.assertIn("alias_system", mastermind_hidden.summary_fields)
+        self.assertIn("information_asymmetry", mastermind_hidden.summary_fields)
+        self.assertIn("mastermind_schemes", mastermind_hidden.summary_fields)
+        self.assertTrue(any("马甲体系设计" in item for item in mastermind_hidden.scan_focus))
+        self.assertTrue(any("掉马与揭秘爽点" in item for item in mastermind_hidden.scan_focus))
+
         for profile in [
             general,
             history,
@@ -341,6 +350,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             nation_fate,
             simulator,
             chinese_weird,
+            mastermind_hidden,
         ]:
             self.assertIn("reader_fit", profile.summary_fields, profile.name)
             self.assertIn("overall_assessment", profile.summary_fields, profile.name)
@@ -386,6 +396,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("nation_fate", names)
         self.assertIn("simulator", names)
         self.assertIn("chinese_weird", names)
+        self.assertIn("mastermind_hidden", names)
 
     def test_profile_manifests_name_matches_directory(self):
         profiles_root = os.path.join(os.path.dirname(os.path.dirname(__file__)), "profiles")
@@ -682,6 +693,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "nation_fate",
             "simulator",
             "chinese_weird",
+            "mastermind_hidden",
         ]:
             profile = analysis_profiles.load_analysis_profile(profile_name)
             rules_text = general_scan._profile_rules_text(profile)
@@ -754,6 +766,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "mystery_detective": os.path.join("profiles", "mystery_detective", "rules.json"),
             "cosmic_horror": os.path.join("profiles", "cosmic_horror", "rules.json"),
             "chinese_weird": os.path.join("profiles", "chinese_weird", "rules.json"),
+            "mastermind_hidden": os.path.join("profiles", "mastermind_hidden", "rules.json"),
             "sports_competition": os.path.join("profiles", "sports_competition", "rules.json"),
             "farming_management": os.path.join("profiles", "farming_management", "rules.json"),
         }
@@ -797,6 +810,19 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("民俗底盘", chinese_weird_points)
         self.assertIn("现实侵蚀", chinese_weird_points)
 
+        mastermind_categories = {item["name"] for item in rules["mastermind_hidden"]["categories"]}
+        mastermind_points = {
+            point["name"]
+            for category in rules["mastermind_hidden"]["categories"]
+            for point in category.get("points", [])
+        }
+        self.assertIn("身份与马甲体系", mastermind_categories)
+        self.assertIn("信息差与幕后排局", mastermind_categories)
+        self.assertIn("掉马揭秘与爽点兑现", mastermind_categories)
+        self.assertIn("马甲边界", mastermind_points)
+        self.assertIn("信息差来源", mastermind_points)
+        self.assertIn("掉马时机", mastermind_points)
+
         sports_categories = {item["name"] for item in rules["sports_competition"]["categories"]}
         sports_points = {
             point["name"]
@@ -822,11 +848,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         mystery_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("mystery_detective"))
         horror_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("cosmic_horror"))
         chinese_weird_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("chinese_weird"))
+        mastermind_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("mastermind_hidden"))
         sports_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("sports_competition"))
         farming_text = general_scan._profile_rules_text(analysis_profiles.load_analysis_profile("farming_management"))
         self.assertIn("侦探魅力", mystery_text)
         self.assertIn("规则怪谈", horror_text)
         self.assertIn("民俗底盘", chinese_weird_text)
+        self.assertIn("马甲边界", mastermind_text)
         self.assertIn("名场面", sports_text)
         self.assertIn("科技树", farming_text)
 
@@ -2670,6 +2698,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "nation_fate",
         )
         self.assertEqual(
+            analysis_profiles.infer_profile_for_text("幕后黑手", "主角隐藏身份暗中操控多方势力，用多马甲和信息差布局，最后掉马揭面。"),
+            "mastermind_hidden",
+        )
+        self.assertEqual(
             analysis_profiles.infer_profile_for_text("都市神医", "赘婿神医在豪门集团商战中扮猪吃虎，连续打脸反派。"),
             "urban_power",
         )
@@ -2875,6 +2907,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("nation_fate", nation_simulator)
         self.assertIn("simulator", nation_simulator)
 
+        mastermind_mystery = analysis_profiles.infer_profiles_for_text(
+            "马甲侦探幕后流",
+            "侦探表面调查密室案件，真实身份是幕后黑手，靠多马甲和信息差操控专案组与各方势力。",
+        )
+        self.assertIn("mastermind_hidden", mastermind_mystery)
+        self.assertIn("mystery_detective", mastermind_mystery)
+
         self.assertEqual(
             analysis_profiles.infer_profiles_for_text("小镇旧事", "他回到故乡，重新面对童年的朋友。"),
             ["general"],
@@ -2919,6 +2958,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertEqual(urban_dragon_king[0]["name"], "urban_power")
 
+        entertainment_behind = analysis_profiles.infer_profile_candidates_for_text(
+            "顶流幕后花絮",
+            "娱乐圈剧组发布幕后花絮，导演带演员宣传综艺和选秀热搜。",
+        )
+        self.assertEqual(entertainment_behind[0]["name"], "entertainment_industry")
+        self.assertNotIn("mastermind_hidden", [item["name"] for item in entertainment_behind[:3]])
+
     def test_auto_profile_filters_context_pollution_and_counts_frequency(self):
         operating_system = analysis_profiles.infer_profile_candidates_for_text(
             "操作系统教程",
@@ -2946,6 +2992,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertEqual(
             analysis_profiles.infer_profiles_for_text("单系统日常", "主角获得系统，但没有面板、副本或任务规则。"),
+            ["general"],
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profiles_for_text("普通布局", "角色讨论工作布局和团队协作，没有隐藏身份、马甲或幕后操控。"),
             ["general"],
         )
 
@@ -2994,6 +3044,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "村规写着夜里不能回头，纸人会替换违规者，红白喜事和阴婚禁忌构成怪谈副本。",
             ),
             "chinese_weird",
+        )
+        self.assertEqual(
+            analysis_profiles.infer_profile_for_text(
+                "幕后流：我有一千个马甲",
+                "主角隐藏身份组建秘密组织，用多马甲暗中操控局势，靠信息差和多方博弈完成幕后排局，最终掉马。",
+            ),
+            "mastermind_hidden",
         )
         self.assertEqual(
             analysis_profiles.infer_profile_for_text(
@@ -3310,6 +3367,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "nation_fate",
             "simulator",
             "chinese_weird",
+            "mastermind_hidden",
         ]:
             self.assertIn(profile_name, overrides)
             self.assertTrue(overrides[profile_name], profile_name)
@@ -3323,6 +3381,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         nation_fate = analysis_profiles.load_analysis_profile("nation_fate")
         simulator = analysis_profiles.load_analysis_profile("simulator")
         chinese_weird = analysis_profiles.load_analysis_profile("chinese_weird")
+        mastermind_hidden = analysis_profiles.load_analysis_profile("mastermind_hidden")
         sci_fi_override = main._with_harem_plus_secondary_focus(sci_fi, harem)
         isekai_override = main._with_harem_plus_secondary_focus(isekai, harem)
         steampunk_override = main._with_harem_plus_secondary_focus(steampunk, harem)
@@ -3332,6 +3391,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         nation_fate_override = main._with_harem_plus_secondary_focus(nation_fate, harem)
         simulator_override = main._with_harem_plus_secondary_focus(simulator, harem)
         chinese_weird_override = main._with_harem_plus_secondary_focus(chinese_weird, harem)
+        mastermind_override = main._with_harem_plus_secondary_focus(mastermind_hidden, harem)
 
         self.assertTrue(any("意识上传" in item and "洁度" in item for item in sci_fi_override.scan_focus))
         self.assertTrue(any("勇者" in item and "送女" in item for item in isekai_override.scan_focus))
@@ -3342,6 +3402,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(any("国运绑定" in item and "送女" in item for item in nation_fate_override.scan_focus))
         self.assertTrue(any("读档" in item and "前世雷" in item for item in simulator_override.scan_focus))
         self.assertTrue(any("阴婚" in item and "送女" in item for item in chinese_weird_override.scan_focus))
+        self.assertTrue(any("多马甲" in item and "绿帽" in item for item in mastermind_override.scan_focus))
 
     def test_requested_profiles_accepts_manual_multi_select(self):
         self.assertEqual(main._normalize_requested_profiles(["历史", "科幻"]), ["history", "hard_sci_fi"])
@@ -5195,6 +5256,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "folk_taboo_system",
                 "instance_escape_loop",
                 "reality_intrusion",
+                "alias_system",
+                "information_asymmetry",
+                "mastermind_schemes",
+                "faction_balance",
+                "exposure_risk",
+                "alias_network",
+                "reveal_payoff",
                 "technique_tactics",
                 "season_structure",
                 "rivalry_and_opponents",
@@ -5229,6 +5297,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "folk_taboo_system": ["祠堂村规与阴婚禁忌形成体系"],
                 "instance_escape_loop": ["怪谈副本有通关闭环"],
                 "reality_intrusion": ["现实生活被怪谈侵蚀"],
+                "alias_system": ["多个马甲各自承担不同权限"],
+                "information_asymmetry": ["隐藏身份制造信息差操纵"],
+                "mastermind_schemes": ["幕后排局有铺垫和代价"],
+                "faction_balance": ["多方势力互相制衡"],
+                "exposure_risk": ["身份暴露风险持续存在"],
+                "alias_network": ["马甲之间互相背书"],
+                "reveal_payoff": ["掉马揭面回收前文伏笔"],
                 "technique_tactics": ["技战术细节可信"],
                 "season_structure": ["赛季节奏明确"],
                 "rivalry_and_opponents": ["宿敌群像稳定"],
@@ -5264,6 +5339,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "民俗禁忌体系",
             "副本逃生闭环",
             "现实侵蚀",
+            "马甲体系",
+            "信息差操纵",
+            "幕后排局",
+            "势力平衡",
+            "暴露风险",
+            "马甲关系网络",
+            "掉马与揭秘爽点",
             "专业技战术",
             "赛事/赛季结构",
             "对手群像",
@@ -8181,6 +8263,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(report.summary_field_label("romance_subplot"), "恋爱喜剧平衡")
         self.assertEqual(report.summary_field_label("weird_rules"), "规则机制")
         self.assertEqual(report.summary_field_label("folk_taboo_system"), "民俗禁忌体系")
+        self.assertEqual(report.summary_field_label("alias_system"), "马甲体系")
+        self.assertEqual(report.summary_field_label("information_asymmetry"), "信息差操纵")
+        self.assertEqual(report.summary_field_label("mastermind_schemes"), "幕后排局")
 
         text = report.build_general_report(
             "字段别名测试",

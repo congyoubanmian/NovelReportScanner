@@ -81,6 +81,14 @@ COMBO_BONUSES = {
         ({"神话擂台", "神明召唤"}, 8),
         ({"华夏", "全球对抗", "国运奖励"}, 7),
     ],
+    "mastermind_hidden": [
+        ({"幕后流", "马甲"}, 8),
+        ({"马甲流", "掉马"}, 8),
+        ({"幕后黑手", "信息差"}, 8),
+        ({"隐藏身份", "暗中操控"}, 8),
+        ({"多马甲", "幕后操控", "布局"}, 8),
+        ({"操盘手", "多方博弈"}, 7),
+    ],
     "apocalypse_survival": [
         ({"末世", "丧尸", "基地"}, 8),
         ({"末日", "幸存者", "物资"}, 8),
@@ -193,6 +201,13 @@ NEGATIVE_KEYWORDS = {
     "entertainment_industry": [("经营农田", -3), ("领地", -3), ("宗门", -3), ("丧尸", -3)],
     "simulator": [("副本", -4), ("主神空间", -4), ("轮回空间", -4), ("玩家", -3), ("NBA", -3)],
     "nation_fate": [("公司", -3), ("校园", -3), ("娱乐圈", -3), ("操作系统", -4)],
+    "mastermind_hidden": [
+        ("幕后花絮", -5), ("幕后制作", -5), ("幕后团队", -4),
+        ("剧组", -3), ("导演", -3), ("选秀", -3),
+        ("融资", -3), ("董事会", -3), ("供应链", -3),
+        ("刑警", -3), ("法医", -3), ("案发现场", -3),
+        ("篮球", -3), ("足球", -3),
+    ],
     "chinese_weird": [("克苏鲁", -5), ("旧日", -5), ("外神", -5), ("魔药", -4), ("序列", -4), ("扮演法", -4), ("篮球", -3)],
 }
 
@@ -220,6 +235,13 @@ KEYWORD_CONTEXT_BLOCKS = {
     "xianxia_fantasy": {
         "修仙": ("修仙种田",),
     },
+    "mastermind_hidden": {
+        "隐藏身份": ("没有隐藏身份", "无隐藏身份", "并无隐藏身份", "并非隐藏身份"),
+        "马甲": ("没有隐藏身份、马甲", "没有马甲", "无马甲", "并无马甲", "并非马甲"),
+        "幕后操控": ("没有隐藏身份、马甲或幕后操控", "没有幕后操控", "无幕后操控", "并无幕后操控"),
+        "幕后": ("没有隐藏身份、马甲或幕后操控", "幕后花絮", "幕后制作", "幕后团队"),
+        "布局": ("工作布局", "页面布局", "布局和团队协作"),
+    },
 }
 
 
@@ -231,6 +253,7 @@ PROFILE_MIN_SCORE_OVERRIDES = {
     "harem": 5,
     "steampunk_fantasy": 5,
     "nation_fate": 5,
+    "mastermind_hidden": 5,
     "simulator": 5,
     "chinese_weird": 5,
     "urban_power": 7,
@@ -244,6 +267,7 @@ KEYWORD_NEGATION_HINTS = (
 PROFILE_GENERIC_ONLY_KEYWORDS = {
     "game_system": {"系统"},
     "urban_power": {"系统"},
+    "mastermind_hidden": {"幕后", "布局", "操纵", "暗中", "操控", "伪装", "面具"},
 }
 
 
@@ -284,6 +308,16 @@ def normalize_profile_name(value: str) -> str:
         "国运文": "nation_fate",
         "文明对抗": "nation_fate",
         "国运流": "nation_fate",
+        "幕后": "mastermind_hidden",
+        "马甲": "mastermind_hidden",
+        "幕后流": "mastermind_hidden",
+        "马甲流": "mastermind_hidden",
+        "幕后黑手": "mastermind_hidden",
+        "多马甲": "mastermind_hidden",
+        "隐藏身份": "mastermind_hidden",
+        "幕后操控": "mastermind_hidden",
+        "behind_scenes": "mastermind_hidden",
+        "mastermind": "mastermind_hidden",
         "都市": "urban_power",
         "都市异能": "urban_power",
         "都市爽文": "urban_power",
