@@ -93,6 +93,10 @@ export function getState() {
   return _api('/api/state')
 }
 
+export function getDiagnostics() {
+  return _api('/api/diagnostics')
+}
+
 export function getBookDetail(bookId) {
   return _api(`/api/book?id=${encodeURIComponent(bookId)}`)
 }

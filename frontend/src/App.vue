@@ -9,6 +9,7 @@ import { usePolling } from './composables/usePolling.js'
 import { useStateEvents } from './composables/useStateEvents.js'
 import {
   getState,
+  getDiagnostics,
   getBookDetail,
   setProfile,
   updateRuntimeConfig,
@@ -29,6 +30,7 @@ const { theme, toggle: toggleTheme } = useTheme()
 const books = ref([])
 const profiles = ref([{ name: 'auto', display_name: '自动识别' }])
 const runtimeConfig = ref(null)
+const diagnostics = ref(null)
 const configReady = ref(false)
 const selectedBook = ref(null)
 const selectedBookId = ref(null)
@@ -91,8 +93,49 @@ const stallWatchdogText = computed(() => {
   return seconds > 0 ? `${seconds}s` : '关闭'
 })
 
+const diagnosticsStatus = computed(() => {
+  const data = diagnostics.value || {}
+  const stale = Number(data.stale_running_count || 0)
+  const running = Number(data.running_count || 0)
+  const queued = Number(data.queue_length || 0)
+  const firstStale = (data.running_tasks || []).find((task) => task.stale_without_log)
+  return {
+    ok: stale === 0,
+    label: stale ? `${stale} 个卡住` : '正常',
+    queued,
+    running,
+    title: firstStale
+      ? `${firstStale.book_name || firstStale.book_id || '运行任务'}\n${firstStale.last_log || ''}`
+      : ''
+  }
+})
+
 // Race-condition guard for detail loading
 let detailRequestId = 0
+let diagnosticsRequestId = 0
+let lastDiagnosticsRefreshAt = 0
+const DIAGNOSTICS_REFRESH_INTERVAL_MS = 10000
+
+async function refreshDiagnostics(options = {}) {
+  const now = Date.now()
+  if (
+    !options.force &&
+    lastDiagnosticsRefreshAt &&
+    now - lastDiagnosticsRefreshAt < DIAGNOSTICS_REFRESH_INTERVAL_MS
+  ) {
+    return
+  }
+  lastDiagnosticsRefreshAt = now
+  const reqId = ++diagnosticsRequestId
+  try {
+    const data = await getDiagnostics()
+    if (reqId === diagnosticsRequestId) {
+      diagnostics.value = data
+    }
+  } catch (e) {
+    console.warn('诊断刷新失败:', e)
+  }
+}
 
 async function applyState(data) {
   books.value = data.books || []
@@ -112,6 +155,7 @@ async function applyState(data) {
     }
   }
   loading.value = false
+  void refreshDiagnostics()
 }
 
 async function refresh() {
@@ -192,6 +236,7 @@ async function saveRuntimeConfig() {
     runtimeConfigDirty.value = false
     syncConfigForm(runtimeConfig.value)
     toastSuccess('运行配置已更新')
+    await refreshDiagnostics({ force: true })
     await refresh()
   } catch (e) {
     toastError('更新运行配置失败: ' + e.message)
@@ -391,6 +436,17 @@ useStateEvents(applyState, {
       >
       <span class="runtime-item" :class="{ danger: !storageStatus.ok }" :title="storageStatus.title"
         ><b>存储</b>{{ storageStatus.label }}</span
+      >
+    </div>
+
+    <div class="runtime-strip" v-if="diagnostics">
+      <span class="runtime-item"><b>队列</b>{{ diagnosticsStatus.queued }}</span>
+      <span class="runtime-item"><b>运行中</b>{{ diagnosticsStatus.running }}</span>
+      <span
+        class="runtime-item"
+        :class="{ danger: !diagnosticsStatus.ok }"
+        :title="diagnosticsStatus.title"
+        ><b>诊断</b>{{ diagnosticsStatus.label }}</span
       >
     </div>
 
