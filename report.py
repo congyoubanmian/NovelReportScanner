@@ -2375,6 +2375,119 @@ def _build_harem_relationship_graph_lines(
     return lines
 
 
+def _markdown_cell(text: str, max_len: int = 80) -> str:
+    text = re.sub(r"[\r\n\t]+", " ", str(text or "")).strip()
+    text = text.replace("|", "\\|")
+    if len(text) > max_len:
+        text = text[:max_len].rstrip() + "..."
+    return text or "-"
+
+
+def _iter_indexed_text_items(items, default_chunk=None):
+    for item in items or []:
+        chunk = default_chunk
+        text = ""
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            chunk = item[0]
+            text = item[1]
+        else:
+            text = item
+        text = str(text or "").strip()
+        if not text:
+            continue
+        try:
+            chunk_value = int(chunk) if chunk is not None else 999999
+        except (TypeError, ValueError):
+            chunk_value = 999999
+        yield chunk_value, text
+
+
+def _build_harem_timeline_lines(heroines: list, all_female_characters: dict, purity_map: dict, reviewer: dict) -> list:
+    events = []
+    for heroine in heroines or []:
+        if not isinstance(heroine, dict):
+            continue
+        name = str(heroine.get("name") or "").strip()
+        if not name:
+            continue
+        aliases = heroine.get("aliases") or heroine.get("other_names") or []
+        evidence = _match_female_evidence(name, aliases, all_female_characters) or {}
+        for field, label, impact in (
+            ("summaries", "女主剧情", "-"),
+            ("interactions", "男主互动", "感情推进"),
+            ("emotion_signals", "情感信号", "感情推进"),
+        ):
+            for chunk, text in list(_iter_indexed_text_items(evidence.get(field), None))[:3]:
+                events.append({
+                    "chunk": chunk,
+                    "type": label,
+                    "heroine": name,
+                    "event": text,
+                    "impact": impact,
+                })
+        purity_info = purity_map.get(name) or purity_map.get(_heroine_name_key(name)) or {}
+        if purity_info.get("pushed_by_male_lead") is True:
+            events.append({
+                "chunk": 999998,
+                "type": "推倒/关系确认",
+                "heroine": name,
+                "event": purity_info.get("pushed_reason") or "二审确认被男主推倒或关系确认。",
+                "impact": "确定伴侣关系",
+            })
+        if purity_info.get("is_leak_heroine") is True:
+            events.append({
+                "chunk": 999999,
+                "type": "漏女风险",
+                "heroine": name,
+                "event": purity_info.get("leak_reason") or "二审判定存在漏女风险。",
+                "impact": "漏女风险",
+            })
+
+    for key, label in (("lei_points", "雷点事件"), ("yumen_points", "郁闷点")):
+        for issue in (reviewer or {}).get(key) or []:
+            if not isinstance(issue, dict):
+                continue
+            chunk = issue.get("chunk_index")
+            try:
+                chunk_value = int(chunk) if chunk is not None else 999999
+            except (TypeError, ValueError):
+                chunk_value = 999999
+            events.append({
+                "chunk": chunk_value,
+                "type": label,
+                "heroine": issue.get("type") or "-",
+                "event": issue.get("content") or issue.get("reason") or issue.get("review_comment") or "",
+                "impact": issue.get("type") or label,
+            })
+
+    if not events:
+        return []
+    events.sort(key=lambda item: (item["chunk"], item["type"], item["heroine"]))
+    lines = [
+        "",
+        "【关键事件时间线】",
+        "| 位置 | 事件类型 | 涉及对象 | 事件 | 洁度/关系影响 |",
+        "|---|---|---|---|---|",
+    ]
+    seen = set()
+    for event in events:
+        key = (event["chunk"], event["type"], event["heroine"], event["event"])
+        if key in seen:
+            continue
+        seen.add(key)
+        position = f"chunk {event['chunk'] + 1}" if event["chunk"] < 900000 else "全书汇总"
+        lines.append(
+            f"| {_markdown_cell(position, 20)} | "
+            f"{_markdown_cell(event['type'], 20)} | "
+            f"{_markdown_cell(event['heroine'], 24)} | "
+            f"{_markdown_cell(event['event'], 90)} | "
+            f"{_markdown_cell(event['impact'], 32)} |"
+        )
+        if len(lines) >= 25:
+            break
+    return lines
+
+
 def _heroine_candidate_duplicate_groups(heroines: list, all_female_characters: dict) -> list:
     groups = []
     used = set()
@@ -3128,6 +3241,7 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
         profile_cache,
         purity_map,
     )
+    timeline_lines = _build_harem_timeline_lines(heroines, all_female_characters, purity_map, reviewer)
 
     # ---------------- 毒点/雷点（原样输出，不润色） ----------------
     heroine_contexts = _build_heroine_position_contexts(heroines, all_female_characters, profile_cache, purity_map)
@@ -3145,7 +3259,7 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
     else:
         risk_lines.append("（无）")
 
-    return "\n".join([*header, "", *male_lines, *heroine_lines, *romance_lines, *relationship_graph_lines, *risk_lines])
+    return "\n".join([*header, "", *male_lines, *heroine_lines, *romance_lines, *relationship_graph_lines, *timeline_lines, *risk_lines])
 
 
 def _clean_text_items(items, limit=5, max_len=120):

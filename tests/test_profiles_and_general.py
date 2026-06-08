@@ -6252,6 +6252,85 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn('H2["乙女\\n暧昧"]', text)
         self.assertIn("洁度: 有瑕", text)
 
+    def test_harem_report_includes_key_event_timeline_table(self):
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        try:
+            report.OpenAI = None
+            report.API_KEY_POOL = []
+            text = report.build_report_v2(
+                "测试后宫",
+                {
+                    "male_protagonist": {"name": "男主"},
+                    "heroine_result": {
+                        "heroines": [
+                            {
+                                "name": "甲女",
+                                "importance_rank": 1,
+                                "relationship_type": "道侣",
+                            },
+                        ],
+                    },
+                    "all_female_characters": {
+                        "甲女": {
+                            "count": 8,
+                            "summaries": [
+                                (12, "甲女首次随男主进入秘境。"),
+                                (30, "甲女与男主并肩作战。"),
+                            ],
+                            "interactions": [
+                                (40, "男主向甲女表白并确认关系。"),
+                            ],
+                            "emotion_signals": [
+                                (20, "甲女开始吃醋。"),
+                            ],
+                            "profile_for_report": {
+                                "identity": "主线女主",
+                                "relationship_with_protagonist": "男主道侣",
+                                "key_events": "已确认关系并同房",
+                            },
+                        },
+                    },
+                },
+                {
+                    "heroines_purity": [
+                        {
+                            "name": "甲女",
+                            "is_clean": True,
+                            "is_virgin": True,
+                            "is_spirit_clean": True,
+                            "no_partner": True,
+                            "has_other_contact": False,
+                            "contact_level": "L0",
+                            "pushed_by_male_lead": True,
+                            "pushed_reason": "第40块确认关系。",
+                        },
+                    ],
+                    "lei_points": [
+                        {
+                            "type": "绿帽",
+                            "chunk_index": 25,
+                            "content": "反派散布甲女与路人男的谣言。",
+                        },
+                    ],
+                },
+            )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+
+        self.assertIn("【关键事件时间线】", text)
+        self.assertIn("| 位置 | 事件类型 | 涉及对象 | 事件 | 洁度/关系影响 |", text)
+        self.assertIn("| chunk 13 | 女主剧情 | 甲女 | 甲女首次随男主进入秘境。 | - |", text)
+        self.assertIn("| chunk 21 | 情感信号 | 甲女 | 甲女开始吃醋。 | 感情推进 |", text)
+        self.assertIn("| chunk 26 | 雷点事件 | 绿帽 | 反派散布甲女与路人男的谣言。 | 绿帽 |", text)
+        self.assertIn("| chunk 41 | 男主互动 | 甲女 | 男主向甲女表白并确认关系。 | 感情推进 |", text)
+        self.assertIn("| 全书汇总 | 推倒/关系确认 | 甲女 | 第40块确认关系。 | 确定伴侣关系 |", text)
+
+        timeline_start = text.index("【关键事件时间线】")
+        self.assertLess(text.index("chunk 13", timeline_start), text.index("chunk 26", timeline_start))
+        self.assertLess(text.index("chunk 26", timeline_start), text.index("chunk 41", timeline_start))
+
     def test_harem_romance_overview_counts_low_presence_semantically(self):
         old_openai = report.OpenAI
         old_api_key_pool = report.API_KEY_POOL
