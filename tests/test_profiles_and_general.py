@@ -4752,8 +4752,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(report._contains_positive_signal_text("她爱他，并愿意相伴余生。", ["爱"]))
         self.assertTrue(report._contains_positive_signal_text("她爱上男主。", ["爱"]))
         self.assertFalse(report._contains_positive_signal_text("剧情让读者动心，但角色没有恋爱线。", ["动心"]))
+        self.assertFalse(report._contains_positive_signal_text("剧情让读者心动，但角色没有恋爱线。", ["心动"]))
         self.assertFalse(report._contains_positive_signal_text("作者对蒸汽设定很倾心，说明文字很多。", ["倾心"]))
         self.assertTrue(report._contains_positive_signal_text("她对男主动心，并开始吃醋。", ["动心"]))
+        self.assertTrue(report._contains_positive_signal_text("她对男主心动，并开始吃醋。", ["心动"]))
         self.assertTrue(report._contains_positive_signal_text("她倾心男主，并主动表白。", ["倾心"]))
         self.assertFalse(report._contains_positive_signal_text("她爱吃醋拌菜，经常负责厨房笑料。", ["吃醋"]))
         self.assertFalse(report._contains_positive_signal_text("她打翻醋坛子，众人以为她吃醋，其实只是厨房事故。", ["吃醋"]))
@@ -4873,6 +4875,18 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertNotIn("感情/亲密推进", personality_level)
         self.assertIn("明确缺少恋爱/后宫推进", personality_level)
+
+        heartbeat_level = report._heroine_position_level(
+            {"importance_rank": 3},
+            {
+                "identity": "主线女配",
+                "relationship_with_protagonist": "她对男主心动，并开始吃醋。",
+                "key_events": "多次参与主线。",
+            },
+            {"count": 5},
+            {},
+        )
+        self.assertIn("感情/亲密推进", heartbeat_level)
 
     def test_leak_three_layers_ignores_non_romantic_love_words(self):
         clean = report._summarize_leak_three_layers(

@@ -1189,7 +1189,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
     )
     past_relation_prefixes = ("前", "前任", "前世", "上一世", "过去", "过往", "前史", "重生前", "穿越前")
     current_relation_words = {"妻子", "正妻", "妻室", "夫妻", "夫妇", "未婚妻", "女朋友", "老婆", "恋人", "爱人", "伴侣", "情侣"}
-    tight_roleplay_words = {"喜欢", "爱", "动心", "倾心", "表白", "告白", "暧昧"}
+    tight_roleplay_words = {"喜欢", "爱", "动心", "心动", "倾心", "表白", "告白", "暧昧"}
     for word in keywords:
         start = 0
         while word:
@@ -1215,7 +1215,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
                 any(next_context.startswith(hint) for hint in non_romantic_admire_followers)
                 or any(hint in text[max(0, index - 4):index] for hint in ("被", "受", "读者", "旁人", "众人"))
             )
-            non_romantic_emotion = word in ("动心", "倾心") and any(
+            non_romantic_emotion = word in ("动心", "心动", "倾心") and any(
                 hint in text[max(0, index - 8):index + len(word) + 8]
                 for hint in non_romantic_emotion_contexts
             )
@@ -1249,7 +1249,7 @@ def _contains_positive_signal_text(value, keywords) -> bool:
                 for hint in non_romantic_jealousy_contexts
             )
             familial_or_comrade_emotion = word in (
-                "亲密", "喜欢", "爱", "爱慕", "动心", "倾心", "陪伴", "相伴", "跟随", "同行"
+                "亲密", "喜欢", "爱", "爱慕", "动心", "心动", "倾心", "陪伴", "相伴", "跟随", "同行"
             ) and any(
                 hint in text[max(0, index - 14):index + len(word) + 14]
                 for hint in familial_or_comrade_contexts
@@ -1477,7 +1477,7 @@ def _heroine_position_level(heroine_meta: dict, profile: dict, evidence: dict = 
         score += 3
         signals.append("漏女/情感深度证据")
     strong_relationship_position_words = ["妻子", "正妻", "妻室", "夫妻", "夫妇", "道侣", "恋人", "爱人", "后宫", "未婚妻", "伴侣", "情侣", "女朋友", "老婆"]
-    romance_signal_words = ["喜欢", "爱慕", "表白", "暧昧", "吃醋", "双修", "同房", "亲密", "推倒", "收女", "动心", "倾心"]
+    romance_signal_words = ["喜欢", "爱慕", "表白", "暧昧", "吃醋", "双修", "同房", "亲密", "推倒", "收女", "动心", "心动", "倾心"]
     has_nominal_or_negated_relationship_context = _relationship_position_is_nominal_or_negated_for_report(text)
     has_strong_relationship_position = (
         _contains_positive_signal_text(text, strong_relationship_position_words)
@@ -2066,7 +2066,7 @@ def _summarize_leak_three_layers(purity_info: dict, profile: dict) -> str:
 
     has_emotional_depth = _contains_positive_signal_text(
         profile_text,
-        ["暧昧", "喜欢", "爱", "动心", "倾心", "表白", "告白", "吃醋", "道侣", "恋人", "未婚妻"],
+        ["暧昧", "喜欢", "爱", "动心", "心动", "倾心", "表白", "告白", "吃醋", "道侣", "恋人", "未婚妻"],
     )
     pushed = purity_info.get("pushed_by_male_lead")
     leak = purity_info.get("is_leak_heroine")
