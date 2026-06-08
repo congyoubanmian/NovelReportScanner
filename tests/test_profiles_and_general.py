@@ -398,6 +398,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("GENERAL_SCAN_SMART_DENSITY", text)
         self.assertIn("GENERAL_SCAN_INCREMENTAL_REUSE", text)
         self.assertIn("GENERAL_SCAN_WRITING_QUALITY", text)
+        self.assertIn("GENERAL_SCAN_NARRATIVE_ARCHITECTURE", text)
 
     def test_profile_aliases_and_stages(self):
         harem = analysis_profiles.load_analysis_profile("后宫")
@@ -815,6 +816,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("general_scan_writing_quality: true", text)
         self.assertIn("config.general_scan_writing_quality !== false", text)
         self.assertIn("configForm.general_scan_writing_quality", text)
+        self.assertIn("general_scan_narrative_architecture: true", text)
+        self.assertIn("config.general_scan_narrative_architecture !== false", text)
+        self.assertIn("configForm.general_scan_narrative_architecture", text)
 
     def test_rate_limit_scope_auto_resolves_by_key_count(self):
         self.assertEqual(Timerror.normalize_rate_limit_scope("auto", 1), "global")
@@ -4212,6 +4216,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_SMART_DENSITY",
             "GENERAL_SCAN_INCREMENTAL_REUSE",
             "GENERAL_SCAN_WRITING_QUALITY",
+            "GENERAL_SCAN_NARRATIVE_ARCHITECTURE",
             "HAREM_PLUS_GENERAL_SCAN",
             "API_KEY",
         ]
@@ -4227,6 +4232,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "general_scan_smart_density": False,
                 "general_scan_incremental_reuse": False,
                 "general_scan_writing_quality": False,
+                "general_scan_narrative_architecture": False,
                 "harem_plus_general_scan": True,
             })
 
@@ -4239,11 +4245,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["GENERAL_SCAN_SMART_DENSITY"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_INCREMENTAL_REUSE"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_WRITING_QUALITY"], "0")
+            self.assertEqual(os.environ["GENERAL_SCAN_NARRATIVE_ARCHITECTURE"], "0")
             self.assertEqual(os.environ["HAREM_PLUS_GENERAL_SCAN"], "1")
             self.assertEqual(result["max_workers"], "4")
             self.assertFalse(result["general_scan_smart_density"])
             self.assertFalse(result["general_scan_incremental_reuse"])
             self.assertFalse(result["general_scan_writing_quality"])
+            self.assertFalse(result["general_scan_narrative_architecture"])
             self.assertTrue(result["harem_plus_general_scan"])
             self.assertIn("max_workers", result["editable"])
             self.assertNotIn("api_key", result["editable"])
@@ -4415,6 +4423,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_SMART_DENSITY": "general_scan_smart_density",
             "GENERAL_SCAN_INCREMENTAL_REUSE": "general_scan_incremental_reuse",
             "GENERAL_SCAN_WRITING_QUALITY": "general_scan_writing_quality",
+            "GENERAL_SCAN_NARRATIVE_ARCHITECTURE": "general_scan_narrative_architecture",
             "HAREM_PLUS_GENERAL_SCAN": "harem_plus_general_scan",
         }
         old_values = {env: os.environ.get(env) for env in env_field_map}
@@ -4446,6 +4455,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "general_scan_smart_density": False,
                     "general_scan_incremental_reuse": False,
                     "general_scan_writing_quality": False,
+                    "general_scan_narrative_architecture": False,
                     "harem_plus_general_scan": True,
                 })
                 self.assertTrue(ok)
@@ -4457,6 +4467,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("GENERAL_SCAN_SMART_DENSITY=0", lines)
                 self.assertIn("GENERAL_SCAN_INCREMENTAL_REUSE=0", lines)
                 self.assertIn("GENERAL_SCAN_WRITING_QUALITY=0", lines)
+                self.assertIn("GENERAL_SCAN_NARRATIVE_ARCHITECTURE=0", lines)
                 self.assertIn("HAREM_PLUS_GENERAL_SCAN=1", lines)
                 # 旧值不应残留
                 self.assertNotIn("MAX_WORKERS=4", lines)
@@ -5834,6 +5845,45 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("【水文与冗余分析】", text)
         self.assertIn("写作质量JSON", text)
         self.assertNotIn("【writing quality overall】", text)
+
+    def test_general_report_includes_narrative_architecture_sections(self):
+        general_summary = {
+            "profile_display_name": "通用小说分析",
+            "summary_fields": [
+                "main_plot",
+                "narrative_structure_analysis",
+                "outline_architecture_overall",
+            ],
+            "summary": {
+                "story_overview": "主角完成多阶段成长。",
+                "main_plot": ["从入门到跨地图扩张"],
+                "narrative_structure_analysis": {
+                    "primary_structure_pattern": "升级-换地图循环",
+                    "rhythm_curve_description": "前期铺垫，中段连续小高潮，后期转入新地图。",
+                    "major_turning_points": ["宗门大比后换地图"],
+                    "structure_risks": ["换地图疲劳"],
+                },
+                "outline_architecture_overall": {
+                    "structural_completeness": "阶段目标清楚，暂未见烂尾风险。",
+                    "causal_chain_strength": "strong",
+                    "growth_curve": {"smoothness": "natural", "curve_description": "成长阶梯清楚"},
+                    "system_stability": "战力体系基本稳定",
+                    "overall_architecture_rating": "good",
+                    "architecture_score": "7.8",
+                    "improvement_suggestions": ["减少重复突破"],
+                },
+            },
+        }
+
+        text = report.build_general_report("测试书", {}, general_summary)
+
+        self.assertIn("【叙事结构分析】", text)
+        self.assertIn("升级-换地图循环", text)
+        self.assertIn("宗门大比后换地图", text)
+        self.assertIn("【大纲架构分析】", text)
+        self.assertIn("架构评分：7.8/10（good）", text)
+        self.assertIn("战力体系基本稳定", text)
+        self.assertNotIn("【narrative structure analysis】", text)
 
     def test_general_report_does_not_repeat_footer_summary_fields(self):
         general_summary = {
@@ -8982,7 +9032,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertEqual(result["density_profile"]["level"], "low")
         self.assertEqual(result["density_profile"]["strategy"], "light")
-        self.assertEqual(calls[0]["max_tokens"], 1800)
+        self.assertEqual(calls[0]["max_tokens"], 2400)
         self.assertIn("密度策略：light", calls[0]["prompt"])
 
     def test_general_scan_outputs_writing_quality_pacing_and_density(self):
@@ -9042,6 +9092,69 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(result["pacing_analysis"]["pacing_type"], "dense")
         self.assertEqual(result["information_density"]["skipability"], "essential")
         self.assertIn("嫌疑人证词改变", result["information_density"]["key_information"])
+
+    def test_general_scan_outputs_narrative_structure_and_architecture(self):
+        profile = analysis_profiles.load_analysis_profile("general")
+        prompts = []
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(messages, max_tokens=3000):
+                prompts.append("\n".join(item.get("content", "") for item in messages))
+                return {
+                    "plot_events": ["主角突破后进入新地图"],
+                    "conflicts": ["旧宗门与新势力冲突"],
+                    "worldbuilding": ["上层修真界开启"],
+                    "themes": ["成长"],
+                    "foreshadowing": [],
+                    "quality_notes": ["换地图承接自然"],
+                    "specialty_notes": [],
+                    "narrative_structure": {
+                        "structural_function": "阶段收束并转入新地图",
+                        "structural_function_tag": "transition",
+                        "structure_pattern": "升级流-换地图段",
+                        "beat_phase": "合",
+                        "turning_point": "主角突破金丹后离开旧宗门",
+                        "arc_position": "收尾",
+                        "estimated_cycle_position": "升级-换地图循环：换地图段",
+                    },
+                    "outline_architecture": {
+                        "causal_chain": {
+                            "causal_strength": "自然发展",
+                            "causal_description": "突破带来更高层级冲突",
+                            "forced_elements": [],
+                            "coincidence_dependency": "none",
+                        },
+                        "protagonist_growth": {
+                            "growth_type": "power",
+                            "growth_significance": "major",
+                            "growth_description": "境界突破",
+                            "growth_smoothness": "reasonable",
+                        },
+                        "worldbuilding_expansion": {
+                            "new_elements": ["上层修真界"],
+                            "expansion_pacing": "timely",
+                            "consistency_check": "consistent",
+                        },
+                        "architecture_integrity": {
+                            "integrity_score": 7.6,
+                            "forced_plot_devices": [],
+                            "power_inconsistency": "暂无明显战力矛盾",
+                            "threat_level": "新威胁层级合理",
+                        },
+                    },
+                    "one_sentence_summary": "主角突破后进入新地图。",
+                }
+
+            general_scan._call_json = fake_call_json
+            result = general_scan._scan_chunk("主角突破金丹，离开宗门前往上层修真界。", 0, 1, profile=profile)
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertTrue(any("叙事结构与大纲架构评估" in prompt for prompt in prompts))
+        self.assertEqual(result["narrative_structure"]["structural_function_tag"], "transition")
+        self.assertEqual(result["narrative_structure"]["structure_pattern"], "升级流-换地图段")
+        self.assertEqual(result["outline_architecture"]["causal_chain"]["causal_strength"], "自然发展")
+        self.assertEqual(result["outline_architecture"]["architecture_integrity"]["integrity_score"], 7.6)
 
     def test_general_scan_density_profile_detects_high_signal_chunks(self):
         profile = general_scan._chunk_density_profile("案件出现尸体，凶手线索揭露，随后发生战斗和反转。")
@@ -9237,6 +9350,76 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("调查推进较紧", summary["pacing_analysis_overall"]["rhythm_curve"])
         self.assertIn("信息密度较高", summary["information_density_audit"]["density_verdict"])
         self.assertIn("说明性段落略多", summary["water_chapter_analysis"])
+
+    def test_general_scan_summary_includes_narrative_architecture_material(self):
+        profile = analysis_profiles.load_analysis_profile("general")
+        prompts = []
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(messages, max_tokens=3000):
+                prompt = "\n".join(item.get("content", "") for item in messages)
+                prompts.append(prompt)
+                return {
+                    "story_overview": "主角完成阶段成长并进入新地图。",
+                    "main_plot": ["旧地图收束", "新地图开启"],
+                    "core_conflicts": ["主角与上层势力冲突"],
+                    "worldbuilding": ["上层修真界"],
+                    "themes": ["成长"],
+                    "foreshadowing_and_payoff": [],
+                    "narrative_structure_analysis": {
+                        "primary_structure_pattern": "升级-换地图循环",
+                        "structure_pattern_description": "以突破和地图切换推动阶段递进。",
+                        "rhythm_curve_description": "前段铺垫，中段突破，末段转场。",
+                        "major_turning_points": ["突破金丹后离开旧宗门"],
+                        "arc_structure": "旧地图篇章完成起承转合",
+                        "sub_arc_analysis": ["宗门篇收束自然"],
+                        "structure_execution_quality": "良好",
+                        "structure_risks": ["后续可能出现换地图疲劳"],
+                    },
+                    "outline_architecture_overall": {
+                        "structural_completeness": "阶段目标清楚。",
+                        "causal_chain_strength": "strong",
+                        "growth_curve": {"smoothness": "natural", "curve_description": "成长递进自然"},
+                        "worldbuilding_pacing": {"expansion_quality": "good", "expansion_description": "新设定引入及时"},
+                        "system_stability": "战力体系稳定",
+                        "architecture_damage": [],
+                        "overall_architecture_rating": "good",
+                        "architecture_score": 7.5,
+                        "improvement_suggestions": ["减少同类突破重复"],
+                    },
+                    "strengths": ["结构清楚"],
+                    "risks_or_issues": ["换地图疲劳"],
+                    "reader_fit": "升级流读者",
+                    "overall_assessment": "结构稳定",
+                }
+
+            general_scan._call_json = fake_call_json
+            summary = general_scan._summarize_book(
+                "叙事架构测试",
+                [{
+                    "one_sentence_summary": "主角突破并换地图。",
+                    "narrative_structure": {
+                        "structural_function_tag": "transition",
+                        "structure_pattern": "升级流-换地图段",
+                        "turning_point": "突破金丹",
+                    },
+                    "outline_architecture": {
+                        "causal_chain": {"causal_strength": "自然发展"},
+                        "protagonist_growth": {"growth_smoothness": "reasonable", "growth_significance": "major"},
+                        "worldbuilding_expansion": {"expansion_pacing": "timely", "consistency_check": "consistent"},
+                        "architecture_integrity": {"integrity_score": 7.5},
+                    },
+                }],
+                profile=profile,
+            )
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertTrue(any('"narrative_architecture_chunks"' in prompt for prompt in prompts))
+        self.assertTrue(any('"narrative_structure_analysis"' in prompt for prompt in prompts))
+        self.assertEqual(summary["narrative_structure_analysis"]["primary_structure_pattern"], "升级-换地图循环")
+        self.assertEqual(summary["outline_architecture_overall"]["architecture_score"], "7.5")
+        self.assertEqual(summary["outline_architecture_overall"]["growth_curve"]["smoothness"], "natural")
 
     def test_general_scan_splits_chunk_on_context_overflow(self):
         old_scan_chunk = general_scan._scan_chunk
@@ -10058,6 +10241,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         "writing_quality": {"prose_quality": {"score": 6}},
                         "pacing_analysis": {"pacing_type": "transition"},
                         "information_density": {"density_score": "medium"},
+                        "narrative_structure": {"structural_function_tag": "transition"},
+                        "outline_architecture": {"causal_chain": {"causal_strength": "自然发展"}},
                         "one_sentence_summary": "旧摘要",
                     }],
                 }, f, ensure_ascii=False)
@@ -10089,6 +10274,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(scanned, [changed_text])
             self.assertTrue(data["incremental_reuse"])
             self.assertTrue(data["writing_quality_enabled"])
+            self.assertTrue(data["narrative_architecture_enabled"])
             self.assertEqual(data["reused_chunk_count"], 1)
             self.assertEqual(data["scanned_chunk_count"], 1)
             self.assertTrue(data["chunk_results"][0]["reused_from_previous"])
@@ -10226,6 +10412,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "max_chunks": general_scan.MAX_CHUNKS,
                 "chunk_sampling_strategy": "full",
                 "writing_quality_enabled": general_scan.WRITING_QUALITY_ENABLED,
+                "narrative_architecture_enabled": general_scan.NARRATIVE_ARCHITECTURE_ENABLED,
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }
@@ -10233,6 +10420,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             data_without_writing_meta = dict(data)
             data_without_writing_meta.pop("writing_quality_enabled", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_writing_meta, novel_path, "history"))
+            data_without_narrative_meta = dict(data)
+            data_without_narrative_meta.pop("narrative_architecture_enabled", None)
+            self.assertFalse(general_scan._is_fresh_summary(data_without_narrative_meta, novel_path, "history"))
             data["summary"] = {"book_overview": "ok"}
             self.assertTrue(general_scan._is_fresh_summary(data, novel_path, "history"))
             self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "general"))
@@ -10271,6 +10461,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "max_chunks": general_scan.MAX_CHUNKS,
                 "chunk_sampling_strategy": "full",
                 "writing_quality_enabled": general_scan.WRITING_QUALITY_ENABLED,
+                "narrative_architecture_enabled": general_scan.NARRATIVE_ARCHITECTURE_ENABLED,
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }

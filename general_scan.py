@@ -20,6 +20,7 @@ MAX_CHUNKS = int(os.environ.get("GENERAL_SCAN_MAX_CHUNKS", "80"))
 SMART_DENSITY = os.environ.get("GENERAL_SCAN_SMART_DENSITY", "1").strip() == "1"
 INCREMENTAL_REUSE = os.environ.get("GENERAL_SCAN_INCREMENTAL_REUSE", "1").strip() == "1"
 WRITING_QUALITY_ENABLED = os.environ.get("GENERAL_SCAN_WRITING_QUALITY", "1").strip() == "1"
+NARRATIVE_ARCHITECTURE_ENABLED = os.environ.get("GENERAL_SCAN_NARRATIVE_ARCHITECTURE", "1").strip() == "1"
 LOW_DENSITY_TERMS = (
     "睡觉", "起床", "吃饭", "喝茶", "闲聊", "聊天", "休息", "赶路", "路上", "返回",
     "日常", "家常", "客栈", "修炼打坐", "打坐", "闭关", "练功", "整理物品",
@@ -255,6 +256,10 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
         return False
     if not WRITING_QUALITY_ENABLED and data.get("writing_quality_enabled") not in {None, False}:
         return False
+    if NARRATIVE_ARCHITECTURE_ENABLED and data.get("narrative_architecture_enabled") is not True:
+        return False
+    if not NARRATIVE_ARCHITECTURE_ENABLED and data.get("narrative_architecture_enabled") not in {None, False}:
+        return False
     stored_prompt_templates = data.get("prompt_templates")
     if isinstance(stored_prompt_templates, dict):
         current_prompt_templates = prompt_templates_metadata("general_scan_chunk", "general_summary")
@@ -287,6 +292,8 @@ def _summary_can_reuse_chunk_results(data: Dict[str, Any], profile_name: str = "
         return False
     if data.get("writing_quality_enabled") not in {None, WRITING_QUALITY_ENABLED}:
         return False
+    if data.get("narrative_architecture_enabled") not in {None, NARRATIVE_ARCHITECTURE_ENABLED}:
+        return False
     stored_prompt_templates = data.get("prompt_templates")
     if isinstance(stored_prompt_templates, dict):
         current_prompt_templates = prompt_templates_metadata("general_scan_chunk", "general_summary")
@@ -306,6 +313,10 @@ def _reusable_chunk_result_map(data: Dict[str, Any]) -> Dict[str, Dict[str, Any]
             continue
         if WRITING_QUALITY_ENABLED and not (
             item.get("writing_quality") and item.get("pacing_analysis") and item.get("information_density")
+        ):
+            continue
+        if NARRATIVE_ARCHITECTURE_ENABLED and not (
+            item.get("narrative_structure") and item.get("outline_architecture")
         ):
             continue
         chunk_hash = item.get("chunk_hash")
@@ -439,6 +450,52 @@ def _normalize_information_density(value: Any) -> Dict[str, Any]:
     }
 
 
+def _normalize_narrative_structure(value: Any) -> Dict[str, Any]:
+    raw = _safe_dict(value)
+    return {
+        "structural_function": str(raw.get("structural_function") or "").strip()[:180],
+        "structural_function_tag": str(raw.get("structural_function_tag") or "").strip()[:30],
+        "structure_pattern": str(raw.get("structure_pattern") or "").strip()[:120],
+        "beat_phase": str(raw.get("beat_phase") or "").strip()[:10],
+        "turning_point": str(raw.get("turning_point") or "").strip()[:160],
+        "arc_position": str(raw.get("arc_position") or "").strip()[:20],
+        "estimated_cycle_position": str(raw.get("estimated_cycle_position") or "").strip()[:120],
+    }
+
+
+def _normalize_outline_architecture(value: Any) -> Dict[str, Any]:
+    raw = _safe_dict(value)
+    causal = _safe_dict(raw.get("causal_chain"))
+    growth = _safe_dict(raw.get("protagonist_growth"))
+    expansion = _safe_dict(raw.get("worldbuilding_expansion"))
+    integrity = _safe_dict(raw.get("architecture_integrity"))
+    return {
+        "causal_chain": {
+            "causal_strength": str(causal.get("causal_strength") or causal.get("strength") or "").strip()[:40],
+            "causal_description": str(causal.get("causal_description") or causal.get("observation") or "").strip()[:180],
+            "forced_elements": _safe_list(causal.get("forced_elements"), limit=4),
+            "coincidence_dependency": str(causal.get("coincidence_dependency") or "").strip()[:30],
+        },
+        "protagonist_growth": {
+            "growth_type": str(growth.get("growth_type") or "").strip()[:40],
+            "growth_significance": str(growth.get("growth_significance") or "").strip()[:40],
+            "growth_description": str(growth.get("growth_description") or "").strip()[:180],
+            "growth_smoothness": str(growth.get("growth_smoothness") or "").strip()[:40],
+        },
+        "worldbuilding_expansion": {
+            "new_elements": _safe_list(expansion.get("new_elements"), limit=5),
+            "expansion_pacing": str(expansion.get("expansion_pacing") or "").strip()[:40],
+            "consistency_check": str(expansion.get("consistency_check") or "").strip()[:50],
+        },
+        "architecture_integrity": {
+            "integrity_score": _clamp_score(integrity.get("integrity_score"), default=0.0),
+            "forced_plot_devices": _safe_list(integrity.get("forced_plot_devices"), limit=4),
+            "power_inconsistency": str(integrity.get("power_inconsistency") or "").strip()[:180],
+            "threat_level": str(integrity.get("threat_level") or "").strip()[:160],
+        },
+    }
+
+
 def _compact_writing_quality_for_summary(chunk_results: List[Dict[str, Any]], limit: int = 80) -> List[Dict[str, Any]]:
     compact = []
     for item in chunk_results:
@@ -455,6 +512,41 @@ def _compact_writing_quality_for_summary(chunk_results: List[Dict[str, Any]], li
             "writing_quality": writing_quality,
             "pacing_analysis": pacing,
             "information_density": density,
+        })
+        if len(compact) >= limit:
+            break
+    return compact
+
+
+def _compact_narrative_architecture_for_summary(chunk_results: List[Dict[str, Any]], limit: int = 120) -> List[Dict[str, Any]]:
+    compact = []
+    for item in chunk_results:
+        if not isinstance(item, dict):
+            continue
+        structure = _safe_dict(item.get("narrative_structure"))
+        architecture = _safe_dict(item.get("outline_architecture"))
+        if not structure and not architecture:
+            continue
+        causal = _safe_dict(architecture.get("causal_chain"))
+        growth = _safe_dict(architecture.get("protagonist_growth"))
+        expansion = _safe_dict(architecture.get("worldbuilding_expansion"))
+        integrity = _safe_dict(architecture.get("architecture_integrity"))
+        compact.append({
+            "chunk_index": item.get("original_chunk_index", item.get("chunk_index")),
+            "summary": item.get("one_sentence_summary"),
+            "structural_function_tag": structure.get("structural_function_tag"),
+            "structure_pattern": structure.get("structure_pattern"),
+            "beat_phase": structure.get("beat_phase"),
+            "turning_point": structure.get("turning_point"),
+            "arc_position": structure.get("arc_position"),
+            "estimated_cycle_position": structure.get("estimated_cycle_position"),
+            "causal_strength": causal.get("causal_strength"),
+            "growth_smoothness": growth.get("growth_smoothness"),
+            "growth_significance": growth.get("growth_significance"),
+            "expansion_pacing": expansion.get("expansion_pacing"),
+            "consistency_check": expansion.get("consistency_check"),
+            "integrity_score": integrity.get("integrity_score"),
+            "forced_plot_devices": integrity.get("forced_plot_devices") or [],
         })
         if len(compact) >= limit:
             break
@@ -668,6 +760,107 @@ def _writing_quality_summary_json_hint() -> str:
   "water_chapter_analysis": ["水文/冗余/低效叙事的具体表现"],"""
 
 
+def _narrative_architecture_system_instruction() -> str:
+    if not NARRATIVE_ARCHITECTURE_ENABLED:
+        return ""
+    return """
+
+【叙事结构与大纲架构评估】
+请额外输出 narrative_structure、outline_architecture 两个结构化字段。判断只基于当前片段可见证据；不能把单个片段脑补成整本书结论。
+
+narrative_structure 用来标注本片段在叙事工程中的功能：
+- structural_function: 当前片段主要承担的结构功能，例如铺垫、升温、高潮、回落、转场、信息桥接。
+- structural_function_tag: setup/rising/climax/falling/bridge/transition 中选一个主标签。
+- structure_pattern: 如果能识别循环或单元结构，标注如“升级流-突破段”“打脸循环-压制段”“单元案件-收束段”。
+- beat_phase: 起/承/转/合/无。
+- turning_point: 地图切换、时间跳跃、境界突破、势力变更、身份揭示、关键人物退场等结构性转折点；没有则空。
+- arc_position: 开端/发展/高潮/收尾/过渡。
+- estimated_cycle_position: 如果处于循环模式，说明所在段位；无法判断则空。
+
+outline_architecture 用来从大纲角度评估当前片段对整书架构的影响：
+- causal_chain: 事件因果是否自然，有无关键巧合或强行推进。
+- protagonist_growth: 主角能力、地位、关系、认知或道德成长是否自然。
+- worldbuilding_expansion: 新设定引入是否及时、过载或前后矛盾。
+- architecture_integrity: 结构完整度、强行剧情装置、体系/战力一致性和威胁层级是否稳定。"""
+
+
+def _narrative_architecture_json_hint() -> str:
+    if not NARRATIVE_ARCHITECTURE_ENABLED:
+        return ""
+    return """,
+  "narrative_structure": {
+    "structural_function": "本片段的主要结构功能",
+    "structural_function_tag": "setup|rising|climax|falling|bridge|transition",
+    "structure_pattern": "升级流/打脸循环/单元案件/事业里程碑等模式及段位",
+    "beat_phase": "起|承|转|合|无",
+    "turning_point": "结构性转折点，没有则空",
+    "arc_position": "开端|发展|高潮|收尾|过渡",
+    "estimated_cycle_position": "循环模式中的位置，没有则空"
+  },
+  "outline_architecture": {
+    "causal_chain": {
+      "causal_strength": "必然因果|自然发展|逻辑通顺|有些牵强|明显强行|毫无关联",
+      "causal_description": "因果链评价",
+      "forced_elements": ["牵强元素，没有则空"],
+      "coincidence_dependency": "none|minor|major|deus_ex"
+    },
+    "protagonist_growth": {
+      "growth_type": "power|status|relationship|knowledge|morality|none",
+      "growth_significance": "major|moderate|minor|none",
+      "growth_description": "成长内容",
+      "growth_smoothness": "smooth|reasonable|abrupt|ass_pull"
+    },
+    "worldbuilding_expansion": {
+      "new_elements": ["新设定元素"],
+      "expansion_pacing": "natural|timely|abrupt|overloaded|sparse",
+      "consistency_check": "consistent|minor_issue|major_contradiction|retcon"
+    },
+    "architecture_integrity": {
+      "integrity_score": 0-10,
+      "forced_plot_devices": ["强行剧情装置，没有则空"],
+      "power_inconsistency": "战力/体系一致性评价",
+      "threat_level": "当前威胁水平合理性"
+    }
+  }"""
+
+
+def _narrative_architecture_summary_json_hint() -> str:
+    if not NARRATIVE_ARCHITECTURE_ENABLED:
+        return ""
+    return """
+  "narrative_structure_analysis": {
+    "primary_structure_pattern": "主要结构模式",
+    "structure_pattern_description": "该结构模式的具体描述",
+    "rhythm_curve_description": "全书节奏曲线描述",
+    "major_turning_points": ["主要结构性转折点"],
+    "arc_structure": "叙事弧结构描述",
+    "sub_arc_analysis": ["子篇章/阶段的起承转合评价"],
+    "structure_execution_quality": "优秀|良好|一般|较差，并说明理由",
+    "structure_risks": ["结构风险"]
+  },
+  "outline_architecture_overall": {
+    "structural_completeness": "结构完整性和烂尾风险评价",
+    "causal_chain_strength": "strong|medium|weak|fragmented",
+    "growth_curve": {
+      "smoothness": "smooth|natural|abrupt|rollercoaster|stagnant",
+      "curve_description": "成长曲线描述",
+      "major_jumps": ["主要跳跃点"],
+      "stagnation_periods": ["停滞期"]
+    },
+    "worldbuilding_pacing": {
+      "expansion_quality": "excellent|good|uneven|poor",
+      "expansion_description": "世界观展开节奏描述",
+      "overload_points": ["设定过载点"],
+      "famine_points": ["设定供给不足点"]
+    },
+    "system_stability": "体系/战力/规则稳定性评价",
+    "architecture_damage": ["大纲层面的损伤"],
+    "overall_architecture_rating": "excellent|good|average|poor",
+    "architecture_score": 0-10,
+    "improvement_suggestions": ["结构层面的改进建议"]
+  },"""
+
+
 def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None) -> Dict[str, Any]:
     profile = profile or load_analysis_profile("general")
     density_profile = density_profile or _chunk_density_profile(text_chunk)
@@ -694,6 +887,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 当前片段密度：
 {_density_instruction(density_profile)}
 {_writing_quality_system_instruction()}
+{_narrative_architecture_system_instruction()}
 
 要求：
 1. 只根据片段内容输出，不要凭空补全。
@@ -712,17 +906,17 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
   "conflicts": ["..."],
   "worldbuilding": ["..."],
   "themes": ["..."],
-  "foreshadowing": ["..."],
-  "quality_notes": ["..."],
-  "specialty_notes": ["专项规则相关要点"]{_writing_quality_json_hint()},
-  "one_sentence_summary": "本片段一句话概要"
-}}"""
+	  "foreshadowing": ["..."],
+	  "quality_notes": ["..."],
+	  "specialty_notes": ["专项规则相关要点"]{_writing_quality_json_hint()}{_narrative_architecture_json_hint()},
+	  "one_sentence_summary": "本片段一句话概要"
+	}}"""
     data = _call_json(
         [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        max_tokens=1800 if density_profile.get("strategy") == "light" else 3000,
+        max_tokens=2400 if density_profile.get("strategy") == "light" else 3800,
     )
     return {
         "chunk_index": chunk_index,
@@ -739,6 +933,8 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         "writing_quality": _normalize_writing_quality(data.get("writing_quality")) if WRITING_QUALITY_ENABLED else {},
         "pacing_analysis": _normalize_pacing_analysis(data.get("pacing_analysis")) if WRITING_QUALITY_ENABLED else {},
         "information_density": _normalize_information_density(data.get("information_density")) if WRITING_QUALITY_ENABLED else {},
+        "narrative_structure": _normalize_narrative_structure(data.get("narrative_structure")) if NARRATIVE_ARCHITECTURE_ENABLED else {},
+        "outline_architecture": _normalize_outline_architecture(data.get("outline_architecture")) if NARRATIVE_ARCHITECTURE_ENABLED else {},
         "one_sentence_summary": str(data.get("one_sentence_summary", "") or "").strip(),
     }
 
@@ -760,6 +956,11 @@ def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int,
         "foreshadowing": [],
         "quality_notes": [],
         "specialty_notes": [],
+        "writing_quality": {},
+        "pacing_analysis": {},
+        "information_density": {},
+        "narrative_structure": {},
+        "outline_architecture": {},
         "one_sentence_summary": "",
         "partial_result": True,
         "partial_reason": reason,
@@ -787,6 +988,15 @@ def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int,
         summary = str(result.get("one_sentence_summary") or "").strip()
         if summary:
             summaries.append(summary)
+        for object_field in (
+            "writing_quality",
+            "pacing_analysis",
+            "information_density",
+            "narrative_structure",
+            "outline_architecture",
+        ):
+            if not merged.get(object_field) and isinstance(result.get(object_field), dict):
+                merged[object_field] = result.get(object_field) or {}
     merged["one_sentence_summary"] = "；".join(summaries[:3])
     return merged
 
@@ -846,6 +1056,8 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
     }
     if WRITING_QUALITY_ENABLED:
         material["writing_quality_chunks"] = _compact_writing_quality_for_summary(chunk_results)
+    if NARRATIVE_ARCHITECTURE_ENABLED:
+        material["narrative_architecture_chunks"] = _compact_narrative_architecture_for_summary(chunk_results)
     base_summary_fields = {
         "main_plot",
         "core_conflicts",
@@ -856,6 +1068,8 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         "pacing_analysis_overall",
         "information_density_audit",
         "water_chapter_analysis",
+        "narrative_structure_analysis",
+        "outline_architecture_overall",
         "strengths",
         "risks_or_issues",
     }
@@ -879,7 +1093,8 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 本 profile 的专项规则：
 {rules_text}
 
-输出必须是 JSON 对象。不要使用后宫、初处、漏女、排雷等专用标准。"""
+输出必须是 JSON 对象。不要使用后宫、初处、漏女、排雷等专用标准。
+开启叙事架构分析时，请基于 narrative_architecture_chunks 判断整书结构模式、阶段转折、因果链、成长曲线和大纲风险；不要把单个片段孤证当成整书结论。"""
     user_prompt = f"""书名：{book_name}
 
 分块材料：
@@ -891,10 +1106,10 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
   "main_plot": ["主线剧情要点"],
   "core_conflicts": ["核心冲突"],
   "worldbuilding": ["世界观/设定要点"],
-  "themes": ["主题表达"],
-  "foreshadowing_and_payoff": ["伏笔、悬念、回收情况"],
-{specialty_json_hint}{_writing_quality_summary_json_hint()}
-  "strengths": ["作品优点"],
+	  "themes": ["主题表达"],
+	  "foreshadowing_and_payoff": ["伏笔、悬念、回收情况"],
+	{specialty_json_hint}{_narrative_architecture_summary_json_hint()}{_writing_quality_summary_json_hint()}
+	  "strengths": ["作品优点"],
   "risks_or_issues": ["可能的问题或阅读门槛"],
   "reader_fit": "适合什么读者",
   "overall_assessment": "总体评价",
@@ -912,8 +1127,8 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        max_tokens=4000,
-    )
+	        max_tokens=5200,
+	    )
     summary = {
         "prompt_template": template_meta,
         "story_overview": _summary_field_text(data, "story_overview"),
@@ -926,6 +1141,8 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         "pacing_analysis_overall": _normalize_object_summary(data.get("pacing_analysis_overall")),
         "information_density_audit": _normalize_object_summary(data.get("information_density_audit")),
         "water_chapter_analysis": _summary_field_value(data, "water_chapter_analysis"),
+        "narrative_structure_analysis": _normalize_object_summary(data.get("narrative_structure_analysis")),
+        "outline_architecture_overall": _normalize_object_summary(data.get("outline_architecture_overall")),
         "strengths": _summary_field_value(data, "strengths"),
         "risks_or_issues": _summary_field_value(data, "risks_or_issues"),
         "reader_fit": "；".join(_summary_field_value(data, "reader_fit")),
@@ -1050,6 +1267,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "sampled_chunk_indices": selected_original_indices,
         "smart_density": SMART_DENSITY,
         "writing_quality_enabled": WRITING_QUALITY_ENABLED,
+        "narrative_architecture_enabled": NARRATIVE_ARCHITECTURE_ENABLED,
         "density_counts": density_counts,
         "incremental_reuse": INCREMENTAL_REUSE,
         "reused_chunk_count": reused_chunk_count,

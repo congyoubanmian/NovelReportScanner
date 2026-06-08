@@ -55,6 +55,7 @@ EDITABLE_RUNTIME_CONFIG = {
     "general_scan_smart_density": {"env": "GENERAL_SCAN_SMART_DENSITY", "type": "bool"},
     "general_scan_incremental_reuse": {"env": "GENERAL_SCAN_INCREMENTAL_REUSE", "type": "bool"},
     "general_scan_writing_quality": {"env": "GENERAL_SCAN_WRITING_QUALITY", "type": "bool"},
+    "general_scan_narrative_architecture": {"env": "GENERAL_SCAN_NARRATIVE_ARCHITECTURE", "type": "bool"},
     "harem_plus_general_scan": {"env": "HAREM_PLUS_GENERAL_SCAN", "type": "bool"},
 }
 BOOK_ID_PAYLOAD_SCHEMA = {
@@ -438,6 +439,7 @@ def _runtime_config_summary():
         "general_scan_smart_density": _env_bool_value(os.environ.get("GENERAL_SCAN_SMART_DENSITY", "1")),
         "general_scan_incremental_reuse": _env_bool_value(os.environ.get("GENERAL_SCAN_INCREMENTAL_REUSE", "1")),
         "general_scan_writing_quality": _env_bool_value(os.environ.get("GENERAL_SCAN_WRITING_QUALITY", "1")),
+        "general_scan_narrative_architecture": _env_bool_value(os.environ.get("GENERAL_SCAN_NARRATIVE_ARCHITECTURE", "1")),
         "harem_plus_general_scan": _env_bool_value(os.environ.get("HAREM_PLUS_GENERAL_SCAN", "0")),
         "editable": sorted(EDITABLE_RUNTIME_CONFIG.keys()),
         "runtime_only": True,

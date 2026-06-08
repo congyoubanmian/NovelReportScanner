@@ -52,6 +52,8 @@ SUMMARY_FIELD_TITLES = {
     "pacing_analysis_overall": "节奏曲线分析",
     "information_density_audit": "信息密度审计",
     "water_chapter_analysis": "水文与冗余分析",
+    "narrative_structure_analysis": "叙事结构分析",
+    "outline_architecture_overall": "大纲架构分析",
     "prose_quality": "文笔质量",
     "character_depth": "人物塑造",
     "narrative_technique": "叙事技巧",
@@ -264,6 +266,9 @@ SUMMARY_FIELD_ALIASES = {
     "rhythm_curve": "pacing_analysis_overall",
     "density_audit": "information_density_audit",
     "information_density": "information_density_audit",
+    "structure_analysis": "narrative_structure_analysis",
+    "narrative_architecture": "outline_architecture_overall",
+    "outline_architecture": "outline_architecture_overall",
     "foreshadowing": "foreshadowing_and_payoff",
     "plot_threads": "foreshadowing_and_payoff",
     "payoff": "foreshadowing_and_payoff",
@@ -3378,6 +3383,12 @@ GENERAL_CRAFT_SUMMARY_FIELDS = {
 }
 
 
+GENERAL_NARRATIVE_ARCHITECTURE_FIELDS = {
+    "narrative_structure_analysis",
+    "outline_architecture_overall",
+}
+
+
 def _append_text_block(lines: list, title: str, value, *, limit: int = 8):
     lines.extend(["", f"【{title}】"])
     if isinstance(value, list):
@@ -3470,6 +3481,38 @@ def _append_general_craft_sections(lines: list, general_summary: dict):
         _append_text_block(lines, "信息密度审计", density)
     if water:
         _append_text_block(lines, "水文与冗余分析", water)
+
+
+def _append_general_narrative_architecture_sections(lines: list, general_summary: dict):
+    summary = (general_summary or {}).get("summary") or {}
+    structure = summary.get("narrative_structure_analysis")
+    architecture = summary.get("outline_architecture_overall")
+    has_any = any([
+        isinstance(structure, dict) and structure,
+        isinstance(architecture, dict) and architecture,
+    ])
+    if not has_any:
+        return
+    if isinstance(structure, dict) and structure:
+        _append_text_block(lines, "叙事结构分析", structure)
+    if isinstance(architecture, dict) and architecture:
+        score = architecture.get("architecture_score")
+        rating = str(architecture.get("overall_architecture_rating") or "").strip()
+        if score is not None or rating:
+            lines.extend(["", "【大纲架构分析】"])
+            if score is not None:
+                lines.append(f"架构评分：{_clamp_score(score):.1f}/10" + (f"（{rating}）" if rating else ""))
+            elif rating:
+                lines.append(f"架构评级：{rating}")
+            rest = {
+                key: value
+                for key, value in architecture.items()
+                if key not in {"architecture_score", "overall_architecture_rating"}
+            }
+            if rest:
+                _append_text_block(lines, "大纲架构细项", rest)
+        else:
+            _append_text_block(lines, "大纲架构分析", architecture)
 
 
 def _text_signal_count(*items) -> int:
@@ -3611,6 +3654,7 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
     add_list("世界观/设定", summary_field_values(summary, "worldbuilding"))
     add_list("主题表达", summary_field_values(summary, "themes"))
     add_list("伏笔与回收", summary_field_values(summary, "foreshadowing_and_payoff"))
+    _append_general_narrative_architecture_sections(lines, general_summary)
     _append_general_craft_sections(lines, general_summary)
     base_summary_fields = {
         "main_plot",
@@ -3619,6 +3663,7 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
         "themes",
         "foreshadowing_and_payoff",
         *GENERAL_CRAFT_SUMMARY_FIELDS,
+        *GENERAL_NARRATIVE_ARCHITECTURE_FIELDS,
         "strengths",
         "risks_or_issues",
         "reader_fit",
