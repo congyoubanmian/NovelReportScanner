@@ -1999,6 +1999,26 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(entertainment[0]["name"], "entertainment_industry")
         self.assertNotIn("farming_management", [item["name"] for item in entertainment[:3]])
 
+        business_system = analysis_profiles.infer_profile_candidates_for_text(
+            "商战系统创业史",
+            "主角经营公司融资上市，董事会斗争，供应链和产品研发是主线，系统只提供经营面板。",
+        )
+        self.assertEqual(business_system[0]["name"], "business_career")
+        self.assertNotIn("urban_power", [item["name"] for item in business_system[:3]])
+
+        military_king = analysis_profiles.infer_profile_candidates_for_text(
+            "兵王战神演习",
+            "退役兵王回到军营参加演习，战区指挥、补给、火炮和特战小队行动是主线。",
+        )
+        self.assertEqual(military_king[0]["name"], "military_war")
+        self.assertNotIn("urban_power", [item["name"] for item in military_king[:3]])
+
+        urban_dragon_king = analysis_profiles.infer_profile_candidates_for_text(
+            "下山龙王神医",
+            "高手下山成为赘婿，神医救人，豪门羞辱，龙王身份揭露后连续打脸。",
+        )
+        self.assertEqual(urban_dragon_king[0]["name"], "urban_power")
+
     def test_auto_profile_filters_context_pollution_and_counts_frequency(self):
         operating_system = analysis_profiles.infer_profile_candidates_for_text(
             "操作系统教程",
