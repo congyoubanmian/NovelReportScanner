@@ -189,6 +189,42 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertNotIn("response_format", calls[1])
         self.assertIn("上一次回复不是可解析的 JSON 对象", calls[1]["messages"][-1]["content"])
 
+    def test_protagonist_json_call_retries_without_json_mode_on_parse_failure(self):
+        class FakeMessage:
+            def __init__(self, content):
+                self.content = content
+
+        class FakeChoice:
+            def __init__(self, content):
+                self.message = FakeMessage(content)
+
+        class FakeResponse:
+            def __init__(self, content):
+                self.choices = [FakeChoice(content)]
+
+        calls = []
+        old_chat = protagonist.chat_completion
+        try:
+            def fake_chat_completion(**kwargs):
+                calls.append(kwargs)
+                if len(calls) == 1:
+                    return FakeResponse("不是 JSON")
+                return FakeResponse('{"male_protagonist":{"name":"男主"},"female_characters":[]}')
+
+            protagonist.chat_completion = fake_chat_completion
+            data = protagonist._call_json_chat_completion(
+                [{"role": "user", "content": "输出 JSON"}],
+                max_tokens=128,
+            )
+        finally:
+            protagonist.chat_completion = old_chat
+
+        self.assertEqual(data["male_protagonist"]["name"], "男主")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
+        self.assertNotIn("response_format", calls[1])
+        self.assertIn("上一次回复不是可解析的 JSON 对象", calls[1]["messages"][-1]["content"])
+
     def test_compose_variables_are_documented_in_env_sample(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
         compose_path = os.path.join(base_dir, "docker-compose.yml")

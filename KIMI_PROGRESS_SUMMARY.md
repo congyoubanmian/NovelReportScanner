@@ -1,6 +1,6 @@
 # Kimi 方案推进进度总结
 
-生成日期：2026-06-07（本版更新于 2026-06-08 22:21）
+生成日期：2026-06-07（本版更新于 2026-06-08 22:34）
 
 ## 总体完成度
 
@@ -188,7 +188,7 @@
 - `novel_scan.py`、`protagonist.py`、`report.py` 已统一使用 `shared_utils.create_chat_completion()` 创建 API 客户端，OpenAI client factory 只保留一份；`protagonist.py` 默认 `BASE_URL` 也已与其他阶段统一为 `https://api.deepseek.com`，避免未显式配置时不同阶段打到不同端点。
 - `novel_scan.py`、`protagonist.py`、`report.py` 的 API 重试和超时默认参数已统一引用 `shared_utils`：默认 `max_retries=5`、`max_403_retries=3`、`max_timeout_retries=3`、`request_timeout=120`，避免同一本书不同阶段使用不同容错策略。
 - 通用/专项剧情扫描已增加 context overflow 降级：当单个 chunk 因上下文过长失败时，会自动拆成两个半段重试并合并为 `partial_result`，在 `partial_reason=context_overflow_split` 中保留原因；若仍失败，会在 `failed_chunks` 中记录 `error_type=context_overflow`，便于后续定位或重跑。
-- 通用/专项剧情扫描、二审和报告阶段已增加 JSON mode 解析失败降级：首次请求仍使用 `response_format=json_object`，若模型返回内容无法解析为 JSON，会追加纠错提示并用普通模式重试一次，降低部分 OpenAI 兼容接口 JSON mode 不稳定导致的 chunk 失败率、二审判断失败率和报告摘要兜底退化率。
+- 角色识别、通用/专项剧情扫描、二审和报告阶段已增加 JSON mode 解析失败降级：首次请求仍使用 `response_format=json_object`，若模型返回内容无法解析为 JSON，会追加纠错提示并用普通模式重试一次，降低部分 OpenAI 兼容接口 JSON mode 不稳定导致的 chunk 失败率、角色合并失败率、二审判断失败率和报告摘要兜底退化率。
 - 核心 prompt 已增加轻量版本元数据：`prompt_templates.py` 统一注册 `harem_scan_chunk/general_scan_chunk/general_summary`，默认版本为 `v1`，可通过 `PROMPT_TEMPLATE_<NAME>_VERSION` 环境变量切换；后宫首扫 prompt 会带模板标记，通用/专项剧情扫描会把 chunk 和 summary 的 prompt 模板元数据写入 `GENERAL_SUMMARY.json`，便于后续实验版本和历史报告追踪。
 - 通用/专项剧情扫描已增加片段密度分级：根据战斗、反转、案件、感情推进等高密度信号和赶路、吃饭、睡觉、日常等低密度信号标记 `density_profile`；默认 `GENERAL_SCAN_SMART_DENSITY=1` 时，低密度片段走轻量抽取 prompt 和更低 `max_tokens`，但不跳过片段，最终 summary 会记录 `density_counts`，Web/Compose/配置模板均可切换该开关。
 - 通用/专项剧情扫描已增加 chunk hash 增量复用：默认 `GENERAL_SCAN_INCREMENTAL_REUSE=1` 时，若同一本书已有旧 summary 且 prompt/配置兼容，会按 `chunk_hash` 复用未变化片段的 `chunk_results`，只扫描新增或修改片段，最后仍重新生成整书 summary；输出会记录 `reused_chunk_count/scanned_chunk_count`，Web/Compose/配置模板均可切换该开关。
@@ -251,7 +251,7 @@
 - 后宫报告关键事件时间线，验证女主剧情、情感信号、雷点事件、男主互动和推倒/关系确认会按 chunk 顺序输出。
 - 通用报告多维度评分，验证 `general_scan` 总评 prompt 会要求并归一化 `radar_scores`，最终报告会输出六维 Markdown 表格和前端可解析 JSON。
 - 通用/专项剧情扫描 context overflow 降级拆分，验证上下文过长错误会触发半段重试、合并 partial 结果并落盘记录 `partial_reason`，而不是直接丢失整个 chunk。
-- 通用/专项剧情扫描、二审和报告阶段 JSON mode 降级重试，验证首次返回非 JSON 时会用普通模式追加纠错提示重试一次，且正常 JSON mode 成功路径不变。
+- 角色识别、通用/专项剧情扫描、二审和报告阶段 JSON mode 降级重试，验证首次返回非 JSON 时会用普通模式追加纠错提示重试一次，且正常 JSON mode 成功路径不变。
 - Prompt 模板版本元数据，验证核心模板默认版本、环境变量覆盖、后宫首扫 prompt 标记和通用扫描落盘 metadata。
 - 通用/专项剧情扫描密度分级，验证低密度片段使用 light prompt 和较低输出预算，高密度片段保持 full 策略，长篇扫描落盘记录 `smart_density/density_counts`，Web 运行配置可编辑并持久化 `GENERAL_SCAN_SMART_DENSITY`。
 - 通用/专项剧情扫描 chunk hash 增量复用，验证旧 summary 中未变片段不再重新调用模型，新增/变化片段仍会扫描，落盘记录 `incremental_reuse/reused_chunk_count/scanned_chunk_count`，Web 运行配置可编辑并持久化 `GENERAL_SCAN_INCREMENTAL_REUSE`。
@@ -262,7 +262,7 @@
 - API 重试/超时默认参数共享，验证角色识别、首扫和报告阶段均引用 `shared_utils` 的同一组默认值。
 - 通用 summary 缓存签名，验证同 mtime 但正文内容变化时不会继续复用旧 summary。
 
-最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **221 个测试 OK**；蒸汽西幻 scan_focus、后宫/都市/刑侦 scan_focus 均衡化、组合关键词和专项规则维度已增加到现有 profile/自动分类回归测试中。国运/文明对抗、幕后流/马甲流、模拟器/人生推演和中式诡异/规则怪谈的 profile 发现、自动识别、后宫交叉规则、后宫增强补扫、字段中文标题、rules 审查点深度、首批非后宫跨类型规则导入、都市爽文跨类边界、置信度校准、profile manifest 版本管理、通用角色识别与通用/专项剧情扫描的长篇动态预算和全书均匀抽样、通用扫描 context overflow 降级拆分、通用扫描/二审/报告阶段 JSON mode 降级重试、Prompt 模板版本元数据、通用扫描密度分级与轻量 prompt、通用扫描 chunk hash 增量复用、后宫报告交叉验证提示（女主名单与雷点覆盖）、后宫 Mermaid 关系图谱、后宫关键事件时间线、通用报告多维度评分、通用 summary 缓存签名、扫描 checkpoint 增量恢复、prompt 自检清单去重、失败 chunk 内容诊断、首扫动态线程块分区、checkpoint 显式路径隔离、detail 显式书名查找、报告显式书名、chunk 摘要显式注入、失败诊断显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文、detail 写入显式路径、主流程最终输出局部上下文、SSE 状态流生命周期/目录同步节流、限流作用域 auto 解析、Web 文件路径归属校验、Web 状态文件损坏告警、扫描/报告日志轮转（含 scan.log/report_generation.log）、Web 访问日志、Web JSON schema 校验、API 重试/超时默认参数共享和 Web 无 token 写操作确认保护已有目标测试覆盖；profile manifest 的 `name` 字段与目录名一致性、manifest 自治排序、通用规则核心维度、历史/硬科幻专项规则补强、API 客户端工厂统一和默认 `BASE_URL` 一致性也已有回归测试覆盖。
+最近全量验证结果：`python3 -m unittest discover -s tests -v` 通过，当前为 **222 个测试 OK**；蒸汽西幻 scan_focus、后宫/都市/刑侦 scan_focus 均衡化、组合关键词和专项规则维度已增加到现有 profile/自动分类回归测试中。国运/文明对抗、幕后流/马甲流、模拟器/人生推演和中式诡异/规则怪谈的 profile 发现、自动识别、后宫交叉规则、后宫增强补扫、字段中文标题、rules 审查点深度、首批非后宫跨类型规则导入、都市爽文跨类边界、置信度校准、profile manifest 版本管理、通用角色识别与通用/专项剧情扫描的长篇动态预算和全书均匀抽样、角色识别/通用扫描/二审/报告阶段 JSON mode 降级重试、通用扫描 context overflow 降级拆分、Prompt 模板版本元数据、通用扫描密度分级与轻量 prompt、通用扫描 chunk hash 增量复用、后宫报告交叉验证提示（女主名单与雷点覆盖）、后宫 Mermaid 关系图谱、后宫关键事件时间线、通用报告多维度评分、通用 summary 缓存签名、扫描 checkpoint 增量恢复、prompt 自检清单去重、失败 chunk 内容诊断、首扫动态线程块分区、checkpoint 显式路径隔离、detail 显式书名查找、报告显式书名、chunk 摘要显式注入、失败诊断显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文、detail 写入显式路径、主流程最终输出局部上下文、SSE 状态流生命周期/目录同步节流、限流作用域 auto 解析、Web 文件路径归属校验、Web 状态文件损坏告警、扫描/报告日志轮转（含 scan.log/report_generation.log）、Web 访问日志、Web JSON schema 校验、API 重试/超时默认参数共享和 Web 无 token 写操作确认保护已有目标测试覆盖；profile manifest 的 `name` 字段与目录名一致性、manifest 自治排序、通用规则核心维度、历史/硬科幻专项规则补强、API 客户端工厂统一和默认 `BASE_URL` 一致性也已有回归测试覆盖。
 
 ## 已推送的关键提交
 

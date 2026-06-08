@@ -687,6 +687,49 @@ def _safe_json_loads(text: str):
 
     raise json.JSONDecodeError("unable to parse json", cleaned[:200], 0)
 
+
+def _call_json_chat_completion(messages, *, temperature=0.1, max_tokens=4000):
+    try:
+        response = chat_completion(
+            model=MODEL,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format={"type": "json_object"},
+        )
+    except Exception as exc:
+        logger.warning(f"response_format 不可用，降级调用: {exc}")
+        response = chat_completion(
+            model=MODEL,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    record_usage(response)
+
+    content = response.choices[0].message.content
+    try:
+        return _safe_json_loads(content)
+    except json.JSONDecodeError as first_err:
+        fallback_messages = list(messages) + [{
+            "role": "user",
+            "content": (
+                "上一次回复不是可解析的 JSON 对象。请只重新输出一个合法 JSON 对象，"
+                "不要 Markdown、不要代码块、不要解释。"
+            ),
+        }]
+        fallback_response = chat_completion(
+            model=MODEL,
+            messages=fallback_messages,
+            temperature=0.0,
+            max_tokens=max_tokens,
+        )
+        record_usage(fallback_response)
+        try:
+            return _safe_json_loads(fallback_response.choices[0].message.content)
+        except json.JSONDecodeError as fallback_err:
+            raise ValueError(f"JSON解析失败: {first_err}; fallback={fallback_err}") from fallback_err
+
 token_tracker = None
 
 
@@ -1193,36 +1236,15 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
 
     for retry in range(max_retries):
         try:
-            # 优先强制 JSON 输出（若服务端不支持 response_format，会自动降级）
             try:
-                response = chat_completion(
-                    model=MODEL,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    temperature=0.1,
-                    max_tokens=4000,
-                    response_format={"type": "json_object"},
-                )
-            except Exception as e:
-                logger.warning(f"Chunk {chunk_index} response_format 不可用，降级重试: {e}")
-                response = chat_completion(
-                    model=MODEL,
-                    messages=[
+                data = _call_json_chat_completion(
+                    [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
                     temperature=0.1,
                     max_tokens=4000,
                 )
-            record_usage(response)
-            
-            content = response.choices[0].message.content.strip()
-            
-            try:
-                # 容错解析：避免“控制字符”导致 JSON 解析失败从而反复调用 API
-                data = _safe_json_loads(content)
                 result = _normalize_character_response(data, chunk_index, profile_mode)
 
                 lead_label = "主角" if profile_mode == "general" else "男主"
@@ -1926,21 +1948,15 @@ def _judge_single_pair_merge(char_a_info, char_b_info, conflict_pairs=None):
 如果以上有2项以上一致，除非有明确矛盾，否则应该合并。"""
 
     try:
-        response = chat_completion(
-            model=MODEL,
+        result = _call_json_chat_completion(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.1,
             max_tokens=1000,
-            response_format={"type": "json_object"}
         )
-        record_usage(response)
-        
-        content = response.choices[0].message.content.strip()
-        result = json.loads(content)
-        
+
         should_merge = result.get('should_merge', False)
         main_name = result.get('main_name', name_a)
         reason = result.get('reason', '未提供理由')
@@ -2798,21 +2814,15 @@ def _identify_heroine_merge_candidates(heroines_list):
 请列出所有可能需要合并的女主组。"""
 
     try:
-        response = chat_completion(
-            model=MODEL,
+        result = _call_json_chat_completion(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.1,
             max_tokens=2000,
-            response_format={"type": "json_object"}
         )
-        record_usage(response)
-        
-        content = response.choices[0].message.content.strip()
-        result = json.loads(content)
-        
+
         merge_groups_raw = result.get('merge_groups', [])
         
         # 转换为简单的列表格式
@@ -2915,21 +2925,15 @@ def _judge_heroine_group_merge(heroines_data_list):
 如果以上有 2-3 项明确一致，且没有明显矛盾，应该合并。"""
 
     try:
-        response = chat_completion(
-            model=MODEL,
+        result = _call_json_chat_completion(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.1,
             max_tokens=1500,
-            response_format={"type": "json_object"}
         )
-        record_usage(response)
-        
-        content = response.choices[0].message.content.strip()
-        result = json.loads(content)
-        
+
         should_merge = result.get('should_merge', False)
         main_name = result.get('main_name', names[0])
         reason = result.get('reason', '未提供理由')
