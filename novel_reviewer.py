@@ -8985,6 +8985,21 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         "rejected_points": [],
     }
 
+    def _issue_evidence_card(item, confidence):
+        evidence_text = (
+            str(item.get("evidence") or "").strip()
+            or str(item.get("content") or "").strip()
+            or str(item.get("reason") or "").strip()
+        )
+        return {
+            "fact_type": item.get("type"),
+            "category": item.get("category"),
+            "source_chunk": item.get("chunk_index"),
+            "evidence_text": evidence_text,
+            "review_comment": item.get("review_comment"),
+            "confidence": confidence,
+        }
+
     for name, info in final_heroine_report.items():
         pushed, pushed_reason = pushed_map.get(name, (None, "未判定"))
         leak_info = leak_status_map.get(name, {})
@@ -9090,6 +9105,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
             "reason": item.get("reason"),
             "review_comment": item.get("review_comment"),
             "chunk_index": item.get("chunk_index"),
+            "evidence_card": _issue_evidence_card(item, "confirmed"),
         })
 
     for item in yumen_points:
@@ -9100,6 +9116,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
             "reason": item.get("reason"),
             "review_comment": item.get("review_comment"),
             "chunk_index": item.get("chunk_index"),
+            "evidence_card": _issue_evidence_card(item, "confirmed"),
         })
 
     for item in pending_issues:
@@ -9111,6 +9128,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
             "review_comment": item.get("review_comment"),
             "chunk_index": item.get("chunk_index"),
             "api_error": True,
+            "evidence_card": _issue_evidence_card(item, "pending"),
         })
 
     for item in rejected_issues:
@@ -9121,6 +9139,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
             "reason": item.get("reason"),
             "review_comment": item.get("review_comment"),
             "chunk_index": item.get("chunk_index"),
+            "evidence_card": _issue_evidence_card(item, "rejected"),
         })
 
     with open(summary_file, "w", encoding="utf-8") as f:

@@ -8105,6 +8105,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             report.API_KEY_POOL = old_api_key_pool
 
         self.assertIn("女主定位上下文：甲女=目标女主", text)
+        self.assertIn("证据卡：类型=绿帽；chunk=12；置信=needs_review；女主=甲女=目标女主；定义复核=需要", text)
         self.assertEqual(text.count("女主定位上下文"), 1)
 
     def test_harem_report_flags_strict_issue_context_for_weak_heroine(self):
@@ -8305,10 +8306,19 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(weak_issue["heroine_position_context"], "弱女=弱准女主")
         self.assertIn("当前定位偏弱", weak_issue["definition_review_hint"])
         self.assertIn("缺少男主主体", weak_issue["definition_review_hint"])
+        self.assertEqual(weak_issue["evidence_card"]["fact_type"], "送女")
+        self.assertEqual(weak_issue["evidence_card"]["source_chunk"], None)
+        self.assertEqual(weak_issue["evidence_card"]["confidence"], "needs_review")
+        self.assertEqual(weak_issue["evidence_card"]["matched_heroines"][0]["name"], "弱女")
+        self.assertIn("弱女被安排嫁给路人男", weak_issue["evidence_card"]["evidence_text"])
+        self.assertIn("当前定位偏弱", weak_issue["evidence_card"]["definition_check"])
         self.assertNotIn("heroine_position_context", missing_issue)
         self.assertIn("未命中已识别女主名或别名", missing_issue["definition_review_hint"])
+        self.assertEqual(missing_issue["evidence_card"]["confidence"], "needs_review")
+        self.assertEqual(missing_issue["evidence_card"]["matched_heroines"], [])
         self.assertEqual(normal_issue["heroine_position_context"], "弱女=弱准女主")
         self.assertNotIn("definition_review_hint", normal_issue)
+        self.assertEqual(normal_issue["evidence_card"]["confidence"], "confirmed")
 
         strong_passive_issue = report._annotate_issue_for_report(
             {"type": "送女", "content": "强女被家族安排政治联姻，嫁给路人男。"},
@@ -8665,6 +8675,17 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertEqual(edge_issue["heroine_position_context"], "弱女=弱准女主")
         self.assertNotIn("definition_review_hint", edge_issue)
+
+    def test_reviewer_summary_serializes_issue_evidence_cards(self):
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        reviewer_path = os.path.join(base_dir, "novel_reviewer.py")
+        with open(reviewer_path, "r", encoding="utf-8") as f:
+            text = f.read()
+
+        self.assertIn("def _issue_evidence_card(item, confidence):", text)
+        self.assertIn('"evidence_card": _issue_evidence_card(item, "confirmed")', text)
+        self.assertIn('"evidence_card": _issue_evidence_card(item, "pending")', text)
+        self.assertIn('"evidence_card": _issue_evidence_card(item, "rejected")', text)
 
     def test_report_ignores_unsafe_manual_issue_anchor_aliases(self):
         contexts = [

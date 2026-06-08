@@ -2082,6 +2082,7 @@ def _annotate_issue_for_report(issue: dict, heroine_contexts: list) -> dict:
         annotated["heroine_position_context"] = context
     if review_hint:
         annotated["definition_review_hint"] = review_hint
+    annotated["evidence_card"] = _build_issue_evidence_card(annotated, heroine_contexts)
     return annotated
 
 
@@ -2089,9 +2090,69 @@ def _annotate_issues_for_report(issues: list, heroine_contexts: list) -> list:
     return [_annotate_issue_for_report(issue, heroine_contexts) for issue in (issues or [])]
 
 
+def _build_issue_evidence_card(issue: dict, heroine_contexts: list) -> dict:
+    issue = issue or {}
+    matched_contexts = _matched_issue_heroine_contexts(issue, heroine_contexts)
+    definition_hint = issue.get("definition_review_hint") or _issue_definition_review_hint(issue, heroine_contexts)
+    evidence_text = (
+        str(issue.get("evidence") or "").strip()
+        or str(issue.get("content") or "").strip()
+        or str(issue.get("reason") or "").strip()
+    )
+    confidence = "confirmed"
+    review_comment = str(issue.get("review_comment") or "").strip()
+    if str(issue.get("api_error") or "").strip():
+        confidence = "pending"
+    elif definition_hint:
+        confidence = "needs_review"
+    elif any(word in review_comment for word in ("驳回", "不成立", "误判", "排除")):
+        confidence = "rejected"
+    return {
+        "fact_type": str(issue.get("type") or "").strip(),
+        "category": str(issue.get("category") or "").strip(),
+        "source_chunk": issue.get("chunk_index"),
+        "evidence_text": evidence_text,
+        "matched_heroines": [
+            {
+                "name": ctx.get("name", ""),
+                "position": ctx.get("label", ""),
+                "level": ctx.get("level", ""),
+            }
+            for ctx in matched_contexts
+            if ctx.get("name")
+        ],
+        "definition_check": definition_hint,
+        "review_comment": review_comment,
+        "confidence": confidence,
+    }
+
+
+def _issue_evidence_card_line(card: dict) -> str:
+    if not isinstance(card, dict) or not card:
+        return ""
+    heroine_bits = [
+        f"{item.get('name')}={item.get('position')}"
+        for item in card.get("matched_heroines") or []
+        if item.get("name")
+    ]
+    parts = [
+        f"类型={card.get('fact_type') or '未知'}",
+        f"chunk={card.get('source_chunk') if card.get('source_chunk') is not None else '?'}",
+        f"置信={card.get('confidence') or 'unknown'}",
+    ]
+    if heroine_bits:
+        parts.append(f"女主={','.join(heroine_bits)}")
+    if card.get("definition_check"):
+        parts.append("定义复核=需要")
+    return "；".join(parts)
+
+
 def _append_issue_lines(risk_lines: list, issues: list, heroine_contexts: list) -> None:
     for i, p in enumerate(_annotate_issues_for_report(issues, heroine_contexts), 1):
         risk_lines.append(f"{i}. [{p.get('type','')}] @chunk {p.get('chunk_index')}")
+        card_line = _issue_evidence_card_line(p.get("evidence_card"))
+        if card_line:
+            risk_lines.append(f"   证据卡：{card_line}")
         context = p.get("heroine_position_context")
         if context:
             risk_lines.append(f"   女主定位上下文：{context}")
