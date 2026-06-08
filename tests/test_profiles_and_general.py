@@ -156,6 +156,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(general.uses_general_scan)
         self.assertIn("character_highlights", general.summary_fields)
         self.assertIn("pacing_and_emotion", general.summary_fields)
+        self.assertIn("episodic_mainline_integration", general.summary_fields)
+        self.assertNotIn("unit_plot_mainline_link", general.summary_fields)
 
         self.assertEqual(history.name, "history")
         self.assertTrue(history.uses_general_scan)
@@ -182,6 +184,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("puzzle_fairness", mystery_detective.summary_fields)
         self.assertIn("narrative_trick", mystery_detective.summary_fields)
         self.assertIn("logic_chain_integrity", mystery_detective.summary_fields)
+        self.assertIn("shortcut_detection_dependency", mystery_detective.summary_fields)
+        self.assertNotIn("cheat_detection_dependency", mystery_detective.summary_fields)
         self.assertIn("reader_fit", mystery_detective.summary_fields)
         self.assertIn("overall_assessment", mystery_detective.summary_fields)
         self.assertTrue(any("叙事结构特色" in item for item in mystery_detective.scan_focus))
@@ -302,6 +306,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(any("外挂硬解" in item and "可复核线索推理" in item for item in mystery_detective.scan_focus))
         self.assertTrue(any("案件彼此割裂" in item for item in mystery_detective.scan_focus))
         self.assertIn("tech_feasibility", steampunk_fantasy.summary_fields)
+        self.assertIn("episodic_mainline_integration", steampunk_fantasy.summary_fields)
+        self.assertNotIn("unit_plot_mainline_link", steampunk_fantasy.summary_fields)
         self.assertGreaterEqual(len(steampunk_fantasy.scan_focus), 8)
         self.assertTrue(any("社会阶层体系" in item for item in steampunk_fantasy.scan_focus))
         self.assertTrue(any("炼金工业的经济逻辑" in item for item in steampunk_fantasy.scan_focus))
@@ -5203,8 +5209,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "steampunk_setting",
                 "alchemy_industry",
                 "tech_feasibility",
-                "unit_plot_mainline_link",
-                "cheat_detection_dependency",
+                "episodic_mainline_integration",
+                "shortcut_detection_dependency",
                 "system_cost_validity",
                 "technical_leap_risk",
             ],
@@ -5213,8 +5219,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "steampunk_setting": ["教会、帝国和蒸汽工业共同构成背景"],
                 "alchemy_industry": ["炼金矩阵参与军工生产"],
                 "tech_feasibility": ["差分机和高能煤精需要解释制造链"],
-                "unit_plot_mainline_link": ["多个案件与主线联系偏弱"],
-                "cheat_detection_dependency": ["破案高度依赖系统回放案发现场"],
+                "episodic_mainline_integration": ["多个案件与主线联系偏弱"],
+                "shortcut_detection_dependency": ["破案高度依赖系统回放案发现场"],
                 "system_cost_validity": ["寿命消耗是系统核心代价"],
                 "technical_leap_risk": ["超级能源和制导技术跃迁过快"],
             }
@@ -8365,6 +8371,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(report.summary_field_label("humanity_and_morality"), "人性与道德困境")
         self.assertEqual(report.summary_field_label("tech_plausibility"), "技术可行性")
         self.assertEqual(report.summary_field_label("case_design"), "案件结构")
+        self.assertEqual(report.summary_field_label("unit_plot_mainline_link"), "单元剧情与主线连接度")
+        self.assertEqual(report.summary_field_label("cheat_detection_dependency"), "外挂破案依赖度")
         self.assertEqual(report.summary_field_label("romance_subplot"), "恋爱喜剧平衡")
         self.assertEqual(report.summary_field_label("weird_rules"), "规则机制")
         self.assertEqual(report.summary_field_label("folk_taboo_system"), "民俗禁忌体系")

@@ -11,7 +11,7 @@
 - **分类/profile 配置完善**：约 **99%**。23 个分类的 `scan_focus`、`summary_fields`、`inference_keywords` 已基本按 Kimi 方案补齐；`kimi_v3` 指出的 10 个缺失后宫交叉规则 profile 已补齐 `cross_profile_rules`，并已新增国运/文明对抗流、幕后流/马甲流、模拟器/人生推演和中式诡异/规则怪谈四个高区分度 profile；所有 profile manifest 的 `name` 字段已与目录名统一，profile 展示/推断排序已迁移为 manifest 自治的 `sort_order`，通用 `rules.json` 已从 1 类 3 点扩展到 4 类 16 点，历史、硬科幻、蒸汽西幻专项规则均已补到不少于 12 个审查点，`harem/urban_power/crime_forensics` 的 `scan_focus` 数量已按 P1-2 均衡到 9/9/11 条，常见旧字段名和 Kimi 草案字段名已通过别名归并，剩余主要是真实样本校准和少量低风险提示词文案打磨。
 - **后宫/男性向排雷专项**：约 **82% - 86%**。核心定义、五维洁度、接触等级、partner 豁免、漏女三层判断、女主事实扩展、重复女主大模型合并等关键项已落地；仍需要更多真实书籍报告校准误判。
 - **多标签/混合类型扫描**：约 **91% - 93%**。已支持自动多标签、手动多选、后宫+其他类型补扫；历史、科幻、仙侠、都市、游戏、异世界、蒸汽西幻、国运、模拟器以及末世、军事、刑侦、克系、校园、文娱、种田、商战、推理、体育等副类型均已导入后宫交叉规则。自动识别已补充标题加权、组合关键词加成、负向关键词抑制、局部否定过滤、短词污染过滤、有限频次加分和 profile 自适应阈值，降低次要标签漏标与跨类误判。
-- **报告输出和字段标题**：约 **96% - 98%**。通用报告、专项报告、后宫报告的字段标题和收尾字段已多轮补齐；所有 23 个 profile 的 summary_fields 均已补全中文标题（含主线剧情、核心冲突、世界观、主题、优点与亮点、风险与问题、适合读者、总体评价等通用字段，以及女主群像、候选女主、漏女、洁度评估、毒点、郁闷点、男主定位、感情线推进等后宫字段）；通用总评、作品概览、伏笔回收、适合读者、总体评价以及常见专项字段均已支持旧字段名别名读取，并有回归测试覆盖。
+- **报告输出和字段标题**：约 **96% - 98%**。通用报告、专项报告、后宫报告的字段标题和收尾字段已多轮补齐；所有 23 个 profile 的 summary_fields 均已补全中文标题（含主线剧情、核心冲突、世界观、主题、优点与亮点、风险与问题、适合读者、总体评价等通用字段，以及女主群像、候选女主、漏女、洁度评估、毒点、郁闷点、男主定位、感情线推进等后宫字段）；Kimi 点名的 `unit_plot_mainline_link`、`cheat_detection_dependency` 已迁移为更自解释的 `episodic_mainline_integration`、`shortcut_detection_dependency`，旧字段继续作为别名兼容；通用总评、作品概览、伏笔回收、适合读者、总体评价以及常见专项字段均已支持旧字段名别名读取，并有回归测试覆盖。
 - **Web/部署/GitHub Actions/Docker**：约 **98% - 99%**。前后端分离、SSE 实时状态、SSE 连接生命周期与目录同步节流、队列管理、删除/批量删除、Token 展示、配置摘要、限流作用域 `auto/global/per_key` 可配置、非敏感运行配置编辑并自动持久化到 `.env`、可选访问令牌、未设置访问令牌时写操作确认保护、Docker/GHCR/DockerHub 流程、请求体限制、文件流式输出、任务日志隔离、前端 ESLint/Prettier 检查、CI 自动验证、输出文件索引、Docker 最终镜像瘦身、容器 API Key 启动校验、书籍同步减少无变化状态写入、API 客户端工厂统一、扫描 checkpoint 增量写入、失败片段内容诊断、首扫动态线程块调度、checkpoint 运行态显式注入、detail 路径显式书名解析、报告书名显式传入、chunk 摘要状态显式注入、失败诊断状态显式注入、中段摘要限额状态显式注入、chunk 提交 checkpoint 文件显式传入、main 级 checkpoint 回调显式上下文、detail 写入显式路径和主流程最终输出局部上下文等工程项已完成；剩余主要是进一步生产化部署细节（反向代理、TLS、更细粒度访问控制）。
 
 ## 已完成的主要工作
@@ -140,6 +140,7 @@
 - 回归测试 `test_general_scan_field_labels_cover_profile_summary_fields` 已移除对通用字段和后宫 profile 的跳过逻辑，现在强制检查所有 profile 的所有 summary_fields 都必须有中文标题，防止新增 profile 字段遗漏标签。
 - 补充更多非后宫专项旧字段/同义字段别名，覆盖军事战略/战术/指挥链/后勤/装备、商战/职场/文娱资源、末世据点与秩序、种田资源与科技树、仙侠境界/势力/求道、系统奖励代价、体育对局/宿敌、刑侦法医/团队/司法、克系污染代价、校园环境/成长弧线等字段；扫描汇总和最终报告共用同一别名表，避免模型返回旧 key 时专项栏目丢失。
 - 非后宫专项字段别名继续补漏，覆盖科学逻辑/科学假设、军事战略/指挥链/部队建设/战斗/外交、商战模式/市场/组织/职业成长、娱乐圈资源/公关、末世资源/据点/秩序重建、仙侠境界/战力/宗门/求道、系统平衡/奖励代价、刑侦谜题公平/法医流程/团队协作等常见模型同义 key。
+- Kimi P2 点名的难懂字段名已迁移：通用/蒸汽西幻使用 `episodic_mainline_integration` 表达“单元剧情与主线连接度”，悬疑推理使用 `shortcut_detection_dependency` 表达“外挂破案依赖度”；旧 `unit_plot_mainline_link`、`cheat_detection_dependency` 仍作为报告和扫描汇总别名读取。
 - 非后宫通用报告会展示片段级 `specialty_notes` 的“专项命中要点”，避免专项规则只在 prompt 或中间 JSON 中出现、最终报告看不到真实命中点。
 
 ### 5. Web 和部署工程项
@@ -293,7 +294,7 @@
 
 ### 2. 字段命名差异（已处理）
 
-Kimi 草案里少量字段名与当前项目不一致（如 `humanity_and_morality` vs `humanity_moral_dilemmas`、`social_relevance` vs `social_reflection`、`adventure_structure` vs `adventure_system` 等），当前已增加别名兼容和回归测试，不影响功能。后续若发现新的模型旧字段输出，优先补别名和测试即可。
+Kimi 草案里少量字段名与当前项目不一致（如 `humanity_and_morality` vs `humanity_moral_dilemmas`、`social_relevance` vs `social_reflection`、`adventure_structure` vs `adventure_system` 等），当前已增加别名兼容和回归测试，不影响功能。Kimi P2 点名的 `unit_plot_mainline_link`、`cheat_detection_dependency` 也已从 profile manifest 中移除并迁移为自解释字段名，旧字段继续兼容。后续若发现新的模型旧字段输出，优先补别名和测试即可。
 
 ### 2.1 Profile name 字段一致性（已处理）
 
