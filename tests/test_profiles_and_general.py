@@ -881,6 +881,131 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("对象是目标女主或强准女主", prompt)
         self.assertIn("反派计划把女性送人但男主没有主动参与", prompt)
 
+    def test_scan_checkpoint_incremental_delta_merges_on_load(self):
+        old_checkpoint = novel_scan.CHECKPOINT_FILE
+        old_plan = novel_scan.CURRENT_CHUNK_PLAN_METADATA
+        old_summaries = dict(novel_scan.CHUNK_SUMMARIES)
+        old_detail_path = getattr(novel_scan, "_ACTIVE_DETAIL_PATH", None)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                novel_scan.CHECKPOINT_FILE = os.path.join(tmpdir, "latest_checkpoint.json")
+                novel_scan.CURRENT_CHUNK_PLAN_METADATA = {"chunk_count": 3}
+                novel_scan.CHUNK_SUMMARIES = {0: "第一块摘要"}
+                novel_scan._ACTIVE_DETAIL_PATH = "/tmp/detail.json"
+
+                issue0 = {"type": "前世雷", "chunk_index": 1}
+                fact0 = {"name": "甲女", "chunk_index": 1}
+                rel0 = {"name": "甲女", "chunk_index": 1}
+                novel_scan.save_checkpoint(
+                    [issue0],
+                    [fact0],
+                    {0},
+                    [rel0],
+                    failed_chunks=set(),
+                    current_chunk_idx=0,
+                )
+
+                issue1 = {"type": "漏女", "chunk_index": 2}
+                fact1 = {"name": "乙女", "chunk_index": 2}
+                rel1 = {"name": "乙女", "chunk_index": 2}
+                novel_scan.CHUNK_SUMMARIES = {0: "第一块摘要", 1: "第二块摘要"}
+                novel_scan.save_checkpoint(
+                    [issue0, issue1],
+                    [fact0, fact1],
+                    {0, 1},
+                    [rel0, rel1],
+                    failed_chunks=set(),
+                    current_chunk_idx=1,
+                    incremental=True,
+                    delta_issues=[issue1],
+                    delta_heroine_facts=[fact1],
+                    delta_extra_relations=[rel1],
+                    delta_chunk_summary="第二块摘要",
+                )
+
+                with open(novel_scan.CHECKPOINT_FILE, "r", encoding="utf-8") as f:
+                    base_data = json.load(f)
+                self.assertEqual(base_data["issues"], [issue0])
+                self.assertTrue(os.path.exists(f"{novel_scan.CHECKPOINT_FILE}.delta.jsonl"))
+
+                novel_scan.CHUNK_SUMMARIES = {}
+                loaded = novel_scan.load_checkpoint()
+                issues, heroine_facts, processed, extra_relations, failed, _profiles, detail_path, _done, _completed = loaded
+
+                self.assertEqual(issues, [issue0, issue1])
+                self.assertEqual(heroine_facts, [fact0, fact1])
+                self.assertEqual(extra_relations, [rel0, rel1])
+                self.assertEqual(processed, {0, 1})
+                self.assertEqual(failed, set())
+                self.assertEqual(detail_path, "/tmp/detail.json")
+                self.assertEqual(novel_scan.CHUNK_SUMMARIES, {0: "第一块摘要", 1: "第二块摘要"})
+        finally:
+            novel_scan.CHECKPOINT_FILE = old_checkpoint
+            novel_scan.CURRENT_CHUNK_PLAN_METADATA = old_plan
+            novel_scan.CHUNK_SUMMARIES = old_summaries
+            novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
+
+    def test_scan_checkpoint_incremental_periodically_merges_full_file(self):
+        old_checkpoint = novel_scan.CHECKPOINT_FILE
+        old_plan = novel_scan.CURRENT_CHUNK_PLAN_METADATA
+        old_summaries = dict(novel_scan.CHUNK_SUMMARIES)
+        old_detail_path = getattr(novel_scan, "_ACTIVE_DETAIL_PATH", None)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                novel_scan.CHECKPOINT_FILE = os.path.join(tmpdir, "latest_checkpoint.json")
+                novel_scan.CURRENT_CHUNK_PLAN_METADATA = {"chunk_count": 10}
+                novel_scan.CHUNK_SUMMARIES = {i: f"摘要{i}" for i in range(10)}
+                novel_scan._ACTIVE_DETAIL_PATH = "/tmp/detail.json"
+
+                issue0 = {"type": "前世雷", "chunk_index": 1}
+                novel_scan.save_checkpoint(
+                    [issue0],
+                    [],
+                    {0},
+                    [],
+                    failed_chunks=set(),
+                    current_chunk_idx=0,
+                )
+
+                issue1 = {"type": "漏女", "chunk_index": 2}
+                novel_scan.save_checkpoint(
+                    [issue0, issue1],
+                    [],
+                    {0, 1},
+                    [],
+                    failed_chunks=set(),
+                    current_chunk_idx=1,
+                    incremental=True,
+                    delta_issues=[issue1],
+                    delta_chunk_summary="摘要1",
+                )
+                delta_path = f"{novel_scan.CHECKPOINT_FILE}.delta.jsonl"
+                self.assertTrue(os.path.exists(delta_path))
+
+                all_issues = [{"type": f"类型{i}", "chunk_index": i + 1} for i in range(10)]
+                novel_scan.save_checkpoint(
+                    all_issues,
+                    [],
+                    set(range(10)),
+                    [],
+                    failed_chunks=set(),
+                    current_chunk_idx=9,
+                    incremental=True,
+                    delta_issues=[all_issues[-1]],
+                    delta_chunk_summary="摘要9",
+                )
+
+                self.assertFalse(os.path.exists(delta_path))
+                with open(novel_scan.CHECKPOINT_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self.assertEqual(data["issues"], all_issues)
+                self.assertEqual(set(data["processed_chunks"]), set(range(10)))
+        finally:
+            novel_scan.CHECKPOINT_FILE = old_checkpoint
+            novel_scan.CURRENT_CHUNK_PLAN_METADATA = old_plan
+            novel_scan.CHUNK_SUMMARIES = old_summaries
+            novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
+
     def test_toxic_reviewer_prompt_locks_strict_harem_definitions(self):
         system_prompt, user_prompt = toxic_reviewer.build_review_prompts(
             {

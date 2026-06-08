@@ -76,6 +76,7 @@ CHUNK_SUMMARIES = {}
 _ACTIVE_PROGRESS_STATE = None
 _middle_summary_calls = 0
 _ACTIVE_DETAIL_PATH = None
+CHECKPOINT_FULL_MERGE_INTERVAL = 10
 
 
 def find_latest_scan_checkpoint(prefix: str):
@@ -265,14 +266,16 @@ def load_rules():
 
 
 # ---------------- 断点续传 ----------------
-def save_checkpoint(all_issues, all_heroine_facts, processed_chunks, extra_relations_all=None, failed_chunks=None,
-                    current_chunk_idx=None, chunk_plan_metadata=None, chunk_summaries=None, heroine_profiles=None,
-                    detail_path=None, rescan_done_chunks=None, rescan_completed=None):
-    """保存扫描进度
-    
-    Args:
-        current_chunk_idx: 当前刚完成的块索引（0-based），用于日志显示
-    """
+def _checkpoint_delta_file():
+    if not CHECKPOINT_FILE:
+        return None
+    return f"{CHECKPOINT_FILE}.delta.jsonl"
+
+
+def _build_checkpoint_data(all_issues, all_heroine_facts, processed_chunks, extra_relations_all=None,
+                           failed_chunks=None, chunk_plan_metadata=None, chunk_summaries=None,
+                           heroine_profiles=None, detail_path=None, rescan_done_chunks=None,
+                           rescan_completed=None):
     data = {
         "issues": all_issues,
         "heroine_facts": all_heroine_facts,
@@ -296,10 +299,143 @@ def save_checkpoint(all_issues, all_heroine_facts, processed_chunks, extra_relat
         data["rescan_done_chunks"] = list(sorted(rescan_done_chunks))
     if rescan_completed is not None:
         data["rescan_completed"] = bool(rescan_completed)
+    return data
+
+
+def _write_full_checkpoint_data(data):
+    with open(CHECKPOINT_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    delta_file = _checkpoint_delta_file()
+    if delta_file and os.path.exists(delta_file):
+        os.unlink(delta_file)
+
+
+def _append_checkpoint_delta(current_chunk_idx, *, delta_issues=None, delta_heroine_facts=None,
+                             delta_extra_relations=None, processed=False, failed=False,
+                             chunk_summary=""):
+    delta_file = _checkpoint_delta_file()
+    if not delta_file:
+        return
+    delta = {
+        "version": 1,
+        "chunk_index": current_chunk_idx,
+        "issues": delta_issues or [],
+        "heroine_facts": delta_heroine_facts or [],
+        "extra_relations": delta_extra_relations or [],
+        "processed_chunks": [current_chunk_idx] if processed else [],
+        "failed_chunks": [current_chunk_idx] if failed else [],
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    if chunk_summary:
+        delta["chunk_summaries"] = {str(current_chunk_idx): chunk_summary}
+    with open(delta_file, 'a', encoding='utf-8') as f:
+        f.write(json.dumps(delta, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
+def _iter_checkpoint_deltas():
+    delta_file = _checkpoint_delta_file()
+    if not delta_file or not os.path.exists(delta_file):
+        return []
+    latest_by_chunk = {}
+    order = []
+    with open(delta_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                item = json.loads(line)
+            except Exception as exc:
+                logger.warning(f"跳过损坏的增量断点记录: {exc}")
+                continue
+            try:
+                idx = int(item.get("chunk_index"))
+            except Exception:
+                continue
+            if idx in latest_by_chunk:
+                order = [x for x in order if x != idx]
+            latest_by_chunk[idx] = item
+            order.append(idx)
+    return [latest_by_chunk[idx] for idx in order]
+
+
+def _merge_checkpoint_deltas(data):
+    for delta in _iter_checkpoint_deltas():
+        idx = int(delta.get("chunk_index"))
+        processed_chunks = set(data.get("processed_chunks", []))
+        already_processed = idx in processed_chunks
+        delta_processed = set(delta.get("processed_chunks", []))
+        delta_failed = set(delta.get("failed_chunks", []))
+        if delta_processed:
+            data.setdefault("processed_chunks", [])
+            merged_processed = set(data.get("processed_chunks", [])) | delta_processed
+            data["processed_chunks"] = list(sorted(merged_processed))
+            merged_failed = set(data.get("failed_chunks", [])) - delta_processed
+            data["failed_chunks"] = list(sorted(merged_failed))
+        if delta_failed:
+            merged_failed = set(data.get("failed_chunks", [])) | delta_failed
+            data["failed_chunks"] = list(sorted(merged_failed))
+        if delta_processed and not already_processed:
+            data.setdefault("issues", []).extend(delta.get("issues", []) or [])
+            data.setdefault("heroine_facts", []).extend(delta.get("heroine_facts", []) or [])
+            data.setdefault("extra_relations", []).extend(delta.get("extra_relations", []) or [])
+        delta_summaries = delta.get("chunk_summaries") or {}
+        if delta_summaries:
+            data.setdefault("chunk_summaries", {}).update(delta_summaries)
+    return data
+
+
+def save_checkpoint(all_issues, all_heroine_facts, processed_chunks, extra_relations_all=None, failed_chunks=None,
+                    current_chunk_idx=None, chunk_plan_metadata=None, chunk_summaries=None, heroine_profiles=None,
+                    detail_path=None, rescan_done_chunks=None, rescan_completed=None, incremental=False,
+                    delta_issues=None, delta_heroine_facts=None, delta_extra_relations=None,
+                    delta_chunk_summary=""):
+    """保存扫描进度
+
+    Args:
+        current_chunk_idx: 当前刚完成的块索引（0-based），用于日志显示
+    """
+    data = _build_checkpoint_data(
+        all_issues,
+        all_heroine_facts,
+        processed_chunks,
+        extra_relations_all=extra_relations_all,
+        failed_chunks=failed_chunks,
+        chunk_plan_metadata=chunk_plan_metadata,
+        chunk_summaries=chunk_summaries,
+        heroine_profiles=heroine_profiles,
+        detail_path=detail_path,
+        rescan_done_chunks=rescan_done_chunks,
+        rescan_completed=rescan_completed,
+    )
     try:
         with CHECKPOINT_LOCK:
-            with open(CHECKPOINT_FILE, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            can_append_delta = (
+                incremental
+                and current_chunk_idx is not None
+                and CHECKPOINT_FILE
+                and os.path.exists(CHECKPOINT_FILE)
+                and (current_chunk_idx + 1) % CHECKPOINT_FULL_MERGE_INTERVAL != 0
+                and heroine_profiles is None
+                and rescan_done_chunks is None
+                and rescan_completed is None
+                and chunk_plan_metadata is None
+                and chunk_summaries is None
+                and detail_path is None
+            )
+            if can_append_delta:
+                current_failed_chunks = set(failed_chunks or [])
+                _append_checkpoint_delta(
+                    current_chunk_idx,
+                    delta_issues=delta_issues,
+                    delta_heroine_facts=delta_heroine_facts,
+                    delta_extra_relations=delta_extra_relations,
+                    processed=current_chunk_idx in set(processed_chunks or []),
+                    failed=current_chunk_idx in current_failed_chunks,
+                    chunk_summary=delta_chunk_summary,
+                )
+            else:
+                _write_full_checkpoint_data(data)
         
         # 优先显示当前完成的块，否则显示进度统计
         if current_chunk_idx is not None:
@@ -315,12 +451,17 @@ def save_checkpoint(all_issues, all_heroine_facts, processed_chunks, extra_relat
 def load_checkpoint():
     """加载扫描进度，若不存在返回空"""
     global CHUNK_SUMMARIES
-    if not CHECKPOINT_FILE or not os.path.exists(CHECKPOINT_FILE):
+    delta_file = _checkpoint_delta_file()
+    if not CHECKPOINT_FILE or (not os.path.exists(CHECKPOINT_FILE) and not (delta_file and os.path.exists(delta_file))):
         CHUNK_SUMMARIES = {}
         return [], [], set(), [], set(), None, None, set(), False
     try:
-        with open(CHECKPOINT_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        if os.path.exists(CHECKPOINT_FILE):
+            with open(CHECKPOINT_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        else:
+            data = {}
+        data = _merge_checkpoint_deltas(data)
         issues = data.get("issues", [])
         heroine_facts = data.get("heroine_facts", [])
         # 兼容旧版 heroine_status
@@ -2298,6 +2439,11 @@ def _commit_chunk_result(idx, issues, heroine_facts, extra_rel, next_summary, ok
             extra_relations_all,
             failed_chunks=failed_chunks,
             current_chunk_idx=idx,
+            incremental=True,
+            delta_issues=issues if ok else [],
+            delta_heroine_facts=heroine_facts if ok else [],
+            delta_extra_relations=extra_rel if ok else [],
+            delta_chunk_summary=next_summary if ok else "",
         )
         _advance_chunk_progress(idx, processed_chunks, failed_chunks, progress_state or _ACTIVE_PROGRESS_STATE)
 
