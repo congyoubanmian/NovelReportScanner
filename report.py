@@ -347,6 +347,15 @@ SUMMARY_FIELD_ALIASES = {
     "final_verdict": "overall_assessment",
 }
 
+RADAR_SCORE_DIMENSIONS = {
+    "plot": "剧情质量",
+    "characters": "人物塑造",
+    "worldbuilding": "世界观",
+    "pacing": "节奏把控",
+    "writing": "文笔水准",
+    "emotion": "情绪调动",
+}
+
 
 def summary_field_label(field: str) -> str:
     if field in SUMMARY_FIELD_TITLES:
@@ -3324,7 +3333,131 @@ def _general_character_rows(detailed_data: dict, limit=20):
     return chars[:limit]
 
 
-def _append_general_scan_section(lines: list, general_summary: dict):
+def _clamp_score(value, default: float = 6.0) -> float:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        score = default
+    return round(max(0.0, min(10.0, score)), 1)
+
+
+def _text_signal_count(*items) -> int:
+    count = 0
+    for item in items:
+        if isinstance(item, list):
+            count += len([x for x in item if str(x or "").strip()])
+        elif isinstance(item, dict):
+            count += len([x for x in item.values() if str(x or "").strip()])
+        elif str(item or "").strip():
+            count += 1
+    return count
+
+
+def _normalize_general_radar_scores(general_summary: dict, detailed_data: dict = None) -> dict:
+    summary = (general_summary or {}).get("summary") or {}
+    raw_scores = summary.get("radar_scores") or (general_summary or {}).get("radar_scores")
+    normalized = {}
+    if isinstance(raw_scores, dict):
+        for key, label in RADAR_SCORE_DIMENSIONS.items():
+            raw = raw_scores.get(key)
+            reason = ""
+            if isinstance(raw, dict):
+                score_value = raw.get("score")
+                reason = str(raw.get("reason") or raw.get("comment") or "").strip()
+            else:
+                score_value = raw
+            if score_value is None:
+                continue
+            normalized[key] = {
+                "label": label,
+                "score": _clamp_score(score_value),
+                "reason": reason[:120],
+            }
+    if len(normalized) == len(RADAR_SCORE_DIMENSIONS):
+        return normalized
+
+    risks = summary_field_values(summary, "risks_or_issues")
+    strengths = summary_field_values(summary, "strengths")
+    characters = _general_character_rows(detailed_data or {}, limit=20)
+    chunk_results = (general_summary or {}).get("chunk_results") or []
+    quality_notes = []
+    for chunk in chunk_results:
+        if isinstance(chunk, dict):
+            quality_notes.extend(_clean_text_items(chunk.get("quality_notes") or [], limit=5, max_len=120))
+    risk_penalty = min(2.5, 0.4 * len(risks))
+    strength_bonus = min(1.5, 0.3 * len(strengths))
+
+    fallback_specs = {
+        "plot": (
+            _text_signal_count(summary_field_values(summary, "main_plot"), summary_field_values(summary, "core_conflicts")),
+            "按主线剧情和核心冲突材料完整度估算。",
+        ),
+        "characters": (
+            _text_signal_count(summary_field_values(summary, "character_highlights"), characters),
+            "按重要角色数量、角色亮点和人物材料估算。",
+        ),
+        "worldbuilding": (
+            _text_signal_count(summary_field_values(summary, "worldbuilding")),
+            "按世界观/设定材料完整度估算。",
+        ),
+        "pacing": (
+            _text_signal_count(summary_field_values(summary, "pacing_and_emotion"), quality_notes),
+            "按节奏与片段质量记录估算。",
+        ),
+        "writing": (
+            _text_signal_count(strengths, quality_notes),
+            "按优点、文笔和片段质量记录估算。",
+        ),
+        "emotion": (
+            _text_signal_count(summary_field_values(summary, "themes"), summary_field_values(summary, "pacing_and_emotion")),
+            "按主题表达和情绪曲线材料估算。",
+        ),
+    }
+    for key, label in RADAR_SCORE_DIMENSIONS.items():
+        if key in normalized:
+            continue
+        evidence_count, reason = fallback_specs[key]
+        score = 5.5 + min(2.5, evidence_count * 0.7) + strength_bonus - risk_penalty
+        normalized[key] = {
+            "label": label,
+            "score": _clamp_score(score),
+            "reason": reason,
+        }
+    return normalized
+
+
+def _append_general_radar_score_section(lines: list, general_summary: dict, detailed_data: dict = None):
+    scores = _normalize_general_radar_scores(general_summary, detailed_data)
+    if not scores:
+        return
+    frontend_json = {
+        key: {
+            "label": item["label"],
+            "score": item["score"],
+            "reason": item.get("reason") or "",
+        }
+        for key, item in scores.items()
+    }
+    lines.extend([
+        "",
+        "【多维度评分】",
+        "| 维度 | 分数 | 依据 |",
+        "|---|---:|---|",
+    ])
+    for item in scores.values():
+        lines.append(
+            f"| {_markdown_cell(item['label'], 24)} | {item['score']:.1f}/10 | {_markdown_cell(item.get('reason') or '未描述', 90)} |"
+        )
+    lines.extend([
+        "",
+        "前端评分JSON：",
+        "```json",
+        json.dumps(frontend_json, ensure_ascii=False, indent=2),
+        "```",
+    ])
+
+
+def _append_general_scan_section(lines: list, general_summary: dict, detailed_data: dict = None):
     summary = (general_summary or {}).get("summary") or {}
     if not summary:
         lines.extend(["", "【剧情与主题】", "未找到通用剧情扫描结果。"])
@@ -3341,6 +3474,7 @@ def _append_general_scan_section(lines: list, general_summary: dict):
 
     lines.extend(["", "【作品概览】"])
     lines.append(summary_field_text(summary, "story_overview"))
+    _append_general_radar_score_section(lines, general_summary, detailed_data)
     add_list("主线剧情", summary_field_values(summary, "main_plot"))
     add_list("核心冲突", summary_field_values(summary, "core_conflicts"))
     add_list("世界观/设定", summary_field_values(summary, "worldbuilding"))
@@ -3403,7 +3537,7 @@ def build_general_report(book_key: str, detailed_data: dict, general_summary: di
         f"分析模式：{(general_summary or {}).get('profile_display_name') or '通用小说分析'}",
         "=" * 60,
     ]
-    _append_general_scan_section(lines, general_summary)
+    _append_general_scan_section(lines, general_summary, detailed_data)
     lines.extend([
         "",
         "【分析标准】",
@@ -3640,7 +3774,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         if harem_plus_summary and _general_summary_matches_novel(harem_plus_summary, novel_path or novel_path_env, "general"):
             log_report(f"using harem+ general summary: {harem_plus_summary_path or '<not found>'}")
             harem_plus_lines = ["", "【作品整体评价】"]
-            _append_general_scan_section(harem_plus_lines, harem_plus_summary)
+            _append_general_scan_section(harem_plus_lines, harem_plus_summary, detailed_data)
             report = f"{report}\n" + "\n".join(harem_plus_lines)
     log_report(f"report content built, chars={len(report)}")
 

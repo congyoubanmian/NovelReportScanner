@@ -5477,6 +5477,41 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("秘境规则稳定", text)
         self.assertIn("宗门资源争夺明确", text)
 
+    def test_general_report_includes_radar_scores_for_frontend(self):
+        general_summary = {
+            "profile_display_name": "通用小说分析",
+            "summary_fields": ["main_plot", "character_highlights", "pacing_and_emotion"],
+            "summary": {
+                "story_overview": "主角调查案件并推进主线。",
+                "main_plot": ["案件推进清晰"],
+                "core_conflicts": ["主角与幕后势力对抗"],
+                "worldbuilding": ["近代城市秩序"],
+                "themes": ["真相与代价"],
+                "character_highlights": ["主角有稳定方法论"],
+                "pacing_and_emotion": ["节奏偏慢但情绪稳定"],
+                "strengths": ["结构清楚"],
+                "risks_or_issues": ["单元之间联系偏弱"],
+                "radar_scores": {
+                    "plot": {"score": 7.5, "reason": "主线推进清楚"},
+                    "characters": {"score": 6.5, "reason": "角色辨识度尚可"},
+                    "worldbuilding": {"score": 7, "reason": "城市规则明确"},
+                    "pacing": {"score": 5.5, "reason": "节奏偏慢"},
+                    "writing": {"score": 6, "reason": "表达流畅"},
+                    "emotion": {"score": 5, "reason": "情绪调动一般"},
+                },
+            },
+        }
+
+        text = report.build_general_report("测试书", {}, general_summary)
+
+        self.assertIn("【多维度评分】", text)
+        self.assertIn("| 剧情质量 | 7.5/10 | 主线推进清楚 |", text)
+        self.assertIn("| 节奏把控 | 5.5/10 | 节奏偏慢 |", text)
+        self.assertIn("前端评分JSON", text)
+        self.assertIn('"plot": {', text)
+        self.assertIn('"label": "剧情质量"', text)
+        self.assertIn('"score": 7.5', text)
+
     def test_general_report_does_not_repeat_footer_summary_fields(self):
         general_summary = {
             "profile_display_name": "通用小说分析",
@@ -8630,6 +8665,50 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("系统奖励稳定", summary["golden_finger_system"])
         self.assertTrue(any('"golden_finger_system": ["异能/金手指体系专项分析要点"]' in prompt for prompt in prompts))
         self.assertTrue(any('"relationships": ["关系线专项分析要点"]' in prompt for prompt in prompts))
+
+    def test_general_scan_summary_normalizes_radar_scores(self):
+        profile = analysis_profiles.load_analysis_profile("general")
+        prompts = []
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(messages, max_tokens=3000):
+                prompts.append("\n".join(item.get("content", "") for item in messages))
+                return {
+                    "story_overview": "主角完成主线。",
+                    "main_plot": ["完成主线"],
+                    "core_conflicts": ["目标明确"],
+                    "worldbuilding": ["设定清楚"],
+                    "themes": ["成长"],
+                    "foreshadowing_and_payoff": ["伏笔回收"],
+                    "strengths": ["结构完整"],
+                    "risks_or_issues": ["节奏略慢"],
+                    "reader_fit": "通用读者",
+                    "overall_assessment": "可读",
+                    "radar_scores": {
+                        "plot": {"score": 8.25, "reason": "主线完整"},
+                        "characters": {"score": "6", "reason": "角色够用"},
+                        "worldbuilding": {"score": 12, "reason": "超出会被截断"},
+                        "pacing": {"score": -1, "reason": "低于会被截断"},
+                        "writing": 7,
+                        "emotion": {"score": 5.5},
+                    },
+                }
+
+            general_scan._call_json = fake_call_json
+            summary = general_scan._summarize_book(
+                "通用测试",
+                [{"one_sentence_summary": "主角完成主线。"}],
+                profile=profile,
+            )
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertTrue(any('"radar_scores"' in prompt for prompt in prompts))
+        self.assertEqual(summary["radar_scores"]["plot"]["label"], "剧情质量")
+        self.assertEqual(summary["radar_scores"]["plot"]["score"], 8.2)
+        self.assertEqual(summary["radar_scores"]["worldbuilding"]["score"], 10.0)
+        self.assertEqual(summary["radar_scores"]["pacing"]["score"], 0.0)
+        self.assertEqual(summary["radar_scores"]["writing"]["score"], 7.0)
 
     def test_general_scan_summary_accepts_kimi_field_aliases(self):
         profile = analysis_profiles.load_analysis_profile("apocalypse_survival")

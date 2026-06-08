@@ -15,6 +15,14 @@ from text_anchor import build_chunk_manifest, save_chunk_manifest
 CHUNK_SIZE = int(os.environ.get("GENERAL_SCAN_CHUNK_SIZE", "12000"))
 CHUNK_OVERLAP = int(os.environ.get("GENERAL_SCAN_CHUNK_OVERLAP", "1000"))
 MAX_CHUNKS = int(os.environ.get("GENERAL_SCAN_MAX_CHUNKS", "80"))
+RADAR_SCORE_DIMENSIONS = {
+    "plot": "剧情质量",
+    "characters": "人物塑造",
+    "worldbuilding": "世界观",
+    "pacing": "节奏把控",
+    "writing": "文笔水准",
+    "emotion": "情绪调动",
+}
 
 
 def _effective_max_chunks(text_length: int, base_max_chunks: int = None) -> int:
@@ -203,6 +211,31 @@ def _safe_list(value: Any, limit: int = 20) -> List[str]:
         if len(out) >= limit:
             break
     return out
+
+
+def _normalize_radar_scores(value: Any) -> Dict[str, Dict[str, Any]]:
+    if not isinstance(value, dict):
+        return {}
+    normalized = {}
+    for key, label in RADAR_SCORE_DIMENSIONS.items():
+        raw = value.get(key)
+        reason = ""
+        if isinstance(raw, dict):
+            score_value = raw.get("score")
+            reason = str(raw.get("reason") or raw.get("comment") or "").strip()
+        else:
+            score_value = raw
+        try:
+            score = float(score_value)
+        except (TypeError, ValueError):
+            continue
+        score = max(0.0, min(10.0, score))
+        normalized[key] = {
+            "label": label,
+            "score": round(score, 1),
+            "reason": reason[:120],
+        }
+    return normalized
 
 
 def _rules_lines_from_file(rules_file: str, import_categories=None, import_points=None) -> List[str]:
@@ -426,7 +459,15 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
   "strengths": ["作品优点"],
   "risks_or_issues": ["可能的问题或阅读门槛"],
   "reader_fit": "适合什么读者",
-  "overall_assessment": "总体评价"
+  "overall_assessment": "总体评价",
+  "radar_scores": {{
+    "plot": {{"score": 0-10, "reason": "剧情质量评分依据"}},
+    "characters": {{"score": 0-10, "reason": "人物塑造评分依据"}},
+    "worldbuilding": {{"score": 0-10, "reason": "世界观评分依据"}},
+    "pacing": {{"score": 0-10, "reason": "节奏把控评分依据"}},
+    "writing": {{"score": 0-10, "reason": "文笔水准评分依据"}},
+    "emotion": {{"score": 0-10, "reason": "情绪调动评分依据"}}
+  }}
 }}"""
     data = _call_json(
         [
@@ -446,6 +487,7 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         "risks_or_issues": _summary_field_value(data, "risks_or_issues"),
         "reader_fit": "；".join(_summary_field_value(data, "reader_fit")),
         "overall_assessment": "；".join(_summary_field_value(data, "overall_assessment")),
+        "radar_scores": _normalize_radar_scores(data.get("radar_scores")),
     }
     for field in specialty_fields:
         summary[field] = _summary_field_value(data, field)
