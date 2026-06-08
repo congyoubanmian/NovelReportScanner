@@ -396,7 +396,7 @@ Web 管理端常用配置：
 
 - `WEB_HOST` / `WEB_PORT`：Web 管理端监听地址和端口。
 - `WEB_CORS_ALLOW_ORIGIN`：CORS 允许来源，默认 `*`。
-- `WEB_ACCESS_TOKEN`：Web 管理端可选访问令牌。留空时不启用；设置后 `/api/*`、`/files`、`/upload` 和 SSE 状态流都需要携带 token。浏览器可在页面输入令牌保存，也可首次访问时使用 `http://host:port/?token=你的令牌` 自动保存。
+- `WEB_ACCESS_TOKEN`：Web 管理端可选访问令牌。留空时读接口仍可访问，但上传、扫描、删除、队列调整和运行配置修改等写操作需要请求携带 `X-Web-Unsafe-Action: confirm`，Web 前端会自动携带；公网部署仍强烈建议设置令牌。设置后 `/api/*`、`/files`、`/upload` 和 SSE 状态流都需要携带 token。浏览器可在页面输入令牌保存，也可首次访问时使用 `http://host:port/?token=你的令牌` 自动保存。
 - `WEB_REQUEST_TIMEOUT`：单个 HTTP 连接的 socket 超时时间，默认 `60` 秒；设为 `0` 可关闭。
 - `MAX_UPLOAD_SIZE`：单个上传 `.txt` 文件大小上限，默认 `104857600` 字节。
 - `MAX_JSON_BODY_SIZE`：JSON API 请求体大小上限，默认 `65536` 字节。

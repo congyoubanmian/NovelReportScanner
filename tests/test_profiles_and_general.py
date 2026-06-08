@@ -3521,7 +3521,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.Handler.end_headers(handler)
             self.assertIn(("Access-Control-Allow-Origin", "https://example.test"), handler.headers_sent)
             self.assertIn(("Access-Control-Allow-Methods", "GET, POST, OPTIONS"), handler.headers_sent)
-            self.assertIn(("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID, Authorization, X-Web-Access-Token"), handler.headers_sent)
+            self.assertIn(("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID, Authorization, X-Web-Access-Token, X-Web-Unsafe-Action"), handler.headers_sent)
 
             options_handler = FakeHandler()
             web_manager.Handler.do_OPTIONS(options_handler)
@@ -3540,6 +3540,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             os.environ.pop("WEB_ACCESS_TOKEN", None)
             os.environ["NOVEL_REPORT_SCANNER_REQUIRE_API_KEY"] = "0"
             self.assertTrue(web_manager._is_authorized_request({}, ""))
+            self.assertFalse(web_manager._unsafe_write_confirmed({}))
+            self.assertTrue(web_manager._unsafe_write_confirmed({"X-Web-Unsafe-Action": "confirm"}))
             summary = web_manager._runtime_config_summary()
             self.assertFalse(summary["web"]["auth_enabled"])
             self.assertFalse(summary["web"]["api_key_required_on_start"])
@@ -3551,6 +3553,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertTrue(web_manager._is_authorized_request({"Authorization": "Bearer secret-token"}, ""))
             self.assertTrue(web_manager._is_authorized_request({"X-Web-Access-Token": "secret-token"}, ""))
             self.assertTrue(web_manager._is_authorized_request({}, "token=secret-token"))
+            self.assertTrue(web_manager._unsafe_write_confirmed({}))
 
             protected_summary = web_manager._runtime_config_summary()
             self.assertTrue(protected_summary["web"]["auth_enabled"])
@@ -3658,18 +3661,60 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.sent.append((status, data))
 
         old_env = {key: os.environ.get(key) for key in ("WEB_ACCESS_TOKEN", "MAX_WORKERS")}
+        old_base_dir = web_manager.get_base_dir
         try:
-            os.environ.pop("WEB_ACCESS_TOKEN", None)
-            body = json.dumps({"config": {"max_workers": 5}}, ensure_ascii=False).encode("utf-8")
-            handler = FakeHandler(body)
+            with tempfile.TemporaryDirectory() as tmp:
+                web_manager.get_base_dir = lambda: tmp
+                os.environ.pop("WEB_ACCESS_TOKEN", None)
+                body = json.dumps({"config": {"max_workers": 5}}, ensure_ascii=False).encode("utf-8")
+                handler = FakeHandler(body)
+                handler.headers["X-Web-Unsafe-Action"] = "confirm"
 
-            web_manager.Handler.do_POST(handler)
+                web_manager.Handler.do_POST(handler)
 
-            self.assertEqual(handler.sent[0][0], 200)
-            self.assertTrue(handler.sent[0][1]["ok"])
-            self.assertEqual(handler.sent[0][1]["config"]["max_workers"], "5")
-            self.assertEqual(os.environ["MAX_WORKERS"], "5")
+                self.assertEqual(handler.sent[0][0], 200)
+                self.assertTrue(handler.sent[0][1]["ok"])
+                self.assertEqual(handler.sent[0][1]["config"]["max_workers"], "5")
+                self.assertEqual(os.environ["MAX_WORKERS"], "5")
         finally:
+            web_manager.get_base_dir = old_base_dir
+            for key, value in old_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_web_manager_write_requires_confirmation_when_token_unset(self):
+        class FakeHandler(web_manager.Handler):
+            def __init__(self, body, headers=None):
+                self.path = "/api/config"
+                self.headers = {"Content-Length": str(len(body)), **(headers or {})}
+                self.rfile = io.BytesIO(body)
+                self.sent = []
+
+            def _send_json(self, data, status=200):
+                self.sent.append((status, data))
+
+        old_env = {key: os.environ.get(key) for key in ("WEB_ACCESS_TOKEN", "MAX_WORKERS")}
+        old_base_dir = web_manager.get_base_dir
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                web_manager.get_base_dir = lambda: tmp
+                os.environ.pop("WEB_ACCESS_TOKEN", None)
+                body = json.dumps({"config": {"max_workers": 5}}, ensure_ascii=False).encode("utf-8")
+
+                denied = FakeHandler(body)
+                web_manager.Handler.do_POST(denied)
+                self.assertEqual(denied.sent[0][0], 403)
+                self.assertEqual(denied.sent[0][1]["error"], "unsafe action requires confirmation")
+                self.assertIn("X-Web-Unsafe-Action", denied.sent[0][1]["hint"])
+
+                allowed = FakeHandler(body, headers={"X-Web-Unsafe-Action": "confirm"})
+                web_manager.Handler.do_POST(allowed)
+                self.assertEqual(allowed.sent[0][0], 200)
+                self.assertTrue(allowed.sent[0][1]["ok"])
+        finally:
+            web_manager.get_base_dir = old_base_dir
             for key, value in old_env.items():
                 if value is None:
                     os.environ.pop(key, None)
@@ -3714,6 +3759,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             )
             body = json.dumps({"book_id": "ready"}, ensure_ascii=False).encode("utf-8")
             handler = FakeHandler(body)
+            handler.headers["X-Web-Unsafe-Action"] = "confirm"
 
             web_manager.Handler.do_POST(handler)
 

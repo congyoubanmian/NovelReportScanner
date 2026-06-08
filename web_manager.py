@@ -557,6 +557,13 @@ def _is_authorized_request(headers, query=""):
     return bool(provided) and secrets.compare_digest(provided, expected)
 
 
+def _unsafe_write_confirmed(headers):
+    if _web_auth_enabled():
+        return True
+    value = headers.get("X-Web-Unsafe-Action", "") if headers else ""
+    return str(value).strip().lower() in {"confirm", "confirmed", "true", "1", "yes"}
+
+
 def _put_task_queue(task_id):
     if not task_id or task_id in TASK_QUEUE_IDS:
         return False
@@ -1273,7 +1280,7 @@ class Handler(BaseHTTPRequestHandler):
     def end_headers(self):
         self.send_header("Access-Control-Allow-Origin", os.environ.get("WEB_CORS_ALLOW_ORIGIN", "*"))
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID, Authorization, X-Web-Access-Token")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID, Authorization, X-Web-Access-Token, X-Web-Unsafe-Action")
         super().end_headers()
 
     def _send_json(self, data, status=200):
@@ -1336,6 +1343,18 @@ class Handler(BaseHTTPRequestHandler):
         if _is_authorized_request(self.headers, parsed.query):
             return True
         self._send_json({"error": "unauthorized"}, 401)
+        return False
+
+    def _require_write_confirmation(self):
+        if _unsafe_write_confirmed(self.headers):
+            return True
+        self._send_json(
+            {
+                "error": "unsafe action requires confirmation",
+                "hint": "WEB_ACCESS_TOKEN 未设置时，写操作必须携带 X-Web-Unsafe-Action: confirm；公网部署建议设置 WEB_ACCESS_TOKEN。",
+            },
+            403,
+        )
         return False
 
     def _serve_static(self, path):
@@ -1457,6 +1476,8 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/profile":
             if not self._require_auth(parsed):
                 return
+            if not self._require_write_confirmation():
+                return
             payload = self._read_json_payload()
             if payload is None:
                 return
@@ -1484,6 +1505,8 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/config":
             if not self._require_auth(parsed):
                 return
+            if not self._require_write_confirmation():
+                return
             payload = self._read_json_payload()
             if payload is None:
                 return
@@ -1495,6 +1518,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/enqueue":
             if not self._require_auth(parsed):
+                return
+            if not self._require_write_confirmation():
                 return
             payload = self._read_json_payload()
             if payload is None:
@@ -1508,6 +1533,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/enqueue-batch":
             if not self._require_auth(parsed):
+                return
+            if not self._require_write_confirmation():
                 return
             payload = self._read_json_payload()
             if payload is None:
@@ -1526,6 +1553,8 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/cancel":
             if not self._require_auth(parsed):
                 return
+            if not self._require_write_confirmation():
+                return
             payload = self._read_json_payload()
             if payload is None:
                 return
@@ -1538,6 +1567,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/prioritize":
             if not self._require_auth(parsed):
+                return
+            if not self._require_write_confirmation():
                 return
             payload = self._read_json_payload()
             if payload is None:
@@ -1552,6 +1583,8 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/move-queue":
             if not self._require_auth(parsed):
                 return
+            if not self._require_write_confirmation():
+                return
             payload = self._read_json_payload()
             if payload is None:
                 return
@@ -1565,6 +1598,8 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/delete":
             if not self._require_auth(parsed):
                 return
+            if not self._require_write_confirmation():
+                return
             payload = self._read_json_payload()
             if payload is None:
                 return
@@ -1577,6 +1612,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/delete-batch":
             if not self._require_auth(parsed):
+                return
+            if not self._require_write_confirmation():
                 return
             payload = self._read_json_payload()
             if payload is None:
@@ -1594,6 +1631,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/upload":
             if not self._require_auth(parsed):
+                return
+            if not self._require_write_confirmation():
                 return
             try:
                 content_length = int(self.headers.get("Content-Length", "0"))
@@ -1675,6 +1714,8 @@ class Handler(BaseHTTPRequestHandler):
 
 def run_server(host="127.0.0.1", port=8765):
     _try_load_runtime_config("web")
+    if not _web_auth_enabled():
+        print("[WARN] WEB_ACCESS_TOKEN 未设置：读接口保持开放，写操作需要 X-Web-Unsafe-Action: confirm；公网部署建议设置访问令牌。")
     _load_state()
     _start_worker_once()
     server = TimeoutHTTPServer((host, int(port)), Handler)

@@ -75,10 +75,17 @@ function _formatErrorResponse(text, status) {
 }
 
 function _requestHeaders(headers = {}) {
-  const token = getAccessToken()
-  if (!token) return headers
   const merged = new Headers(headers)
-  merged.set('Authorization', `Bearer ${token}`)
+  const token = getAccessToken()
+  if (token) {
+    merged.set('Authorization', `Bearer ${token}`)
+  }
+  return merged
+}
+
+function _writeHeaders(headers = {}) {
+  const merged = new Headers(headers)
+  merged.set('X-Web-Unsafe-Action', 'confirm')
   return merged
 }
 
@@ -98,7 +105,7 @@ export async function getTextFile(url, timeoutMs = REQUEST_TIMEOUT_MS) {
 export function setProfile(bookId, profile) {
   return _api('/api/profile', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: _writeHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ book_id: bookId, profile })
   })
 }
@@ -106,7 +113,7 @@ export function setProfile(bookId, profile) {
 export function updateRuntimeConfig(config) {
   return _api('/api/config', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: _writeHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ config })
   })
 }
@@ -114,7 +121,7 @@ export function updateRuntimeConfig(config) {
 export function enqueueBook(bookId) {
   return _api('/api/enqueue', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: _writeHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ book_id: bookId })
   })
 }
@@ -122,7 +129,7 @@ export function enqueueBook(bookId) {
 export function enqueueBooks(bookIds) {
   return _api('/api/enqueue-batch', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: _writeHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ book_ids: bookIds })
   })
 }
@@ -130,7 +137,7 @@ export function enqueueBooks(bookIds) {
 export function cancelQueuedBook(bookId) {
   return _api('/api/cancel', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: _writeHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ book_id: bookId })
   })
 }
@@ -138,7 +145,7 @@ export function cancelQueuedBook(bookId) {
 export function prioritizeQueuedBook(bookId) {
   return _api('/api/prioritize', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: _writeHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ book_id: bookId })
   })
 }
@@ -146,7 +153,7 @@ export function prioritizeQueuedBook(bookId) {
 export function moveQueuedBook(bookId, direction) {
   return _api('/api/move-queue', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: _writeHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ book_id: bookId, direction })
   })
 }
@@ -154,7 +161,7 @@ export function moveQueuedBook(bookId, direction) {
 export function deleteBook(bookId) {
   return _api('/api/delete', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: _writeHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ book_id: bookId })
   })
 }
@@ -162,7 +169,7 @@ export function deleteBook(bookId) {
 export function deleteBooks(bookIds) {
   return _api('/api/delete-batch', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: _writeHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ book_ids: bookIds })
   })
 }
@@ -172,6 +179,7 @@ export function uploadBook(formData) {
     '/upload',
     {
       method: 'POST',
+      headers: _writeHeaders(),
       body: formData
     },
     UPLOAD_TIMEOUT_MS
