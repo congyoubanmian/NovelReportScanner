@@ -4738,6 +4738,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(report._contains_positive_signal_text("她喜欢男主，并珍惜他送的簪子。", ["喜欢"]))
         self.assertFalse(report._contains_positive_signal_text("她性格活泼可爱，是搞笑担当。", ["爱"]))
         self.assertFalse(report._contains_positive_signal_text("她爱吃点心，经常提供笑料。", ["爱"]))
+        self.assertFalse(report._contains_positive_signal_text("她爱哭爱笑，负责活跃气氛。", ["爱"]))
+        self.assertFalse(report._contains_positive_signal_text("她爱冒险也爱吐槽，经常提供笑料。", ["爱"]))
+        self.assertFalse(report._contains_positive_signal_text("她爱撒娇，但没有恋爱线。", ["爱"]))
         self.assertFalse(report._contains_positive_signal_text("读者喜爱她的吐槽和搞笑桥段。", ["爱"]))
         self.assertFalse(report._contains_positive_signal_text("她热爱推理，主要作用是提供线索。", ["爱"]))
         self.assertFalse(report._contains_positive_signal_text("三小只包括爱丽丝、小人鱼和公主。", ["爱"]))
@@ -4856,6 +4859,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertNotIn("感情/亲密推进", vain_level)
         self.assertIn("明确缺少恋爱/后宫推进", vain_level)
+
+        personality_level = report._heroine_position_level(
+            {"importance_rank": 3},
+            {
+                "identity": "活跃气氛的女配",
+                "relationship_with_protagonist": "跟随小队行动，没有恋爱线。",
+                "features": "爱哭爱笑，爱冒险也爱吐槽。",
+                "key_events": "多次参与支线。",
+            },
+            {"count": 5},
+            {},
+        )
+        self.assertNotIn("感情/亲密推进", personality_level)
+        self.assertIn("明确缺少恋爱/后宫推进", personality_level)
 
     def test_leak_three_layers_ignores_non_romantic_love_words(self):
         clean = report._summarize_leak_three_layers(
