@@ -1523,6 +1523,82 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             novel_scan.ENABLE_GLOBAL_RESCAN = old_enable_global_rescan
             novel_scan.logger = old_logger
 
+    def test_detail_writes_accept_explicit_detail_path(self):
+        old_detail_path = getattr(novel_scan, "_ACTIVE_DETAIL_PATH", None)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                active_path = os.path.join(tmpdir, "Active_detailed_20260608.json")
+                local_path = os.path.join(tmpdir, "Local_detailed_20260608.json")
+                seed = {
+                    "all_female_characters": {
+                        "甲女": {
+                            "avg_score": 0,
+                            "count": 1,
+                            "total_score": 0,
+                            "other_names": [],
+                            "summaries": [],
+                            "features": [],
+                            "relationships": [],
+                            "interactions": [],
+                            "emotion_signals": [],
+                        }
+                    }
+                }
+                for path in (active_path, local_path):
+                    with open(path, "w", encoding="utf-8") as f:
+                        json.dump(seed, f, ensure_ascii=False)
+                novel_scan._ACTIVE_DETAIL_PATH = active_path
+
+                novel_scan._save_heroine_profiles_to_detail(
+                    {
+                        "甲女": {
+                            "report_summary": {
+                                "identity": "目标女主",
+                                "relationship_with_protagonist": "同行",
+                            }
+                        }
+                    },
+                    detail_path=local_path,
+                )
+                novel_scan._append_to_detail_file(
+                    [
+                        {
+                            "name": "甲女",
+                            "facts": {
+                                "physical_contacts": [
+                                    {
+                                        "partner": "路人男",
+                                        "is_male_lead": False,
+                                        "contact_type": "拉扯",
+                                        "detail": "被路人男拉住手腕",
+                                        "evidence": "路人男拉住甲女手腕",
+                                        "chunk_index": 1,
+                                    }
+                                ]
+                            },
+                        }
+                    ],
+                    [],
+                    "男主",
+                    detail_path=local_path,
+                )
+
+                with open(active_path, "r", encoding="utf-8") as f:
+                    active_data = json.load(f)
+                with open(local_path, "r", encoding="utf-8") as f:
+                    local_data = json.load(f)
+
+                active_entry = active_data["all_female_characters"]["甲女"]
+                local_entry = local_data["all_female_characters"]["甲女"]
+                self.assertNotIn("profile_for_report", active_entry)
+                self.assertNotIn("non_male_male_interactions", active_entry)
+                self.assertEqual(local_entry["profile_for_report"]["identity"], "目标女主")
+                self.assertTrue(
+                    any("路人男" in item for item in local_entry["non_male_male_interactions"])
+                )
+        finally:
+            novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
+
     def test_thread_block_accepts_isolated_middle_summary_state(self):
         old_middle_calls = novel_scan._middle_summary_calls
         old_max_middle = novel_scan.MAX_MIDDLE_SUMMARY_CALLS

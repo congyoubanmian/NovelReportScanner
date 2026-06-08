@@ -3030,17 +3030,17 @@ def generate_heroine_profiles(all_heroine_facts, heroines, male_protagonist=None
     return profiles
 
 
-def _save_heroine_profiles_to_detail(heroine_profiles):
+def _save_heroine_profiles_to_detail(heroine_profiles, detail_path=None):
     if not heroine_profiles:
         return
-    detail_path = _resolve_detail_path()
-    if not detail_path or not os.path.exists(detail_path):
+    effective_detail_path = detail_path or _resolve_detail_path()
+    if not effective_detail_path or not os.path.exists(effective_detail_path):
         logger.warning("未找到对应的 *_detailed_*.json，无法写入 profile_for_report。")
         return
 
     with DETAIL_FILE_LOCK:
         try:
-            with open(detail_path, "r", encoding="utf-8") as f:
+            with open(effective_detail_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except Exception as exc:
             logger.warning(f"读取 detail 文件失败: {exc}")
@@ -3076,7 +3076,7 @@ def _save_heroine_profiles_to_detail(heroine_profiles):
                 entry.setdefault("other_names", []).append(heroine_name)
 
         try:
-            with open(detail_path, "w", encoding="utf-8") as f:
+            with open(effective_detail_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as exc:
             logger.warning(f"写入 detail 文件失败: {exc}")
@@ -3795,7 +3795,7 @@ def _find_latest_detail_file(book_name=None, base_dir=None):
     return latest
 
 
-def _append_to_detail_file(heroine_facts, extra_relations, male_protagonist=None):
+def _append_to_detail_file(heroine_facts, extra_relations, male_protagonist=None, detail_path=None):
     """
     将扫描阶段抽取的结构化事实写入 protagonist 生成的 detail.json
     - heroine_facts: 女主结构化事实列表
@@ -3807,13 +3807,13 @@ def _append_to_detail_file(heroine_facts, extra_relations, male_protagonist=None
     """
     if not heroine_facts and not extra_relations:
         return
-    detail_path = _resolve_detail_path()
-    if not detail_path or not os.path.exists(detail_path):
+    effective_detail_path = detail_path or _resolve_detail_path()
+    if not effective_detail_path or not os.path.exists(effective_detail_path):
         logger.warning("未找到对应的 *_detailed_*.json，无法追加取证数据。")
         return
     with DETAIL_FILE_LOCK:
         try:
-            with open(detail_path, "r", encoding="utf-8") as f:
+            with open(effective_detail_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except Exception as e:
             logger.warning(f"读取 detail 文件失败: {e}")
@@ -3917,9 +3917,9 @@ def _append_to_detail_file(heroine_facts, extra_relations, male_protagonist=None
                     entry["non_male_male_interactions"].append(text)
 
         try:
-            with open(detail_path, "w", encoding="utf-8") as f:
+            with open(effective_detail_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-            logger.info(f"已向 detail 文件追加结构化事实: {detail_path}")
+            logger.info(f"已向 detail 文件追加结构化事实: {effective_detail_path}")
         except Exception as e:
             logger.warning(f"写入 detail 文件失败: {e}")
 
@@ -4250,7 +4250,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
             ),
         )
     if heroine_profiles:
-        _save_heroine_profiles_to_detail(heroine_profiles)
+        _save_heroine_profiles_to_detail(heroine_profiles, detail_path=_ACTIVE_DETAIL_PATH)
 
     if ENABLE_GLOBAL_RESCAN and not rescan_completed:
         all_heroine_facts = global_dimension_rescan(
@@ -4297,7 +4297,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         logger.info("全局补扫：检测到断点标记 rescan_completed=true，跳过补扫阶段。")
 
     # 6. 追加 detail.json 结构化事实
-    _append_to_detail_file(all_heroine_facts, extra_relations_all, male_protagonist)
+    _append_to_detail_file(all_heroine_facts, extra_relations_all, male_protagonist, detail_path=_ACTIVE_DETAIL_PATH)
 
     # 7. 保存与报告
     raw_data = {
