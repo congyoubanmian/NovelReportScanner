@@ -10,6 +10,7 @@ import threading
 import time
 import uuid
 import warnings
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
@@ -510,6 +511,65 @@ def _health_summary():
         "app": _app_version_summary(),
         "scan_stall_timeout_seconds": SCAN_STALL_TIMEOUT_SECONDS,
         "scan_stall_watchdog_enabled": SCAN_STALL_TIMEOUT_SECONDS > 0,
+    }
+
+
+def _task_diagnostic(task, book):
+    last_log_at = task.get("last_log_at") or task.get("updated_at") or book.get("last_log_at") or book.get("updated_at")
+    seconds_since_last_log = _seconds_since_state_time(last_log_at)
+    stale = (
+        SCAN_STALL_TIMEOUT_SECONDS > 0
+        and seconds_since_last_log is not None
+        and seconds_since_last_log >= SCAN_STALL_TIMEOUT_SECONDS
+    )
+    return {
+        "task_id": task.get("id"),
+        "book_id": task.get("book_id"),
+        "book_name": book.get("name") or task.get("book_id"),
+        "profile": task.get("profile"),
+        "status": task.get("status"),
+        "created_at": task.get("created_at", ""),
+        "started_at": task.get("started_at", ""),
+        "updated_at": task.get("updated_at", ""),
+        "last_log_at": last_log_at or "",
+        "last_log": task.get("last_log") or book.get("last_log") or "",
+        "seconds_since_last_log": seconds_since_last_log,
+        "stale_without_log": stale,
+        "log_path": task.get("log_path", ""),
+    }
+
+
+def _diagnostics_summary():
+    with STATE_LOCK:
+        books_by_id = {book_id: dict(book) for book_id, book in STATE.get("books", {}).items()}
+        tasks = [dict(task) for task in STATE.get("tasks", [])]
+        running_tasks = [
+            _task_diagnostic(task, books_by_id.get(task.get("book_id"), {}))
+            for task in tasks
+            if task.get("status") == "running"
+        ]
+        status_counts = {}
+        for task in tasks:
+            status = task.get("status") or "unknown"
+            status_counts[status] = status_counts.get(status, 0) + 1
+        queued_positions = _queued_task_positions()
+
+    running_tasks.sort(key=lambda item: item.get("started_at") or item.get("created_at") or "")
+    queued_count = status_counts.get("queued", 0)
+    stale_running_count = sum(1 for item in running_tasks if item.get("stale_without_log"))
+    return {
+        "ok": stale_running_count == 0,
+        "config_ready": CONFIG_READY,
+        "app": _app_version_summary(),
+        "scan_stall_timeout_seconds": SCAN_STALL_TIMEOUT_SECONDS,
+        "scan_stall_watchdog_enabled": SCAN_STALL_TIMEOUT_SECONDS > 0,
+        "task_counts": status_counts,
+        "queue_length": queued_count,
+        "queue_runtime_length": len(queued_positions),
+        "running_count": len(running_tasks),
+        "stale_running_count": stale_running_count,
+        "running_tasks": running_tasks,
+        "storage": _storage_health_summary(),
     }
 
 
@@ -1014,6 +1074,25 @@ def _safe_token_int(value):
 
 def _time_value(value):
     return str(value or "").replace("T", " ").strip()
+
+
+def _parse_state_time(value):
+    text = _time_value(value)
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _seconds_since_state_time(value):
+    parsed = _parse_state_time(value)
+    if parsed is None:
+        return None
+    return max(0, int(time.time() - parsed.timestamp()))
 
 
 def _book_token_usage(book_id, max_runs=5, since=None):
@@ -1757,6 +1836,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             _sync_books_from_disk()
             self._send_json(_public_state())
+            return
+        if parsed.path == "/api/diagnostics":
+            if not self._require_auth(parsed):
+                return
+            self._send_json(_diagnostics_summary())
             return
         if parsed.path == "/api/events":
             if not self._require_auth(parsed):

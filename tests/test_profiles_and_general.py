@@ -5562,6 +5562,81 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.STATE = old_state
             web_manager._save_state = old_save_state
 
+    def test_web_manager_diagnostics_reports_running_task_staleness(self):
+        old_state = web_manager.STATE
+        old_timeout = web_manager.SCAN_STALL_TIMEOUT_SECONDS
+        old_app_commit = web_manager.APP_COMMIT
+        old_time = web_manager.time.time
+        try:
+            web_manager.SCAN_STALL_TIMEOUT_SECONDS = 1200
+            web_manager.APP_COMMIT = "abc123"
+            base_time = web_manager.datetime.strptime(
+                "2026-06-09 06:50:00",
+                "%Y-%m-%d %H:%M:%S",
+            ).timestamp()
+            web_manager.time.time = lambda: base_time + 1800
+            web_manager.STATE = {
+                "books": {
+                    "running-book": {
+                        "id": "running-book",
+                        "name": "运行书",
+                        "status": "running",
+                        "task_id": "task-running",
+                        "last_log": "Chunk 367 JSON解析失败",
+                        "last_log_at": "2026-06-09 06:50:00",
+                    },
+                    "queued-book": {
+                        "id": "queued-book",
+                        "name": "排队书",
+                        "status": "queued",
+                        "task_id": "task-queued",
+                    },
+                },
+                "tasks": [
+                    {
+                        "id": "task-running",
+                        "book_id": "running-book",
+                        "profile": "harem",
+                        "status": "running",
+                        "created_at": "2026-06-09 06:00:00",
+                        "started_at": "2026-06-09 06:10:00",
+                        "last_log": "Chunk 367 JSON解析失败",
+                        "last_log_at": "2026-06-09 06:50:00",
+                        "log_path": "/app/results/web_logs/task-running.log",
+                    },
+                    {
+                        "id": "task-queued",
+                        "book_id": "queued-book",
+                        "profile": "general",
+                        "status": "queued",
+                        "created_at": "2026-06-09 06:30:00",
+                    },
+                ],
+            }
+
+            diagnostics = web_manager._diagnostics_summary()
+
+            self.assertFalse(diagnostics["ok"])
+            self.assertEqual(diagnostics["app"]["commit"], "abc123")
+            self.assertEqual(diagnostics["scan_stall_timeout_seconds"], 1200)
+            self.assertEqual(diagnostics["queue_length"], 1)
+            self.assertEqual(diagnostics["running_count"], 1)
+            self.assertEqual(diagnostics["stale_running_count"], 1)
+            self.assertEqual(diagnostics["task_counts"]["queued"], 1)
+            self.assertEqual(diagnostics["task_counts"]["running"], 1)
+            running = diagnostics["running_tasks"][0]
+            self.assertEqual(running["task_id"], "task-running")
+            self.assertEqual(running["book_name"], "运行书")
+            self.assertEqual(running["last_log"], "Chunk 367 JSON解析失败")
+            self.assertEqual(running["seconds_since_last_log"], 1800)
+            self.assertTrue(running["stale_without_log"])
+            self.assertIn("storage", diagnostics)
+        finally:
+            web_manager.STATE = old_state
+            web_manager.SCAN_STALL_TIMEOUT_SECONDS = old_timeout
+            web_manager.APP_COMMIT = old_app_commit
+            web_manager.time.time = old_time
+
     def test_web_manager_public_state_includes_profiles_and_suggestions(self):
         old_state = web_manager.STATE
         old_env = {
