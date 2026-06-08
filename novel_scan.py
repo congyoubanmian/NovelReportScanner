@@ -3495,7 +3495,7 @@ def _merge_multi_dimension_results(merged, boost_facts, dimensions, heroines):
     return new_merged
 
 
-def global_dimension_rescan(chunks, processed_chunks, all_heroine_facts, heroine_profiles, heroines, male_protagonist=None, checkpoint_callback=None, rescan_done_chunks=None):
+def global_dimension_rescan(chunks, processed_chunks, all_heroine_facts, heroine_profiles, heroines, male_protagonist=None, checkpoint_callback=None, rescan_done_chunks=None, novel_name=None):
     if not ENABLE_GLOBAL_RESCAN:
         return all_heroine_facts
 
@@ -3590,7 +3590,7 @@ def global_dimension_rescan(chunks, processed_chunks, all_heroine_facts, heroine
 
                 # 保存学习到的关键词
                 if isinstance(learned_kw, dict) and any(learned_kw.values()):
-                    save_learned_keywords(learned_kw, source_phase="global_rescan_opt", novel_name=clean_filename)
+                    save_learned_keywords(learned_kw, source_phase="global_rescan_opt", novel_name=novel_name)
 
                 # 合并结果
                 merged = _merge_multi_dimension_results(merged, boost_facts, list(cluster.all_dimensions), heroines)
@@ -3614,8 +3614,10 @@ def global_dimension_rescan(chunks, processed_chunks, all_heroine_facts, heroine
     return [{"name": name, "facts": facts} for name, facts in merged.items()]
 
 
-def generate_report(all_issues, all_heroine_facts, heroines):
+def generate_report(all_issues, all_heroine_facts, heroines, book_name=None):
     """生成最终报告（事实抽取版）"""
+    effective_book_name = book_name if book_name is not None else clean_filename
+
     def classify_issue(item):
         cat = item.get('category', '')
         t = item.get('type', '')
@@ -3629,7 +3631,7 @@ def generate_report(all_issues, all_heroine_facts, heroines):
     lei_points = [x for x in all_issues if classify_issue(x) == 'lei']
     yumen_points = [x for x in all_issues if classify_issue(x) == 'yumen']
     
-    report = f"🔍 小说深度扫描报告：{clean_filename}\n"
+    report = f"🔍 小说深度扫描报告：{effective_book_name or ''}\n"
     report += f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
     report += "="*60 + "\n\n"
     
@@ -4199,6 +4201,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
                 rescan_done_chunks=rescan_done_chunks,
             ),
             rescan_done_chunks=rescan_done_chunks,
+            novel_name=clean_filename,
         )
         rescan_completed = True
         save_checkpoint(
@@ -4230,7 +4233,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     with open(f"{OUTPUT_DIR}/raw_data.json", 'w', encoding='utf-8') as f:
         json.dump(raw_data, f, ensure_ascii=False, indent=2)
         
-    report = generate_report(all_issues, all_heroine_facts, heroines)
+    report = generate_report(all_issues, all_heroine_facts, heroines, book_name=clean_filename)
     report_file = f"{OUTPUT_DIR}/FULL_REPORT.txt"
     with open(report_file, 'w', encoding='utf-8') as f:
         f.write(report)

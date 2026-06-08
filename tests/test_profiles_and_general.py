@@ -1187,6 +1187,18 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             novel_scan.clean_filename = old_name
             novel_scan._ACTIVE_DETAIL_PATH = old_detail_path
 
+    def test_generate_report_accepts_explicit_book_name(self):
+        old_name = novel_scan.clean_filename
+        try:
+            novel_scan.clean_filename = "全局书名"
+
+            report_text = novel_scan.generate_report([], [], [], book_name="显式书名")
+
+            self.assertIn("小说深度扫描报告：显式书名", report_text)
+            self.assertNotIn("小说深度扫描报告：全局书名", report_text)
+        finally:
+            novel_scan.clean_filename = old_name
+
     def test_chunk_failure_diagnostic_flags_problematic_text(self):
         diagnostic = novel_scan._build_chunk_failure_diagnostic(
             "正常开头\x00异常控制\x1b字符\n" + ("很长" * 1100) + "\ufffd",
