@@ -55,6 +55,7 @@ const configForm = ref({
   general_scan_foreshadowing_engineering: true,
   general_scan_semantic_layers: true,
   general_scan_reader_experience: true,
+  general_scan_continuity_audit: true,
   general_scan_rolling_context: true,
   general_scan_context_max_chars: '1600',
   harem_plus_general_scan: false
@@ -134,6 +135,7 @@ function syncConfigForm(config) {
     general_scan_foreshadowing_engineering: config.general_scan_foreshadowing_engineering !== false,
     general_scan_semantic_layers: config.general_scan_semantic_layers !== false,
     general_scan_reader_experience: config.general_scan_reader_experience !== false,
+    general_scan_continuity_audit: config.general_scan_continuity_audit !== false,
     general_scan_rolling_context: config.general_scan_rolling_context !== false,
     general_scan_context_max_chars: config.general_scan_context_max_chars || '1600',
     harem_plus_general_scan: Boolean(config.harem_plus_general_scan)
@@ -158,6 +160,7 @@ async function saveRuntimeConfig() {
         configForm.value.general_scan_foreshadowing_engineering,
       general_scan_semantic_layers: configForm.value.general_scan_semantic_layers,
       general_scan_reader_experience: configForm.value.general_scan_reader_experience,
+      general_scan_continuity_audit: configForm.value.general_scan_continuity_audit,
       general_scan_rolling_context: configForm.value.general_scan_rolling_context,
       general_scan_context_max_chars: configForm.value.general_scan_context_max_chars,
       harem_plus_general_scan: configForm.value.harem_plus_general_scan
@@ -480,6 +483,14 @@ useStateEvents(applyState, {
           @change="runtimeConfigDirty = true"
         />
         <span>读者体验</span>
+      </label>
+      <label class="runtime-toggle">
+        <input
+          v-model="configForm.general_scan_continuity_audit"
+          type="checkbox"
+          @change="runtimeConfigDirty = true"
+        />
+        <span>一致性审计</span>
       </label>
       <label class="runtime-toggle">
         <input

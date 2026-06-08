@@ -402,6 +402,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("GENERAL_SCAN_FORESHADOWING_ENGINEERING", text)
         self.assertIn("GENERAL_SCAN_SEMANTIC_LAYERS", text)
         self.assertIn("GENERAL_SCAN_READER_EXPERIENCE", text)
+        self.assertIn("GENERAL_SCAN_CONTINUITY_AUDIT", text)
         self.assertIn("GENERAL_SCAN_CONTENT_AWARE_SAMPLING", text)
         self.assertIn("GENERAL_SCAN_ROLLING_CONTEXT", text)
         self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS", text)
@@ -834,6 +835,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("general_scan_reader_experience: true", text)
         self.assertIn("config.general_scan_reader_experience !== false", text)
         self.assertIn("configForm.general_scan_reader_experience", text)
+        self.assertIn("general_scan_continuity_audit: true", text)
+        self.assertIn("config.general_scan_continuity_audit !== false", text)
+        self.assertIn("configForm.general_scan_continuity_audit", text)
         self.assertIn("general_scan_content_aware_sampling: true", text)
         self.assertIn("config.general_scan_content_aware_sampling !== false", text)
         self.assertIn("configForm.general_scan_content_aware_sampling", text)
@@ -4239,6 +4243,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_FORESHADOWING_ENGINEERING",
             "GENERAL_SCAN_SEMANTIC_LAYERS",
             "GENERAL_SCAN_READER_EXPERIENCE",
+            "GENERAL_SCAN_CONTINUITY_AUDIT",
             "GENERAL_SCAN_ROLLING_CONTEXT",
             "GENERAL_SCAN_CONTEXT_MAX_CHARS",
             "HAREM_PLUS_GENERAL_SCAN",
@@ -4261,6 +4266,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "general_scan_foreshadowing_engineering": False,
                 "general_scan_semantic_layers": False,
                 "general_scan_reader_experience": False,
+                "general_scan_continuity_audit": False,
                 "general_scan_rolling_context": False,
                 "general_scan_context_max_chars": "800",
                 "harem_plus_general_scan": True,
@@ -4280,6 +4286,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["GENERAL_SCAN_FORESHADOWING_ENGINEERING"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_SEMANTIC_LAYERS"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_READER_EXPERIENCE"], "0")
+            self.assertEqual(os.environ["GENERAL_SCAN_CONTINUITY_AUDIT"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_ROLLING_CONTEXT"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_CONTEXT_MAX_CHARS"], "800")
             self.assertEqual(os.environ["HAREM_PLUS_GENERAL_SCAN"], "1")
@@ -4292,6 +4299,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertFalse(result["general_scan_foreshadowing_engineering"])
             self.assertFalse(result["general_scan_semantic_layers"])
             self.assertFalse(result["general_scan_reader_experience"])
+            self.assertFalse(result["general_scan_continuity_audit"])
             self.assertFalse(result["general_scan_rolling_context"])
             self.assertEqual(result["general_scan_context_max_chars"], "800")
             self.assertTrue(result["harem_plus_general_scan"])
@@ -4470,6 +4478,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_FORESHADOWING_ENGINEERING": "general_scan_foreshadowing_engineering",
             "GENERAL_SCAN_SEMANTIC_LAYERS": "general_scan_semantic_layers",
             "GENERAL_SCAN_READER_EXPERIENCE": "general_scan_reader_experience",
+            "GENERAL_SCAN_CONTINUITY_AUDIT": "general_scan_continuity_audit",
             "GENERAL_SCAN_ROLLING_CONTEXT": "general_scan_rolling_context",
             "GENERAL_SCAN_CONTEXT_MAX_CHARS": "general_scan_context_max_chars",
             "HAREM_PLUS_GENERAL_SCAN": "harem_plus_general_scan",
@@ -4508,6 +4517,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "general_scan_foreshadowing_engineering": False,
                     "general_scan_semantic_layers": False,
                     "general_scan_reader_experience": False,
+                    "general_scan_continuity_audit": False,
                     "general_scan_rolling_context": False,
                     "general_scan_context_max_chars": 800,
                     "harem_plus_general_scan": True,
@@ -4526,6 +4536,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("GENERAL_SCAN_FORESHADOWING_ENGINEERING=0", lines)
                 self.assertIn("GENERAL_SCAN_SEMANTIC_LAYERS=0", lines)
                 self.assertIn("GENERAL_SCAN_READER_EXPERIENCE=0", lines)
+                self.assertIn("GENERAL_SCAN_CONTINUITY_AUDIT=0", lines)
                 self.assertIn("GENERAL_SCAN_ROLLING_CONTEXT=0", lines)
                 self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS=800", lines)
                 self.assertIn("HAREM_PLUS_GENERAL_SCAN=1", lines)
@@ -6043,6 +6054,42 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("反派误判后被主角翻盘形成爽点", text)
         self.assertEqual(text.count("【读者体验分析】"), 1)
         self.assertNotIn("【reader experience analysis】", text)
+
+    def test_general_report_includes_continuity_audit_sections(self):
+        general_summary = {
+            "profile_display_name": "通用小说分析",
+            "summary_fields": [
+                "main_plot",
+                "continuity_audit_analysis",
+            ],
+            "summary": {
+                "story_overview": "主角推进旧案并回收线索。",
+                "main_plot": ["旧案推进"],
+                "continuity_audit_analysis": {
+                    "overall_continuity_rating": "average",
+                    "risk_level": "medium",
+                    "character_continuity": ["主角称呼保持稳定"],
+                    "relationship_consistency": ["同伴关系从陌生到协作，阶段自然"],
+                    "worldbuilding_consistency": ["旧设定在后续片段继续生效"],
+                    "foreshadowing_continuity": ["玉佩线索仍未回收"],
+                    "causal_chain_issues": ["一次破局依赖偶然情报"],
+                    "unresolved_threads": ["玉佩来源"],
+                    "evidence": ["第3块设置玉佩，第40块仍提到玉佩"],
+                    "fix_suggestions": ["补充玉佩来源解释"],
+                },
+            },
+        }
+
+        text = report.build_general_report("测试书", {}, general_summary)
+
+        self.assertIn("【连续性与一致性审计】", text)
+        self.assertIn("连续性评级：average", text)
+        self.assertIn("风险等级：medium", text)
+        self.assertIn("主角称呼保持稳定", text)
+        self.assertIn("玉佩线索仍未回收", text)
+        self.assertIn("补充玉佩来源解释", text)
+        self.assertEqual(text.count("【连续性与一致性审计】"), 1)
+        self.assertNotIn("【continuity audit analysis】", text)
 
     def test_general_report_does_not_repeat_footer_summary_fields(self):
         general_summary = {
@@ -9997,6 +10044,82 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("压制后反杀形成爽点", summary["reader_experience_analysis"]["satisfaction_design"])
         self.assertIn("压抑铺垫过长", summary["reader_experience_analysis"]["frustration_risks"])
 
+    def test_general_scan_summary_includes_continuity_audit_material(self):
+        profile = analysis_profiles.load_analysis_profile("general")
+        prompts = []
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(messages, max_tokens=3000):
+                prompt = "\n".join(item.get("content", "") for item in messages)
+                prompts.append(prompt)
+                return {
+                    "story_overview": "主角推进旧案并暴露设定风险。",
+                    "main_plot": ["旧案推进"],
+                    "core_conflicts": ["真相与阻挠"],
+                    "worldbuilding": ["旧城规则"],
+                    "themes": ["真相"],
+                    "foreshadowing_and_payoff": ["玉佩线仍未回收"],
+                    "continuity_audit_analysis": {
+                        "overall_continuity_rating": "average",
+                        "risk_level": "medium",
+                        "character_continuity": ["主角称呼和身份稳定"],
+                        "relationship_consistency": ["协作关系递进自然"],
+                        "worldbuilding_consistency": ["旧城禁令后续仍生效"],
+                        "foreshadowing_continuity": ["玉佩来源仍未解释"],
+                        "causal_chain_issues": ["关键情报出现略巧合"],
+                        "unresolved_threads": ["玉佩来源"],
+                        "evidence": ["第2块设置玉佩，第8块仍未解释"],
+                        "fix_suggestions": ["后续补足玉佩来源"],
+                    },
+                    "strengths": ["主线清楚"],
+                    "risks_or_issues": ["连续性需复核"],
+                    "reader_fit": "悬疑读者",
+                    "overall_assessment": "可读",
+                }
+
+            general_scan._call_json = fake_call_json
+            summary = general_scan._summarize_book(
+                "连续性测试",
+                [{
+                    "one_sentence_summary": "主角发现玉佩疑点。",
+                    "conflicts": ["主角追查旧案"],
+                    "worldbuilding": ["旧城禁令"],
+                    "quality_notes": ["关键情报出现略巧合"],
+                    "context_state_update": {
+                        "relationship_updates": ["主角与同伴开始协作"],
+                        "open_threads": ["玉佩来源"],
+                        "worldbuilding_updates": ["旧城禁令限制行动"],
+                    },
+                    "outline_architecture": {
+                        "causal_chain": {
+                            "causal_strength": "有些牵强",
+                            "forced_elements": ["偶然获得密信"],
+                            "coincidence_dependency": "minor",
+                        },
+                        "worldbuilding_expansion": {"consistency_check": "minor_issue"},
+                        "architecture_integrity": {
+                            "power_inconsistency": "主角临时能力解释不足",
+                            "forced_plot_devices": ["路人突然送线索"],
+                        },
+                    },
+                    "foreshadowing_engineering": {
+                        "new_foreshadowing": [{"description": "玉佩来源", "estimated_importance": "high"}],
+                        "foreshadowing_resolutions": [],
+                    },
+                }],
+                profile=profile,
+            )
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertTrue(any('"continuity_audit_material"' in prompt for prompt in prompts))
+        self.assertTrue(any('"continuity_audit_analysis"' in prompt for prompt in prompts))
+        self.assertTrue(any("旧城禁令限制行动" in prompt for prompt in prompts))
+        self.assertTrue(any("路人突然送线索" in prompt for prompt in prompts))
+        self.assertEqual(summary["continuity_audit_analysis"]["risk_level"], "medium")
+        self.assertIn("玉佩来源仍未解释", summary["continuity_audit_analysis"]["foreshadowing_continuity"])
+        self.assertIn("关键情报出现略巧合", summary["continuity_audit_analysis"]["causal_chain_issues"])
+
     def test_general_scan_summary_uses_rolling_context_timeline_only(self):
         profile = analysis_profiles.load_analysis_profile("general")
         prompts = []
@@ -10852,6 +10975,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(data["semantic_layers_schema_version"], general_scan.SEMANTIC_LAYERS_SCHEMA_VERSION)
             self.assertTrue(data["reader_experience_enabled"])
             self.assertEqual(data["reader_experience_schema_version"], general_scan.READER_EXPERIENCE_SCHEMA_VERSION)
+            self.assertTrue(data["continuity_audit_enabled"])
+            self.assertEqual(data["continuity_audit_schema_version"], general_scan.CONTINUITY_AUDIT_SCHEMA_VERSION)
             self.assertEqual(sum(data["density_counts"].values()), 300)
             self.assertEqual(data["prompt_templates"]["general_scan_chunk"]["version"], "v1")
             self.assertEqual(data["prompt_templates"]["general_summary"]["version"], "v1")
@@ -11197,6 +11322,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "semantic_layers_schema_version": general_scan.SEMANTIC_LAYERS_SCHEMA_VERSION,
                 "reader_experience_enabled": general_scan.READER_EXPERIENCE_ENABLED,
                 "reader_experience_schema_version": general_scan.READER_EXPERIENCE_SCHEMA_VERSION,
+                "continuity_audit_enabled": general_scan.CONTINUITY_AUDIT_ENABLED,
+                "continuity_audit_schema_version": general_scan.CONTINUITY_AUDIT_SCHEMA_VERSION,
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }
@@ -11219,6 +11346,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             data_without_reader_experience_meta = dict(data)
             data_without_reader_experience_meta.pop("reader_experience_enabled", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_reader_experience_meta, novel_path, "history"))
+            data_without_continuity_meta = dict(data)
+            data_without_continuity_meta.pop("continuity_audit_enabled", None)
+            self.assertFalse(general_scan._is_fresh_summary(data_without_continuity_meta, novel_path, "history"))
             data_without_content_sampling_meta = dict(data)
             data_without_content_sampling_meta.pop("content_aware_sampling_schema_version", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_content_sampling_meta, novel_path, "history"))
@@ -11272,6 +11402,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "semantic_layers_schema_version": general_scan.SEMANTIC_LAYERS_SCHEMA_VERSION,
                 "reader_experience_enabled": general_scan.READER_EXPERIENCE_ENABLED,
                 "reader_experience_schema_version": general_scan.READER_EXPERIENCE_SCHEMA_VERSION,
+                "continuity_audit_enabled": general_scan.CONTINUITY_AUDIT_ENABLED,
+                "continuity_audit_schema_version": general_scan.CONTINUITY_AUDIT_SCHEMA_VERSION,
                 "summary": {"story_overview": "ok"},
                 "chunk_results": [],
             }

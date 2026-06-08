@@ -32,6 +32,8 @@ SEMANTIC_LAYERS_ENABLED = os.environ.get("GENERAL_SCAN_SEMANTIC_LAYERS", "1").st
 SEMANTIC_LAYERS_SCHEMA_VERSION = 1
 READER_EXPERIENCE_ENABLED = os.environ.get("GENERAL_SCAN_READER_EXPERIENCE", "1").strip() == "1"
 READER_EXPERIENCE_SCHEMA_VERSION = 1
+CONTINUITY_AUDIT_ENABLED = os.environ.get("GENERAL_SCAN_CONTINUITY_AUDIT", "1").strip() == "1"
+CONTINUITY_AUDIT_SCHEMA_VERSION = 1
 LOW_DENSITY_TERMS = (
     "睡觉", "起床", "吃饭", "喝茶", "闲聊", "聊天", "休息", "赶路", "路上", "返回",
     "日常", "家常", "客栈", "修炼打坐", "打坐", "闭关", "练功", "整理物品",
@@ -390,6 +392,13 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
         if data.get("reader_experience_schema_version") != READER_EXPERIENCE_SCHEMA_VERSION:
             return False
     elif data.get("reader_experience_enabled") not in {None, False}:
+        return False
+    if CONTINUITY_AUDIT_ENABLED:
+        if data.get("continuity_audit_enabled") is not True:
+            return False
+        if data.get("continuity_audit_schema_version") != CONTINUITY_AUDIT_SCHEMA_VERSION:
+            return False
+    elif data.get("continuity_audit_enabled") not in {None, False}:
         return False
     stored_prompt_templates = data.get("prompt_templates")
     if isinstance(stored_prompt_templates, dict):
@@ -1191,6 +1200,44 @@ def _compact_reader_experience_for_summary(chunk_results: List[Dict[str, Any]], 
     return compact
 
 
+def _compact_continuity_for_summary(chunk_results: List[Dict[str, Any]], limit: int = 120) -> List[Dict[str, Any]]:
+    compact = []
+    for item in chunk_results:
+        if not isinstance(item, dict):
+            continue
+        update = _normalize_context_state_update(item.get("context_state_update"))
+        architecture = _safe_dict(item.get("outline_architecture"))
+        expansion = _safe_dict(architecture.get("worldbuilding_expansion"))
+        integrity = _safe_dict(architecture.get("architecture_integrity"))
+        causal = _safe_dict(architecture.get("causal_chain"))
+        foreshadowing = _normalize_foreshadowing_engineering(item.get("foreshadowing_engineering"))
+        material = {
+            "chunk_index": item.get("original_chunk_index", item.get("chunk_index")),
+            "summary": item.get("one_sentence_summary"),
+            "conflicts": _safe_list(item.get("conflicts"), limit=4),
+            "worldbuilding": _safe_list(item.get("worldbuilding"), limit=4),
+            "quality_notes": _safe_list(item.get("quality_notes"), limit=4),
+            "relationship_updates": update.get("relationship_updates"),
+            "open_threads": update.get("open_threads"),
+            "resolved_threads": update.get("resolved_threads"),
+            "worldbuilding_updates": update.get("worldbuilding_updates"),
+            "causal_strength": causal.get("causal_strength"),
+            "forced_elements": causal.get("forced_elements") or [],
+            "coincidence_dependency": causal.get("coincidence_dependency"),
+            "worldbuilding_consistency": expansion.get("consistency_check"),
+            "power_inconsistency": integrity.get("power_inconsistency"),
+            "forced_plot_devices": integrity.get("forced_plot_devices") or [],
+            "new_foreshadowing": foreshadowing.get("new_foreshadowing") or [],
+            "foreshadowing_resolutions": foreshadowing.get("foreshadowing_resolutions") or [],
+        }
+        if not any(value for key, value in material.items() if key not in {"chunk_index", "summary"}):
+            continue
+        compact.append(material)
+        if len(compact) >= limit:
+            break
+    return compact
+
+
 def _merge_foreshadowing_engineering_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     merged = {
         "new_foreshadowing": [],
@@ -1690,6 +1737,24 @@ def _reader_experience_summary_json_hint() -> str:
   },"""
 
 
+def _continuity_audit_summary_json_hint() -> str:
+    if not CONTINUITY_AUDIT_ENABLED:
+        return ""
+    return """
+  "continuity_audit_analysis": {
+    "overall_continuity_rating": "excellent|good|average|risky",
+    "risk_level": "low|medium|high",
+    "character_continuity": ["人物身份、称呼、关系阶段或行为动机的连续性判断"],
+    "relationship_consistency": ["重要人物关系是否自然演化，有无跳变或回退"],
+    "worldbuilding_consistency": ["设定、规则、势力、地点、时间线是否自洽"],
+    "foreshadowing_continuity": ["伏笔、悬念、回收和遗留线的连续性问题"],
+    "causal_chain_issues": ["因果链、巧合依赖、强行推进或战力/规则跳变"],
+    "unresolved_threads": ["需要后续复核的重要未解问题"],
+    "evidence": ["来自分块材料的短证据"],
+    "fix_suggestions": ["连续性和一致性层面的改进建议"]
+  },"""
+
+
 def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None, context_snapshot=None) -> Dict[str, Any]:
     profile = profile or load_analysis_profile("general")
     density_profile = density_profile or _chunk_density_profile(text_chunk)
@@ -1936,6 +2001,8 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         material["reader_experience_chunks"] = _compact_reader_experience_for_summary(chunk_results)
     if ROLLING_CONTEXT_ENABLED:
         material["rolling_context_timeline"] = _compact_rolling_context_timeline(chunk_results)
+    if CONTINUITY_AUDIT_ENABLED:
+        material["continuity_audit_material"] = _compact_continuity_for_summary(chunk_results)
     base_summary_fields = {
         "main_plot",
         "core_conflicts",
@@ -1951,6 +2018,7 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         "foreshadowing_engineering_analysis",
         "semantic_layers_analysis",
         "reader_experience_analysis",
+        "continuity_audit_analysis",
         "strengths",
         "risks_or_issues",
     }
@@ -1979,6 +2047,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 开启伏笔工程追踪时，请结合 foreshadowing_engineering_chunks 和 rolling_context_timeline 判断伏笔设置、活跃线索、回收质量、烟雾弹和风险；不要把普通未完成剧情目标都算作伏笔。
 开启深层语义分析时，请基于 semantic_layers_chunks 归纳事实层、意图层、效果层和技法层的稳定模式；潜台词/反讽必须来自分块证据，不要强行拔高主题。
 开启读者体验分析时，请基于 reader_experience_chunks 判断投入度曲线、爽点/燃点/甜点/解谜满足、期待管理和体验风险；不要把单个片段的挫败点扩大成整书结论。
+开启连续性审计时，请基于 continuity_audit_material 和 rolling_context_timeline 检查人物关系、世界观设定、伏笔回收、因果链、战力/规则是否前后自洽；只能标记有分块证据支持的风险，不要把“尚未完结”本身判为错误。
 开启滚动上下文时，请基于 rolling_context_timeline 理解全书阶段推进、人物关系延续、未解问题和回收情况；不要要求或引用 context_snapshot_used 这类逐块内部快照。"""
     user_prompt = f"""书名：{book_name}
 
@@ -1993,7 +2062,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
   "worldbuilding": ["世界观/设定要点"],
   "themes": ["主题表达"],
   "foreshadowing_and_payoff": ["伏笔、悬念、回收情况"],
-{specialty_json_hint}{_narrative_architecture_summary_json_hint()}{_foreshadowing_engineering_summary_json_hint()}{_semantic_layers_summary_json_hint()}{_reader_experience_summary_json_hint()}{_writing_quality_summary_json_hint()}
+{specialty_json_hint}{_narrative_architecture_summary_json_hint()}{_foreshadowing_engineering_summary_json_hint()}{_semantic_layers_summary_json_hint()}{_reader_experience_summary_json_hint()}{_continuity_audit_summary_json_hint()}{_writing_quality_summary_json_hint()}
   "strengths": ["作品优点"],
   "risks_or_issues": ["可能的问题或阅读门槛"],
   "reader_fit": "适合什么读者",
@@ -2031,6 +2100,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         "foreshadowing_engineering_analysis": _normalize_object_summary(data.get("foreshadowing_engineering_analysis")),
         "semantic_layers_analysis": _normalize_object_summary(data.get("semantic_layers_analysis")),
         "reader_experience_analysis": _normalize_object_summary(data.get("reader_experience_analysis")),
+        "continuity_audit_analysis": _normalize_object_summary(data.get("continuity_audit_analysis")),
         "strengths": _summary_field_value(data, "strengths"),
         "risks_or_issues": _summary_field_value(data, "risks_or_issues"),
         "reader_fit": "；".join(_summary_field_value(data, "reader_fit")),
@@ -2200,6 +2270,9 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "reader_experience_enabled": READER_EXPERIENCE_ENABLED,
         "reader_experience_schema_version": READER_EXPERIENCE_SCHEMA_VERSION if READER_EXPERIENCE_ENABLED else None,
         "reader_experience_timeline_count": len(_compact_reader_experience_for_summary(chunk_results)) if READER_EXPERIENCE_ENABLED else 0,
+        "continuity_audit_enabled": CONTINUITY_AUDIT_ENABLED,
+        "continuity_audit_schema_version": CONTINUITY_AUDIT_SCHEMA_VERSION if CONTINUITY_AUDIT_ENABLED else None,
+        "continuity_audit_timeline_count": len(_compact_continuity_for_summary(chunk_results)) if CONTINUITY_AUDIT_ENABLED else 0,
         "density_counts": density_counts,
         "incremental_reuse": INCREMENTAL_REUSE,
         "reused_chunk_count": reused_chunk_count,
