@@ -45,5 +45,9 @@ GENERAL_SCAN_MAX_CHUNKS=80
 # 后宫增强模式：1=后宫排雷后额外运行通用剧情扫描，并在报告末尾追加作品整体评价；0=关闭
 HAREM_PLUS_GENERAL_SCAN=0
 
+# 扫描日志轮转：单个日志文件最大字节数与保留历史份数；0 表示不轮转
+LOG_MAX_BYTES=10485760
+LOG_BACKUP_COUNT=5
+
 # Web 管理端可选访问令牌；留空不启用。公网部署建议设置一个长随机字符串。
 WEB_ACCESS_TOKEN=

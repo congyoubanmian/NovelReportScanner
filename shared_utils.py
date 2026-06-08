@@ -1,5 +1,6 @@
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 import sys
 from typing import Any, Dict, Optional, Tuple
@@ -53,6 +54,62 @@ _base_workers = int(os.environ.get("MAX_WORKERS", "8"))
 MAX_WORKERS = _base_workers + 4
 
 logger = logging.getLogger("reviewer")
+
+
+def _read_int_env(name: str, default: int, *, min_value: int = 0) -> int:
+    raw_value = os.environ.get(name)
+    if raw_value is None or str(raw_value).strip() == "":
+        return default
+    try:
+        value = int(str(raw_value).strip())
+    except (TypeError, ValueError):
+        return default
+    return max(min_value, value)
+
+
+LOG_MAX_BYTES = _read_int_env("LOG_MAX_BYTES", 10 * 1024 * 1024)
+LOG_BACKUP_COUNT = _read_int_env("LOG_BACKUP_COUNT", 5)
+
+
+def create_rotating_file_handler(
+    log_path: str,
+    *,
+    formatter: logging.Formatter = None,
+    encoding: str = "utf-8",
+    max_bytes: int = None,
+    backup_count: int = None,
+) -> RotatingFileHandler:
+    handler = RotatingFileHandler(
+        log_path,
+        maxBytes=LOG_MAX_BYTES if max_bytes is None else max(0, int(max_bytes)),
+        backupCount=LOG_BACKUP_COUNT if backup_count is None else max(0, int(backup_count)),
+        encoding=encoding,
+    )
+    if formatter is not None:
+        handler.setFormatter(formatter)
+    return handler
+
+
+def configure_rotating_file_logger(
+    target_logger: logging.Logger,
+    log_path: str,
+    *,
+    level: int = logging.INFO,
+    stream: bool = True,
+    formatter: logging.Formatter = None,
+) -> logging.Logger:
+    formatter = formatter or logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    for handler in list(target_logger.handlers):
+        target_logger.removeHandler(handler)
+        handler.close()
+    file_handler = create_rotating_file_handler(log_path, formatter=formatter)
+    target_logger.addHandler(file_handler)
+    if stream:
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        target_logger.addHandler(stream_handler)
+    target_logger.setLevel(level)
+    return target_logger
 
 # ---- API 调用封装：统一收敛到 Timerror.py（只需修改 Timerror.py 即可全局生效）----
 MAX_403_RETRIES = 3  # 连续 3 次 403 才标记为不可用

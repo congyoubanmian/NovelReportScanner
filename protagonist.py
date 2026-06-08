@@ -15,7 +15,12 @@ from tqdm import tqdm
 import concurrent.futures
 import threading
 from token_tracker import create_default_tracker
-from shared_utils import create_chat_completion, get_base_dir, read_file_safely
+from shared_utils import (
+    configure_rotating_file_logger,
+    create_chat_completion,
+    get_base_dir,
+    read_file_safely,
+)
 
 BASE_URL = os.environ.get("BASE_URL", "https://api.deepseek.com")
 MODEL = os.environ.get("MODEL_NAME", "deepseek-chat")
@@ -4061,15 +4066,7 @@ def main(novel_path=None, book_name=None, run_id=None):
 
     # 重新配置 logger（支持多次调用不残留旧 handler）
     logger = logging.getLogger("protagonist")
-    logger.handlers.clear()
-    logger.setLevel(logging.INFO)
-    _fmt = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    _fh = logging.FileHandler(os.path.join(OUTPUT_DIR, "analysis.log"), encoding='utf-8')
-    _fh.setFormatter(_fmt)
-    _sh = logging.StreamHandler()
-    _sh.setFormatter(_fmt)
-    logger.addHandler(_fh)
-    logger.addHandler(_sh)
+    configure_rotating_file_logger(logger, os.path.join(OUTPUT_DIR, "analysis.log"))
 
     try:
         print("=" * 70)

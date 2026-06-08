@@ -1,11 +1,14 @@
 import json
 import io
+import logging
 import os
 import re
 import subprocess
 import tempfile
 import time
 import unittest
+import ast
+from logging.handlers import RotatingFileHandler
 from unittest import mock
 
 import analysis_profiles
@@ -14,12 +17,54 @@ import main
 import novel_scan
 import novel_reviewer
 import report
+import shared_utils
 import toxic_reviewer
 import Timerror
 import web_manager
 
 
 class ProfileAndGeneralReportTests(unittest.TestCase):
+    def test_scan_log_handler_uses_rotation_defaults(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_path = os.path.join(tmpdir, "analysis.log")
+            handler = shared_utils.create_rotating_file_handler(log_path)
+            try:
+                self.assertIsInstance(handler, RotatingFileHandler)
+                self.assertEqual(handler.maxBytes, shared_utils.LOG_MAX_BYTES)
+                self.assertEqual(handler.backupCount, shared_utils.LOG_BACKUP_COUNT)
+            finally:
+                handler.close()
+
+    def test_configure_rotating_file_logger_replaces_existing_handlers(self):
+        class CloseTrackingHandler(logging.Handler):
+            def __init__(self):
+                super().__init__()
+                self.closed_by_configure = False
+
+            def close(self):
+                self.closed_by_configure = True
+                super().close()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target_logger = logging.getLogger("test.rotating.scan.logger")
+            for handler in list(target_logger.handlers):
+                target_logger.removeHandler(handler)
+                handler.close()
+            old_handler = CloseTrackingHandler()
+            target_logger.addHandler(old_handler)
+
+            log_path = os.path.join(tmpdir, "reviewer.log")
+            try:
+                shared_utils.configure_rotating_file_logger(target_logger, log_path, stream=False)
+                self.assertTrue(old_handler.closed_by_configure)
+                self.assertEqual(len(target_logger.handlers), 1)
+                self.assertIsInstance(target_logger.handlers[0], RotatingFileHandler)
+                self.assertEqual(target_logger.handlers[0].baseFilename, log_path)
+            finally:
+                for handler in list(target_logger.handlers):
+                    target_logger.removeHandler(handler)
+                    handler.close()
+
     def test_compose_variables_are_documented_in_env_sample(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
         compose_path = os.path.join(base_dir, "docker-compose.yml")
@@ -450,9 +495,16 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             with self.subTest(module=filename):
                 with open(os.path.join(base_dir, filename), "r", encoding="utf-8") as f:
                     text = f.read()
+                tree = ast.parse(text)
+                shared_import_names = {
+                    alias.name
+                    for node in ast.walk(tree)
+                    if isinstance(node, ast.ImportFrom) and node.module == "shared_utils"
+                    for alias in node.names
+                }
                 self.assertNotIn("def _openai_client_factory", text)
                 self.assertNotIn("from Timerror import make_chat_completion", text)
-                self.assertIn("from shared_utils import create_chat_completion", text)
+                self.assertIn("create_chat_completion", shared_import_names)
                 self.assertIn('BASE_URL = os.environ.get("BASE_URL", "https://api.deepseek.com")', text)
 
     def test_frontend_runtime_config_exposes_auto_rate_limit_scope(self):

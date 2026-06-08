@@ -44,6 +44,7 @@ from shared_utils import (
     SCAN_RESULTS_DIR,
     _safe_json_loads_maybe,
     chat_completion,
+    configure_rotating_file_logger,
     get_token_tracker,
     init_token_tracker,
     logger,
@@ -8615,17 +8616,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
 
     # 初始化日志到当前扫描目录
     log_path = os.path.join(os.path.dirname(raw_data_path), "reviewer.log")
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    # 清理默认 handler，避免重复输出
-    if logger.handlers:
-        logger.handlers.clear()
-    fh = logging.FileHandler(log_path, encoding='utf-8')
-    fh.setFormatter(formatter)
-    sh = logging.StreamHandler()
-    sh.setFormatter(formatter)
-    logger.addHandler(fh)
-    logger.addHandler(sh)
-    logger.setLevel(logging.INFO)
+    configure_rotating_file_logger(logger, log_path)
     logger.info(f"日志文件: {log_path}")
 
     char_file_path = find_character_data(raw_data_path, detail_path=detail_path)
