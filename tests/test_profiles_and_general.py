@@ -16959,6 +16959,37 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in result["chunk_facts"]["characters"]], ["沈南歌"])
         self.assertTrue(result["discarded_facts"])
 
+    def test_general_scan_downshifts_json_parse_error_by_splitting_chunk(self):
+        calls = []
+
+        def fake_scan(text_chunk, chunk_index, total_chunks, profile=None, density_profile=None, context_snapshot=None, entity_prescan=None):
+            calls.append(text_chunk)
+            if len(calls) == 1:
+                raise ValueError("JSON解析失败: Expecting ',' delimiter: line 243 column 26 (char 7257)")
+            return {
+                "chunk_index": chunk_index,
+                "plot_events": [f"事件{len(calls)}"],
+                "one_sentence_summary": f"摘要{len(calls)}",
+            }
+
+        old_depth = general_scan.API_DOWNSHIFT_MAX_DEPTH
+        try:
+            general_scan.API_DOWNSHIFT_MAX_DEPTH = 1
+            with mock.patch.object(general_scan, "_scan_chunk", side_effect=fake_scan):
+                result = general_scan._scan_chunk_with_context_overflow_fallback(
+                    "甲" * 100 + "\n" + "乙" * 100,
+                    0,
+                    1,
+                )
+        finally:
+            general_scan.API_DOWNSHIFT_MAX_DEPTH = old_depth
+
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(result["partial_result"])
+        self.assertEqual(result["partial_reason"], "parse_error_downshift_split")
+        self.assertEqual(result["partial_count"], 2)
+        self.assertEqual(result["plot_events"], ["事件2", "事件3"])
+
     def test_general_scan_main_marks_partial_scan_when_chunks_fail(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             novels_dir = os.path.join(tmpdir, "novels")

@@ -2966,6 +2966,25 @@ def _downshift_entity_prescan(entity_prescan, depth: int):
     return items[:keep]
 
 
+def _should_downshift_scan_chunk_error(error_type: str, error: Exception) -> bool:
+    if error_type in {"context_overflow", "api_error", "timeout"}:
+        return True
+    if error_type != "parse_error":
+        return False
+    text = str(error or "")
+    return any(marker in text for marker in (
+        "truncated_json_response",
+        "response_flags=",
+        "json_unbalanced",
+        "likely_truncated",
+        "near_max_tokens_truncated",
+        "code_fence_unclosed",
+        "JSON解析失败",
+        "unable to parse json",
+        "Expecting ',' delimiter",
+    ))
+
+
 def _scan_chunk_downshifted(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, context_snapshot=None, entity_prescan=None, depth: int = 0) -> Dict[str, Any]:
     density_profile = _chunk_density_profile(text_chunk)
     if ROLLING_CONTEXT_ENABLED:
@@ -2989,7 +3008,11 @@ def _scan_chunk_downshifted(text_chunk: str, chunk_index: int, total_chunks: int
         return result
     except Exception as exc:
         error_type = classify_scan_error(exc)
-        if error_type not in {"context_overflow", "api_error", "timeout"} or depth >= API_DOWNSHIFT_MAX_DEPTH or len(text_chunk or "") < 2:
+        if (
+            not _should_downshift_scan_chunk_error(error_type, exc)
+            or depth >= API_DOWNSHIFT_MAX_DEPTH
+            or len(text_chunk or "") < 2
+        ):
             raise
         parts = _split_text_for_downshift(text_chunk)
         partial_results = []
