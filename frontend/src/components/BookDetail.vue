@@ -64,6 +64,26 @@ function taskLastLogText(task) {
   return task.last_log || task.message || ''
 }
 
+function taskWarnings(task) {
+  const result = task.result || {}
+  return Array.isArray(result.warnings) ? result.warnings.filter(Boolean) : []
+}
+
+function taskPartialMeta(task) {
+  return task.result?.general_scan_partial || null
+}
+
+function formatPercent(value) {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '—'
+  return `${Math.round(num * 100)}%`
+}
+
+function partialSummaryUrl(task) {
+  const path = taskPartialMeta(task)?.summary_path
+  return path ? `/files?path=${encodeURIComponent(path)}` : ''
+}
+
 const preview = ref({
   url: '',
   name: '',
@@ -268,28 +288,48 @@ watch(
               <tr v-if="!tasks.length">
                 <td colspan="8" class="empty-cell">暂无任务</td>
               </tr>
-              <tr v-for="t in tasks" :key="t.id">
-                <td class="mono">{{ t.id }}</td>
-                <td>{{ t.profile }}</td>
-                <td>{{ resolvedProfilesText(t) }}</td>
-                <td><StatusTag :status="t.displayStatus" /></td>
-                <td class="mono nowrap">{{ t.created_at || '—' }}</td>
-                <td class="task-log-cell" :title="taskLastLogText(t)">
-                  <div class="mono nowrap">{{ t.last_log_at || t.updated_at || '—' }}</div>
-                  <div class="muted task-log-text">{{ taskLastLogText(t) || '—' }}</div>
-                </td>
-                <td class="muted">{{ t.finished_at || t.error || '—' }}</td>
-                <td style="text-align: center">
-                  <a
-                    v-if="t.log_file"
-                    :href="fileHref(t.log_file.url)"
-                    target="_blank"
-                    class="log-link"
-                    >📋 日志</a
-                  >
-                  <span v-else>—</span>
-                </td>
-              </tr>
+              <template v-for="t in tasks" :key="t.id">
+                <tr>
+                  <td class="mono">{{ t.id }}</td>
+                  <td>{{ t.profile }}</td>
+                  <td>{{ resolvedProfilesText(t) }}</td>
+                  <td><StatusTag :status="t.displayStatus" /></td>
+                  <td class="mono nowrap">{{ t.created_at || '—' }}</td>
+                  <td class="task-log-cell" :title="taskLastLogText(t)">
+                    <div class="mono nowrap">{{ t.last_log_at || t.updated_at || '—' }}</div>
+                    <div class="muted task-log-text">{{ taskLastLogText(t) || '—' }}</div>
+                  </td>
+                  <td class="muted">{{ t.finished_at || t.error || '—' }}</td>
+                  <td style="text-align: center">
+                    <a
+                      v-if="t.log_file"
+                      :href="fileHref(t.log_file.url)"
+                      target="_blank"
+                      class="log-link"
+                      >📋 日志</a
+                    >
+                    <span v-else>—</span>
+                  </td>
+                </tr>
+                <tr v-if="taskWarnings(t).length" class="task-warning-row">
+                  <td colspan="8">
+                    <div class="task-warning">
+                      <strong>部分扫描</strong>
+                      <span>{{ taskWarnings(t).join('；') }}</span>
+                      <span v-if="taskPartialMeta(t)">
+                        覆盖率 {{ formatPercent(taskPartialMeta(t).scan_coverage_ratio) }}
+                      </span>
+                      <a
+                        v-if="partialSummaryUrl(t)"
+                        :href="fileHref(partialSummaryUrl(t))"
+                        target="_blank"
+                        class="log-link"
+                        >查看 summary</a
+                      >
+                    </div>
+                  </td>
+                </tr>
+              </template>
             </tbody>
           </table>
         </div>
@@ -366,6 +406,22 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.task-warning-row td {
+  background: var(--warning-bg);
+  border-bottom-color: var(--border-table);
+  padding: 10px 16px;
+}
+.task-warning {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--warning-text);
+  font-size: 0.82rem;
+}
+.task-warning strong {
+  color: var(--warning-text);
 }
 @media (max-width: 768px) {
   .usage-summary {

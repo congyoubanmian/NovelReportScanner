@@ -12958,6 +12958,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(result["general_scan_partial"]["failed_chunk_count"], 2)
             self.assertEqual(result["general_scan_partial"]["summary_path"], summary_path)
 
+    def test_frontend_book_detail_shows_general_partial_warning(self):
+        with open(os.path.join("frontend", "src", "components", "BookDetail.vue"), "r", encoding="utf-8") as f:
+            text = f.read()
+
+        self.assertIn("taskWarnings", text)
+        self.assertIn("general_scan_partial", text)
+        self.assertIn("scan_coverage_ratio", text)
+        self.assertIn("查看 summary", text)
+
     def test_general_scan_fresh_summary(self):
         with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
             f.write("test")
