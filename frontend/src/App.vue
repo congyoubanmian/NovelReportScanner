@@ -120,6 +120,7 @@ const diagnosticsStatus = computed(() => {
   const issues = Array.isArray(data.health_issues) ? data.health_issues : []
   const stale = Number(data.stale_running_count || 0)
   const failed = Number(data.failed_count || 0)
+  const failedHistory = Number(data.failed_task_history_count || 0)
   const running = Number(data.running_count || 0)
   const queued = Number(data.queue_length || 0)
   const longestRunningText = formatElapsed(data.longest_running_seconds)
@@ -150,6 +151,7 @@ const diagnosticsStatus = computed(() => {
     queued,
     running,
     failed,
+    failedHistory,
     topFailureText: topFailure ? `${topFailure.reason} x${topFailure.count}` : '-',
     longestRunningText,
     oldestQueueWaitText,
@@ -539,6 +541,7 @@ useStateEvents(applyState, {
       <span class="runtime-item" :class="{ danger: diagnosticsStatus.failed > 0 }"
         ><b>失败</b>{{ diagnosticsStatus.failed }}</span
       >
+      <span class="runtime-item"><b>历史失败</b>{{ diagnosticsStatus.failedHistory }}</span>
       <span
         class="runtime-item"
         :class="{ danger: diagnosticsStatus.failed > 0 }"
