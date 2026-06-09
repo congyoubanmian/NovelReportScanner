@@ -39,6 +39,7 @@ const configReady = ref(false)
 const selectedBook = ref(null)
 const selectedBookId = ref(null)
 const loading = ref(true)
+const stateUnauthorizedNotified = ref(false)
 const initialUrlParams = new URLSearchParams(window.location.search)
 const initialUrlToken =
   ACCESS_TOKEN_QUERY_KEYS.map((key) => initialUrlParams.get(key)?.trim()).find(Boolean) || ''
@@ -278,11 +279,15 @@ async function applyState(data, options = {}) {
 async function refresh(options = {}) {
   try {
     const data = await getState()
+    stateUnauthorizedNotified.value = false
     await applyState(data, options)
   } catch (e) {
     console.error('刷新失败:', e)
     if (String(e.message || '').includes('unauthorized')) {
-      toastError('访问令牌无效或缺失')
+      if (!stateUnauthorizedNotified.value) {
+        toastError('访问令牌无效或缺失')
+      }
+      stateUnauthorizedNotified.value = true
     }
   } finally {
     loading.value = false
@@ -296,6 +301,7 @@ async function refreshAfterMutation() {
 
 async function saveAccessToken() {
   setAccessToken(accessTokenInput.value)
+  stateUnauthorizedNotified.value = false
   toastSuccess(accessTokenInput.value.trim() ? '访问令牌已保存' : '访问令牌已清除')
   await refresh()
 }
