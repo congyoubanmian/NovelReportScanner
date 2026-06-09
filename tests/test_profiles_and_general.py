@@ -1191,11 +1191,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
 
-    def test_frontend_runtime_config_exposes_auto_rate_limit_scope(self):
+    def test_frontend_runtime_config_covers_editable_backend_fields(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
         app_path = os.path.join(base_dir, "frontend", "src", "App.vue")
         with open(app_path, "r", encoding="utf-8") as f:
             text = f.read()
+        for field in web_manager.EDITABLE_RUNTIME_CONFIG:
+            with self.subTest(field=field):
+                self.assertIn(f"{field}:", text)
+                self.assertIn(f"configForm.value.{field}", text)
         self.assertIn("rate_limit_scope: 'auto'", text)
         self.assertIn("config.rate_limit_scope || 'auto'", text)
         self.assertIn('<option value="auto">auto</option>', text)
