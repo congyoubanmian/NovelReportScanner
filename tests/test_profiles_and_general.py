@@ -7616,6 +7616,44 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.OUTPUTS_CACHE.update(old_cache)
             web_manager.os.walk = old_os_walk
 
+    def test_web_manager_drops_stale_cached_output_links(self):
+        old_base_dir = web_manager.get_base_dir
+        old_ttl = web_manager.OUTPUTS_CACHE_TTL_SECONDS
+        old_cache = dict(web_manager.OUTPUTS_CACHE)
+        old_os_walk = web_manager.os.walk
+        calls = []
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                results_dir = os.path.join(tmp, "results")
+                os.makedirs(results_dir, exist_ok=True)
+                out_path = os.path.join(results_dir, "book_GENERAL_SUMMARY_latest.json")
+                with open(out_path, "w", encoding="utf-8") as f:
+                    f.write("{}")
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.OUTPUTS_CACHE_TTL_SECONDS = 60
+                web_manager.OUTPUTS_CACHE.clear()
+
+                def tracking_walk(*args, **kwargs):
+                    calls.append(args[0])
+                    return old_os_walk(*args, **kwargs)
+
+                web_manager.os.walk = tracking_walk
+
+                outputs = web_manager._find_book_outputs("book")
+                self.assertEqual([item["path"] for item in outputs], [out_path])
+                self.assertEqual(len(calls), 1)
+
+                os.unlink(out_path)
+
+                self.assertEqual(web_manager._find_book_outputs("book"), [])
+                self.assertEqual(len(calls), 2)
+        finally:
+            web_manager.get_base_dir = old_base_dir
+            web_manager.OUTPUTS_CACHE_TTL_SECONDS = old_ttl
+            web_manager.OUTPUTS_CACHE.clear()
+            web_manager.OUTPUTS_CACHE.update(old_cache)
+            web_manager.os.walk = old_os_walk
+
     def test_web_manager_book_detail_adds_log_link(self):
         task_id = "testtask"
         log_path = web_manager._task_log_path(task_id)

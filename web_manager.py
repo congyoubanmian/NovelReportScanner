@@ -1196,6 +1196,20 @@ def _invalidate_book_outputs(book_id):
     OUTPUTS_CACHE.pop(_outputs_cache_key(book_id), None)
 
 
+def _fresh_cached_output_links(outputs):
+    if not outputs:
+        return []
+    expected_paths = []
+    for item in outputs:
+        if not isinstance(item, dict) or not item.get("path"):
+            return None
+        expected_paths.append(os.path.abspath(item["path"]))
+    refreshed = _merge_output_links(outputs)
+    if {os.path.abspath(item.get("path")) for item in refreshed} != set(expected_paths):
+        return None
+    return refreshed
+
+
 def _book_output_index(book_id):
     with STATE_LOCK:
         book = STATE.get("books", {}).get(book_id) or {}
@@ -1302,7 +1316,11 @@ def _find_book_outputs(book_id):
     cache_key = _outputs_cache_key(book_id)
     cached = OUTPUTS_CACHE.get(cache_key)
     if cached and now - cached["time"] < OUTPUTS_CACHE_TTL_SECONDS:
-        return cached["outputs"]
+        outputs = _fresh_cached_output_links(cached.get("outputs"))
+        if outputs is not None:
+            cached["outputs"] = outputs
+            return outputs
+        OUTPUTS_CACHE.pop(cache_key, None)
 
     indexed_outputs = _book_output_index(book_id)
     if indexed_outputs:
