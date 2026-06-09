@@ -65,13 +65,20 @@ async function _request(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
 
 function _formatErrorResponse(text, status) {
   if (!text) return `HTTP ${status}`
+  const trimmed = text.trim()
   try {
-    const data = JSON.parse(text)
+    const data = JSON.parse(trimmed)
     const resultText = typeof data.result === 'string' ? data.result : ''
     const parts = [data.error || resultText, data.detail, data.hint].filter(Boolean)
-    return parts.length ? parts.join('：') : text
+    return parts.length ? parts.join('：') : trimmed
   } catch {
-    return text
+    if (/^<!doctype html\b/i.test(trimmed) || /^<html[\s>]/i.test(trimmed)) {
+      const title = trimmed.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]
+      const cleanTitle = title?.replace(/\s+/g, ' ').trim()
+      return cleanTitle ? `HTTP ${status}: ${cleanTitle}` : `HTTP ${status}`
+    }
+    const plainText = trimmed.replace(/\s+/g, ' ')
+    return plainText.length > 300 ? `${plainText.slice(0, 300)}...` : plainText
   }
 }
 

@@ -1260,6 +1260,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             text = f.read()
         self.assertIn("typeof data.result === 'string'", text)
         self.assertIn("data.error || resultText", text)
+        self.assertIn("<title[^>]*>", text)
+        self.assertIn("HTTP ${status}: ${cleanTitle}", text)
+        self.assertIn("plainText.slice(0, 300)", text)
 
     def test_rate_limit_scope_auto_resolves_by_key_count(self):
         self.assertEqual(Timerror.normalize_rate_limit_scope("auto", 1), "global")
