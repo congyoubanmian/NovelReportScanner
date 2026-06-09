@@ -1262,6 +1262,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("retryTypes.has('parse_failure')", text)
         self.assertIn("diagnosticsStatus.retryApiVisible", text)
         self.assertIn("diagnosticsStatus.retryParseVisible", text)
+        self.assertIn("function reasonSummaryText(reasons)", text)
+        self.assertIn("response.result?.skipped_reasons", text)
+        self.assertIn("response.result?.unmatched_reasons", text)
         self.assertIn("storage: '存储异常'", text)
         self.assertIn("config: '配置异常'", text)
         self.assertIn("item.message || item.type || 'health issue'", text)
@@ -8094,6 +8097,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
             self.assertEqual([item["book_id"] for item in result["matched"]], ["api"])
             self.assertEqual([item["book_id"] for item in result["queued"]], ["api"])
+            self.assertEqual(result["skipped_reasons"], [])
+            self.assertEqual(result["unmatched_reasons"], [
+                {"reason": "failure type not selected", "count": 2},
+            ])
             self.assertEqual(web_manager.STATE["books"]["api"]["status"], "queued")
             self.assertEqual(web_manager.STATE["books"]["missing_key"]["status"], "failed")
             self.assertEqual(web_manager.STATE["books"]["parse"]["status"], "failed")
@@ -8105,6 +8112,60 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.TASK_QUEUE_IDS.clear()
             web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
             web_manager.STATE = old_state
+
+    def test_web_manager_retry_failed_tasks_summarizes_enqueue_skips(self):
+        old_state = web_manager.STATE
+        old_queue_ids = set(web_manager.TASK_QUEUE_IDS)
+        old_base_dir = web_manager.get_base_dir
+        try:
+            web_manager.TASK_QUEUE_IDS.clear()
+            while not web_manager.TASK_QUEUE.empty():
+                web_manager.TASK_QUEUE.get_nowait()
+                web_manager.TASK_QUEUE.task_done()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                web_manager.get_base_dir = lambda: tmpdir
+                missing_path = os.path.join(tmpdir, "novels", "missing.txt")
+                web_manager.STATE = {
+                    "books": {
+                        "missing": {
+                            "id": "missing",
+                            "name": "missing",
+                            "path": missing_path,
+                            "profile": "general",
+                            "status": "failed",
+                        },
+                    },
+                    "tasks": [
+                        {
+                            "id": "missing-api",
+                            "book_id": "missing",
+                            "status": "failed",
+                            "finished_at": "2026-01-02 00:00:00",
+                            "error": "服务器错误(504)",
+                        },
+                    ],
+                }
+
+                result = web_manager._retry_failed_tasks_by_type(["api_failure"])
+
+                self.assertEqual([item["book_id"] for item in result["matched"]], ["missing"])
+                self.assertEqual(result["queued"], [])
+                self.assertEqual(result["skipped"], [{
+                    "book_id": "missing",
+                    "reason": "源文件不存在，请重新上传小说文件",
+                }])
+                self.assertEqual(result["skipped_reasons"], [{
+                    "reason": "源文件不存在，请重新上传小说文件",
+                    "count": 1,
+                }])
+        finally:
+            while not web_manager.TASK_QUEUE.empty():
+                web_manager.TASK_QUEUE.get_nowait()
+                web_manager.TASK_QUEUE.task_done()
+            web_manager.TASK_QUEUE_IDS.clear()
+            web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
+            web_manager.STATE = old_state
+            web_manager.get_base_dir = old_base_dir
 
     def test_web_manager_prioritize_queued_book_moves_task_to_front(self):
         old_state = web_manager.STATE

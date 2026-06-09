@@ -1674,7 +1674,18 @@ def _enqueue_many(book_ids):
             queued.append({"book_id": book_id, "task_id": result})
         else:
             skipped.append({"book_id": book_id, "reason": result})
-    return {"queued": queued, "skipped": skipped}
+    return {"queued": queued, "skipped": skipped, "skipped_reasons": _reason_count_summary(skipped)}
+
+
+def _reason_count_summary(items, reason_key="reason"):
+    counts = {}
+    for item in items or []:
+        reason = str((item or {}).get(reason_key) or "unknown").strip() or "unknown"
+        counts[reason] = counts.get(reason, 0) + 1
+    return [
+        {"reason": reason, "count": count}
+        for reason, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    ]
 
 
 def _latest_failed_task_for_book_locked(book_id):
@@ -1726,6 +1737,7 @@ def _retry_failed_tasks_by_type(failure_types):
     result = _enqueue_many([item["book_id"] for item in matched])
     result["matched"] = matched
     result["unmatched_failed"] = skipped
+    result["unmatched_reasons"] = _reason_count_summary(skipped)
     result["failure_types"] = sorted(requested_types)
     return result
 

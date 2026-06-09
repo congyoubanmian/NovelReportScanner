@@ -280,6 +280,12 @@ function syncConfigForm(config) {
   }
 }
 
+function reasonSummaryText(reasons) {
+  const first = Array.isArray(reasons) ? reasons[0] : null
+  if (!first) return ''
+  return `${first.reason || 'unknown'} x${first.count || 0}`
+}
+
 async function saveRuntimeConfig() {
   savingRuntimeConfig.value = true
   try {
@@ -377,11 +383,17 @@ async function handleRetryFailed(failureTypes, label) {
     const queued = response.result?.queued?.length || 0
     const skipped = response.result?.skipped?.length || 0
     const matched = response.result?.matched?.length || 0
+    const skippedReasonText = reasonSummaryText(response.result?.skipped_reasons)
+    const unmatchedReasonText = reasonSummaryText(response.result?.unmatched_reasons)
     if (queued) {
-      toastSuccess(`${label}：已重新加入 ${queued} 本${skipped ? `，跳过 ${skipped} 本` : ''}`)
+      toastSuccess(
+        `${label}：已重新加入 ${queued} 本${skipped ? `，跳过 ${skipped} 本${skippedReasonText ? `（${skippedReasonText}）` : ''}` : ''}`
+      )
     } else {
       toastError(
-        matched ? `${label}：匹配到 ${matched} 本但未能加入队列` : `${label}：没有匹配的失败任务`
+        matched
+          ? `${label}：匹配到 ${matched} 本但未能加入队列${skippedReasonText ? `（${skippedReasonText}）` : ''}`
+          : `${label}：没有匹配的失败任务${unmatchedReasonText ? `（${unmatchedReasonText}）` : ''}`
       )
     }
     await refreshDiagnostics({ force: true })
