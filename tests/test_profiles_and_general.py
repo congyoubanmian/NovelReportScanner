@@ -15445,6 +15445,84 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(any(450 <= idx <= 550 for idx in sampled_indices))
         self.assertEqual(protagonist._sample_chunk_indices_for_budget(1000, 0), list(range(1000)))
 
+    def test_general_character_main_filters_group_title_names_and_uses_role_log_label(self):
+        old_profile = os.environ.get("ANALYSIS_PROFILE")
+        try:
+            os.environ["ANALYSIS_PROFILE"] = "general"
+            with tempfile.TemporaryDirectory() as tmpdir:
+                novel_path = os.path.join(tmpdir, "novel.txt")
+                with open(novel_path, "w", encoding="utf-8") as f:
+                    f.write("stub")
+
+                captured_global = {}
+                exported = []
+
+                def fake_analyze(_text, chunk_index, total_chunks, **_kwargs):
+                    return {
+                        "_success": True,
+                        "profile_mode": "general",
+                        "male_protagonist": {
+                            "name": "云烨",
+                            "summary": "视角核心",
+                            "gender": "male",
+                        },
+                        "female_characters": [
+                            {
+                                "name": "各州刺史（青州、登州、沧州、莱州等）",
+                                "score": 6,
+                                "role_type": "supporting",
+                                "summary": "群体官员列席",
+                            },
+                            {
+                                "name": "张俭、契苾何力",
+                                "score": 7,
+                                "role_type": "supporting",
+                                "summary": "两人参与军务",
+                            },
+                        ],
+                        "discarded_facts": [],
+                    }
+
+                def fake_merge_aliases(global_stats):
+                    captured_global.update(global_stats)
+                    return global_stats
+
+                def fake_export(_merged_stats, heroine_result, *_args, **_kwargs):
+                    exported.append(heroine_result)
+                    return ("detail.json", "snapshot.json", "report.txt")
+
+                with mock.patch.object(protagonist, "get_base_dir", return_value=tmpdir), \
+                        mock.patch.object(protagonist, "init_token_tracker"), \
+                        mock.patch.object(protagonist, "read_novel", return_value="字" * 8000), \
+                        mock.patch.object(protagonist, "split_text_by_length", return_value=["chunk-0"]), \
+                        mock.patch.object(protagonist, "validate_config"), \
+                        mock.patch.object(protagonist, "tqdm", side_effect=lambda items, **kwargs: items), \
+                        mock.patch.object(protagonist, "analyze_chunk_for_heroines", side_effect=fake_analyze), \
+                        mock.patch.object(protagonist, "merge_aliases", side_effect=fake_merge_aliases), \
+                        mock.patch.object(protagonist, "identify_heroines") as mock_identify_heroines, \
+                        mock.patch.object(protagonist, "merge_heroines_final") as mock_merge_heroines_final, \
+                        mock.patch.object(protagonist, "generate_final_report", return_value="report"), \
+                        mock.patch.object(protagonist, "export_results", side_effect=fake_export):
+                    self.assertEqual(protagonist.main(novel_path=novel_path, book_name="group_title"), 0)
+
+                log_path = os.path.join(protagonist.OUTPUT_DIR, "analysis.log")
+                with open(log_path, "r", encoding="utf-8") as f:
+                    log_text = f.read()
+                self.assertIn("角色字段疑似包含多个名字", log_text)
+                self.assertNotIn("女性角色字段疑似包含多个名字", log_text)
+                self.assertNotIn("各州刺史", captured_global)
+                self.assertIn("张俭", captured_global)
+                self.assertIn("契苾何力", captured_global)
+                self.assertTrue(any(item.get("reason") == "group_or_title_name" for item in protagonist.DISCARDED_FACTS))
+                mock_identify_heroines.assert_not_called()
+                mock_merge_heroines_final.assert_not_called()
+                self.assertEqual(exported[0]["profile_mode"], "general")
+        finally:
+            if old_profile is None:
+                os.environ.pop("ANALYSIS_PROFILE", None)
+            else:
+                os.environ["ANALYSIS_PROFILE"] = old_profile
+
     def test_general_character_prompt_limits_chunk_character_output(self):
         old_limit = protagonist.GENERAL_CHARACTER_MAX_PER_CHUNK
         try:
@@ -15486,6 +15564,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in capped["general_characters"]], ["主角", "反派", "同伴"])
         self.assertEqual(capped["discarded_facts"][0]["reason"], "general_character_over_limit")
         self.assertIn("路人乙", capped["discarded_facts"][0]["value"])
+
+    def test_character_name_split_skips_group_title_enumerations(self):
+        self.assertEqual(protagonist._split_multi_names("各州刺史（青州、登州、沧州、莱州等）"), [])
+        self.assertEqual(protagonist._split_multi_names("张俭、契苾何力"), ["张俭", "契苾何力"])
+        self.assertEqual(protagonist._split_multi_names("豫章公主、巴陵公主、襄城公主"), ["豫章公主", "巴陵公主", "襄城公主"])
+        self.assertEqual(protagonist._split_multi_names("张三（李四、王五称呼他）"), ["张三（李四、王五称呼他）"])
 
     def test_general_focus_characters_include_mixed_gender_roles_without_heroine_judgement(self):
         merged_stats = {

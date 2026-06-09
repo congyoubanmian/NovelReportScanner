@@ -16,7 +16,7 @@ import concurrent.futures
 import threading
 from token_tracker import create_default_tracker
 from fact_validator import classify_scan_error, discarded_fact, validate_harem_character_result
-from name_authority import build_conservative_alias_map, is_unsafe_alias
+from name_authority import build_conservative_alias_map, is_generic_person_name, is_unsafe_alias
 from shared_utils import (
     DEFAULT_MAX_403_RETRIES,
     DEFAULT_MAX_RETRIES,
@@ -231,17 +231,19 @@ def _split_multi_names(name: str):
     s = _normalize_person_name(name)
     if not s:
         return []
+    if _is_group_or_title_enumeration_name(s):
+        return []
 
     # 最强拆分：顿号（中文枚举）
     if "、" in s:
-        parts = [p.strip() for p in s.split("、") if p.strip()]
+        parts = _split_top_level_name_parts(s, {"、"})
         # 过滤明显无效段
         parts = [_normalize_person_name(p) for p in parts if _normalize_person_name(p)]
         return parts if len(parts) >= 2 else [s]
 
     # 次强拆分：逗号（仅当包含中日韩字符时才拆）
     if "," in s:
-        parts = [p.strip() for p in s.split(",") if p.strip()]
+        parts = _split_top_level_name_parts(s, {","})
         if len(parts) < 2:
             return [s]
 
@@ -256,6 +258,51 @@ def _split_multi_names(name: str):
             return parts if len(parts) >= 2 else [s]
 
     return [s]
+
+
+def _split_top_level_name_parts(name: str, separators: set[str]) -> list[str]:
+    parts = []
+    current = []
+    depth = 0
+    open_marks = {"（", "("}
+    close_marks = {"）", ")"}
+    for ch in name:
+        if ch in open_marks:
+            depth += 1
+            current.append(ch)
+            continue
+        if ch in close_marks:
+            depth = max(0, depth - 1)
+            current.append(ch)
+            continue
+        if depth == 0 and ch in separators:
+            part = "".join(current).strip()
+            if part:
+                parts.append(part)
+            current = []
+            continue
+        current.append(ch)
+    part = "".join(current).strip()
+    if part:
+        parts.append(part)
+    return parts
+
+
+def _is_group_or_title_enumeration_name(name: str) -> bool:
+    s = _normalize_person_name(name)
+    if not s:
+        return True
+    core = re.sub(r"[（(][^）)]*[）)]", "", s).strip()
+    if is_generic_person_name(core):
+        return True
+    group_terms = (
+        "各州", "诸州", "众", "群", "等人", "一行人", "刺史", "官员", "群臣",
+        "将领", "士兵", "侍卫", "护卫", "家丁", "丫鬟", "仆役", "百姓", "商人",
+        "使者", "官吏", "文官", "武将", "勋贵", "门客", "弟子", "族人",
+    )
+    if any(term in s for term in group_terms) and any(mark in s for mark in ("、", ",", "，", "等", "诸", "各")):
+        return True
+    return False
 
 
 def _levenshtein_distance(a: str, b: str, max_dist: int = 2) -> int:
@@ -4845,12 +4892,23 @@ def main(novel_path=None, book_name=None, run_id=None):
                     logger.warning(f"块 {chunk_idx} 分析失败: {error_msg}，将在补漏阶段重试")
                     return False
                 _append_discarded_facts(result.get("discarded_facts") or [])
+                is_general_mode = (result or {}).get("profile_mode") == "general"
 
                 # 处理男主信息
                 male_proto = result.get("male_protagonist")
                 if male_proto:
                     raw_name = male_proto.get("name", "")
                     male_names = _split_multi_names(raw_name)
+                    if raw_name and not male_names:
+                        _append_discarded_facts([
+                            discarded_fact(
+                                "male_protagonist.name",
+                                raw_name,
+                                "group_or_title_name",
+                                "角色名疑似群体/官职枚举，已跳过",
+                                chunk_idx,
+                            )
+                        ])
                     if len(male_names) >= 2:
                         logger.warning(f"男主字段疑似包含多个名字，将拆分处理: '{raw_name}' -> {male_names}")
                     for name in male_names[:2]:
@@ -4888,10 +4946,21 @@ def main(novel_path=None, book_name=None, run_id=None):
                 for char in chars:
                     raw_name = char.get("name", "")
                     names = _split_multi_names(raw_name)
+                    if raw_name and not names:
+                        _append_discarded_facts([
+                            discarded_fact(
+                                "general_characters.name" if is_general_mode else "female_characters.name",
+                                raw_name,
+                                "group_or_title_name",
+                                "角色名疑似群体/官职枚举，已跳过",
+                                chunk_idx,
+                            )
+                        ])
                     if not names:
                         continue
                     if len(names) >= 2:
-                        logger.warning(f"女性角色字段疑似包含多个名字，将拆分处理: '{raw_name}' -> {names}")
+                        field_label = "角色字段" if is_general_mode else "女性角色字段"
+                        logger.warning(f"{field_label}疑似包含多个名字，将拆分处理: '{raw_name}' -> {names}")
 
                     score = char.get("score", 0)
                     for name in names[:3]:
