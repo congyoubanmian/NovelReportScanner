@@ -7335,6 +7335,49 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.STATE = old_state
             web_manager._save_state = old_save_state
 
+    def test_web_manager_failure_reason_summary_prefers_recent_ties(self):
+        failed_tasks = [
+            {
+                "failure_reason": "json parse failure",
+                "finished_at": "2026-06-09 05:00:00",
+            },
+            {
+                "failure_reason": "api failure",
+                "finished_at": "2026-06-09 06:00:00",
+            },
+            {
+                "failure_reason": "permission denied",
+                "finished_at": "2026-06-09 01:00:00",
+            },
+            {
+                "failure_reason": "permission denied",
+                "finished_at": "2026-06-09 02:00:00",
+            },
+        ]
+
+        summary = web_manager._failure_reason_summary(failed_tasks)
+
+        self.assertEqual(
+            summary,
+            [
+                {
+                    "reason": "permission denied",
+                    "count": 2,
+                    "latest_at": "2026-06-09 02:00:00",
+                },
+                {
+                    "reason": "api failure",
+                    "count": 1,
+                    "latest_at": "2026-06-09 06:00:00",
+                },
+                {
+                    "reason": "json parse failure",
+                    "count": 1,
+                    "latest_at": "2026-06-09 05:00:00",
+                },
+            ],
+        )
+
     def test_web_manager_diagnostics_reports_running_task_staleness(self):
         old_state = web_manager.STATE
         old_timeout = web_manager.SCAN_STALL_TIMEOUT_SECONDS

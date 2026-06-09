@@ -798,7 +798,9 @@ def _failure_reason_summary(failed_tasks, limit=10):
         {"reason": reason, "count": count, "latest_at": latest.get(reason, "")}
         for reason, count in counts.items()
     ]
-    rows.sort(key=lambda item: (-item["count"], item.get("latest_at", ""), item["reason"]))
+    rows.sort(key=lambda item: item["reason"])
+    rows.sort(key=lambda item: item.get("latest_at", ""), reverse=True)
+    rows.sort(key=lambda item: item["count"], reverse=True)
     return rows[:limit]
 
 
