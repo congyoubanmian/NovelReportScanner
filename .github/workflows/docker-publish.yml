@@ -115,22 +115,37 @@ jobs:
 
       - name: Push Docker image tags with retry
         run: |
+          : > /tmp/docker-push-failures.list
+
           while IFS= read -r tag; do
             [ -n "$tag" ] || continue
             docker tag "novel-report-scanner:${{ github.sha }}" "$tag"
 
+            pushed=false
             for attempt in 1 2 3 4; do
               if docker push "$tag"; then
+                pushed=true
                 break
               fi
               if [ "$attempt" -eq 4 ]; then
-                exit 1
+                printf '%s\n' "$tag" >> /tmp/docker-push-failures.list
+                break
               fi
               sleep_seconds=$((attempt * 30))
               echo "Docker push failed for ${tag}, retrying in ${sleep_seconds}s..."
               sleep "$sleep_seconds"
             done
+
+            if [ "$pushed" != "true" ]; then
+              echo "Docker push failed for ${tag} after all retry attempts; continuing with remaining tags."
+            fi
           done < /tmp/docker-tags.list
+
+          if [ -s /tmp/docker-push-failures.list ]; then
+            echo "::error::Failed to push these image tags:"
+            cat /tmp/docker-push-failures.list
+            exit 1
+          fi
 
       - name: Report Docker Hub push
         if: ${{ steps.dockerhub_gate.outputs.enabled == 'true' }}
