@@ -2168,6 +2168,12 @@ class Handler(BaseHTTPRequestHandler):
             500,
         )
 
+    def _send_not_found(self, path):
+        if path == "/api" or path.startswith("/api/") or path in {"/files", "/upload"}:
+            self._send_json({"error": "not found"}, 404)
+            return
+        self.send_error(404)
+
     def _read_json_payload(self):
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -2360,7 +2366,7 @@ class Handler(BaseHTTPRequestHandler):
             path = unquote((params.get("path") or [""])[0])
             self._send_public_file(path)
             return
-        self.send_error(404)
+        self._send_not_found(parsed.path)
 
     def do_POST(self):
         parsed = urlparse(self.path)
@@ -2617,7 +2623,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
             self._send_json({"ok": True, "book_id": book_id})
             return
-        self.send_error(404)
+        self._send_not_found(parsed.path)
 
 
 def run_server(host=None, port=None):

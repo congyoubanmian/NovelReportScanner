@@ -6144,6 +6144,48 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             else:
                 os.environ["WEB_ACCESS_TOKEN"] = old_token
 
+    def test_web_manager_unknown_api_routes_return_json_404(self):
+        class FakeHandler(web_manager.Handler):
+            def __init__(self, path):
+                self.path = path
+                self.headers = {"Content-Length": "0", "X-Web-Unsafe-Action": "confirm"}
+                self.rfile = io.BytesIO(b"")
+                self.sent = []
+                self.errors = []
+
+            def _send_json(self, data, status=200):
+                self.sent.append((status, data))
+
+            def send_error(self, code, message=None):
+                self.errors.append((code, message))
+
+            def _serve_static(self, _path):
+                return False
+
+        old_token = os.environ.get("WEB_ACCESS_TOKEN")
+        try:
+            os.environ.pop("WEB_ACCESS_TOKEN", None)
+
+            get_api = FakeHandler("/api/missing")
+            web_manager.Handler.do_GET(get_api)
+            self.assertEqual(get_api.sent[0], (404, {"error": "not found"}))
+            self.assertEqual(get_api.errors, [])
+
+            post_api = FakeHandler("/api/missing")
+            web_manager.Handler.do_POST(post_api)
+            self.assertEqual(post_api.sent[0], (404, {"error": "not found"}))
+            self.assertEqual(post_api.errors, [])
+
+            static_missing = FakeHandler("/missing-page")
+            web_manager.Handler.do_GET(static_missing)
+            self.assertEqual(static_missing.sent, [])
+            self.assertEqual(static_missing.errors[0][0], 404)
+        finally:
+            if old_token is None:
+                os.environ.pop("WEB_ACCESS_TOKEN", None)
+            else:
+                os.environ["WEB_ACCESS_TOKEN"] = old_token
+
     def test_web_manager_sse_state_stream_sends_state_event(self):
         class OneShotWFile:
             def __init__(self):
