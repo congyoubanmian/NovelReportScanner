@@ -5953,6 +5953,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         old_save_state = web_manager._save_state
         old_queue_ids = set(web_manager.TASK_QUEUE_IDS)
         old_token = os.environ.get("WEB_ACCESS_TOKEN")
+        old_storage_health_summary = web_manager._storage_health_summary
+        storage_calls = []
         try:
             os.environ.pop("WEB_ACCESS_TOKEN", None)
             web_manager.TASK_QUEUE_IDS.clear()
@@ -5974,6 +5976,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager._save_state = lambda: (_ for _ in ()).throw(
                 PermissionError("/app/results/web_manager_state.json.1.tmp")
             )
+            def fake_storage_health_summary(force_refresh=False):
+                storage_calls.append(force_refresh)
+                return {
+                    "novels": {"path": "/app/novels", "writable": True, "error": ""},
+                    "results": {"path": "/app/results", "writable": False, "error": "Permission denied"},
+                }
+
+            web_manager._storage_health_summary = fake_storage_health_summary
             body = json.dumps({"book_id": "ready"}, ensure_ascii=False).encode("utf-8")
             handler = FakeHandler(body)
             handler.headers["X-Web-Unsafe-Action"] = "confirm"
@@ -5984,6 +5994,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(handler.sent[0][1]["error"], "storage write failed")
             self.assertIn("/app/results/web_manager_state.json.1.tmp", handler.sent[0][1]["detail"])
             self.assertIn("novels/results", handler.sent[0][1]["hint"])
+            self.assertEqual(storage_calls, [True])
+            self.assertFalse(handler.sent[0][1]["storage"]["results"]["writable"])
+            self.assertIn("storage", [issue["type"] for issue in handler.sent[0][1]["health_issues"]])
         finally:
             while not web_manager.TASK_QUEUE.empty():
                 web_manager.TASK_QUEUE.get_nowait()
@@ -5992,6 +6005,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
             web_manager.STATE = old_state
             web_manager._save_state = old_save_state
+            web_manager._storage_health_summary = old_storage_health_summary
             if old_token is None:
                 os.environ.pop("WEB_ACCESS_TOKEN", None)
             else:

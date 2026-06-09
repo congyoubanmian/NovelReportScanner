@@ -2220,11 +2220,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def _send_storage_error(self, exc):
         message = str(exc) or exc.__class__.__name__
+        storage = _storage_health_summary(force_refresh=True)
         self._send_json(
             {
                 "error": "storage write failed",
                 "detail": message,
                 "hint": "检查宿主机挂载的 novels/results 目录是否允许容器运行用户写入。",
+                "storage": storage,
+                "health_issues": _health_issues(CONFIG_READY, storage),
             },
             500,
         )
