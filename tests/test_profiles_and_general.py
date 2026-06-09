@@ -3145,6 +3145,72 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("摘要1", summary)
         self.assertIn("摘要2", summary)
 
+    def test_scan_chunk_downshifts_truncated_json_by_splitting_text(self):
+        class Message:
+            def __init__(self, content):
+                self.content = content
+
+        class Choice:
+            def __init__(self, content):
+                self.message = Message(content)
+
+        class Response:
+            def __init__(self, content):
+                self.choices = [Choice(content)]
+
+        calls = []
+        old_call = novel_scan._call_json_chat_completion
+        old_sleep = novel_scan.time.sleep
+        old_depth = novel_scan.HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH
+        old_min_chars = novel_scan.HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS
+        try:
+            def fake_call(messages, **kwargs):
+                calls.append((messages, kwargs))
+                if len(calls) <= 3:
+                    return Response('{"issues": [{"type": "截断"}], "heroine_facts": [')
+                part_no = len(calls) - 3
+                return Response(json.dumps({
+                    "issues": [{"type": f"半块{part_no}", "content": f"问题{part_no}"}],
+                    "heroine_facts": [{
+                        "name": "甲女",
+                        "facts": {
+                            "relationship": [{"content": f"事实{part_no}", "evidence": f"证据{part_no}"}],
+                        },
+                    }],
+                    "_context_summary": f"摘要{part_no}",
+                }, ensure_ascii=False))
+
+            novel_scan._call_json_chat_completion = fake_call
+            novel_scan.time.sleep = lambda *_args, **_kwargs: None
+            novel_scan.HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH = 1
+            novel_scan.HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS = 20
+
+            text = "甲女与男主同行。" * 20
+            issues, facts, extra, summary, ok, fatal, err = novel_scan.scan_chunk(
+                text,
+                0,
+                1,
+                "只输出 JSON",
+                ["甲女"],
+                {"name": "男主"},
+            )
+        finally:
+            novel_scan._call_json_chat_completion = old_call
+            novel_scan.time.sleep = old_sleep
+            novel_scan.HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH = old_depth
+            novel_scan.HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS = old_min_chars
+
+        self.assertTrue(ok)
+        self.assertFalse(fatal)
+        self.assertEqual(err, "")
+        self.assertEqual(len(calls), 5)
+        self.assertEqual([item["type"] for item in issues], ["半块1", "半块2"])
+        self.assertEqual([item["partial_index"] for item in issues], [1, 2])
+        self.assertEqual([item["partial_index"] for item in facts], [1, 2])
+        self.assertEqual(extra, [])
+        self.assertIn("摘要1", summary)
+        self.assertIn("摘要2", summary)
+
     def test_global_rescan_truncated_json_keeps_chunk_retryable(self):
         class Message:
             def __init__(self, content):

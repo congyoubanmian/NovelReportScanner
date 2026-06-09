@@ -277,6 +277,12 @@ def _is_chronic_parse_failure_diagnostic(diagnostic):
     return _is_chronic_parse_failure_text(diagnostic.get("error", ""))
 
 
+def _should_downshift_chunk_failure(error_type, err_msg):
+    if error_type in {"api_error", "timeout", "context_overflow"}:
+        return True
+    return error_type == "parse_error" and _is_chronic_parse_failure_text(err_msg)
+
+
 def _filter_chronic_parse_failures(indices, diagnostics):
     if RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER <= 0:
         return list(indices), []
@@ -2602,7 +2608,7 @@ def scan_chunk(text_chunk, index, total, system_prompt, heroines, male_protagoni
     if (
         ok
         or fatal
-        or error_type not in {"api_error", "timeout", "context_overflow"}
+        or not _should_downshift_chunk_failure(error_type, err_msg)
         or _downshift_depth >= max(0, HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH)
         or len(text_chunk or "") < max(2, HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS)
     ):
