@@ -1318,6 +1318,19 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
     else:
         system_prompt, user_prompt = _build_harem_character_prompt(text_chunk, chunk_index, total_chunks)
 
+    def _parse_failure(error):
+        logger.warning(f"Chunk {chunk_index} JSON解析失败 (尝试 {retry+1}/{max_retries}): {error}")
+        if retry < max_retries - 1:
+            time.sleep(1)
+            return None
+        return {
+            "male_protagonist": None,
+            "female_characters": [],
+            "_success": False,
+            "_error": f"JSON解析失败: {error}",
+            "_error_type": "parse_error",
+        }
+
     for retry in range(max_retries):
         try:
             try:
@@ -1339,15 +1352,18 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
                 return result
                 
             except json.JSONDecodeError as e:
-                logger.warning(f"Chunk {chunk_index} JSON解析失败 (尝试 {retry+1}/{max_retries}): {e}")
-                if retry < max_retries - 1:
-                    time.sleep(1)
-                    continue
-                else:
-                    # JSON解析失败，标记为失败
-                    return {"male_protagonist": None, "female_characters": [], "_success": False, "_error": f"JSON解析失败: {e}", "_error_type": "parse_error"}
+                result = _parse_failure(e)
+                if result is not None:
+                    return result
+                continue
                     
         except Exception as e:
+            error_type = classify_scan_error(e)
+            if error_type == "parse_error":
+                result = _parse_failure(e)
+                if result is not None:
+                    return result
+                continue
             logger.error(f"Chunk {chunk_index} API调用失败 (尝试 {retry+1}/{max_retries}): {e}")
             if is_retryable_transport_error(e):
                 return {"male_protagonist": None, "female_characters": [], "_success": False, "_error": f"API调用失败: {e}", "_error_type": classify_scan_error(e)}

@@ -45,7 +45,16 @@ def classify_scan_error(exc: Exception) -> str:
         return "timeout"
     if is_retryable_transport_error(exc):
         return "api_error"
-    if "json" in text or "parse" in text or "解析" in text:
+    if any(token in text for token in (
+        "json",
+        "parse",
+        "解析",
+        "message.content",
+        "response.choices",
+        "content_none",
+        "content 为空",
+        "content is empty",
+    )):
         return "parse_error"
     return "unknown"
 

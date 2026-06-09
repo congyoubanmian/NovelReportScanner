@@ -12,6 +12,8 @@ import threading
 import time
 import unittest
 import ast
+import builtins
+import types
 from logging.handlers import RotatingFileHandler
 from unittest import mock
 
@@ -67,6 +69,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(fact_validator.classify_scan_error(RuntimeError("服务器错误(504)")), "api_error")
         self.assertEqual(fact_validator.classify_scan_error(RuntimeError("gateway timeout 504")), "api_error")
         self.assertEqual(fact_validator.classify_scan_error(RuntimeError("模型超时")), "timeout")
+        self.assertEqual(fact_validator.classify_scan_error(RuntimeError("response.choices 为空")), "parse_error")
+        self.assertEqual(fact_validator.classify_scan_error(RuntimeError("message.content 为空")), "parse_error")
 
     def test_scan_log_handler_uses_rotation_defaults(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -297,6 +301,28 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertEqual(data["plot_events"], ['云烨说"这是真的"，随后离开'])
         self.assertEqual(len(calls), 1)
+
+    def test_shared_json_parser_uses_json_repair_fallback(self):
+        original_import = builtins.__import__
+        calls = []
+
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "json_repair":
+                def repair_json(_text, return_objects=False):
+                    calls.append(return_objects)
+                    return {"ok": True} if return_objects else '{"ok": true}'
+
+                return types.SimpleNamespace(repair_json=repair_json)
+            return original_import(name, globals, locals, fromlist, level)
+
+        try:
+            builtins.__import__ = fake_import
+            data = shared_utils.parse_json_object_lenient('{"a": "x" "b": 1}')
+        finally:
+            builtins.__import__ = original_import
+
+        self.assertEqual(data, {"ok": True})
+        self.assertIn(True, calls)
 
     def test_shared_json_call_helper_retries_when_json_mode_is_rejected(self):
         class FakeMessage:
@@ -551,6 +577,33 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(result["_success"])
         self.assertEqual(len(calls), 1)
         self.assertIn("API调用失败", result["_error"])
+
+    def test_protagonist_chunk_analysis_classifies_empty_response_as_parse_error(self):
+        calls = []
+        old_call = protagonist._call_json_chat_completion
+        old_sleep = protagonist.time.sleep
+        try:
+            def fake_call(*_args, **_kwargs):
+                calls.append("call")
+                raise ValueError("response.choices 为空; fallback=response.choices 为空")
+
+            protagonist._call_json_chat_completion = fake_call
+            protagonist.time.sleep = lambda *_args, **_kwargs: None
+            result = protagonist.analyze_chunk_for_heroines(
+                "云烨遇见辛月。",
+                chunk_index=0,
+                total_chunks=1,
+                max_retries=2,
+            )
+        finally:
+            protagonist._call_json_chat_completion = old_call
+            protagonist.time.sleep = old_sleep
+
+        self.assertFalse(result["_success"])
+        self.assertEqual(result["_error_type"], "parse_error")
+        self.assertIn("JSON解析失败", result["_error"])
+        self.assertNotIn("API调用失败", result["_error"])
+        self.assertEqual(len(calls), 2)
 
     def test_compose_variables_are_documented_in_env_sample(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
