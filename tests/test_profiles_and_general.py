@@ -1288,6 +1288,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("onState(JSON.parse(event.data))", text)
         self.assertIn("catch {\n        closeSource()\n        onFallback()\n        scheduleRetry()\n      }", text)
 
+    def test_frontend_polling_skips_overlapping_refreshes(self):
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        composable_path = os.path.join(base_dir, "frontend", "src", "composables", "usePolling.js")
+        with open(composable_path, "r", encoding="utf-8") as f:
+            text = f.read()
+
+        self.assertIn("let running = false", text)
+        self.assertIn("async function runCallback()", text)
+        self.assertIn("if (running) return", text)
+        self.assertIn("await callback()", text)
+        self.assertIn("running = false", text)
+        self.assertIn("setInterval(runCallback, intervalMs)", text)
+        self.assertIn("runCallback()\n      start()", text)
+
     def test_rate_limit_scope_auto_resolves_by_key_count(self):
         self.assertEqual(Timerror.normalize_rate_limit_scope("auto", 1), "global")
         self.assertEqual(Timerror.normalize_rate_limit_scope("auto", 2), "per_key")

@@ -2,11 +2,22 @@ import { onMounted, onUnmounted } from 'vue'
 
 export function usePolling(callback, intervalMs = 3000, options = {}) {
   let timer = null
+  let running = false
   const autoStart = options.autoStart !== false
+
+  async function runCallback() {
+    if (running) return
+    running = true
+    try {
+      await callback()
+    } finally {
+      running = false
+    }
+  }
 
   function start() {
     if (timer || document.hidden) return
-    timer = setInterval(callback, intervalMs)
+    timer = setInterval(runCallback, intervalMs)
   }
 
   function stop() {
@@ -19,13 +30,13 @@ export function usePolling(callback, intervalMs = 3000, options = {}) {
     if (document.hidden) {
       stop()
     } else {
-      callback()
+      runCallback()
       start()
     }
   }
 
   onMounted(() => {
-    callback()
+    runCallback()
     if (autoStart) start()
     document.addEventListener('visibilitychange', handleVisibilityChange)
   })
