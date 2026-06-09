@@ -39,6 +39,9 @@ API_KEY = API_KEY_POOL[0] if API_KEY_POOL else ""
 
 CHUNK_SIZE = 10000
 GENERAL_CHARACTER_MAX_CHUNKS = int(os.environ.get("GENERAL_CHARACTER_MAX_CHUNKS", os.environ.get("GENERAL_SCAN_MAX_CHUNKS", "80")))
+ALIAS_CROSS_MERGE_MAX_PAYLOAD_CHARS = int(os.environ.get("ALIAS_CROSS_MERGE_MAX_PAYLOAD_CHARS", "12000"))
+ALIAS_CROSS_MERGE_MAX_LIST_ITEMS = int(os.environ.get("ALIAS_CROSS_MERGE_MAX_LIST_ITEMS", "3"))
+ALIAS_CROSS_MERGE_MAX_FIELD_CHARS = int(os.environ.get("ALIAS_CROSS_MERGE_MAX_FIELD_CHARS", "160"))
 
 DEFAULT_PROGRESS_FLAGS = {
     "scanned": False,
@@ -1837,6 +1840,63 @@ def _call_merge_ai(characters_batch, conflict_pairs, batch_info="", mutual_pairs
     return merge_groups, rejected_merges
 
 
+def _truncate_alias_merge_value(value, max_chars=None):
+    limit = ALIAS_CROSS_MERGE_MAX_FIELD_CHARS if max_chars is None else max(0, int(max_chars or 0))
+    text = str(value or "").strip()
+    if not limit or len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "..."
+
+
+def _compact_alias_cross_merge_character(char_info):
+    max_items = max(1, int(ALIAS_CROSS_MERGE_MAX_LIST_ITEMS or 1))
+
+    def compact_list(values, item_limit=max_items):
+        compacted = []
+        for item in values or []:
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                item = item[1]
+            text = _truncate_alias_merge_value(item)
+            if text and text not in compacted:
+                compacted.append(text)
+            if len(compacted) >= item_limit:
+                break
+        return compacted
+
+    aliases = compact_list((char_info.get("aliases") or []) + (char_info.get("other_names") or []), item_limit=max_items * 2)
+    return {
+        "name": char_info.get("name", ""),
+        "aliases": aliases,
+        "avg_score": char_info.get("avg_score", 0),
+        "count": char_info.get("count", 0),
+        "features": compact_list(char_info.get("features") or []),
+        "appearances": compact_list(char_info.get("appearances") or []),
+        "relationships": compact_list(char_info.get("relationships") or []),
+        "summaries": compact_list(char_info.get("summaries") or []),
+    }
+
+
+def _split_alias_cross_merge_batches(characters_info, max_payload_chars=None):
+    limit = ALIAS_CROSS_MERGE_MAX_PAYLOAD_CHARS if max_payload_chars is None else int(max_payload_chars or 0)
+    compacted = [_compact_alias_cross_merge_character(item) for item in characters_info or [] if item.get("name")]
+    if limit <= 0:
+        return [compacted] if compacted else []
+
+    batches = []
+    current = []
+    for item in compacted:
+        candidate = current + [item]
+        candidate_len = len(json.dumps(candidate, ensure_ascii=False))
+        if current and candidate_len > limit:
+            batches.append(current)
+            current = [item]
+        else:
+            current = candidate
+    if current:
+        batches.append(current)
+    return batches
+
+
 def _judge_single_pair_merge(char_a_info, char_b_info, conflict_pairs=None):
     """
     专门判断单个角色对是否应该合并
@@ -2247,37 +2307,57 @@ def merge_aliases(global_stats):
                     main_names_info.append(char_info)
             
             if len(main_names_info) > 1:
-                try:
-                    cross_merge_groups, _ = _call_merge_ai(main_names_info, conflict_pairs, "（跨批次检查）", mutual_pairs=None)
-                    if cross_merge_groups:
-                        logger.info(f"跨批次检查发现 {len(cross_merge_groups)} 个额外合并组")
-                        # 合并跨批次结果
-                        for cross_group in cross_merge_groups:
-                            cross_main = cross_group.get('main_name', '')
-                            cross_aliases = cross_group.get('aliases', [])
-                            
-                            # 查找是否已有包含这个主名的合并组
-                            found = False
-                            for existing_group in all_merge_groups:
-                                if existing_group.get('main_name') == cross_main:
-                                    # 添加新别名
-                                    for alias in cross_aliases:
-                                        if alias not in existing_group.get('aliases', []):
-                                            existing_group['aliases'].append(alias)
-                                    found = True
-                                    break
-                                elif cross_main in existing_group.get('aliases', []):
-                                    # cross_main 是某个组的别名，需要合并
-                                    for alias in cross_aliases:
-                                        if alias not in existing_group.get('aliases', []) and alias != existing_group.get('main_name'):
-                                            existing_group['aliases'].append(alias)
-                                    found = True
-                                    break
-                            
-                            if not found:
-                                all_merge_groups.append(cross_group)
-                except Exception as e:
-                    logger.warning(f"跨批次检查失败: {e}")
+                cross_batches = _split_alias_cross_merge_batches(main_names_info)
+                if not cross_batches:
+                    logger.info("跨批次检查无有效候选，跳过")
+                else:
+                    logger.info(
+                        f"跨批次检查候选 {len(main_names_info)} 个，按输入预算分为 {len(cross_batches)} 批"
+                    )
+                for batch_index, cross_batch in enumerate(cross_batches, start=1):
+                    payload_chars = len(json.dumps(cross_batch, ensure_ascii=False))
+                    if ALIAS_CROSS_MERGE_MAX_PAYLOAD_CHARS > 0 and payload_chars > ALIAS_CROSS_MERGE_MAX_PAYLOAD_CHARS:
+                        logger.warning(
+                            f"跨批次检查第 {batch_index}/{len(cross_batches)} 批仍超出输入预算"
+                            f"（{payload_chars}>{ALIAS_CROSS_MERGE_MAX_PAYLOAD_CHARS}），跳过"
+                        )
+                        continue
+                    try:
+                        cross_merge_groups, _ = _call_merge_ai(
+                            cross_batch,
+                            conflict_pairs,
+                            f"（跨批次检查 {batch_index}/{len(cross_batches)}）",
+                            mutual_pairs=None,
+                        )
+                        if cross_merge_groups:
+                            logger.info(f"跨批次检查第 {batch_index} 批发现 {len(cross_merge_groups)} 个额外合并组")
+                            # 合并跨批次结果
+                            for cross_group in cross_merge_groups:
+                                cross_main = cross_group.get('main_name', '')
+                                cross_aliases = cross_group.get('aliases', [])
+
+                                # 查找是否已有包含这个主名的合并组
+                                found = False
+                                for existing_group in all_merge_groups:
+                                    if existing_group.get('main_name') == cross_main:
+                                        # 添加新别名
+                                        for alias in cross_aliases:
+                                            if alias not in existing_group.get('aliases', []):
+                                                existing_group['aliases'].append(alias)
+                                        found = True
+                                        break
+                                    elif cross_main in existing_group.get('aliases', []):
+                                        # cross_main 是某个组的别名，需要合并
+                                        for alias in cross_aliases:
+                                            if alias not in existing_group.get('aliases', []) and alias != existing_group.get('main_name'):
+                                                existing_group['aliases'].append(alias)
+                                        found = True
+                                        break
+
+                                if not found:
+                                    all_merge_groups.append(cross_group)
+                    except Exception as e:
+                        logger.warning(f"跨批次检查第 {batch_index}/{len(cross_batches)} 批失败: {e}")
             
             logger.info(f"两轮合并完成，最终收集到 {len(all_merge_groups)} 个合并组")
         

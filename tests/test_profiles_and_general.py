@@ -12325,6 +12325,99 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(any(450 <= idx <= 550 for idx in sampled_indices))
         self.assertEqual(protagonist._sample_chunk_indices_for_budget(1000, 0), list(range(1000)))
 
+    def test_alias_cross_merge_batches_respect_payload_budget(self):
+        candidates = [
+            {
+                "name": f"角色{i}",
+                "aliases": [f"别名{i}", "长别名" * 80],
+                "avg_score": 8.0,
+                "count": 10,
+                "other_names": ["其他称呼" * 80],
+                "features": ["外貌描写" * 80],
+                "appearances": ["出场描写" * 80],
+                "relationships": ["关系描写" * 80],
+                "summaries": ["摘要内容" * 80],
+            }
+            for i in range(40)
+        ]
+
+        with mock.patch.object(protagonist, "ALIAS_CROSS_MERGE_MAX_PAYLOAD_CHARS", 1200), \
+                mock.patch.object(protagonist, "ALIAS_CROSS_MERGE_MAX_FIELD_CHARS", 24), \
+                mock.patch.object(protagonist, "ALIAS_CROSS_MERGE_MAX_LIST_ITEMS", 2):
+            batches = protagonist._split_alias_cross_merge_batches(candidates)
+
+        self.assertGreater(len(batches), 1)
+        self.assertEqual(sum(len(batch) for batch in batches), len(candidates))
+        for batch in batches:
+            self.assertLessEqual(len(json.dumps(batch, ensure_ascii=False)), 1200)
+        serialized = json.dumps(batches, ensure_ascii=False)
+        self.assertNotIn("外貌描写" * 20, serialized)
+
+    def test_merge_aliases_limits_cross_batch_payload_size(self):
+        global_stats = {}
+        for i in range(65):
+            main_name = f"甲女{i}"
+            alias_name = f"阿甲{i}"
+            global_stats[main_name] = {
+                "total_score": 30,
+                "count": 10,
+                "chunk_scores": [],
+                "summaries": [f"甲女{i}与男主同行，身份线索一致。" + "摘要" * 80],
+                "types": set(),
+                "other_names": {alias_name, "长别名" * 80},
+                "appearances": ["出场" * 100],
+                "features": [f"甲女{i}有银发蓝眼。" + "特征" * 80],
+                "relationships": [f"甲女{i}与男主互相照应。" + "关系" * 80],
+                "interactions": [],
+                "emotion_signals": [],
+            }
+            global_stats[alias_name] = {
+                "total_score": 10,
+                "count": 4,
+                "chunk_scores": [],
+                "summaries": [f"甲女{i}与男主同行，身份线索一致。" + "别名摘要" * 80],
+                "types": set(),
+                "other_names": {main_name},
+                "appearances": ["别名出场" * 100],
+                "features": [f"甲女{i}有银发蓝眼。" + "别名特征" * 80],
+                "relationships": [f"甲女{i}与男主互相照应。" + "别名关系" * 80],
+                "interactions": [],
+                "emotion_signals": [],
+            }
+
+        payload_lengths = []
+
+        def fake_call_merge_ai(characters_batch, conflict_pairs, batch_info="", mutual_pairs=None):
+            if "跨批次检查" in str(batch_info):
+                payload_lengths.append(len(json.dumps(characters_batch, ensure_ascii=False)))
+                return [], []
+            merge_groups = []
+            for item in characters_batch:
+                name = item["name"]
+                if name.startswith("甲女"):
+                    merge_groups.append({
+                        "main_name": name,
+                        "aliases": [f"阿甲{name[2:]}"],
+                        "reason": "测试合并",
+                    })
+            return merge_groups, []
+
+        with mock.patch.object(protagonist, "MAX_WORKERS", 1), \
+                mock.patch.object(protagonist, "tqdm", side_effect=lambda items, **kwargs: items), \
+                mock.patch.object(protagonist, "_get_generation_conflict_pairs", return_value=[]), \
+                mock.patch.object(protagonist, "_detect_same_name_prefix_pairs", return_value=[]), \
+                mock.patch.object(protagonist, "_clean_contaminated_other_names", return_value=0), \
+                mock.patch.object(protagonist, "_detect_mutual_other_names", return_value=[]), \
+                mock.patch.object(protagonist, "_should_accept_merge_pair", return_value=(True, "测试证据充分")), \
+                mock.patch.object(protagonist, "_call_merge_ai", side_effect=fake_call_merge_ai), \
+                mock.patch.object(protagonist, "ALIAS_CROSS_MERGE_MAX_PAYLOAD_CHARS", 1200), \
+                mock.patch.object(protagonist, "ALIAS_CROSS_MERGE_MAX_FIELD_CHARS", 24), \
+                mock.patch.object(protagonist, "ALIAS_CROSS_MERGE_MAX_LIST_ITEMS", 2):
+            protagonist.merge_aliases(global_stats)
+
+        self.assertGreater(len(payload_lengths), 1)
+        self.assertTrue(all(length <= 1200 for length in payload_lengths))
+
     def test_protagonist_general_main_samples_long_books_across_timeline(self):
         old_profile = os.environ.get("ANALYSIS_PROFILE")
         try:
