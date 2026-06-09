@@ -107,22 +107,31 @@ function formatElapsed(seconds) {
 const diagnosticsStatus = computed(() => {
   const data = diagnostics.value || {}
   const stale = Number(data.stale_running_count || 0)
+  const failed = Number(data.failed_count || 0)
   const running = Number(data.running_count || 0)
   const queued = Number(data.queue_length || 0)
   const longestRunningText = formatElapsed(data.longest_running_seconds)
   const oldestQueueWaitText = formatElapsed(data.oldest_queue_wait_seconds)
   const firstStale = (data.running_tasks || []).find((task) => task.stale_without_log)
+  const topFailure = (data.failure_reasons || [])[0]
+  const recentFailure = (data.recent_failed_tasks || []).find((task) => task.log_file?.url)
+  const failureTitle = (data.failure_reasons || [])
+    .map((item) => `${item.reason || 'unknown failure'} x${item.count || 0}`)
+    .join('\n')
   return {
-    ok: stale === 0,
-    label: stale ? `${stale} 个卡住` : '正常',
+    ok: stale === 0 && failed === 0,
+    label: stale ? `${stale} 个卡住` : failed ? `${failed} 个失败` : '正常',
     queued,
     running,
+    failed,
+    topFailureText: topFailure ? `${topFailure.reason} x${topFailure.count}` : '-',
     longestRunningText,
     oldestQueueWaitText,
     logUrl: firstStale?.log_file?.url || '',
+    failureLogUrl: recentFailure?.log_file?.url || '',
     title: firstStale
       ? `${firstStale.book_name || firstStale.book_id || '运行任务'}\n无日志 ${formatElapsed(firstStale.seconds_since_last_log)}\n${firstStale.log_file?.url ? `日志: ${firstStale.log_file.url}\n` : ''}${firstStale.last_log || ''}`
-      : ''
+      : failureTitle
   }
 })
 
@@ -464,6 +473,15 @@ useStateEvents(applyState, {
       <span class="runtime-item"><b>最久等待</b>{{ diagnosticsStatus.oldestQueueWaitText }}</span>
       <span class="runtime-item"><b>运行中</b>{{ diagnosticsStatus.running }}</span>
       <span class="runtime-item"><b>最长运行</b>{{ diagnosticsStatus.longestRunningText }}</span>
+      <span class="runtime-item" :class="{ danger: diagnosticsStatus.failed > 0 }"
+        ><b>失败</b>{{ diagnosticsStatus.failed }}</span
+      >
+      <span
+        class="runtime-item"
+        :class="{ danger: diagnosticsStatus.failed > 0 }"
+        :title="diagnosticsStatus.title"
+        ><b>主要失败</b>{{ diagnosticsStatus.topFailureText }}</span
+      >
       <span
         class="runtime-item"
         :class="{ danger: !diagnosticsStatus.ok }"
@@ -476,6 +494,13 @@ useStateEvents(applyState, {
         :href="fileHref(diagnosticsStatus.logUrl)"
         target="_blank"
         ><b>卡住日志</b>打开</a
+      >
+      <a
+        v-if="diagnosticsStatus.failureLogUrl"
+        class="runtime-item runtime-link"
+        :href="fileHref(diagnosticsStatus.failureLogUrl)"
+        target="_blank"
+        ><b>失败日志</b>打开</a
       >
     </div>
 
