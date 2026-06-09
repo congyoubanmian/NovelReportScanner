@@ -431,6 +431,7 @@ SSE_MAX_CONNECTION_SECONDS=300
 - `RPM_LIMIT` / `TPM_LIMIT`：程序本地预限流配置，用来在请求发出前控制最近 60 秒内的请求数和预估 token 数。
 - `RATE_LIMIT_SCOPE`：本地限流作用域。`auto` 表示多个 API Key 时每个 key 单独计数、单个 key 时使用全局桶；`global` 表示当前进程内所有线程和 key 共用一个限流桶；`per_key` 表示每个 key 单独计数。默认推荐 `auto`，能减少多 key 场景下的无谓串行等待，同时避免单 key 场景误放大并发。
 - `API_SERVER_ERROR_MAX_RETRIES`：同一请求遇到模型网关 `500/502/503/504` 时的最大重试次数，默认 `2`。线上持续 504 时，较小值能让单块快速失败并交给断点补扫，避免一个大请求反复占住队列。
+- `API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS`：大请求 5xx 快速失败阈值，默认 `20000` 字符。输入超过该值的请求遇到 `500/502/503/504` 时只发起 1 次真实请求，然后把错误交给上层的切半降载、断点或补扫流程，避免同一个超大 prompt 连续撞网关；设为 `0` 表示关闭。
 - `HAREM_SCAN_CHUNK_SIZE`：后宫/男性向角色首扫分块大小，默认 `7000`。调小会增加块数，但能降低单请求 token、网关 504 和 JSON 截断风险。
 - `HAREM_SCAN_MAX_TOKENS`：后宫/男性向角色首扫单块最大输出 tokens，默认 `3000`。如果模型经常 504 或输出 JSON 截断，可继续下调。
 - `HAREM_SCAN_RETRY_WORKERS`：后宫补漏扫描并发，默认 `1`。单 Key 或网关不稳定时保持低并发更稳，多 Key 且服务稳定时可适当调高。
@@ -458,7 +459,7 @@ Web 管理端常用配置：
 - `SSE_SYNC_INTERVAL_SECONDS`：SSE 状态流触发 `novels/` 目录同步的最短间隔，默认 `5` 秒；多个 SSE 连接会共用这个节流。
 - `SSE_MAX_CONNECTION_SECONDS`：单个 SSE 连接最大生命周期，默认 `300` 秒；到期后浏览器 `EventSource` 会自动重连，避免服务端线程长期占用。
 
-Web 页面顶部可直接调整部分非敏感运行配置，包括 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`API_SERVER_ERROR_MAX_RETRIES`、`HAREM_SCAN_CHUNK_SIZE`、`HAREM_SCAN_MAX_TOKENS`、`HAREM_SCAN_RETRY_WORKERS`、`GENERAL_SCAN_MAX_CHUNKS`、`GENERAL_SCAN_SMART_DENSITY`、`GENERAL_SCAN_CONTENT_AWARE_SAMPLING`、`GENERAL_SCAN_INCREMENTAL_REUSE`、`GENERAL_SCAN_WRITING_QUALITY`、`GENERAL_SCAN_NARRATIVE_ARCHITECTURE`、`GENERAL_SCAN_FORESHADOWING_ENGINEERING`、`GENERAL_SCAN_SEMANTIC_LAYERS`、`GENERAL_SCAN_READER_EXPERIENCE`、`GENERAL_SCAN_CONTINUITY_AUDIT`、`GENERAL_SCAN_ROLLING_CONTEXT`、`GENERAL_SCAN_ENTITY_PRESCAN`、`GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE`、`GENERAL_SCAN_CONTEXT_MAX_CHARS` 和 `HAREM_PLUS_GENERAL_SCAN`。这些修改会立即影响当前 Web 服务进程及其后续扫描子进程，并会安全写回 `.env` 文件以便重启后继续生效；写回时只更新白名单内的非敏感字段，保留注释、空行和 API Key 等敏感信息，不会展示或修改 API Key。`setting.txt` 仍作为样例/兼容配置来源，不会被 Web 配置页写回。
+Web 页面顶部可直接调整部分非敏感运行配置，包括 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`API_SERVER_ERROR_MAX_RETRIES`、`API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS`、`HAREM_SCAN_CHUNK_SIZE`、`HAREM_SCAN_MAX_TOKENS`、`HAREM_SCAN_RETRY_WORKERS`、`GENERAL_SCAN_MAX_CHUNKS`、`GENERAL_SCAN_SMART_DENSITY`、`GENERAL_SCAN_CONTENT_AWARE_SAMPLING`、`GENERAL_SCAN_INCREMENTAL_REUSE`、`GENERAL_SCAN_WRITING_QUALITY`、`GENERAL_SCAN_NARRATIVE_ARCHITECTURE`、`GENERAL_SCAN_FORESHADOWING_ENGINEERING`、`GENERAL_SCAN_SEMANTIC_LAYERS`、`GENERAL_SCAN_READER_EXPERIENCE`、`GENERAL_SCAN_CONTINUITY_AUDIT`、`GENERAL_SCAN_ROLLING_CONTEXT`、`GENERAL_SCAN_ENTITY_PRESCAN`、`GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE`、`GENERAL_SCAN_CONTEXT_MAX_CHARS` 和 `HAREM_PLUS_GENERAL_SCAN`。这些修改会立即影响当前 Web 服务进程及其后续扫描子进程，并会安全写回 `.env` 文件以便重启后继续生效；写回时只更新白名单内的非敏感字段，保留注释、空行和 API Key 等敏感信息，不会展示或修改 API Key。`setting.txt` 仍作为样例/兼容配置来源，不会被 Web 配置页写回。
 
 前端开发检查：
 

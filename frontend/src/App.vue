@@ -51,6 +51,7 @@ const configForm = ref({
   tpm_limit: '',
   rate_limit_scope: 'auto',
   api_server_error_max_retries: '2',
+  api_server_error_fast_fail_input_chars: '20000',
   harem_scan_chunk_size: '7000',
   harem_scan_max_tokens: '3000',
   harem_scan_retry_workers: '1',
@@ -239,6 +240,8 @@ function syncConfigForm(config) {
     tpm_limit: config.tpm_limit || '',
     rate_limit_scope: config.rate_limit_scope || 'auto',
     api_server_error_max_retries: config.api_server_error_max_retries || '2',
+    api_server_error_fast_fail_input_chars:
+      config.api_server_error_fast_fail_input_chars || '20000',
     harem_scan_chunk_size: config.harem_scan_chunk_size || '7000',
     harem_scan_max_tokens: config.harem_scan_max_tokens || '3000',
     harem_scan_retry_workers: config.harem_scan_retry_workers || '1',
@@ -272,6 +275,8 @@ async function saveRuntimeConfig() {
       tpm_limit: configForm.value.tpm_limit,
       rate_limit_scope: configForm.value.rate_limit_scope,
       api_server_error_max_retries: configForm.value.api_server_error_max_retries,
+      api_server_error_fast_fail_input_chars:
+        configForm.value.api_server_error_fast_fail_input_chars,
       harem_scan_chunk_size: configForm.value.harem_scan_chunk_size,
       harem_scan_max_tokens: configForm.value.harem_scan_max_tokens,
       harem_scan_retry_workers: configForm.value.harem_scan_retry_workers,
@@ -628,6 +633,16 @@ useStateEvents(applyState, {
           type="number"
           min="1"
           max="10"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>5xx快败</span>
+        <input
+          v-model="configForm.api_server_error_fast_fail_input_chars"
+          type="number"
+          min="0"
+          max="1000000"
           @input="runtimeConfigDirty = true"
         />
       </label>

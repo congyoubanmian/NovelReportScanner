@@ -99,6 +99,7 @@ class RetryConfig:
     max_403_retries: int = 3
     max_timeout_retries: int = 3
     max_server_error_retries: int = 2
+    max_server_error_fast_fail_input_chars: int = 20000
     request_timeout: int = 120
 
 
@@ -493,6 +494,7 @@ def make_chat_completion(
     max_403_retries: int = 3,
     max_timeout_retries: int = 3,
     max_server_error_retries: Optional[int] = None,
+    max_server_error_fast_fail_input_chars: Optional[int] = None,
     base_delay: float = 2.0,
     # -------- 超时/慢响应的区分与误杀保护 --------
     rate_limit_grace_seconds: int = 180,
@@ -533,6 +535,13 @@ def make_chat_completion(
             else os.environ.get("API_SERVER_ERROR_MAX_RETRIES", "2"),
             2,
             min_value=1,
+        ),
+        max_server_error_fast_fail_input_chars=_coerce_int(
+            max_server_error_fast_fail_input_chars
+            if max_server_error_fast_fail_input_chars is not None
+            else os.environ.get("API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS", "20000"),
+            20000,
+            min_value=0,
         ),
         request_timeout=_coerce_int(request_timeout, 120, min_value=1),
     )
@@ -963,12 +972,22 @@ def make_chat_completion(
                                 break
 
                             # 正常 5xx：短重试后失败，交给上层断点/补扫，避免同一大请求反复撞网关。
-                            server_error_limit = min(cfg.max_retries, cfg.max_server_error_retries)
+                            server_error_limit = cfg.max_server_error_retries
+                            fast_fail_threshold = cfg.max_server_error_fast_fail_input_chars
+                            if fast_fail_threshold > 0 and input_chars >= fast_fail_threshold:
+                                server_error_limit = min(server_error_limit, 1)
+                            server_error_limit = min(cfg.max_retries, max(1, server_error_limit))
                             if real_attempt >= server_error_limit:
+                                fast_fail_note = (
+                                    f"，大请求快速失败阈值={fast_fail_threshold}"
+                                    if fast_fail_threshold > 0 and input_chars >= fast_fail_threshold
+                                    else ""
+                                )
                                 _log(
                                     logger,
                                     "warning",
-                                    f"API_KEY[{idx}|{key_tag}] 服务器错误({code})已达本轮上限({server_error_limit})，停止重试",
+                                    f"API_KEY[{idx}|{key_tag}] 服务器错误({code})已达本轮上限({server_error_limit})"
+                                    f"{fast_fail_note}，停止重试",
                                 )
                                 raise
                             wait_time = cfg.base_delay * attempt_no

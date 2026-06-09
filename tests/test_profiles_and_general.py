@@ -473,6 +473,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("HAREM_SCAN_CHUNK_SIZE=7000", env_sample_text)
         self.assertIn("API_SERVER_ERROR_MAX_RETRIES: ${API_SERVER_ERROR_MAX_RETRIES:-2}", compose_text)
         self.assertIn("API_SERVER_ERROR_MAX_RETRIES=2", env_sample_text)
+        self.assertIn("API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS: ${API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS:-20000}", compose_text)
+        self.assertIn("API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS=20000", env_sample_text)
         self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH: ${HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH:-1}", compose_text)
         self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH=1", env_sample_text)
         self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS: ${HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS:-1200}", compose_text)
@@ -1079,6 +1081,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(shared_utils.DEFAULT_MAX_403_RETRIES, 3)
         self.assertEqual(shared_utils.DEFAULT_MAX_TIMEOUT_RETRIES, 3)
         self.assertEqual(shared_utils.DEFAULT_MAX_SERVER_ERROR_RETRIES, 2)
+        self.assertEqual(shared_utils.DEFAULT_SERVER_ERROR_FAST_FAIL_INPUT_CHARS, 20000)
         self.assertEqual(shared_utils.DEFAULT_REQUEST_TIMEOUT, 120)
 
         for module in [novel_scan, protagonist, report]:
@@ -1107,12 +1110,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         old_values = {
             "API_SERVER_ERROR_MAX_RETRIES": os.environ.get("API_SERVER_ERROR_MAX_RETRIES"),
+            "API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS": os.environ.get("API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS"),
             "HAREM_SCAN_CHUNK_SIZE": os.environ.get("HAREM_SCAN_CHUNK_SIZE"),
         }
         try:
             os.environ["API_SERVER_ERROR_MAX_RETRIES"] = ""
+            os.environ["API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS"] = "bad"
             os.environ["HAREM_SCAN_CHUNK_SIZE"] = "bad"
             self.assertEqual(shared_utils.read_int_env("API_SERVER_ERROR_MAX_RETRIES", 2, min_value=1), 2)
+            self.assertEqual(shared_utils.read_int_env("API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS", 20000, min_value=0), 20000)
             self.assertEqual(shared_utils.read_int_env("HAREM_SCAN_CHUNK_SIZE", 7000, min_value=1000), 7000)
 
             chat_completion = Timerror.make_chat_completion(
@@ -1194,6 +1200,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("config.rate_limit_scope || 'auto'", text)
         self.assertIn('<option value="auto">auto</option>', text)
         self.assertIn("api_server_error_max_retries: '2'", text)
+        self.assertIn("api_server_error_fast_fail_input_chars: '20000'", text)
+        self.assertIn("config.api_server_error_fast_fail_input_chars || '20000'", text)
+        self.assertIn("configForm.api_server_error_fast_fail_input_chars", text)
+        self.assertIn("<span>5xx快败</span>", text)
         self.assertIn("harem_scan_chunk_size: '7000'", text)
         self.assertIn("configForm.harem_scan_chunk_size", text)
         self.assertIn("general_scan_writing_quality: true", text)
@@ -1390,6 +1400,82 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         with self.assertRaises(ServerError):
             chat_completion(messages=[{"role": "user", "content": "hello"}], max_tokens=1)
         self.assertEqual(len(calls), 2)
+
+    def test_make_chat_completion_fast_fails_large_5xx_request(self):
+        calls = []
+
+        class Response:
+            status_code = 504
+
+        class ServerError(RuntimeError):
+            response = Response()
+
+        class FakeCompletions:
+            def create(self, **_kwargs):
+                calls.append("call")
+                raise ServerError("gateway timeout")
+
+        class FakeChat:
+            completions = FakeCompletions()
+
+        class FakeClient:
+            chat = FakeChat()
+
+        chat_completion = Timerror.make_chat_completion(
+            openai_client_factory=lambda _key, _base_url, _timeout: FakeClient(),
+            api_key_pool=["sk-test"],
+            base_url="https://example.test/v1",
+            request_timeout=1,
+            max_retries=5,
+            max_server_error_retries=3,
+            max_server_error_fast_fail_input_chars=10,
+            base_delay=0,
+            rpm_limit=0,
+            tpm_limit=0,
+            logger=None,
+        )
+
+        with self.assertRaises(ServerError):
+            chat_completion(messages=[{"role": "user", "content": "甲" * 10}], max_tokens=1)
+        self.assertEqual(len(calls), 1)
+
+    def test_make_chat_completion_keeps_5xx_retry_budget_for_small_request(self):
+        calls = []
+
+        class Response:
+            status_code = 504
+
+        class ServerError(RuntimeError):
+            response = Response()
+
+        class FakeCompletions:
+            def create(self, **_kwargs):
+                calls.append("call")
+                raise ServerError("gateway timeout")
+
+        class FakeChat:
+            completions = FakeCompletions()
+
+        class FakeClient:
+            chat = FakeChat()
+
+        chat_completion = Timerror.make_chat_completion(
+            openai_client_factory=lambda _key, _base_url, _timeout: FakeClient(),
+            api_key_pool=["sk-test"],
+            base_url="https://example.test/v1",
+            request_timeout=1,
+            max_retries=5,
+            max_server_error_retries=3,
+            max_server_error_fast_fail_input_chars=100,
+            base_delay=0,
+            rpm_limit=0,
+            tpm_limit=0,
+            logger=None,
+        )
+
+        with self.assertRaises(ServerError):
+            chat_completion(messages=[{"role": "user", "content": "short"}], max_tokens=1)
+        self.assertEqual(len(calls), 3)
 
     def test_make_chat_completion_connection_reset_does_not_use_timeout_disable_path(self):
         calls = []
@@ -5511,6 +5597,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "TPM_LIMIT",
             "RATE_LIMIT_SCOPE",
             "API_SERVER_ERROR_MAX_RETRIES",
+            "API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS",
             "HAREM_SCAN_CHUNK_SIZE",
             "HAREM_SCAN_MAX_TOKENS",
             "HAREM_SCAN_RETRY_WORKERS",
@@ -5545,6 +5632,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "tpm_limit": "5000",
                 "rate_limit_scope": "per_key",
                 "api_server_error_max_retries": "2",
+                "api_server_error_fast_fail_input_chars": "15000",
                 "harem_scan_chunk_size": "6500",
                 "harem_scan_max_tokens": "2800",
                 "harem_scan_retry_workers": "1",
@@ -5574,6 +5662,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["TPM_LIMIT"], "5000")
             self.assertEqual(os.environ["RATE_LIMIT_SCOPE"], "per_key")
             self.assertEqual(os.environ["API_SERVER_ERROR_MAX_RETRIES"], "2")
+            self.assertEqual(os.environ["API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS"], "15000")
             self.assertEqual(os.environ["HAREM_SCAN_CHUNK_SIZE"], "6500")
             self.assertEqual(os.environ["HAREM_SCAN_MAX_TOKENS"], "2800")
             self.assertEqual(os.environ["HAREM_SCAN_RETRY_WORKERS"], "1")
@@ -5613,6 +5702,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(result["general_scan_context_max_chars"], "800")
             self.assertEqual(result["rescan_skip_chronic_parse_failure_after"], "3")
             self.assertEqual(result["api_server_error_max_retries"], "2")
+            self.assertEqual(result["api_server_error_fast_fail_input_chars"], "15000")
             self.assertEqual(result["harem_scan_chunk_size"], "6500")
             self.assertEqual(result["harem_scan_max_tokens"], "2800")
             self.assertEqual(result["harem_scan_retry_workers"], "1")
@@ -5835,6 +5925,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "TPM_LIMIT": "tpm_limit",
             "RATE_LIMIT_SCOPE": "rate_limit_scope",
             "API_SERVER_ERROR_MAX_RETRIES": "api_server_error_max_retries",
+            "API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS": "api_server_error_fast_fail_input_chars",
             "HAREM_SCAN_CHUNK_SIZE": "harem_scan_chunk_size",
             "HAREM_SCAN_MAX_TOKENS": "harem_scan_max_tokens",
             "HAREM_SCAN_RETRY_WORKERS": "harem_scan_retry_workers",
@@ -5886,6 +5977,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 ok, _ = web_manager._update_runtime_config({
                     "max_workers": 16,
                     "api_server_error_max_retries": 2,
+                    "api_server_error_fast_fail_input_chars": 15000,
                     "harem_scan_chunk_size": 6500,
                     "harem_scan_max_tokens": 2800,
                     "harem_scan_retry_workers": 1,
@@ -5914,6 +6006,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("API_KEY=secret", lines)
                 self.assertIn("MAX_WORKERS=16", lines)
                 self.assertIn("API_SERVER_ERROR_MAX_RETRIES=2", lines)
+                self.assertIn("API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS=15000", lines)
                 self.assertIn("HAREM_SCAN_CHUNK_SIZE=6500", lines)
                 self.assertIn("HAREM_SCAN_MAX_TOKENS=2800", lines)
                 self.assertIn("HAREM_SCAN_RETRY_WORKERS=1", lines)
