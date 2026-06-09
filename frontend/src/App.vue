@@ -81,11 +81,23 @@ const configForm = ref({
 const savingRuntimeConfig = ref(false)
 const runtimeConfigDirty = ref(false)
 const storageStatus = computed(() => {
-  const storage = runtimeConfig.value?.web?.storage || {}
-  const novelsWritable = storage.novels?.writable !== false
-  const resultsWritable = storage.results?.writable !== false
+  const storage = runtimeConfig.value?.web?.storage
+  const hasStorageStatus =
+    typeof storage?.novels?.writable === 'boolean' &&
+    typeof storage?.results?.writable === 'boolean'
+  if (!hasStorageStatus) {
+    return {
+      ok: false,
+      danger: false,
+      label: '未知',
+      title: '尚未返回存储写入自检结果'
+    }
+  }
+  const novelsWritable = storage.novels.writable
+  const resultsWritable = storage.results.writable
   return {
     ok: novelsWritable && resultsWritable,
+    danger: !novelsWritable || !resultsWritable,
     label: novelsWritable && resultsWritable ? '正常' : '异常',
     title: [
       `novels: ${storage.novels?.path || '—'}${novelsWritable ? '' : ` (${storage.novels?.error || '不可写'})`}`,
@@ -608,7 +620,10 @@ useStateEvents(applyState, {
         ><b>Key校验</b
         >{{ runtimeConfig.web?.api_key_required_on_start ? '启动必需' : '允许跳过' }}</span
       >
-      <span class="runtime-item" :class="{ danger: !storageStatus.ok }" :title="storageStatus.title"
+      <span
+        class="runtime-item"
+        :class="{ danger: storageStatus.danger }"
+        :title="storageStatus.title"
         ><b>存储</b>{{ storageStatus.label }}</span
       >
     </div>
