@@ -30,6 +30,7 @@ from shared_utils import (
 )
 from prompt_templates import prompt_template_metadata, prompt_templates_metadata
 from text_anchor import build_chunk_manifest, save_chunk_manifest
+from fact_validator import classify_scan_error
 
 
 # ================= 配置区域 =================
@@ -254,11 +255,21 @@ def _record_chunk_failure_diagnostic(idx, text_chunk, err_msg="", chunk_failure_
     diagnostics = chunk_failure_diagnostics if chunk_failure_diagnostics is not None else CHUNK_FAILURE_DIAGNOSTICS
     previous = diagnostics.get(int(idx)) or {}
     diagnostic = _build_chunk_failure_diagnostic(text_chunk, err_msg=err_msg)
+    error_type = _classify_chunk_failure_error(err_msg)
+    diagnostic["error_type"] = error_type
     previous_error = str(previous.get("error") or "")
     current_error = diagnostic.get("error") or ""
+    previous_error_type = previous.get("error_type") or _classify_chunk_failure_error(previous_error)
+    retry_counted_types = {"api_error", "timeout", "context_overflow"}
     same_failure_family = (
-        _is_chronic_parse_failure_text(previous_error)
-        and _is_chronic_parse_failure_text(current_error)
+        (
+            _is_chronic_parse_failure_text(previous_error)
+            and _is_chronic_parse_failure_text(current_error)
+        )
+        or (
+            error_type in retry_counted_types
+            and previous_error_type == error_type
+        )
     )
     previous_retry_count = int(previous.get("retry_count", 0) or 0)
     diagnostic["retry_count"] = previous_retry_count + 1 if same_failure_family else 1
@@ -266,6 +277,15 @@ def _record_chunk_failure_diagnostic(idx, text_chunk, err_msg="", chunk_failure_
     if diagnostic.get("flags"):
         logger.warning(f"chunk {idx} 内容诊断：{','.join(diagnostic['flags'])} severity={diagnostic['severity']}")
     return diagnostic
+
+
+def _classify_chunk_failure_error(err_msg):
+    if not str(err_msg or "").strip():
+        return "unknown"
+    try:
+        return classify_scan_error(RuntimeError(str(err_msg)))
+    except Exception:
+        return "unknown"
 
 
 def _is_chronic_parse_failure_text(text):

@@ -2617,6 +2617,63 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(second["retry_count"], 2)
         self.assertTrue(novel_scan._is_chronic_parse_failure_diagnostic(diagnostics[2]))
 
+    def test_chunk_failure_diagnostic_counts_repeated_api_and_timeout_failures(self):
+        diagnostics = {}
+
+        first = novel_scan._record_chunk_failure_diagnostic(
+            4,
+            "普通正文",
+            err_msg="服务器错误(504)",
+            chunk_failure_diagnostics=diagnostics,
+        )
+        second = novel_scan._record_chunk_failure_diagnostic(
+            4,
+            "普通正文",
+            err_msg="gateway timeout 504",
+            chunk_failure_diagnostics=diagnostics,
+        )
+        third = novel_scan._record_chunk_failure_diagnostic(
+            4,
+            "普通正文",
+            err_msg="模型超时",
+            chunk_failure_diagnostics=diagnostics,
+        )
+        fourth = novel_scan._record_chunk_failure_diagnostic(
+            4,
+            "普通正文",
+            err_msg="模型超时",
+            chunk_failure_diagnostics=diagnostics,
+        )
+
+        self.assertEqual(first["error_type"], "api_error")
+        self.assertEqual(second["error_type"], "api_error")
+        self.assertEqual(second["retry_count"], 2)
+        self.assertEqual(third["error_type"], "timeout")
+        self.assertEqual(third["retry_count"], 1)
+        self.assertEqual(fourth["error_type"], "timeout")
+        self.assertEqual(fourth["retry_count"], 2)
+
+    def test_chunk_failure_diagnostic_does_not_count_generic_parse_as_chronic(self):
+        diagnostics = {}
+
+        first = novel_scan._record_chunk_failure_diagnostic(
+            5,
+            "普通正文",
+            err_msg="parse failed",
+            chunk_failure_diagnostics=diagnostics,
+        )
+        second = novel_scan._record_chunk_failure_diagnostic(
+            5,
+            "普通正文",
+            err_msg="parse failed",
+            chunk_failure_diagnostics=diagnostics,
+        )
+
+        self.assertEqual(first["error_type"], "parse_error")
+        self.assertEqual(second["error_type"], "parse_error")
+        self.assertEqual(second["retry_count"], 1)
+        self.assertFalse(novel_scan._is_chronic_parse_failure_diagnostic(diagnostics[5]))
+
     def test_filter_chronic_parse_failures_keeps_other_failures(self):
         old_threshold = novel_scan.RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER
         try:
