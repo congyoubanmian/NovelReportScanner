@@ -808,6 +808,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH=1", env_sample_text)
         self.assertIn("GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS: ${GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS:-4000}", compose_text)
         self.assertIn("GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS=4000", env_sample_text)
+        self.assertIn("HEROINE_FINAL_MERGE_MAX_CANDIDATES: ${HEROINE_FINAL_MERGE_MAX_CANDIDATES:-24}", compose_text)
+        self.assertIn("HEROINE_FINAL_MERGE_MAX_CANDIDATES=24", env_sample_text)
+        self.assertIn("HEROINE_FINAL_MERGE_MAX_GROUP_SIZE: ${HEROINE_FINAL_MERGE_MAX_GROUP_SIZE:-3}", compose_text)
+        self.assertIn("HEROINE_FINAL_MERGE_MAX_GROUP_SIZE=3", env_sample_text)
         self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH: ${HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH:-1}", compose_text)
         self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH=1", env_sample_text)
         self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS: ${HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS:-1200}", compose_text)
@@ -15530,6 +15534,62 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertGreater(len(payload_lengths), 1)
         self.assertTrue(all(length <= 1200 for length in payload_lengths))
+
+    def test_heroine_final_merge_candidate_filter_keeps_only_strong_alias_evidence(self):
+        heroines = [
+            {"name": "乐氏（乐岚姬）", "aliases": ["乐岚姬"], "other_names": ["岚姬"]},
+            {"name": "乐岚姬", "aliases": ["岚姬"], "other_names": []},
+            {"name": "卢氏", "aliases": ["夫人"], "other_names": []},
+            {"name": "崔氏", "aliases": ["夫人"], "other_names": []},
+            {"name": "暮女侠", "aliases": [], "other_names": []},
+        ]
+        raw_candidates = [
+            (["乐氏（乐岚姬）", "乐岚姬"], "别名互含"),
+            (["卢氏", "崔氏"], "共享泛称夫人"),
+            (["暮女侠", "暮女侠"], "同名重复"),
+            (["乐岚姬", "不存在"], "无效名字"),
+        ]
+
+        filtered = protagonist._normalize_heroine_merge_candidates(raw_candidates, heroines, max_candidates=10)
+
+        self.assertEqual(len(filtered), 1)
+        self.assertEqual(filtered[0][0], ["乐氏（乐岚姬）", "乐岚姬"])
+        self.assertIn("乐氏（乐岚姬） 的别名包含 乐岚姬", filtered[0][1])
+
+    def test_merge_heroines_final_limits_judgement_to_strong_alias_candidates(self):
+        heroines = [
+            {"name": f"甲女{i}", "aliases": [f"阿甲{i}"], "other_names": [], "count": 1}
+            for i in range(6)
+        ]
+        heroines.extend([
+            {"name": f"阿甲{i}", "aliases": [], "other_names": [], "count": 1}
+            for i in range(6)
+        ])
+        heroines.extend([
+            {"name": "乙女", "aliases": ["夫人"], "other_names": [], "count": 1},
+            {"name": "丙女", "aliases": ["夫人"], "other_names": [], "count": 1},
+        ])
+        judged = []
+
+        def fake_identify(_heroines):
+            candidates = [(["乙女", "丙女"], "共享泛称夫人")]
+            for i in range(6):
+                candidates.append(([f"甲女{i}", f"阿甲{i}"], "强别名"))
+            return candidates
+
+        def fake_judge(group):
+            judged.append([item["name"] for item in group])
+            return False, "", "测试不合并"
+
+        with mock.patch.object(protagonist, "_identify_heroine_merge_candidates", side_effect=fake_identify), \
+                mock.patch.object(protagonist, "_judge_heroine_group_merge", side_effect=fake_judge), \
+                mock.patch.object(protagonist, "HEROINE_FINAL_MERGE_MAX_CANDIDATES", 3):
+            result = protagonist.merge_heroines_final({"heroines": heroines, "analysis": ""}, {})
+
+        self.assertIs(result["heroines"], heroines)
+        self.assertEqual(len(judged), 3)
+        self.assertNotIn(["乙女", "丙女"], judged)
+        self.assertTrue(all(pair[0].startswith("甲女") and pair[1].startswith("阿甲") for pair in judged))
 
     def test_protagonist_general_main_samples_long_books_across_timeline(self):
         old_profile = os.environ.get("ANALYSIS_PROFILE")

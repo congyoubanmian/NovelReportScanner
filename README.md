@@ -441,6 +441,8 @@ STORAGE_HEALTH_TTL_SECONDS=10
 - `HAREM_SCAN_RETRY_WORKERS`：后宫补漏扫描并发，默认 `1`。单 Key 或网关不稳定时保持低并发更稳，多 Key 且服务稳定时可适当调高。
 - `HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH`：后宫单块遇到 `504` / timeout / context overflow 后自动切半降载的最大深度，默认 `1`；设为 `0` 可关闭。默认只把失败块拆成两半，避免额外请求失控。
 - `HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS`：小于该字符数的后宫片段不再切半，默认 `1200`，避免把低信息片段拆得过碎。
+- `HEROINE_FINAL_MERGE_MAX_CANDIDATES`：女主最终合并阶段最多进入大模型二次判断的候选组数，默认 `24`；设为 `0` 表示不限制。候选会先经过强别名证据过滤，避免模型输出空结果或弱候选时放大成大量无效 API 调用。
+- `HEROINE_FINAL_MERGE_MAX_GROUP_SIZE`：女主最终合并单个候选组最多保留的名字数，默认 `3`。较小值可降低最终合并 prompt 体积，减少 504 和 JSON 空响应。
 - `GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH`：通用/专项角色识别遇到 `504` / timeout 后自动切半降载的最大深度，默认 `1`；设为 `0` 可关闭。它只影响 `protagonist.py` 的角色识别阶段，不影响通用剧情扫描。
 - `GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS`：小于该字符数的通用/专项角色识别片段不再切半，默认 `4000`，避免短片段过度碎片化。
 - `SCAN_FUTURE_STALL_TIMEOUT_SECONDS`：扫描进程内部并发阶段如果超过该秒数没有任何线程任务完成，会取消待处理任务并把当前阶段标记为失败，默认 `0` 关闭。它和 Web 层 `SCAN_STALL_TIMEOUT_SECONDS` 不同，后者只看子进程是否持续产生日志；线上排查 SDK/API 调用长期不返回时可临时设为 `600-1800`。

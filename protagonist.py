@@ -66,6 +66,8 @@ GENERAL_CHARACTER_MAX_CHUNKS = read_int_env(
 ALIAS_CROSS_MERGE_MAX_PAYLOAD_CHARS = read_int_env("ALIAS_CROSS_MERGE_MAX_PAYLOAD_CHARS", 12000, min_value=0)
 ALIAS_CROSS_MERGE_MAX_LIST_ITEMS = read_int_env("ALIAS_CROSS_MERGE_MAX_LIST_ITEMS", 3, min_value=1)
 ALIAS_CROSS_MERGE_MAX_FIELD_CHARS = read_int_env("ALIAS_CROSS_MERGE_MAX_FIELD_CHARS", 160, min_value=1)
+HEROINE_FINAL_MERGE_MAX_CANDIDATES = read_int_env("HEROINE_FINAL_MERGE_MAX_CANDIDATES", 24, min_value=0)
+HEROINE_FINAL_MERGE_MAX_GROUP_SIZE = read_int_env("HEROINE_FINAL_MERGE_MAX_GROUP_SIZE", 3, min_value=2, max_value=8)
 
 DEFAULT_PROGRESS_FLAGS = {
     "scanned": False,
@@ -3462,6 +3464,91 @@ def _judge_heroine_group_merge(heroines_data_list):
         return False, "", f"API 调用失败: {e}"
 
 
+def _heroine_alias_tokens(heroine):
+    tokens = set()
+    name = _normalize_person_name((heroine or {}).get("name", ""))
+    for raw in [name] + list((heroine or {}).get("aliases") or []) + list((heroine or {}).get("other_names") or []):
+        token = _normalize_person_name(raw)
+        if not token:
+            continue
+        core = re.sub(r"[（(][^）)]*[）)]", "", token).strip()
+        for item in (token, core):
+            if item and item != name and not is_unsafe_alias(item):
+                tokens.add(item)
+        for inner in re.findall(r"[（(]([^）)]+)[）)]", token):
+            inner = _normalize_person_name(inner)
+            if inner and inner != name and not is_unsafe_alias(inner):
+                tokens.add(inner)
+    return tokens
+
+
+def _normalize_heroine_merge_candidates(raw_candidates, heroines, max_candidates=None, max_group_size=None):
+    if not raw_candidates:
+        return []
+    max_candidates = HEROINE_FINAL_MERGE_MAX_CANDIDATES if max_candidates is None else int(max_candidates or 0)
+    max_group_size = HEROINE_FINAL_MERGE_MAX_GROUP_SIZE if max_group_size is None else max(2, int(max_group_size or 2))
+    by_name = {
+        _normalize_person_name(h.get("name", "")): h
+        for h in heroines or []
+        if isinstance(h, dict) and _normalize_person_name(h.get("name", ""))
+    }
+    alias_map = {name: _heroine_alias_tokens(h) for name, h in by_name.items()}
+    scored = []
+    seen = set()
+
+    for names, reason in raw_candidates:
+        normalized_names = []
+        for raw_name in names or []:
+            name = _normalize_person_name(raw_name)
+            if not name or name not in by_name or name in normalized_names:
+                continue
+            normalized_names.append(name)
+            if len(normalized_names) >= max_group_size:
+                break
+        if len(normalized_names) < 2:
+            continue
+
+        key = tuple(sorted(normalized_names))
+        if key in seen:
+            continue
+        seen.add(key)
+
+        score = 0
+        evidence = []
+        for i, left in enumerate(normalized_names):
+            for right in normalized_names[i + 1:]:
+                left_aliases = alias_map.get(left, set())
+                right_aliases = alias_map.get(right, set())
+                if right in left_aliases:
+                    score += 4
+                    evidence.append(f"{left} 的别名包含 {right}")
+                if left in right_aliases:
+                    score += 4
+                    evidence.append(f"{right} 的别名包含 {left}")
+                shared = sorted(left_aliases & right_aliases)
+                safe_shared = [item for item in shared if item not in {left, right} and not is_unsafe_alias(item)]
+                if safe_shared:
+                    score += min(3, len(safe_shared))
+                    evidence.append(f"共享别名：{safe_shared[:3]}")
+                left_core = re.sub(r"[（(][^）)]*[）)]", "", left).strip()
+                right_core = re.sub(r"[（(][^）)]*[）)]", "", right).strip()
+                if left_core and right_core and left_core != right_core:
+                    if left_core in right_aliases or right_core in left_aliases:
+                        score += 2
+                        evidence.append("括号/核心名与别名互含")
+        if score <= 0:
+            logger.info(f"跳过弱女主合并候选: {normalized_names} ({str(reason)[:60]})")
+            continue
+        merged_reason = "；".join(evidence[:4]) or str(reason or "")
+        scored.append((score, normalized_names, merged_reason))
+
+    scored.sort(key=lambda item: (-item[0], len(item[1]), item[1]))
+    if max_candidates > 0 and len(scored) > max_candidates:
+        logger.info(f"女主最终合并候选过多，按强证据保留 {max_candidates}/{len(scored)} 组")
+        scored = scored[:max_candidates]
+    return [(names, reason) for _score, names, reason in scored]
+
+
 def merge_heroines_final(heroines_result, merged_stats):
     """
     女主判定后的最终合并检查
@@ -3530,16 +3617,7 @@ def merge_heroines_final(heroines_result, merged_stats):
             n = _normalize_person_name(h.get("name", ""))
             if not n:
                 continue
-            aliases = set()
-            for a in (h.get("aliases", []) or []):
-                an = _normalize_person_name(a)
-                if an:
-                    aliases.add(an)
-            for a in (h.get("other_names", []) or []):
-                an = _normalize_person_name(a)
-                if an:
-                    aliases.add(an)
-            name_to_aliases[n] = aliases
+            name_to_aliases[n] = _heroine_alias_tokens(h)
 
         existing_pairs = set()
         for names, _reason in merge_candidates:
@@ -3569,7 +3647,7 @@ def merge_heroines_final(heroines_result, merged_stats):
                     reasons.append(f"{a} 的别名包含 {b}")
                 shared = a_aliases & b_aliases
                 if shared:
-                    reasons.append(f"共享别名：{list(shared)[:3]}")
+                    reasons.append(f"共享别名：{sorted(shared)[:3]}")
                 if reasons:
                     key = tuple(sorted([a, b]))
                     if key not in existing_pairs:
@@ -3585,8 +3663,14 @@ def merge_heroines_final(heroines_result, merged_stats):
     if not merge_candidates:
         logger.info("未发现需要合并的女主候选")
         return heroines_result
+
+    original_candidate_count = len(merge_candidates)
+    merge_candidates = _normalize_heroine_merge_candidates(merge_candidates, heroines)
+    if not merge_candidates:
+        logger.info(f"女主最终合并候选均未通过强别名证据过滤（原始 {original_candidate_count} 组）")
+        return heroines_result
     
-    logger.info(f"识别到 {len(merge_candidates)} 组可能需要合并的女主候选")
+    logger.info(f"识别到 {len(merge_candidates)} 组可能需要合并的女主候选（原始 {original_candidate_count} 组）")
     
     # 辈分冲突安全检查（防止母女/长辈-晚辈被错误合并）
     _HEROINE_ELDER_KW = {'太太', '夫人', '妈妈', '母亲', '婆婆', '奶奶', '外婆', '阿姨', '姑姑', '姨妈'}
