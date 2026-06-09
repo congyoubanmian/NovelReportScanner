@@ -27,8 +27,17 @@ export function setAccessToken(token) {
 export function withAccessToken(path) {
   const token = getAccessToken()
   if (!token || !path.startsWith('/')) return path
+  if (_hasAccessTokenQuery(path)) return path
   const joiner = path.includes('?') ? '&' : '?'
   return `${path}${joiner}token=${encodeURIComponent(token)}`
+}
+
+function _hasAccessTokenQuery(path) {
+  const query = path.split('#', 1)[0].split('?', 2)[1] || ''
+  if (!query) return false
+  return query
+    .split('&')
+    .some((part) => ['token', 'access_token', 'web_access_token'].includes(part.split('=', 1)[0]))
 }
 
 async function _api(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {

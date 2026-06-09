@@ -1274,6 +1274,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("<title[^>]*>", text)
         self.assertIn("HTTP ${status}: ${cleanTitle}", text)
         self.assertIn("plainText.slice(0, 300)", text)
+        self.assertIn("function _hasAccessTokenQuery(path)", text)
+        self.assertIn("'access_token'", text)
+        self.assertIn("'web_access_token'", text)
+        self.assertIn("if (_hasAccessTokenQuery(path)) return path", text)
 
     def test_frontend_sse_fallback_retries_after_parse_errors(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
