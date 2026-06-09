@@ -34,6 +34,7 @@ const books = ref([])
 const profiles = ref([{ name: 'auto', display_name: '自动识别' }])
 const runtimeConfig = ref(null)
 const diagnostics = ref(null)
+const diagnosticsError = ref('')
 const configReady = ref(false)
 const selectedBook = ref(null)
 const selectedBookId = ref(null)
@@ -117,6 +118,7 @@ function formatElapsed(seconds) {
 
 const diagnosticsStatus = computed(() => {
   const data = diagnostics.value || {}
+  const errorText = diagnosticsError.value
   const issues = Array.isArray(data.health_issues) ? data.health_issues : []
   const stale = Number(data.stale_running_count || 0)
   const failed = Number(data.failed_count || 0)
@@ -146,6 +148,24 @@ const diagnosticsStatus = computed(() => {
     failed_tasks: `${failed} 个失败`
   }
   const topIssue = issues[0]
+  if (errorText) {
+    return {
+      ok: false,
+      label: '刷新失败',
+      queued,
+      running,
+      failed,
+      failedHistory,
+      retryApiVisible: false,
+      retryParseVisible: false,
+      topFailureText: topFailure ? `${topFailure.reason} x${topFailure.count}` : '-',
+      longestRunningText,
+      oldestQueueWaitText,
+      logUrl: '',
+      failureLogUrl: recentFailure?.log_file?.url || '',
+      title: `诊断刷新失败：${errorText}`
+    }
+  }
   return {
     ok: issues.length ? data.ok !== false : stale === 0 && failed === 0,
     label: topIssue
@@ -199,8 +219,12 @@ async function refreshDiagnostics(options = {}) {
     const data = await getDiagnostics()
     if (reqId === diagnosticsRequestId) {
       diagnostics.value = data
+      diagnosticsError.value = ''
     }
   } catch (e) {
+    if (reqId === diagnosticsRequestId) {
+      diagnosticsError.value = e.message || String(e)
+    }
     console.warn('诊断刷新失败:', e)
   }
 }
