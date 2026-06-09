@@ -561,6 +561,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("concurrency:", workflow_text)
         self.assertIn("group: docker-publish-${{ github.ref }}", workflow_text)
         self.assertIn("cancel-in-progress: true", workflow_text)
+        self.assertIn("timeout-minutes: 45", workflow_text)
         self.assertIn("Build Docker image", workflow_text)
         self.assertIn("Push Docker image tags with retry", workflow_text)
         self.assertIn("docker buildx build", workflow_text)
@@ -601,6 +602,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("concurrency:", workflow_text)
         self.assertIn("group: ci-${{ github.ref }}", workflow_text)
         self.assertIn("cancel-in-progress: true", workflow_text)
+        self.assertGreaterEqual(workflow_text.count("timeout-minutes: 20"), 2)
         self.assertIn("npm run check", workflow_text)
 
     def test_gitignore_blocks_runtime_inputs_and_keeps_templates(self):
