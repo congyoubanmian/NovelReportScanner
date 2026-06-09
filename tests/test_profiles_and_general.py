@@ -1261,6 +1261,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("const errorText = diagnosticsError.value", text)
         self.assertIn("label: '刷新失败'", text)
         self.assertIn("诊断刷新失败：${errorText}", text)
+        self.assertIn('v-if="diagnostics || diagnosticsError"', text)
         self.assertIn("diagnosticsError.value = ''", text)
         self.assertIn("diagnosticsError.value = e.message || String(e)", text)
         self.assertIn("data.retry_types", text)

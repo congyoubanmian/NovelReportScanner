@@ -602,7 +602,7 @@ useStateEvents(applyState, {
       >
     </div>
 
-    <div class="runtime-strip" v-if="diagnostics">
+    <div class="runtime-strip" v-if="diagnostics || diagnosticsError">
       <span class="runtime-item"><b>队列</b>{{ diagnosticsStatus.queued }}</span>
       <span class="runtime-item"><b>最久等待</b>{{ diagnosticsStatus.oldestQueueWaitText }}</span>
       <span class="runtime-item"><b>运行中</b>{{ diagnosticsStatus.running }}</span>
