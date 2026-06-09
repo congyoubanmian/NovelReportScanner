@@ -55,7 +55,9 @@ CHUNK_SIZE = read_int_env(
 )
 HAREM_SCAN_MAX_TOKENS = read_int_env("HAREM_SCAN_MAX_TOKENS", 3000, min_value=500)
 HAREM_SCAN_RETRY_WORKERS = read_int_env("HAREM_SCAN_RETRY_WORKERS", 1, min_value=1)
-GENERAL_CHARACTER_MAX_PER_CHUNK = read_int_env("GENERAL_CHARACTER_MAX_PER_CHUNK", 12, min_value=3, max_value=30)
+GENERAL_CHARACTER_MAX_TOKENS = read_int_env("GENERAL_CHARACTER_MAX_TOKENS", 2400, min_value=500)
+GENERAL_CHARACTER_RETRY_MAX_TOKENS = read_int_env("GENERAL_CHARACTER_RETRY_MAX_TOKENS", 1400, min_value=500)
+GENERAL_CHARACTER_MAX_PER_CHUNK = read_int_env("GENERAL_CHARACTER_MAX_PER_CHUNK", 8, min_value=3, max_value=30)
 GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH = read_int_env("GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH", 1, min_value=0, max_value=3)
 GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS = read_int_env("GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS", 4000, min_value=500)
 GENERAL_CHARACTER_MAX_CHUNKS = read_int_env(
@@ -717,13 +719,15 @@ def _safe_json_loads(text: str):
     return parse_json_object_lenient(text)
 
 
-def _call_json_chat_completion(messages, *, temperature=0.1, max_tokens=4000):
+def _call_json_chat_completion(messages, *, temperature=0.1, max_tokens=4000, fallback_prompt=None, fallback_max_tokens=None):
     return call_json_chat_completion_with_fallback(
         chat_completion_func=chat_completion,
         model=MODEL,
         messages=messages,
         temperature=temperature,
         max_tokens=max_tokens,
+        fallback_prompt=fallback_prompt,
+        fallback_max_tokens=fallback_max_tokens,
         record_usage_func=record_usage,
         parse_json_func=_safe_json_loads,
     )
@@ -1178,6 +1182,24 @@ def _parse_retry_diagnostic(error):
     return flags, err_detail, truncated
 
 
+def _character_max_tokens(profile_mode, retry=0):
+    if profile_mode == "general":
+        if retry > 0:
+            return max(500, min(GENERAL_CHARACTER_MAX_TOKENS, GENERAL_CHARACTER_RETRY_MAX_TOKENS))
+        return max(500, GENERAL_CHARACTER_MAX_TOKENS)
+    return max(500, HAREM_SCAN_MAX_TOKENS)
+
+
+def _character_fallback_prompt(profile_mode):
+    suffix = _build_character_parse_retry_suffix(profile_mode, 1).strip()
+    if suffix:
+        return suffix
+    return (
+        "上一次回复不是可解析的 JSON 对象，或当前接口不支持 JSON mode。"
+        "请只重新输出一个合法 JSON 对象，不要 Markdown、不要代码块、不要解释。"
+    )
+
+
 def _coerce_score(value):
     try:
         score = int(value)
@@ -1486,7 +1508,11 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
             f"Chunk {chunk_index} JSON解析失败 (尝试 {retry+1}/{max_retries}): {error}; "
             f"{err_detail}; truncated={truncated}"
         )
-        if _should_downshift_general_character_chunk(profile_mode, text_chunk, _downshift_depth):
+        should_try_compact_retry = retry < max_retries - 1
+        if (
+            not should_try_compact_retry
+            and _should_downshift_general_character_chunk(profile_mode, text_chunk, _downshift_depth)
+        ):
             downshifted = _downshift_general_character_chunk(
                 text_chunk,
                 chunk_index,
@@ -1497,7 +1523,7 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
             )
             if downshifted is not None:
                 return downshifted
-        if retry < max_retries - 1:
+        if should_try_compact_retry:
             time.sleep(1)
             return None
         return {
@@ -1518,7 +1544,9 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
                         {"role": "user", "content": user_prompt + retry_suffix},
                     ],
                     temperature=0.1,
-                    max_tokens=HAREM_SCAN_MAX_TOKENS,
+                    max_tokens=_character_max_tokens(profile_mode, retry),
+                    fallback_prompt=_character_fallback_prompt(profile_mode),
+                    fallback_max_tokens=_character_max_tokens(profile_mode, retry + 1),
                 )
                 result = _normalize_character_response(data, chunk_index, profile_mode)
 

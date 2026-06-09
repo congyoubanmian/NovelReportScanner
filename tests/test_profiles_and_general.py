@@ -234,6 +234,41 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
         self.assertEqual(calls[1]["response_format"], {"type": "json_object"})
 
+    def test_shared_json_call_helper_accepts_custom_retry_prompt_and_tokens(self):
+        class FakeMessage:
+            def __init__(self, content):
+                self.content = content
+
+        class FakeChoice:
+            def __init__(self, content):
+                self.message = FakeMessage(content)
+
+        class FakeResponse:
+            def __init__(self, content):
+                self.choices = [FakeChoice(content)]
+
+        calls = []
+
+        def fake_chat_completion(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return FakeResponse("不是 JSON")
+            return FakeResponse('{"ok": true}')
+
+        data = shared_utils.call_json_chat_completion_with_fallback(
+            chat_completion_func=fake_chat_completion,
+            model="test-model",
+            messages=[{"role": "user", "content": "输出 JSON"}],
+            max_tokens=2400,
+            fallback_prompt="请输出最短合法 JSON",
+            fallback_max_tokens=900,
+        )
+
+        self.assertTrue(data["ok"])
+        self.assertEqual(calls[0]["max_tokens"], 2400)
+        self.assertEqual(calls[1]["max_tokens"], 900)
+        self.assertEqual(calls[1]["messages"][-1]["content"], "请输出最短合法 JSON")
+
     def test_shared_json_call_helper_retries_empty_choices_response(self):
         class EmptyResponse:
             choices = None
@@ -670,9 +705,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         try:
             def fake_call(messages, **_kwargs):
                 calls.append(messages)
-                if len(calls) == 1:
+                if len(calls) <= 2:
                     raise ValueError("truncated_json_response; response_flags=json_unbalanced; response_len=6200")
-                name = "云烨" if len(calls) == 2 else "李二"
+                name = "云烨" if len(calls) == 3 else "李二"
                 return {
                     "primary_protagonist": {"name": "云烨", "gender": "male", "summary": "主角行动"},
                     "characters": [{
@@ -707,7 +742,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertTrue(result["_success"])
         self.assertEqual(result["partial_reason"], "parse_error_downshift_split")
-        self.assertEqual(len(calls), 3)
+        self.assertEqual(len(calls), 4)
         self.assertIn("李二", [item["name"] for item in result["female_characters"]])
         self.assertEqual(result["discarded_facts"][-1]["reason"], "parse_error_downshift_split")
 
@@ -776,6 +811,87 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("JSON修复重试要求", calls[1][1]["content"])
         self.assertIn("characters 最多输出", calls[1][1]["content"])
 
+    def test_protagonist_general_character_uses_separate_token_budgets(self):
+        calls = []
+        old_call = protagonist._call_json_chat_completion
+        old_profile = os.environ.get("ANALYSIS_PROFILE")
+        old_max_tokens = protagonist.GENERAL_CHARACTER_MAX_TOKENS
+        old_retry_tokens = protagonist.GENERAL_CHARACTER_RETRY_MAX_TOKENS
+        try:
+            def fake_call(messages, **kwargs):
+                calls.append((messages, kwargs))
+                return {
+                    "primary_protagonist": {"name": "云烨", "gender": "male", "summary": "主角行动"},
+                    "characters": [],
+                }
+
+            os.environ["ANALYSIS_PROFILE"] = "general"
+            protagonist.GENERAL_CHARACTER_MAX_TOKENS = 2300
+            protagonist.GENERAL_CHARACTER_RETRY_MAX_TOKENS = 1100
+            protagonist._call_json_chat_completion = fake_call
+            result = protagonist.analyze_chunk_for_heroines(
+                "云烨在长安处理政务。",
+                chunk_index=168,
+                total_chunks=452,
+                max_retries=2,
+            )
+        finally:
+            protagonist._call_json_chat_completion = old_call
+            protagonist.GENERAL_CHARACTER_MAX_TOKENS = old_max_tokens
+            protagonist.GENERAL_CHARACTER_RETRY_MAX_TOKENS = old_retry_tokens
+            if old_profile is None:
+                os.environ.pop("ANALYSIS_PROFILE", None)
+            else:
+                os.environ["ANALYSIS_PROFILE"] = old_profile
+
+        self.assertTrue(result["_success"])
+        self.assertEqual(calls[0][1]["max_tokens"], 2300)
+        self.assertEqual(calls[0][1]["fallback_max_tokens"], 1100)
+        self.assertIn("characters 最多输出", calls[0][1]["fallback_prompt"])
+
+    def test_general_character_parse_error_retries_before_downshift(self):
+        calls = []
+        old_call = protagonist._call_json_chat_completion
+        old_sleep = protagonist.time.sleep
+        old_profile = os.environ.get("ANALYSIS_PROFILE")
+        old_depth = protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH
+        old_min_chars = protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS
+        try:
+            def fake_call(messages, **_kwargs):
+                calls.append(messages)
+                if len(calls) == 1:
+                    raise ValueError("truncated_json_response; response_flags=json_unbalanced; response_len=6200")
+                return {
+                    "primary_protagonist": {"name": "云烨", "gender": "male", "summary": "主角行动"},
+                    "characters": [],
+                }
+
+            os.environ["ANALYSIS_PROFILE"] = "general"
+            protagonist._call_json_chat_completion = fake_call
+            protagonist.time.sleep = lambda *_args, **_kwargs: None
+            protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH = 1
+            protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS = 20
+            result = protagonist.analyze_chunk_for_heroines(
+                "云烨在长安处理政务。辛月随后入府协助。" * 20,
+                chunk_index=18,
+                total_chunks=452,
+                max_retries=2,
+            )
+        finally:
+            protagonist._call_json_chat_completion = old_call
+            protagonist.time.sleep = old_sleep
+            protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH = old_depth
+            protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS = old_min_chars
+            if old_profile is None:
+                os.environ.pop("ANALYSIS_PROFILE", None)
+            else:
+                os.environ["ANALYSIS_PROFILE"] = old_profile
+
+        self.assertTrue(result["_success"])
+        self.assertEqual(len(calls), 2)
+        self.assertNotIn("partial_reason", result)
+        self.assertIn("JSON修复重试要求", calls[1][1]["content"])
+
     def test_compose_variables_are_documented_in_env_sample(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
         compose_path = os.path.join(base_dir, "docker-compose.yml")
@@ -802,8 +918,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("API_SERVER_ERROR_MAX_RETRIES=2", env_sample_text)
         self.assertIn("API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS: ${API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS:-20000}", compose_text)
         self.assertIn("API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS=20000", env_sample_text)
-        self.assertIn("GENERAL_CHARACTER_MAX_PER_CHUNK: ${GENERAL_CHARACTER_MAX_PER_CHUNK:-12}", compose_text)
-        self.assertIn("GENERAL_CHARACTER_MAX_PER_CHUNK=12", env_sample_text)
+        self.assertIn("GENERAL_CHARACTER_MAX_TOKENS: ${GENERAL_CHARACTER_MAX_TOKENS:-2400}", compose_text)
+        self.assertIn("GENERAL_CHARACTER_MAX_TOKENS=2400", env_sample_text)
+        self.assertIn("GENERAL_CHARACTER_RETRY_MAX_TOKENS: ${GENERAL_CHARACTER_RETRY_MAX_TOKENS:-1400}", compose_text)
+        self.assertIn("GENERAL_CHARACTER_RETRY_MAX_TOKENS=1400", env_sample_text)
+        self.assertIn("GENERAL_CHARACTER_MAX_PER_CHUNK: ${GENERAL_CHARACTER_MAX_PER_CHUNK:-8}", compose_text)
+        self.assertIn("GENERAL_CHARACTER_MAX_PER_CHUNK=8", env_sample_text)
         self.assertIn("GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH: ${GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH:-1}", compose_text)
         self.assertIn("GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH=1", env_sample_text)
         self.assertIn("GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS: ${GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS:-4000}", compose_text)
@@ -6327,6 +6447,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "HAREM_SCAN_MAX_TOKENS",
             "HAREM_SCAN_RETRY_WORKERS",
             "GENERAL_SCAN_MAX_CHUNKS",
+            "GENERAL_CHARACTER_MAX_TOKENS",
+            "GENERAL_CHARACTER_RETRY_MAX_TOKENS",
+            "GENERAL_CHARACTER_MAX_PER_CHUNK",
             "GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH",
             "GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS",
             "GENERAL_SCAN_SMART_DENSITY",
@@ -6364,6 +6487,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "harem_scan_max_tokens": "2800",
                 "harem_scan_retry_workers": "1",
                 "general_scan_max_chunks": "120",
+                "general_character_max_tokens": "2300",
+                "general_character_retry_max_tokens": "1200",
+                "general_character_max_per_chunk": "7",
                 "general_character_api_downshift_max_depth": "1",
                 "general_character_api_downshift_min_chars": "4000",
                 "general_scan_smart_density": False,
@@ -6396,6 +6522,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["HAREM_SCAN_MAX_TOKENS"], "2800")
             self.assertEqual(os.environ["HAREM_SCAN_RETRY_WORKERS"], "1")
             self.assertEqual(os.environ["GENERAL_SCAN_MAX_CHUNKS"], "120")
+            self.assertEqual(os.environ["GENERAL_CHARACTER_MAX_TOKENS"], "2300")
+            self.assertEqual(os.environ["GENERAL_CHARACTER_RETRY_MAX_TOKENS"], "1200")
+            self.assertEqual(os.environ["GENERAL_CHARACTER_MAX_PER_CHUNK"], "7")
             self.assertEqual(os.environ["GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH"], "1")
             self.assertEqual(os.environ["GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS"], "4000")
             self.assertEqual(os.environ["GENERAL_SCAN_SMART_DENSITY"], "0")
@@ -6677,6 +6806,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "HAREM_SCAN_MAX_TOKENS": "harem_scan_max_tokens",
             "HAREM_SCAN_RETRY_WORKERS": "harem_scan_retry_workers",
             "GENERAL_SCAN_MAX_CHUNKS": "general_scan_max_chunks",
+            "GENERAL_CHARACTER_MAX_TOKENS": "general_character_max_tokens",
+            "GENERAL_CHARACTER_RETRY_MAX_TOKENS": "general_character_retry_max_tokens",
+            "GENERAL_CHARACTER_MAX_PER_CHUNK": "general_character_max_per_chunk",
             "GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH": "general_character_api_downshift_max_depth",
             "GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS": "general_character_api_downshift_min_chars",
             "GENERAL_SCAN_SMART_DENSITY": "general_scan_smart_density",
@@ -6730,6 +6862,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "harem_scan_chunk_size": 6500,
                     "harem_scan_max_tokens": 2800,
                     "harem_scan_retry_workers": 1,
+                    "general_character_max_tokens": 2300,
+                    "general_character_retry_max_tokens": 1200,
+                    "general_character_max_per_chunk": 7,
                     "general_character_api_downshift_max_depth": 1,
                     "general_character_api_downshift_min_chars": 4000,
                     "general_scan_smart_density": False,
@@ -6761,6 +6896,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("HAREM_SCAN_CHUNK_SIZE=6500", lines)
                 self.assertIn("HAREM_SCAN_MAX_TOKENS=2800", lines)
                 self.assertIn("HAREM_SCAN_RETRY_WORKERS=1", lines)
+                self.assertIn("GENERAL_CHARACTER_MAX_TOKENS=2300", lines)
+                self.assertIn("GENERAL_CHARACTER_RETRY_MAX_TOKENS=1200", lines)
+                self.assertIn("GENERAL_CHARACTER_MAX_PER_CHUNK=7", lines)
                 self.assertIn("GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH=1", lines)
                 self.assertIn("GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS=4000", lines)
                 self.assertIn("GENERAL_SCAN_SMART_DENSITY=0", lines)

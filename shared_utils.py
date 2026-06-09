@@ -683,6 +683,8 @@ def call_json_chat_completion_with_fallback(
     messages,
     temperature: float = 0.1,
     max_tokens: Optional[int] = None,
+    fallback_prompt: Optional[str] = None,
+    fallback_max_tokens: Optional[int] = None,
     record_usage_func=None,
     parse_json_func=None,
 ) -> Dict[str, Any]:
@@ -748,7 +750,7 @@ def call_json_chat_completion_with_fallback(
 
     fallback_messages = list(messages) + [{
         "role": "user",
-        "content": (
+        "content": fallback_prompt or (
             "上一次回复不是可解析的 JSON 对象，或当前接口不支持 JSON mode。"
             "请只重新输出一个合法 JSON 对象，不要 Markdown、不要代码块、不要解释。"
         ),
@@ -756,6 +758,8 @@ def call_json_chat_completion_with_fallback(
     fallback_kwargs = dict(base_kwargs)
     fallback_kwargs["messages"] = fallback_messages
     fallback_kwargs["temperature"] = 0.0
+    if fallback_max_tokens is not None:
+        fallback_kwargs["max_tokens"] = fallback_max_tokens
     if json_mode_supported:
         fallback_kwargs.update(json_mode_kwargs)
     fallback_response = chat_completion_func(**fallback_kwargs)

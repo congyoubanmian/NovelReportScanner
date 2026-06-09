@@ -61,6 +61,9 @@ const configForm = ref({
   harem_scan_max_tokens: '3000',
   harem_scan_retry_workers: '1',
   general_scan_max_chunks: '',
+  general_character_max_tokens: '2400',
+  general_character_retry_max_tokens: '1400',
+  general_character_max_per_chunk: '8',
   general_character_api_downshift_max_depth: '1',
   general_character_api_downshift_min_chars: '4000',
   general_scan_smart_density: true,
@@ -323,6 +326,9 @@ function syncConfigForm(config) {
     harem_scan_max_tokens: config.harem_scan_max_tokens || '3000',
     harem_scan_retry_workers: config.harem_scan_retry_workers || '1',
     general_scan_max_chunks: config.general_scan_max_chunks || '80',
+    general_character_max_tokens: config.general_character_max_tokens || '2400',
+    general_character_retry_max_tokens: config.general_character_retry_max_tokens || '1400',
+    general_character_max_per_chunk: config.general_character_max_per_chunk || '8',
     general_character_api_downshift_max_depth:
       config.general_character_api_downshift_max_depth || '1',
     general_character_api_downshift_min_chars:
@@ -368,6 +374,9 @@ async function saveRuntimeConfig() {
       harem_scan_max_tokens: configForm.value.harem_scan_max_tokens,
       harem_scan_retry_workers: configForm.value.harem_scan_retry_workers,
       general_scan_max_chunks: configForm.value.general_scan_max_chunks,
+      general_character_max_tokens: configForm.value.general_character_max_tokens,
+      general_character_retry_max_tokens: configForm.value.general_character_retry_max_tokens,
+      general_character_max_per_chunk: configForm.value.general_character_max_per_chunk,
       general_character_api_downshift_max_depth:
         configForm.value.general_character_api_downshift_max_depth,
       general_character_api_downshift_min_chars:
@@ -801,6 +810,36 @@ useStateEvents(applyState, {
           v-model="configForm.general_scan_max_chunks"
           type="number"
           min="0"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>角色Token</span>
+        <input
+          v-model="configForm.general_character_max_tokens"
+          type="number"
+          min="500"
+          max="8000"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>重试Token</span>
+        <input
+          v-model="configForm.general_character_retry_max_tokens"
+          type="number"
+          min="500"
+          max="8000"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>单块角色</span>
+        <input
+          v-model="configForm.general_character_max_per_chunk"
+          type="number"
+          min="3"
+          max="30"
           @input="runtimeConfigDirty = true"
         />
       </label>
