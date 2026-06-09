@@ -798,6 +798,26 @@ def _failure_reason_summary(failed_tasks, limit=10):
     return rows[:limit]
 
 
+def _task_recency_key(task):
+    return task.get("finished_at") or task.get("updated_at") or task.get("created_at") or ""
+
+
+def _latest_failed_tasks_for_current_failed_books(books_by_id, tasks):
+    latest_by_book = {}
+    for task in tasks:
+        book_id = task.get("book_id")
+        book = books_by_id.get(book_id) or {}
+        if task.get("status") != "failed" or book.get("status") != "failed":
+            continue
+        previous = latest_by_book.get(book_id)
+        if previous is None or _task_recency_key(task) > _task_recency_key(previous):
+            latest_by_book[book_id] = task
+    return [
+        _failed_task_diagnostic(task, books_by_id.get(task.get("book_id"), {}))
+        for task in latest_by_book.values()
+    ]
+
+
 def _diagnostics_summary():
     with STATE_LOCK:
         books_by_id = {book_id: dict(book) for book_id, book in STATE.get("books", {}).items()}
@@ -817,17 +837,15 @@ def _diagnostics_summary():
             for task in tasks
             if task.get("status") == "queued"
         ]
-        failed_tasks = [
-            _failed_task_diagnostic(task, books_by_id.get(task.get("book_id"), {}))
-            for task in tasks
-            if task.get("status") == "failed"
-        ]
+        failed_tasks = _latest_failed_tasks_for_current_failed_books(books_by_id, tasks)
+        failed_book_count = sum(1 for book in books_by_id.values() if book.get("status") == "failed")
 
     running_tasks.sort(key=lambda item: item.get("started_at") or item.get("created_at") or "")
     queued_tasks.sort(key=lambda item: item.get("queue_position") or float("inf"))
     failed_tasks.sort(key=lambda item: item.get("finished_at") or item.get("updated_at") or item.get("created_at") or "", reverse=True)
     queued_count = status_counts.get("queued", 0)
-    failed_count = status_counts.get("failed", 0)
+    failed_task_history_count = status_counts.get("failed", 0)
+    failed_count = failed_book_count
     stale_running_count = sum(1 for item in running_tasks if item.get("stale_without_log"))
     storage = _storage_health_summary()
     health_issues = _health_issues(CONFIG_READY, storage, stale_running_count, failed_count)
@@ -854,6 +872,8 @@ def _diagnostics_summary():
         "running_count": len(running_tasks),
         "stale_running_count": stale_running_count,
         "failed_count": failed_count,
+        "failed_book_count": failed_book_count,
+        "failed_task_history_count": failed_task_history_count,
         "oldest_queue_wait_seconds": oldest_queue_wait_seconds,
         "longest_running_seconds": longest_running_seconds,
         "running_tasks": running_tasks,

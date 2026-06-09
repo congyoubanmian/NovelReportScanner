@@ -7370,6 +7370,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(diagnostics["running_count"], 1)
             self.assertEqual(diagnostics["stale_running_count"], 1)
             self.assertEqual(diagnostics["failed_count"], 3)
+            self.assertEqual(diagnostics["failed_book_count"], 3)
+            self.assertEqual(diagnostics["failed_task_history_count"], 3)
             self.assertFalse(diagnostics["ready"])
             self.assertTrue(diagnostics["storage_ready"])
             self.assertEqual(
@@ -7417,6 +7419,91 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.APP_COMMIT = old_app_commit
             web_manager.CONFIG_READY = old_config_ready
             web_manager.time.time = old_time
+
+    def test_web_manager_diagnostics_ignores_resolved_failure_history(self):
+        old_state = web_manager.STATE
+        old_config_ready = web_manager.CONFIG_READY
+        try:
+            web_manager.CONFIG_READY = True
+            web_manager.STATE = {
+                "books": {
+                    "recovered-book": {
+                        "id": "recovered-book",
+                        "name": "已恢复",
+                        "status": "completed",
+                        "task_id": "task-success",
+                    },
+                    "failed-book": {
+                        "id": "failed-book",
+                        "name": "当前失败",
+                        "status": "failed",
+                        "task_id": "task-current-failed",
+                    },
+                },
+                "tasks": [
+                    {
+                        "id": "task-old-failed",
+                        "book_id": "recovered-book",
+                        "profile": "general",
+                        "status": "failed",
+                        "created_at": "2026-06-09 01:00:00",
+                        "finished_at": "2026-06-09 01:10:00",
+                        "error": "服务器错误(504)",
+                    },
+                    {
+                        "id": "task-success",
+                        "book_id": "recovered-book",
+                        "profile": "general",
+                        "status": "completed",
+                        "created_at": "2026-06-09 02:00:00",
+                        "finished_at": "2026-06-09 02:10:00",
+                    },
+                    {
+                        "id": "task-older-failed",
+                        "book_id": "failed-book",
+                        "profile": "general",
+                        "status": "failed",
+                        "created_at": "2026-06-09 03:00:00",
+                        "finished_at": "2026-06-09 03:10:00",
+                        "error": "invalid scan result: JSON parse failed",
+                    },
+                    {
+                        "id": "task-current-failed",
+                        "book_id": "failed-book",
+                        "profile": "general",
+                        "status": "failed",
+                        "created_at": "2026-06-09 04:00:00",
+                        "finished_at": "2026-06-09 04:10:00",
+                        "error": "PermissionError: [Errno 13] Permission denied",
+                    },
+                ],
+            }
+
+            with mock.patch.object(web_manager, "_storage_health_summary", return_value={
+                "novels": {"path": "/tmp/novels", "writable": True, "error": ""},
+                "results": {"path": "/tmp/results", "writable": True, "error": ""},
+            }):
+                diagnostics = web_manager._diagnostics_summary()
+
+            self.assertFalse(diagnostics["ok"])
+            self.assertEqual(diagnostics["failed_count"], 1)
+            self.assertEqual(diagnostics["failed_book_count"], 1)
+            self.assertEqual(diagnostics["failed_task_history_count"], 3)
+            self.assertEqual(diagnostics["task_counts"]["failed"], 3)
+            self.assertEqual(diagnostics["health_issues"], [{
+                "type": "failed_tasks",
+                "message": "1 failed task(s)",
+                "count": 1,
+            }])
+            self.assertEqual([item["task_id"] for item in diagnostics["recent_failed_tasks"]], ["task-current-failed"])
+            self.assertEqual(diagnostics["failure_reasons"], [{
+                "reason": "permission denied",
+                "count": 1,
+                "latest_at": "2026-06-09 04:10:00",
+            }])
+        finally:
+            web_manager.STATE = old_state
+            web_manager.CONFIG_READY = old_config_ready
 
     def test_web_manager_public_state_includes_profiles_and_suggestions(self):
         old_state = web_manager.STATE
