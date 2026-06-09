@@ -1263,6 +1263,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("async function refreshAfterMutation()", text)
         self.assertIn("await refreshDiagnostics({ force: true })", text)
         self.assertIn("await refreshAfterMutation()", text)
+        self.assertIn("async function refreshAfterMutation() {\n  await refresh()\n  await refreshDiagnostics({ force: true })\n}", text)
         self.assertIn("retryTypes.has('api_failure')", text)
         self.assertIn("retryTypes.has('parse_failure')", text)
         self.assertIn("diagnosticsStatus.retryApiVisible", text)

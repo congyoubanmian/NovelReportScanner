@@ -241,8 +241,8 @@ async function refresh() {
 }
 
 async function refreshAfterMutation() {
-  await refreshDiagnostics({ force: true })
   await refresh()
+  await refreshDiagnostics({ force: true })
 }
 
 async function saveAccessToken() {
