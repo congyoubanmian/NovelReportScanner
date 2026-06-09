@@ -6331,6 +6331,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.wfile = TrackingWFile()
                 self.headers_sent = []
                 self.errors = []
+                self.sent = []
 
             def send_response(self, code):
                 self.response = code
@@ -6344,8 +6345,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             def send_error(self, code, message=None):
                 self.errors.append((code, message))
 
+            def _send_json(self, data, status=200):
+                self.sent.append((status, data))
+
         old_base_dir = web_manager.get_base_dir
         old_chunk_size = web_manager.FILE_RESPONSE_CHUNK_SIZE
+        had_open = hasattr(web_manager, "open")
+        old_open = getattr(web_manager, "open", None)
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 results_dir = os.path.join(tmp, "results")
@@ -6368,10 +6374,29 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
                 forbidden_handler = FakeHandler()
                 web_manager.Handler._send_public_file(forbidden_handler, os.path.join(tmp, "secret.txt"))
-                self.assertEqual(forbidden_handler.errors[0][0], 403)
+                self.assertEqual(forbidden_handler.sent[0], (403, {"error": "file is not allowed"}))
+                self.assertEqual(forbidden_handler.errors, [])
+
+                missing_handler = FakeHandler()
+                web_manager.Handler._send_public_file(missing_handler, os.path.join(results_dir, "missing.txt"))
+                self.assertEqual(missing_handler.sent[0], (404, {"error": "file not found"}))
+
+                def fail_open(_path, _mode="r", *_args, **_kwargs):
+                    raise PermissionError("permission denied")
+
+                web_manager.open = fail_open
+                failed_read_handler = FakeHandler()
+                web_manager.Handler._send_public_file(failed_read_handler, path)
+                self.assertEqual(failed_read_handler.sent[0][0], 500)
+                self.assertEqual(failed_read_handler.sent[0][1]["error"], "file read failed")
+                self.assertIn("permission denied", failed_read_handler.sent[0][1]["detail"])
         finally:
             web_manager.get_base_dir = old_base_dir
             web_manager.FILE_RESPONSE_CHUNK_SIZE = old_chunk_size
+            if had_open:
+                web_manager.open = old_open
+            elif hasattr(web_manager, "open"):
+                delattr(web_manager, "open")
 
     def test_web_manager_timeout_http_server_sets_request_timeout(self):
         class FakeSocket:

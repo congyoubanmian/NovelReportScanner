@@ -1163,15 +1163,25 @@ def _with_queue_positions(items):
 
 
 def _is_safe_public_file(path):
+    return _public_file_access_error(path) is None
+
+
+def _public_file_access_error(path):
     if not path:
-        return False
+        return 400, "missing file path"
     base = os.path.abspath(get_base_dir())
     allowed = [
         os.path.abspath(os.path.join(base, "results")),
         os.path.abspath(os.path.join(base, "novels")),
     ]
     ap = os.path.abspath(path)
-    return any(_is_path_inside(ap, root) for root in allowed) and os.path.isfile(ap)
+    if not any(_is_path_inside(ap, root) for root in allowed):
+        return 403, "file is not allowed"
+    if not os.path.exists(ap):
+        return 404, "file not found"
+    if not os.path.isfile(ap):
+        return 403, "file is not a regular file"
+    return None
 
 
 def _is_safe_novel_file(path):
@@ -2261,24 +2271,34 @@ class Handler(BaseHTTPRequestHandler):
         return
 
     def _send_public_file(self, path):
-        if not _is_safe_public_file(path):
-            self.send_error(403, "file is not allowed")
+        access_error = _public_file_access_error(path)
+        if access_error is not None:
+            status, message = access_error
+            self._send_json({"error": message}, status)
             return
         try:
             size = os.path.getsize(path)
+            f = open(path, "rb")
+        except FileNotFoundError:
+            self._send_json({"error": "file not found"}, 404)
+            return
+        except OSError as exc:
+            self._send_json({"error": "file read failed", "detail": str(exc)}, 500)
+            return
+        try:
             content_type = "application/json; charset=utf-8" if path.lower().endswith(".json") else "text/plain; charset=utf-8"
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(size))
             self.end_headers()
-            with open(path, "rb") as f:
+            with f:
                 while True:
                     chunk = f.read(FILE_RESPONSE_CHUNK_SIZE)
                     if not chunk:
                         break
                     self.wfile.write(chunk)
         except OSError:
-            self.send_error(404)
+            return
 
     def do_OPTIONS(self):
         self.send_response(204)
