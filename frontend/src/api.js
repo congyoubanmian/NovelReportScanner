@@ -2,6 +2,7 @@ const API_BASE = ''
 const REQUEST_TIMEOUT_MS = 15000
 const UPLOAD_TIMEOUT_MS = 120000
 const ACCESS_TOKEN_STORAGE_KEY = 'novel_report_scanner_access_token'
+export const ACCESS_TOKEN_QUERY_KEYS = ['token', 'access_token', 'web_access_token']
 
 export function getAccessToken() {
   try {
@@ -38,9 +39,7 @@ export function withAccessToken(path) {
 function _hasAccessTokenQuery(path) {
   const query = path.split('#', 1)[0].split('?', 2)[1] || ''
   if (!query) return false
-  return query
-    .split('&')
-    .some((part) => ['token', 'access_token', 'web_access_token'].includes(part.split('=', 1)[0]))
+  return query.split('&').some((part) => ACCESS_TOKEN_QUERY_KEYS.includes(part.split('=', 1)[0]))
 }
 
 async function _api(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {

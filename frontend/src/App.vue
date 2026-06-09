@@ -8,6 +8,7 @@ import { useTheme } from './composables/useTheme.js'
 import { usePolling } from './composables/usePolling.js'
 import { useStateEvents } from './composables/useStateEvents.js'
 import {
+  ACCESS_TOKEN_QUERY_KEYS,
   getState,
   getDiagnostics,
   getBookDetail,
@@ -37,11 +38,13 @@ const configReady = ref(false)
 const selectedBook = ref(null)
 const selectedBookId = ref(null)
 const loading = ref(true)
-const initialUrlToken = new URLSearchParams(window.location.search).get('token') || ''
+const initialUrlParams = new URLSearchParams(window.location.search)
+const initialUrlToken =
+  ACCESS_TOKEN_QUERY_KEYS.map((key) => initialUrlParams.get(key)?.trim()).find(Boolean) || ''
 if (initialUrlToken) {
   setAccessToken(initialUrlToken)
   const cleanUrl = new URL(window.location.href)
-  cleanUrl.searchParams.delete('token')
+  ACCESS_TOKEN_QUERY_KEYS.forEach((key) => cleanUrl.searchParams.delete(key))
   window.history.replaceState({}, '', cleanUrl.toString())
 }
 const accessTokenInput = ref(getAccessToken())
