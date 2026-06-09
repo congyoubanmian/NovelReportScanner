@@ -481,6 +481,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS=1200", env_sample_text)
         self.assertIn("SCAN_FUTURE_STALL_TIMEOUT_SECONDS: ${SCAN_FUTURE_STALL_TIMEOUT_SECONDS:-0}", compose_text)
         self.assertIn("SCAN_FUTURE_STALL_TIMEOUT_SECONDS=0", env_sample_text)
+        self.assertIn("STORAGE_HEALTH_TTL_SECONDS: ${STORAGE_HEALTH_TTL_SECONDS:-10}", compose_text)
+        self.assertIn("STORAGE_HEALTH_TTL_SECONDS=10", env_sample_text)
 
     def test_setting_sample_keys_are_loaded_by_main_config(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -504,6 +506,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("WEB_ACCESS_TOKEN", main._PASSTHROUGH_SETTING_KEYS)
         self.assertIn("SCAN_STALL_TIMEOUT_SECONDS", main._VALIDATED_NON_NEGATIVE_FLOAT_KEYS)
         self.assertIn("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", main._VALIDATED_NON_NEGATIVE_FLOAT_KEYS)
+        self.assertIn("STORAGE_HEALTH_TTL_SECONDS", main._VALIDATED_NON_NEGATIVE_FLOAT_KEYS)
 
     def test_docker_entrypoint_requires_web_token_and_writable_volumes(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -5308,6 +5311,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         old_env = {key: os.environ.get(key) for key in keys}
         old_stall_timeout = web_manager.SCAN_STALL_TIMEOUT_SECONDS
         old_future_stall_timeout = web_manager.SCAN_FUTURE_STALL_TIMEOUT_SECONDS
+        old_storage_health_ttl = web_manager.STORAGE_HEALTH_TTL_SECONDS
         old_base_dir = web_manager.get_base_dir
         try:
             for key in keys:
@@ -5327,6 +5331,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         "LOG_BACKUP_COUNT=2\n"
                         "SCAN_STALL_TIMEOUT_SECONDS=321.5\n"
                         "SCAN_FUTURE_STALL_TIMEOUT_SECONDS=123.5\n"
+                        "STORAGE_HEALTH_TTL_SECONDS=7.5\n"
                     )
 
                 main.load_configs(tmp, interactive=False)
@@ -5340,17 +5345,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertEqual(os.environ["LOG_BACKUP_COUNT"], "2")
                 self.assertEqual(os.environ["SCAN_STALL_TIMEOUT_SECONDS"], "321.5")
                 self.assertEqual(os.environ["SCAN_FUTURE_STALL_TIMEOUT_SECONDS"], "123.5")
+                self.assertEqual(os.environ["STORAGE_HEALTH_TTL_SECONDS"], "7.5")
 
                 web_manager.get_base_dir = lambda: tmp
                 ok, error = web_manager._try_load_runtime_config("test")
                 self.assertTrue(ok, error)
                 self.assertEqual(web_manager.SCAN_STALL_TIMEOUT_SECONDS, 321.5)
                 self.assertEqual(web_manager.SCAN_FUTURE_STALL_TIMEOUT_SECONDS, 123.5)
+                self.assertEqual(web_manager.STORAGE_HEALTH_TTL_SECONDS, 7.5)
                 self.assertTrue(web_manager._web_auth_enabled())
         finally:
             web_manager.get_base_dir = old_base_dir
             web_manager.SCAN_STALL_TIMEOUT_SECONDS = old_stall_timeout
             web_manager.SCAN_FUTURE_STALL_TIMEOUT_SECONDS = old_future_stall_timeout
+            web_manager.STORAGE_HEALTH_TTL_SECONDS = old_storage_health_ttl
             for key, value in old_env.items():
                 if value is None:
                     os.environ.pop(key, None)
@@ -5619,7 +5627,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
     def test_web_manager_runtime_config_reports_storage_writability(self):
         old_base_dir = web_manager.get_base_dir
+        old_cache = dict(web_manager.STORAGE_HEALTH_CACHE)
         try:
+            web_manager.STORAGE_HEALTH_CACHE.update({"base_dir": None, "checked_at": 0.0, "summary": None})
             with tempfile.TemporaryDirectory() as tmp:
                 web_manager.get_base_dir = lambda: tmp
                 summary = web_manager._runtime_config_summary()
@@ -5638,6 +5648,53 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertTrue(storage["results"]["error"])
         finally:
             web_manager.get_base_dir = old_base_dir
+            web_manager.STORAGE_HEALTH_CACHE.clear()
+            web_manager.STORAGE_HEALTH_CACHE.update(old_cache)
+
+    def test_web_manager_storage_health_summary_uses_ttl_cache(self):
+        old_base_dir = web_manager.get_base_dir
+        old_ttl = web_manager.STORAGE_HEALTH_TTL_SECONDS
+        old_cache = dict(web_manager.STORAGE_HEALTH_CACHE)
+        old_directory_write_status = web_manager._directory_write_status
+        old_time = web_manager.time.monotonic
+        calls = []
+        now = [100.0]
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.STORAGE_HEALTH_TTL_SECONDS = 10.0
+                web_manager.STORAGE_HEALTH_CACHE.update({"base_dir": None, "checked_at": 0.0, "summary": None})
+                web_manager.time.monotonic = lambda: now[0]
+
+                def fake_directory_write_status(path_factory):
+                    path = path_factory()
+                    calls.append(path)
+                    return {"path": path, "writable": True, "error": "", "call": len(calls)}
+
+                web_manager._directory_write_status = fake_directory_write_status
+
+                first = web_manager._storage_health_summary()
+                second = web_manager._storage_health_summary()
+                second["novels"]["writable"] = False
+                third = web_manager._storage_health_summary()
+                self.assertEqual(len(calls), 2)
+                self.assertTrue(third["novels"]["writable"])
+
+                forced = web_manager._storage_health_summary(force_refresh=True)
+                self.assertEqual(len(calls), 4)
+                self.assertEqual(forced["novels"]["call"], 3)
+
+                now[0] += 11.0
+                expired = web_manager._storage_health_summary()
+                self.assertEqual(len(calls), 6)
+                self.assertEqual(expired["novels"]["call"], 5)
+        finally:
+            web_manager.get_base_dir = old_base_dir
+            web_manager.STORAGE_HEALTH_TTL_SECONDS = old_ttl
+            web_manager.STORAGE_HEALTH_CACHE.clear()
+            web_manager.STORAGE_HEALTH_CACHE.update(old_cache)
+            web_manager._directory_write_status = old_directory_write_status
+            web_manager.time.monotonic = old_time
 
     def test_web_manager_health_reports_readiness_without_public_paths(self):
         old_config_ready = web_manager.CONFIG_READY
@@ -6727,7 +6784,6 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         old_load_state = web_manager._load_state
         old_start_worker_once = web_manager._start_worker_once
         old_config_ready = web_manager.CONFIG_READY
-        old_env = {key: os.environ.get(key) for key in ("API_KEY", "API_KEY_POOL", "WEB_HOST", "WEB_PORT")}
         runtime_names = (
             "MAX_UPLOAD_SIZE",
             "MAX_JSON_BODY_SIZE",
@@ -6742,7 +6798,16 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "SCAN_HEARTBEAT_INTERVAL_SECONDS",
             "SCAN_STALL_TIMEOUT_SECONDS",
             "SCAN_FUTURE_STALL_TIMEOUT_SECONDS",
+            "STORAGE_HEALTH_TTL_SECONDS",
         )
+        runtime_env_names = tuple(
+            "WEB_REQUEST_TIMEOUT" if name == "WEB_REQUEST_TIMEOUT_SECONDS" else name
+            for name in runtime_names
+        )
+        old_env = {
+            key: os.environ.get(key)
+            for key in ("API_KEY", "API_KEY_POOL", "WEB_HOST", "WEB_PORT", *runtime_env_names)
+        }
         old_runtime = {name: getattr(web_manager, name) for name in runtime_names}
         old_load_configs = web_manager.load_configs
         load_calls = []
@@ -6764,6 +6829,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         "SSE_STATE_INTERVAL_SECONDS=0.5\n"
                         "SSE_SYNC_INTERVAL_SECONDS=0.75\n"
                         "SSE_MAX_CONNECTION_SECONDS=9.5\n"
+                        "STORAGE_HEALTH_TTL_SECONDS=8.5\n"
                         "SCAN_CANCEL_TIMEOUT_SECONDS=1.25\n"
                         "SCAN_HEARTBEAT_INTERVAL_SECONDS=1.75\n"
                     )
@@ -6793,6 +6859,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertEqual(summary["sse_state_interval_seconds"], 0.5)
                 self.assertEqual(summary["sse_sync_interval_seconds"], 0.75)
                 self.assertEqual(summary["sse_max_connection_seconds"], 9.5)
+                self.assertEqual(summary["storage_health_ttl_seconds"], 8.5)
         finally:
             web_manager.get_base_dir = old_base_dir
             web_manager.TimeoutHTTPServer = old_server_class

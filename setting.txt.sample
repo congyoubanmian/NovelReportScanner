@@ -73,5 +73,8 @@ SCAN_STALL_TIMEOUT_SECONDS=1200
 # 扫描进程内部线程池超过该秒数没有任何任务完成时终止当前阶段；默认关闭，线上排查卡死时可设为 600-1800
 SCAN_FUTURE_STALL_TIMEOUT_SECONDS=0
 
+# Web 存储写入自检缓存时间；状态页/SSE 频繁刷新时减少挂载卷临时写入，0 表示每次都重新探测
+STORAGE_HEALTH_TTL_SECONDS=10
+
 # Web 管理端可选访问令牌；留空不启用。公网部署建议设置一个长随机字符串。
 WEB_ACCESS_TOKEN=

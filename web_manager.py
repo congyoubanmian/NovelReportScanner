@@ -31,6 +31,7 @@ from shared_utils import configure_rotating_file_logger, read_float_env, read_in
 
 STATE_LOCK = threading.RLock()
 RUNTIME_CONFIG_LOCK = threading.RLock()
+STORAGE_HEALTH_LOCK = threading.RLock()
 TASK_QUEUE = queue.Queue()
 TASK_QUEUE_IDS = set()
 RUNNING_TASK_PROCS = {}
@@ -54,12 +55,14 @@ SCAN_CANCEL_TIMEOUT_SECONDS = read_float_env("SCAN_CANCEL_TIMEOUT_SECONDS", 5.0,
 SCAN_HEARTBEAT_INTERVAL_SECONDS = read_float_env("SCAN_HEARTBEAT_INTERVAL_SECONDS", 10.0, min_value=0.0)
 SCAN_STALL_TIMEOUT_SECONDS = read_float_env("SCAN_STALL_TIMEOUT_SECONDS", 1200.0, min_value=0.0)
 SCAN_FUTURE_STALL_TIMEOUT_SECONDS = read_float_env("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", 0.0, min_value=0.0)
+STORAGE_HEALTH_TTL_SECONDS = read_float_env("STORAGE_HEALTH_TTL_SECONDS", 10.0, min_value=0.0)
 APP_VERSION = os.environ.get("APP_VERSION", "dev").strip() or "dev"
 APP_COMMIT = os.environ.get("APP_COMMIT", "").strip() or "unknown"
 APP_BUILD_DATE = os.environ.get("APP_BUILD_DATE", "").strip()
 LAST_BOOK_SYNC_AT = 0.0
 LAST_SSE_SYNC_AT = 0.0
 OUTPUTS_CACHE = {}
+STORAGE_HEALTH_CACHE = {"base_dir": None, "checked_at": 0.0, "summary": None}
 ACCESS_LOGGER = None
 EDITABLE_RUNTIME_CONFIG = {
     "max_workers": {"env": "MAX_WORKERS", "type": "int", "min": 1, "max": 64},
@@ -571,6 +574,7 @@ def _runtime_config_summary():
             "sse_state_interval_seconds": SSE_STATE_INTERVAL_SECONDS,
             "sse_sync_interval_seconds": SSE_SYNC_INTERVAL_SECONDS,
             "sse_max_connection_seconds": SSE_MAX_CONNECTION_SECONDS,
+            "storage_health_ttl_seconds": STORAGE_HEALTH_TTL_SECONDS,
             "auth_enabled": _web_auth_enabled(),
             "allow_no_auth": _env_bool_value(os.environ.get("WEB_ALLOW_NO_AUTH", "0")),
             "api_key_required_on_start": _env_bool_value(os.environ.get("NOVEL_REPORT_SCANNER_REQUIRE_API_KEY", "1")),
@@ -884,11 +888,34 @@ def _diagnostics_summary():
     }
 
 
-def _storage_health_summary():
-    return {
+def _storage_health_summary(force_refresh=False):
+    def copy_summary(summary):
+        return {name: dict(status) for name, status in summary.items()}
+
+    now = time.monotonic()
+    base_dir = os.path.abspath(get_base_dir())
+    with STORAGE_HEALTH_LOCK:
+        cached = STORAGE_HEALTH_CACHE.get("summary")
+        if (
+            not force_refresh
+            and cached is not None
+            and STORAGE_HEALTH_CACHE.get("base_dir") == base_dir
+            and STORAGE_HEALTH_TTL_SECONDS > 0
+            and now - STORAGE_HEALTH_CACHE.get("checked_at", 0.0) < STORAGE_HEALTH_TTL_SECONDS
+        ):
+            return copy_summary(cached)
+
+    summary = {
         "novels": _directory_write_status(_novels_dir),
         "results": _directory_write_status(lambda: os.path.join(get_base_dir(), "results")),
     }
+    with STORAGE_HEALTH_LOCK:
+        STORAGE_HEALTH_CACHE.update({
+            "base_dir": base_dir,
+            "checked_at": now,
+            "summary": summary,
+        })
+    return copy_summary(summary)
 
 
 def _directory_write_status(path_factory):
@@ -2142,6 +2169,7 @@ def _refresh_runtime_constants_from_env():
     global SSE_STATE_INTERVAL_SECONDS, SSE_SYNC_INTERVAL_SECONDS, SSE_MAX_CONNECTION_SECONDS
     global SCAN_CANCEL_TIMEOUT_SECONDS, SCAN_HEARTBEAT_INTERVAL_SECONDS
     global SCAN_STALL_TIMEOUT_SECONDS, SCAN_FUTURE_STALL_TIMEOUT_SECONDS
+    global STORAGE_HEALTH_TTL_SECONDS
 
     MAX_UPLOAD_SIZE = read_int_env("MAX_UPLOAD_SIZE", 100 * 1024 * 1024, min_value=1)
     MAX_JSON_BODY_SIZE = read_int_env("MAX_JSON_BODY_SIZE", 64 * 1024, min_value=1)
@@ -2160,6 +2188,7 @@ def _refresh_runtime_constants_from_env():
     SCAN_HEARTBEAT_INTERVAL_SECONDS = read_float_env("SCAN_HEARTBEAT_INTERVAL_SECONDS", 10.0, min_value=0.0)
     SCAN_STALL_TIMEOUT_SECONDS = read_float_env("SCAN_STALL_TIMEOUT_SECONDS", 1200.0, min_value=0.0)
     SCAN_FUTURE_STALL_TIMEOUT_SECONDS = read_float_env("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", 0.0, min_value=0.0)
+    STORAGE_HEALTH_TTL_SECONDS = read_float_env("STORAGE_HEALTH_TTL_SECONDS", 10.0, min_value=0.0)
 
 
 class Handler(BaseHTTPRequestHandler):
