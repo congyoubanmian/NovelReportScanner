@@ -1255,6 +1255,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("data.failed_task_history_count", text)
         self.assertIn("failedHistory", text)
         self.assertIn("<b>历史失败</b>", text)
+        self.assertIn("data.retry_types", text)
+        self.assertIn("data.recent_failed_tasks || []", text)
+        self.assertIn("item.type || item.retry_type", text)
         self.assertIn("retryTypes.has('api_failure')", text)
         self.assertIn("retryTypes.has('parse_failure')", text)
         self.assertIn("diagnosticsStatus.retryApiVisible", text)
@@ -7490,6 +7493,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(diagnostics["failure_reasons"][0]["reason"], "permission denied")
             self.assertEqual(diagnostics["failure_reasons"][0]["count"], 2)
             self.assertEqual(diagnostics["failure_reasons"][1]["reason"], "json parse failure")
+            self.assertEqual(diagnostics["retry_types"], [
+                {"type": "storage_failure", "count": 2},
+                {"type": "parse_failure", "count": 1},
+            ])
             recent_failed = diagnostics["recent_failed_tasks"]
             self.assertEqual(len(recent_failed), 3)
             self.assertEqual(recent_failed[0]["task_id"], "task-failed-3")
@@ -7584,6 +7591,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "count": 1,
             }])
             self.assertEqual([item["task_id"] for item in diagnostics["recent_failed_tasks"]], ["task-current-failed"])
+            self.assertEqual(diagnostics["retry_types"], [{"type": "storage_failure", "count": 1}])
             self.assertEqual(diagnostics["failure_reasons"], [{
                 "reason": "permission denied",
                 "count": 1,

@@ -128,8 +128,12 @@ const diagnosticsStatus = computed(() => {
   const firstStale = (data.running_tasks || []).find((task) => task.stale_without_log)
   const topFailure = (data.failure_reasons || [])[0]
   const recentFailure = (data.recent_failed_tasks || []).find((task) => task.log_file?.url)
+  const retryTypeItems =
+    Array.isArray(data.retry_types) && data.retry_types.length
+      ? data.retry_types
+      : data.recent_failed_tasks || []
   const retryTypes = new Set(
-    (data.recent_failed_tasks || []).map((task) => task.retry_type).filter(Boolean)
+    retryTypeItems.map((item) => item.type || item.retry_type).filter(Boolean)
   )
   const failureTitle = (data.failure_reasons || [])
     .map((item) => `${item.reason || 'unknown failure'} x${item.count || 0}`)

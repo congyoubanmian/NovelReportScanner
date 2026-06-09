@@ -802,6 +802,18 @@ def _failure_reason_summary(failed_tasks, limit=10):
     return rows[:limit]
 
 
+def _retry_type_summary(failed_tasks):
+    counts = {}
+    for task in failed_tasks:
+        retry_type = str(task.get("retry_type") or "").strip()
+        if retry_type:
+            counts[retry_type] = counts.get(retry_type, 0) + 1
+    return [
+        {"type": retry_type, "count": count}
+        for retry_type, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    ]
+
+
 def _task_recency_key(task):
     return task.get("finished_at") or task.get("updated_at") or task.get("created_at") or ""
 
@@ -884,6 +896,7 @@ def _diagnostics_summary():
         "queued_tasks": queued_tasks,
         "recent_failed_tasks": failed_tasks[:10],
         "failure_reasons": _failure_reason_summary(failed_tasks),
+        "retry_types": _retry_type_summary(failed_tasks),
         "storage": storage,
     }
 
