@@ -19,6 +19,7 @@ import cgi
 import sys
 
 from analysis_profiles import (
+    PROFILE_INFERENCE_ALGORITHM_VERSION,
     infer_profile_candidates_for_novel,
     infer_profiles_for_novel,
     list_available_profiles,
@@ -414,7 +415,7 @@ def _refresh_book_suggestions(book):
 
 def _book_suggestion_signature(path):
     stat = os.stat(path)
-    return f"{stat.st_mtime}:{stat.st_size}"
+    return f"{stat.st_mtime}:{stat.st_size}:profile-v{PROFILE_INFERENCE_ALGORITHM_VERSION}"
 
 
 def _sync_books_from_disk():

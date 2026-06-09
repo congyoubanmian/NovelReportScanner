@@ -4973,6 +4973,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(general_candidates[0]["rank"], 1)
         self.assertTrue(general_candidates[0]["auto_selected"])
 
+    def test_auto_profile_exposes_algorithm_version_for_cache_invalidation(self):
+        self.assertRegex(analysis_profiles.PROFILE_INFERENCE_ALGORITHM_VERSION, r"^\d{4}-\d{2}-\d{2}\.\d+$")
+
     def test_auto_profile_negative_keywords_reduce_cross_category_noise(self):
         basketball = analysis_profiles.infer_profile_candidates_for_text(
             "篮球系统训练营",
@@ -7986,6 +7989,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertTrue(any(item["name"] == "harem" for item in state["books"][0]["profile_suggestions"]))
             self.assertTrue(all("rank" in item for item in state["books"][0]["profile_suggestions"]))
             self.assertTrue(any(item.get("auto_selected") for item in state["books"][0]["profile_suggestions"]))
+            self.assertIn(
+                analysis_profiles.PROFILE_INFERENCE_ALGORITHM_VERSION,
+                state["books"][0]["suggestion_signature"],
+            )
         finally:
             web_manager.STATE = old_state
             web_manager.APP_VERSION = old_app_version
@@ -8120,6 +8127,64 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertEqual(len(save_calls), 1)
                 self.assertEqual(web_manager.STATE["books"]["book"]["path"], novel_path)
                 self.assertEqual(web_manager.STATE["books"]["book"]["profile_suggestions"], [{"name": "steampunk_fantasy"}])
+        finally:
+            web_manager.STATE = old_state
+            web_manager.get_base_dir = old_base_dir
+            web_manager._profile_suggestions = old_profile_suggestions
+            web_manager._save_state = old_save_state
+            web_manager.LAST_BOOK_SYNC_AT = old_last_sync
+            web_manager.SYNC_BOOKS_TTL_SECONDS = old_ttl
+
+    def test_web_manager_sync_refreshes_suggestions_after_profile_algorithm_change(self):
+        old_state = web_manager.STATE
+        old_base_dir = web_manager.get_base_dir
+        old_profile_suggestions = web_manager._profile_suggestions
+        old_save_state = web_manager._save_state
+        old_last_sync = web_manager.LAST_BOOK_SYNC_AT
+        old_ttl = web_manager.SYNC_BOOKS_TTL_SECONDS
+        save_calls = []
+        suggestion_calls = []
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                os.makedirs(os.path.join(tmp, "novels"), exist_ok=True)
+                os.makedirs(os.path.join(tmp, "results"), exist_ok=True)
+                novel_path = os.path.join(tmp, "novels", "book.txt")
+                with open(novel_path, "w", encoding="utf-8") as f:
+                    f.write("大唐皇帝与朝廷边军议事。")
+                stat = os.stat(novel_path)
+
+                web_manager.STATE = {
+                    "books": {
+                        "book": {
+                            "id": "book",
+                            "name": "book",
+                            "path": novel_path,
+                            "profile": "auto",
+                            "status": "idle",
+                            "profile_suggestions": [{"name": "general"}],
+                            "suggestion_signature": f"{stat.st_mtime}:{stat.st_size}",
+                        }
+                    },
+                    "tasks": [],
+                }
+                web_manager.get_base_dir = lambda: tmp
+
+                def fake_profile_suggestions(_path, _book_name):
+                    suggestion_calls.append("called")
+                    return [{"name": "history"}]
+
+                web_manager._profile_suggestions = fake_profile_suggestions
+                web_manager._save_state = lambda: save_calls.append(json.dumps(web_manager.STATE, sort_keys=True))
+                web_manager.LAST_BOOK_SYNC_AT = 0.0
+                web_manager.SYNC_BOOKS_TTL_SECONDS = 0.0
+
+                web_manager._sync_books_from_disk()
+
+                book = web_manager.STATE["books"]["book"]
+                self.assertEqual(suggestion_calls, ["called"])
+                self.assertEqual(book["profile_suggestions"], [{"name": "history"}])
+                self.assertIn(analysis_profiles.PROFILE_INFERENCE_ALGORITHM_VERSION, book["suggestion_signature"])
+                self.assertEqual(len(save_calls), 1)
         finally:
             web_manager.STATE = old_state
             web_manager.get_base_dir = old_base_dir
