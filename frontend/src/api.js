@@ -67,7 +67,8 @@ function _formatErrorResponse(text, status) {
   if (!text) return `HTTP ${status}`
   try {
     const data = JSON.parse(text)
-    const parts = [data.error, data.detail, data.hint].filter(Boolean)
+    const resultText = typeof data.result === 'string' ? data.result : ''
+    const parts = [data.error || resultText, data.detail, data.hint].filter(Boolean)
     return parts.length ? parts.join('：') : text
   } catch {
     return text

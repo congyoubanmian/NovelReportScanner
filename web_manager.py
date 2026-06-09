@@ -1044,6 +1044,13 @@ def _validate_json_payload_schema(payload, schema):
     return True, ""
 
 
+def _operation_response(ok, result):
+    response = {"ok": ok, "result": result}
+    if not ok and isinstance(result, str):
+        response["error"] = result
+    return response
+
+
 def _web_access_token():
     return os.environ.get("WEB_ACCESS_TOKEN", "").strip()
 
@@ -2391,7 +2398,7 @@ class Handler(BaseHTTPRequestHandler):
             except (PermissionError, OSError) as exc:
                 self._send_storage_error(exc)
                 return
-            self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
+            self._send_json(_operation_response(ok, result), 200 if ok else 409)
             return
         if parsed.path == "/api/enqueue-batch":
             if not self._require_auth(parsed):
@@ -2437,7 +2444,7 @@ class Handler(BaseHTTPRequestHandler):
             except (PermissionError, OSError) as exc:
                 self._send_storage_error(exc)
                 return
-            self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
+            self._send_json(_operation_response(ok, result), 200 if ok else 409)
             return
         if parsed.path == "/api/prioritize":
             if not self._require_auth(parsed):
@@ -2452,7 +2459,7 @@ class Handler(BaseHTTPRequestHandler):
             except (PermissionError, OSError) as exc:
                 self._send_storage_error(exc)
                 return
-            self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
+            self._send_json(_operation_response(ok, result), 200 if ok else 409)
             return
         if parsed.path == "/api/move-queue":
             if not self._require_auth(parsed):
@@ -2467,7 +2474,7 @@ class Handler(BaseHTTPRequestHandler):
             except (PermissionError, OSError) as exc:
                 self._send_storage_error(exc)
                 return
-            self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
+            self._send_json(_operation_response(ok, result), 200 if ok else 409)
             return
         if parsed.path == "/api/delete":
             if not self._require_auth(parsed):
@@ -2482,7 +2489,7 @@ class Handler(BaseHTTPRequestHandler):
             except (PermissionError, OSError) as exc:
                 self._send_storage_error(exc)
                 return
-            self._send_json({"ok": ok, "result": result}, 200 if ok else 409)
+            self._send_json(_operation_response(ok, result), 200 if ok else 409)
             return
         if parsed.path == "/api/delete-batch":
             if not self._require_auth(parsed):

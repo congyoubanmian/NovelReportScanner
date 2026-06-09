@@ -1235,6 +1235,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("autoSelected: Boolean(s.auto_selected)", book_detail_text)
         self.assertIn("Top{{ s.rank || i + 1 }}", book_detail_text)
 
+    def test_frontend_api_formats_operation_result_errors(self):
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        api_path = os.path.join(base_dir, "frontend", "src", "api.js")
+        with open(api_path, "r", encoding="utf-8") as f:
+            text = f.read()
+        self.assertIn("typeof data.result === 'string'", text)
+        self.assertIn("data.error || resultText", text)
+
     def test_rate_limit_scope_auto_resolves_by_key_count(self):
         self.assertEqual(Timerror.normalize_rate_limit_scope("auto", 1), "global")
         self.assertEqual(Timerror.normalize_rate_limit_scope("auto", 2), "per_key")
@@ -5763,6 +5771,52 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
             web_manager.STATE = old_state
             web_manager._save_state = old_save_state
+            if old_token is None:
+                os.environ.pop("WEB_ACCESS_TOKEN", None)
+            else:
+                os.environ["WEB_ACCESS_TOKEN"] = old_token
+
+    def test_web_manager_operation_failure_response_includes_error(self):
+        class FakeHandler(web_manager.Handler):
+            def __init__(self, body):
+                self.path = "/api/enqueue"
+                self.headers = {
+                    "Content-Length": str(len(body)),
+                    "X-Web-Unsafe-Action": "confirm",
+                }
+                self.rfile = io.BytesIO(body)
+                self.sent = []
+
+            def _send_json(self, data, status=200):
+                self.sent.append((status, data))
+
+        old_state = web_manager.STATE
+        old_token = os.environ.get("WEB_ACCESS_TOKEN")
+        try:
+            os.environ.pop("WEB_ACCESS_TOKEN", None)
+            web_manager.STATE = {
+                "books": {
+                    "busy": {
+                        "id": "busy",
+                        "name": "busy",
+                        "path": "/tmp/busy.txt",
+                        "profile": "general",
+                        "status": "queued",
+                    }
+                },
+                "tasks": [],
+            }
+            body = json.dumps({"book_id": "busy"}, ensure_ascii=False).encode("utf-8")
+            handler = FakeHandler(body)
+
+            web_manager.Handler.do_POST(handler)
+
+            self.assertEqual(handler.sent[0][0], 409)
+            self.assertFalse(handler.sent[0][1]["ok"])
+            self.assertEqual(handler.sent[0][1]["result"], "book already queued or running")
+            self.assertEqual(handler.sent[0][1]["error"], "book already queued or running")
+        finally:
+            web_manager.STATE = old_state
             if old_token is None:
                 os.environ.pop("WEB_ACCESS_TOKEN", None)
             else:
