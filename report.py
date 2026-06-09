@@ -21,6 +21,7 @@ from shared_utils import (
     create_chat_completion,
     get_base_dir,
     read_file_safely,
+    read_int_env,
 )
 from token_tracker import create_default_tracker
 from analysis_profiles import load_analysis_profile
@@ -512,7 +513,7 @@ BASE_URL = os.environ.get("BASE_URL", "https://api.deepseek.com")
 # 模型选择：可修改为其他已部署模型或通过环境变量 MODEL_NAME 覆盖
 MODEL = os.environ.get("MODEL_NAME", "deepseek-chat")
 # 并发线程数（用于润色并发），可通过环境变量 MAX_WORKERS 覆盖。
-MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "4"))
+MAX_WORKERS = read_int_env("MAX_WORKERS", 4, min_value=1)
 
 # API Key 支持池化：优先 API_KEY_POOL（逗号分隔），否则回退 API_KEY
 API_KEY_POOL = [

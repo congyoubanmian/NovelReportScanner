@@ -28,6 +28,8 @@ from shared_utils import (
     get_base_dir,
     iter_completed_futures,
     read_file_safely,
+    read_float_env,
+    read_int_env,
     should_retry_without_json_mode_error,
 )
 from prompt_templates import prompt_template_metadata, prompt_templates_metadata
@@ -46,27 +48,27 @@ API_KEY = API_KEY_POOL[0] if API_KEY_POOL else ""
 BASE_URL = os.environ.get("BASE_URL", "https://api.deepseek.com")
 MODEL = os.environ.get("MODEL_NAME", "deepseek-chat")
 CHUNK_SIZE = 6000
-CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", "1200"))
-MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "6"))
+CHUNK_OVERLAP = read_int_env("CHUNK_OVERLAP", 1200, min_value=0)
+MAX_WORKERS = read_int_env("MAX_WORKERS", 6, min_value=1)
 ENABLE_FACT_BOOST = os.environ.get("ENABLE_FACT_BOOST", "1").strip() == "1"
-FACT_BOOST_MAX_CALLS_PER_CHUNK = int(os.environ.get("FACT_BOOST_MAX_CALLS_PER_CHUNK", "2"))
-DIM_BOOST_MAX_PER_CHUNK = int(os.environ.get("DIM_BOOST_MAX_PER_CHUNK", "3"))
+FACT_BOOST_MAX_CALLS_PER_CHUNK = read_int_env("FACT_BOOST_MAX_CALLS_PER_CHUNK", 2, min_value=0)
+DIM_BOOST_MAX_PER_CHUNK = read_int_env("DIM_BOOST_MAX_PER_CHUNK", 3, min_value=0)
 # 扫描完成后自动“补扫遗漏/失败块”的轮数（避免因网络/格式偶发导致的缺块）
-RESCAN_ROUNDS = int(os.environ.get("RESCAN_ROUNDS", "3"))
+RESCAN_ROUNDS = read_int_env("RESCAN_ROUNDS", 3, min_value=0)
 # 补扫阶段线程数（默认更保守，降低被限流/超时概率）
-RESCAN_MAX_WORKERS = int(os.environ.get("RESCAN_MAX_WORKERS", "4"))
+RESCAN_MAX_WORKERS = read_int_env("RESCAN_MAX_WORKERS", 4, min_value=1)
 ENABLE_GLOBAL_RESCAN = os.environ.get("ENABLE_GLOBAL_RESCAN", "1").strip() == "1"
-MAX_MIDDLE_SUMMARY_CALLS = int(os.environ.get("MAX_MIDDLE_SUMMARY_CALLS", "10"))
-INITIAL_SCAN_BLOCK_MULTIPLIER = int(os.environ.get("INITIAL_SCAN_BLOCK_MULTIPLIER", "3"))
-INITIAL_SCAN_MIN_BLOCK_SIZE = int(os.environ.get("INITIAL_SCAN_MIN_BLOCK_SIZE", "6"))
+MAX_MIDDLE_SUMMARY_CALLS = read_int_env("MAX_MIDDLE_SUMMARY_CALLS", 10, min_value=0)
+INITIAL_SCAN_BLOCK_MULTIPLIER = read_int_env("INITIAL_SCAN_BLOCK_MULTIPLIER", 3, min_value=1)
+INITIAL_SCAN_MIN_BLOCK_SIZE = read_int_env("INITIAL_SCAN_MIN_BLOCK_SIZE", 6, min_value=1)
 # ---- 全局补扫优化 配置 ----
-RESCAN_MAX_HITS = int(os.environ.get("RESCAN_MAX_HITS", "4"))
-RESCAN_PRE_FILTER_THRESHOLD = float(os.environ.get("RESCAN_PRE_FILTER_THRESHOLD", "1.0"))
-RESCAN_MAX_WINDOW = int(os.environ.get("RESCAN_MAX_WINDOW", "2000"))
-RESCAN_MAX_PROMPT_HEROINES = int(os.environ.get("RESCAN_MAX_PROMPT_HEROINES", "4"))
-RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER = int(os.environ.get("RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER", "2"))
-HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH = int(os.environ.get("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH", "1"))
-HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS = int(os.environ.get("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS", "1200"))
+RESCAN_MAX_HITS = read_int_env("RESCAN_MAX_HITS", 4, min_value=0)
+RESCAN_PRE_FILTER_THRESHOLD = read_float_env("RESCAN_PRE_FILTER_THRESHOLD", 1.0, min_value=0.0)
+RESCAN_MAX_WINDOW = read_int_env("RESCAN_MAX_WINDOW", 2000, min_value=0)
+RESCAN_MAX_PROMPT_HEROINES = read_int_env("RESCAN_MAX_PROMPT_HEROINES", 4, min_value=1)
+RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER = read_int_env("RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER", 2, min_value=0)
+HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH = read_int_env("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH", 1, min_value=0, max_value=4)
+HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS = read_int_env("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS", 1200, min_value=0)
 
 RULES_FILE = os.environ.get("ANALYSIS_RULES_FILE") or os.path.join(
     get_base_dir(),

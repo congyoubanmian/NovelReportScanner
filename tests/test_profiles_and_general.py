@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -1122,6 +1123,56 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     os.environ.pop(key, None)
                 else:
                     os.environ[key] = value
+
+    def test_scan_modules_tolerate_invalid_numeric_envs_on_import(self):
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        env = os.environ.copy()
+        env.update({
+            "API_KEY": "sk-test",
+            "MAX_WORKERS": "bad",
+            "CHUNK_OVERLAP": "bad",
+            "FACT_BOOST_MAX_CALLS_PER_CHUNK": "bad",
+            "DIM_BOOST_MAX_PER_CHUNK": "bad",
+            "RESCAN_ROUNDS": "bad",
+            "RESCAN_MAX_WORKERS": "bad",
+            "MAX_MIDDLE_SUMMARY_CALLS": "bad",
+            "INITIAL_SCAN_BLOCK_MULTIPLIER": "bad",
+            "INITIAL_SCAN_MIN_BLOCK_SIZE": "bad",
+            "RESCAN_MAX_HITS": "bad",
+            "RESCAN_PRE_FILTER_THRESHOLD": "bad",
+            "RESCAN_MAX_WINDOW": "bad",
+            "RESCAN_MAX_PROMPT_HEROINES": "bad",
+            "RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER": "bad",
+            "HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH": "bad",
+            "HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS": "bad",
+            "GENERAL_SCAN_CHUNK_SIZE": "bad",
+            "GENERAL_SCAN_CHUNK_OVERLAP": "bad",
+            "GENERAL_SCAN_MAX_CHUNKS": "bad",
+            "GENERAL_SCAN_CONTEXT_MAX_CHARS": "bad",
+            "ALIAS_CROSS_MERGE_MAX_PAYLOAD_CHARS": "bad",
+            "ALIAS_CROSS_MERGE_MAX_LIST_ITEMS": "bad",
+            "ALIAS_CROSS_MERGE_MAX_FIELD_CHARS": "bad",
+        })
+        code = (
+            "import general_scan, novel_scan, protagonist, report\n"
+            "assert general_scan.CHUNK_SIZE == 12000\n"
+            "assert general_scan.CHUNK_OVERLAP == 1000\n"
+            "assert general_scan.MAX_CHUNKS == 80\n"
+            "assert general_scan.CONTEXT_MAX_CHARS == 1600\n"
+            "assert novel_scan.MAX_WORKERS == 6\n"
+            "assert novel_scan.RESCAN_PRE_FILTER_THRESHOLD == 1.0\n"
+            "assert protagonist.ALIAS_CROSS_MERGE_MAX_LIST_ITEMS == 3\n"
+            "assert report.MAX_WORKERS == 4\n"
+        )
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=base_dir,
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=15,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
 
     def test_frontend_runtime_config_exposes_auto_rate_limit_scope(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -6107,6 +6158,144 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertIsNone(fake_socket.timeout)
         finally:
             web_manager.ThreadingHTTPServer.get_request = old_get_request
+
+    def test_web_manager_run_server_uses_loaded_env_host_port_by_default(self):
+        created_servers = []
+
+        class FakeServer:
+            def __init__(self, address, handler, request_timeout=None):
+                self.address = address
+                self.handler = handler
+                self.request_timeout = request_timeout
+                created_servers.append(self)
+
+            def serve_forever(self):
+                return None
+
+        old_base_dir = web_manager.get_base_dir
+        old_server_class = web_manager.TimeoutHTTPServer
+        old_load_state = web_manager._load_state
+        old_start_worker_once = web_manager._start_worker_once
+        old_config_ready = web_manager.CONFIG_READY
+        old_env = {key: os.environ.get(key) for key in ("API_KEY", "API_KEY_POOL", "WEB_HOST", "WEB_PORT")}
+        runtime_names = (
+            "MAX_UPLOAD_SIZE",
+            "MAX_JSON_BODY_SIZE",
+            "FILE_RESPONSE_CHUNK_SIZE",
+            "WEB_REQUEST_TIMEOUT_SECONDS",
+            "SYNC_BOOKS_TTL_SECONDS",
+            "OUTPUTS_CACHE_TTL_SECONDS",
+            "SSE_STATE_INTERVAL_SECONDS",
+            "SSE_SYNC_INTERVAL_SECONDS",
+            "SSE_MAX_CONNECTION_SECONDS",
+            "SCAN_CANCEL_TIMEOUT_SECONDS",
+            "SCAN_HEARTBEAT_INTERVAL_SECONDS",
+            "SCAN_STALL_TIMEOUT_SECONDS",
+            "SCAN_FUTURE_STALL_TIMEOUT_SECONDS",
+        )
+        old_runtime = {name: getattr(web_manager, name) for name in runtime_names}
+        try:
+            for key in old_env:
+                os.environ.pop(key, None)
+            with tempfile.TemporaryDirectory() as tmp:
+                with open(os.path.join(tmp, ".env"), "w", encoding="utf-8") as f:
+                    f.write(
+                        "API_KEY=sk-test\n"
+                        "WEB_HOST=0.0.0.0\n"
+                        "WEB_PORT=9876\n"
+                        "MAX_UPLOAD_SIZE=2048\n"
+                        "MAX_JSON_BODY_SIZE=4096\n"
+                        "FILE_RESPONSE_CHUNK_SIZE=512\n"
+                        "WEB_REQUEST_TIMEOUT=7.5\n"
+                        "SYNC_BOOKS_TTL_SECONDS=1.5\n"
+                        "OUTPUTS_CACHE_TTL_SECONDS=2.5\n"
+                        "SSE_STATE_INTERVAL_SECONDS=0.5\n"
+                        "SSE_SYNC_INTERVAL_SECONDS=0.75\n"
+                        "SSE_MAX_CONNECTION_SECONDS=9.5\n"
+                        "SCAN_CANCEL_TIMEOUT_SECONDS=1.25\n"
+                        "SCAN_HEARTBEAT_INTERVAL_SECONDS=1.75\n"
+                    )
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.TimeoutHTTPServer = FakeServer
+                web_manager._load_state = lambda: None
+                web_manager._start_worker_once = lambda: None
+
+                web_manager.run_server()
+
+                self.assertEqual(created_servers[0].address, ("0.0.0.0", 9876))
+                self.assertTrue(web_manager.CONFIG_READY)
+                self.assertEqual(created_servers[0].request_timeout, 7.5)
+                summary = web_manager._runtime_config_summary()["web"]
+                self.assertEqual(summary["max_upload_size"], 2048)
+                self.assertEqual(summary["max_json_body_size"], 4096)
+                self.assertEqual(summary["file_response_chunk_size"], 512)
+                self.assertEqual(summary["request_timeout"], 7.5)
+                self.assertEqual(summary["sync_books_ttl_seconds"], 1.5)
+                self.assertEqual(summary["outputs_cache_ttl_seconds"], 2.5)
+                self.assertEqual(summary["sse_state_interval_seconds"], 0.5)
+                self.assertEqual(summary["sse_sync_interval_seconds"], 0.75)
+                self.assertEqual(summary["sse_max_connection_seconds"], 9.5)
+        finally:
+            web_manager.get_base_dir = old_base_dir
+            web_manager.TimeoutHTTPServer = old_server_class
+            web_manager._load_state = old_load_state
+            web_manager._start_worker_once = old_start_worker_once
+            web_manager.CONFIG_READY = old_config_ready
+            for name, value in old_runtime.items():
+                setattr(web_manager, name, value)
+            for key, value in old_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_web_manager_run_server_explicit_address_overrides_env(self):
+        created_servers = []
+
+        class FakeServer:
+            def __init__(self, address, handler, request_timeout=None):
+                self.address = address
+                self.handler = handler
+                self.request_timeout = request_timeout
+                created_servers.append(self)
+
+            def serve_forever(self):
+                return None
+
+        old_base_dir = web_manager.get_base_dir
+        old_server_class = web_manager.TimeoutHTTPServer
+        old_load_state = web_manager._load_state
+        old_start_worker_once = web_manager._start_worker_once
+        old_config_ready = web_manager.CONFIG_READY
+        old_env = {key: os.environ.get(key) for key in ("API_KEY", "API_KEY_POOL", "WEB_HOST", "WEB_PORT")}
+        old_request_timeout = web_manager.WEB_REQUEST_TIMEOUT_SECONDS
+        try:
+            for key in old_env:
+                os.environ.pop(key, None)
+            with tempfile.TemporaryDirectory() as tmp:
+                with open(os.path.join(tmp, ".env"), "w", encoding="utf-8") as f:
+                    f.write("API_KEY=sk-test\nWEB_HOST=0.0.0.0\nWEB_PORT=9876\n")
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.TimeoutHTTPServer = FakeServer
+                web_manager._load_state = lambda: None
+                web_manager._start_worker_once = lambda: None
+
+                web_manager.run_server("127.0.0.1", 8765)
+
+                self.assertEqual(created_servers[0].address, ("127.0.0.1", 8765))
+                self.assertTrue(web_manager.CONFIG_READY)
+        finally:
+            web_manager.get_base_dir = old_base_dir
+            web_manager.TimeoutHTTPServer = old_server_class
+            web_manager._load_state = old_load_state
+            web_manager._start_worker_once = old_start_worker_once
+            web_manager.CONFIG_READY = old_config_ready
+            web_manager.WEB_REQUEST_TIMEOUT_SECONDS = old_request_timeout
+            for key, value in old_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
 
     def test_web_manager_scan_subprocess_parses_result_and_logs_output(self):
         class FakeProcess:

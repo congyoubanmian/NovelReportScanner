@@ -26,7 +26,7 @@ from analysis_profiles import (
     profile_options,
 )
 from main import _WEB_SCAN_RESULT_PREFIX, _generate_run_id, get_base_dir, load_configs
-from shared_utils import configure_rotating_file_logger
+from shared_utils import configure_rotating_file_logger, read_float_env, read_int_env
 
 
 STATE_LOCK = threading.RLock()
@@ -36,19 +36,23 @@ RUNNING_TASK_PROCS = {}
 WORKER_STARTED = False
 STATE = {"books": {}, "tasks": []}
 CONFIG_READY = False
-MAX_UPLOAD_SIZE = int(os.environ.get("MAX_UPLOAD_SIZE", str(100 * 1024 * 1024)))
-MAX_JSON_BODY_SIZE = int(os.environ.get("MAX_JSON_BODY_SIZE", str(64 * 1024)))
-FILE_RESPONSE_CHUNK_SIZE = int(os.environ.get("FILE_RESPONSE_CHUNK_SIZE", str(1024 * 1024)))
-WEB_REQUEST_TIMEOUT_SECONDS = float(os.environ.get("WEB_REQUEST_TIMEOUT", "60"))
-SYNC_BOOKS_TTL_SECONDS = float(os.environ.get("SYNC_BOOKS_TTL_SECONDS", "5"))
-OUTPUTS_CACHE_TTL_SECONDS = float(os.environ.get("OUTPUTS_CACHE_TTL_SECONDS", "5"))
-SSE_STATE_INTERVAL_SECONDS = float(os.environ.get("SSE_STATE_INTERVAL_SECONDS", "3"))
-SSE_SYNC_INTERVAL_SECONDS = float(os.environ.get("SSE_SYNC_INTERVAL_SECONDS", str(max(SYNC_BOOKS_TTL_SECONDS, SSE_STATE_INTERVAL_SECONDS))))
-SSE_MAX_CONNECTION_SECONDS = float(os.environ.get("SSE_MAX_CONNECTION_SECONDS", "300"))
-SCAN_CANCEL_TIMEOUT_SECONDS = float(os.environ.get("SCAN_CANCEL_TIMEOUT_SECONDS", "5"))
-SCAN_HEARTBEAT_INTERVAL_SECONDS = float(os.environ.get("SCAN_HEARTBEAT_INTERVAL_SECONDS", "10"))
-SCAN_STALL_TIMEOUT_SECONDS = float(os.environ.get("SCAN_STALL_TIMEOUT_SECONDS", "1200"))
-SCAN_FUTURE_STALL_TIMEOUT_SECONDS = float(os.environ.get("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", "0"))
+MAX_UPLOAD_SIZE = read_int_env("MAX_UPLOAD_SIZE", 100 * 1024 * 1024, min_value=1)
+MAX_JSON_BODY_SIZE = read_int_env("MAX_JSON_BODY_SIZE", 64 * 1024, min_value=1)
+FILE_RESPONSE_CHUNK_SIZE = read_int_env("FILE_RESPONSE_CHUNK_SIZE", 1024 * 1024, min_value=1)
+WEB_REQUEST_TIMEOUT_SECONDS = read_float_env("WEB_REQUEST_TIMEOUT", 60.0, min_value=0.0)
+SYNC_BOOKS_TTL_SECONDS = read_float_env("SYNC_BOOKS_TTL_SECONDS", 5.0, min_value=0.0)
+OUTPUTS_CACHE_TTL_SECONDS = read_float_env("OUTPUTS_CACHE_TTL_SECONDS", 5.0, min_value=0.0)
+SSE_STATE_INTERVAL_SECONDS = read_float_env("SSE_STATE_INTERVAL_SECONDS", 3.0, min_value=0.0)
+SSE_SYNC_INTERVAL_SECONDS = read_float_env(
+    "SSE_SYNC_INTERVAL_SECONDS",
+    max(SYNC_BOOKS_TTL_SECONDS, SSE_STATE_INTERVAL_SECONDS),
+    min_value=0.0,
+)
+SSE_MAX_CONNECTION_SECONDS = read_float_env("SSE_MAX_CONNECTION_SECONDS", 300.0, min_value=0.0)
+SCAN_CANCEL_TIMEOUT_SECONDS = read_float_env("SCAN_CANCEL_TIMEOUT_SECONDS", 5.0, min_value=0.0)
+SCAN_HEARTBEAT_INTERVAL_SECONDS = read_float_env("SCAN_HEARTBEAT_INTERVAL_SECONDS", 10.0, min_value=0.0)
+SCAN_STALL_TIMEOUT_SECONDS = read_float_env("SCAN_STALL_TIMEOUT_SECONDS", 1200.0, min_value=0.0)
+SCAN_FUTURE_STALL_TIMEOUT_SECONDS = read_float_env("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", 0.0, min_value=0.0)
 APP_VERSION = os.environ.get("APP_VERSION", "dev").strip() or "dev"
 APP_COMMIT = os.environ.get("APP_COMMIT", "").strip() or "unknown"
 APP_BUILD_DATE = os.environ.get("APP_BUILD_DATE", "").strip()
@@ -1979,9 +1983,29 @@ def _try_load_runtime_config(interactive_context: str = "web"):
 
 
 def _refresh_runtime_constants_from_env():
+    global MAX_UPLOAD_SIZE, MAX_JSON_BODY_SIZE, FILE_RESPONSE_CHUNK_SIZE
+    global WEB_REQUEST_TIMEOUT_SECONDS, SYNC_BOOKS_TTL_SECONDS, OUTPUTS_CACHE_TTL_SECONDS
+    global SSE_STATE_INTERVAL_SECONDS, SSE_SYNC_INTERVAL_SECONDS, SSE_MAX_CONNECTION_SECONDS
+    global SCAN_CANCEL_TIMEOUT_SECONDS, SCAN_HEARTBEAT_INTERVAL_SECONDS
     global SCAN_STALL_TIMEOUT_SECONDS, SCAN_FUTURE_STALL_TIMEOUT_SECONDS
-    SCAN_STALL_TIMEOUT_SECONDS = float(os.environ.get("SCAN_STALL_TIMEOUT_SECONDS", "1200"))
-    SCAN_FUTURE_STALL_TIMEOUT_SECONDS = float(os.environ.get("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", "0"))
+
+    MAX_UPLOAD_SIZE = read_int_env("MAX_UPLOAD_SIZE", 100 * 1024 * 1024, min_value=1)
+    MAX_JSON_BODY_SIZE = read_int_env("MAX_JSON_BODY_SIZE", 64 * 1024, min_value=1)
+    FILE_RESPONSE_CHUNK_SIZE = read_int_env("FILE_RESPONSE_CHUNK_SIZE", 1024 * 1024, min_value=1)
+    WEB_REQUEST_TIMEOUT_SECONDS = read_float_env("WEB_REQUEST_TIMEOUT", 60.0, min_value=0.0)
+    SYNC_BOOKS_TTL_SECONDS = read_float_env("SYNC_BOOKS_TTL_SECONDS", 5.0, min_value=0.0)
+    OUTPUTS_CACHE_TTL_SECONDS = read_float_env("OUTPUTS_CACHE_TTL_SECONDS", 5.0, min_value=0.0)
+    SSE_STATE_INTERVAL_SECONDS = read_float_env("SSE_STATE_INTERVAL_SECONDS", 3.0, min_value=0.0)
+    SSE_SYNC_INTERVAL_SECONDS = read_float_env(
+        "SSE_SYNC_INTERVAL_SECONDS",
+        max(SYNC_BOOKS_TTL_SECONDS, SSE_STATE_INTERVAL_SECONDS),
+        min_value=0.0,
+    )
+    SSE_MAX_CONNECTION_SECONDS = read_float_env("SSE_MAX_CONNECTION_SECONDS", 300.0, min_value=0.0)
+    SCAN_CANCEL_TIMEOUT_SECONDS = read_float_env("SCAN_CANCEL_TIMEOUT_SECONDS", 5.0, min_value=0.0)
+    SCAN_HEARTBEAT_INTERVAL_SECONDS = read_float_env("SCAN_HEARTBEAT_INTERVAL_SECONDS", 10.0, min_value=0.0)
+    SCAN_STALL_TIMEOUT_SECONDS = read_float_env("SCAN_STALL_TIMEOUT_SECONDS", 1200.0, min_value=0.0)
+    SCAN_FUTURE_STALL_TIMEOUT_SECONDS = read_float_env("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", 0.0, min_value=0.0)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -2456,18 +2480,21 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
 
-def run_server(host="127.0.0.1", port=8765):
+def run_server(host=None, port=None):
     _try_load_runtime_config("web")
+    host = os.environ.get("WEB_HOST", "127.0.0.1") if host is None else host
+    port = os.environ.get("WEB_PORT", "8765") if port is None else port
     if not _web_auth_enabled():
         print("[WARN] WEB_ACCESS_TOKEN 未设置：读接口保持开放，写操作需要 X-Web-Unsafe-Action: confirm；公网部署建议设置访问令牌。")
     _load_state()
     _start_worker_once()
-    server = TimeoutHTTPServer((host, int(port)), Handler)
+    server = TimeoutHTTPServer((host, int(port)), Handler, request_timeout=WEB_REQUEST_TIMEOUT_SECONDS)
     print(f"Web 管理端已启动: http://{host}:{port}")
     server.serve_forever()
 
 
 if __name__ == "__main__":
+    _try_load_runtime_config("web")
     host = os.environ.get("WEB_HOST", "127.0.0.1")
-    port = int(os.environ.get("WEB_PORT", "8765"))
+    port = os.environ.get("WEB_PORT", "8765")
     run_server(host, port)
