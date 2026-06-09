@@ -460,20 +460,16 @@ Web 页面顶部可直接调整部分非敏感运行配置，包括 `MAX_WORKERS
 
 ```bash
 cd frontend
-npm run lint
-npm run format:check
-npm run build
+npm run check
 ```
 
-`npm run lint` 使用 ESLint 检查 Vue/JS 代码，并设置为零 warning 通过；`npm run format:check` 使用 Prettier 校验格式。
+`npm run check` 会依次执行 ESLint、Prettier 格式校验和生产构建；需要单独定位时也可以分别运行 `npm run lint`、`npm run format:check`、`npm run build`。
 
 仓库 CI 也会执行：
 
 - `python -m unittest discover -s tests -v`
 - `npm audit --audit-level=moderate`
-- `npm run lint`
-- `npm run format:check`
-- `npm run build`
+- `npm run check`
 
 ### 分析模式
 

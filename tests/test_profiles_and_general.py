@@ -501,6 +501,22 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("github.sha", workflow_text)
         self.assertIn("date -u", workflow_text)
 
+    def test_frontend_check_script_covers_lint_format_and_build(self):
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        package_path = os.path.join(base_dir, "frontend", "package.json")
+        workflow_path = os.path.join(base_dir, ".github", "workflows", "ci.yml")
+        with open(package_path, "r", encoding="utf-8") as f:
+            package_data = json.load(f)
+        with open(workflow_path, "r", encoding="utf-8") as f:
+            workflow_text = f.read()
+
+        scripts = package_data.get("scripts") or {}
+        check_script = scripts.get("check", "")
+        self.assertIn("npm run lint", check_script)
+        self.assertIn("npm run format:check", check_script)
+        self.assertIn("npm run build", check_script)
+        self.assertIn("npm run check", workflow_text)
+
     def test_gitignore_blocks_runtime_inputs_and_keeps_templates(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
         gitignore_path = os.path.join(base_dir, ".gitignore")
