@@ -48,6 +48,7 @@ SSE_MAX_CONNECTION_SECONDS = float(os.environ.get("SSE_MAX_CONNECTION_SECONDS", 
 SCAN_CANCEL_TIMEOUT_SECONDS = float(os.environ.get("SCAN_CANCEL_TIMEOUT_SECONDS", "5"))
 SCAN_HEARTBEAT_INTERVAL_SECONDS = float(os.environ.get("SCAN_HEARTBEAT_INTERVAL_SECONDS", "10"))
 SCAN_STALL_TIMEOUT_SECONDS = float(os.environ.get("SCAN_STALL_TIMEOUT_SECONDS", "1200"))
+SCAN_FUTURE_STALL_TIMEOUT_SECONDS = float(os.environ.get("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", "0"))
 APP_VERSION = os.environ.get("APP_VERSION", "dev").strip() or "dev"
 APP_COMMIT = os.environ.get("APP_COMMIT", "").strip() or "unknown"
 APP_BUILD_DATE = os.environ.get("APP_BUILD_DATE", "").strip()
@@ -80,6 +81,7 @@ EDITABLE_RUNTIME_CONFIG = {
     "general_scan_context_max_chars": {"env": "GENERAL_SCAN_CONTEXT_MAX_CHARS", "type": "int", "min": 0, "max": 10000},
     "rescan_skip_chronic_parse_failure_after": {"env": "RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER", "type": "int", "min": 0, "max": 20},
     "scan_stall_timeout_seconds": {"env": "SCAN_STALL_TIMEOUT_SECONDS", "type": "int", "min": 0, "max": 86400},
+    "scan_future_stall_timeout_seconds": {"env": "SCAN_FUTURE_STALL_TIMEOUT_SECONDS", "type": "int", "min": 0, "max": 86400},
     "harem_plus_general_scan": {"env": "HAREM_PLUS_GENERAL_SCAN", "type": "bool"},
 }
 BOOK_ID_PAYLOAD_SCHEMA = {
@@ -482,6 +484,7 @@ def _runtime_config_summary():
         "general_scan_knowledge_base_llm_merge": _env_bool_value(os.environ.get("GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE", "0")),
         "general_scan_context_max_chars": os.environ.get("GENERAL_SCAN_CONTEXT_MAX_CHARS", "1600"),
         "rescan_skip_chronic_parse_failure_after": os.environ.get("RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER", "2"),
+        "scan_future_stall_timeout_seconds": os.environ.get("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", "0"),
         "harem_plus_general_scan": _env_bool_value(os.environ.get("HAREM_PLUS_GENERAL_SCAN", "0")),
         "editable": sorted(EDITABLE_RUNTIME_CONFIG.keys()),
         "runtime_only": True,
@@ -914,7 +917,7 @@ def _persist_runtime_config_to_env_file(values):
 
 
 def _update_runtime_config(values):
-    global SCAN_STALL_TIMEOUT_SECONDS
+    global SCAN_STALL_TIMEOUT_SECONDS, SCAN_FUTURE_STALL_TIMEOUT_SECONDS
     if not isinstance(values, dict):
         return False, "config must be an object"
     normalized = {}
@@ -929,6 +932,8 @@ def _update_runtime_config(values):
         os.environ[EDITABLE_RUNTIME_CONFIG[field]["env"]] = value
         if field == "scan_stall_timeout_seconds":
             SCAN_STALL_TIMEOUT_SECONDS = float(value or 0)
+        elif field == "scan_future_stall_timeout_seconds":
+            SCAN_FUTURE_STALL_TIMEOUT_SECONDS = float(value or 0)
     # 尝试持久化到 .env 文件（失败不影响内存中的更新）
     _persist_runtime_config_to_env_file(normalized)
     return True, _runtime_config_summary()

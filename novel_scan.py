@@ -65,6 +65,7 @@ RESCAN_MAX_PROMPT_HEROINES = int(os.environ.get("RESCAN_MAX_PROMPT_HEROINES", "4
 RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER = int(os.environ.get("RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER", "2"))
 HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH = int(os.environ.get("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH", "1"))
 HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS = int(os.environ.get("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS", "1200"))
+SCAN_FUTURE_STALL_TIMEOUT_SECONDS = float(os.environ.get("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", "0"))
 
 RULES_FILE = os.environ.get("ANALYSIS_RULES_FILE") or os.path.join(
     get_base_dir(),
@@ -3113,6 +3114,34 @@ def _cancel_pending_futures(futures, current_future=None, executor=None):
             executor.shutdown(wait=False)
 
 
+def _iter_completed_futures(futures, phase_name="", timeout_seconds=None, executor=None):
+    timeout = SCAN_FUTURE_STALL_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
+    try:
+        timeout = float(timeout or 0)
+    except (TypeError, ValueError):
+        timeout = 0.0
+
+    if timeout <= 0:
+        yield from concurrent.futures.as_completed(futures)
+        return
+
+    pending = set(futures)
+    while pending:
+        done, pending = concurrent.futures.wait(
+            pending,
+            timeout=timeout,
+            return_when=concurrent.futures.FIRST_COMPLETED,
+        )
+        if not done:
+            _cancel_pending_futures(pending, executor=executor)
+            prefix = f"{phase_name} " if phase_name else ""
+            raise TimeoutError(
+                f"{prefix}future stall timeout after {timeout:g}s without completed task"
+            )
+        for future in done:
+            yield future
+
+
 def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protagonist, fact_boost_prompt,
                                    all_issues, all_heroine_facts, extra_relations_all, processed_chunks, failed_chunks,
                                    chunk_summaries=None, chunk_failure_diagnostics=None, middle_summary_state=None,
@@ -3169,23 +3198,29 @@ def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protago
                 for block_id, block_indices in enumerate(blocks)
                 if block_indices
             }
-            for future in concurrent.futures.as_completed(futures):
-                block_id = futures[future]
-                try:
-                    result = future.result()
-                except Exception as exc:
-                    logger.error(f"线程块 {block_id} 崩溃: {exc}", exc_info=True)
-                    if not fatal_error_msg:
-                        fatal_error_msg = str(exc)
+            try:
+                for future in _iter_completed_futures(futures, phase_name="首扫线程块", executor=executor):
+                    block_id = futures[future]
+                    try:
+                        result = future.result()
+                    except Exception as exc:
+                        logger.error(f"线程块 {block_id} 崩溃: {exc}", exc_info=True)
+                        if not fatal_error_msg:
+                            fatal_error_msg = str(exc)
+                            _cancel_pending_futures(futures, current_future=future, executor=executor)
+                            executor_cancelled = True
+                            break
+                        continue
+                    block_results[block_id] = result
+                    if result.get("fatal_error"):
                         _cancel_pending_futures(futures, current_future=future, executor=executor)
                         executor_cancelled = True
-                        break
-                    continue
-                block_results[block_id] = result
-                if result.get("fatal_error"):
-                    _cancel_pending_futures(futures, current_future=future, executor=executor)
-                    executor_cancelled = True
-                    return result.get("fatal_error")
+                        return result.get("fatal_error")
+            except TimeoutError as exc:
+                fatal_error_msg = str(exc)
+                logger.error(f"首扫线程块等待超时: {fatal_error_msg}")
+                _cancel_pending_futures(futures, executor=executor)
+                executor_cancelled = True
         finally:
             if not executor_cancelled:
                 executor.shutdown(wait=True)
@@ -4450,55 +4485,61 @@ def _run_scan_for_indices(chunks, indices, system_prompt, heroines, male_protago
                 for i in pending_indices
             }
             fatal_error = None
-            for future in concurrent.futures.as_completed(futures):
-                idx = futures[future]
-                try:
-                    idx, issues, heroine_facts, extra_rel, next_summary, ok, fatal, err_msg = future.result()
-                except Exception as e:
-                    ok, fatal, err_msg = False, False, str(e)
-                    issues, heroine_facts, extra_rel = [], [], []
-                    next_summary = ""
+            try:
+                for future in _iter_completed_futures(futures, phase_name=phase_name, executor=executor):
+                    idx = futures[future]
+                    try:
+                        idx, issues, heroine_facts, extra_rel, next_summary, ok, fatal, err_msg = future.result()
+                    except Exception as e:
+                        ok, fatal, err_msg = False, False, str(e)
+                        issues, heroine_facts, extra_rel = [], [], []
+                        next_summary = ""
 
-                if fatal:
-                    fatal_error = err_msg or "所有 API_KEY 均不可用"
-                    with CHECKPOINT_LOCK:
-                        failed_chunks.add(idx)
-                        _record_chunk_failure_diagnostic(idx, chunks[idx], err_msg=err_msg, chunk_failure_diagnostics=diagnostics)
-                        save_checkpoint(
-                            all_issues,
-                            all_heroine_facts,
-                            processed_chunks,
-                            extra_relations_all,
-                            failed_chunks=failed_chunks,
-                            current_chunk_idx=idx,
-                            chunk_failure_diagnostics=diagnostics if explicit_failure_diagnostics else None,
-                            checkpoint_file=checkpoint_file,
-                        )
-                        _advance_chunk_progress(idx, processed_chunks, failed_chunks, progress_state)
-                    logger.error(f"❌ 致命错误，终止{phase_name}：chunk={idx} err={fatal_error}")
-                    _cancel_pending_futures(futures, current_future=future, executor=executor)
-                    executor_cancelled = True
-                    break
+                    if fatal:
+                        fatal_error = err_msg or "所有 API_KEY 均不可用"
+                        with CHECKPOINT_LOCK:
+                            failed_chunks.add(idx)
+                            _record_chunk_failure_diagnostic(idx, chunks[idx], err_msg=err_msg, chunk_failure_diagnostics=diagnostics)
+                            save_checkpoint(
+                                all_issues,
+                                all_heroine_facts,
+                                processed_chunks,
+                                extra_relations_all,
+                                failed_chunks=failed_chunks,
+                                current_chunk_idx=idx,
+                                chunk_failure_diagnostics=diagnostics if explicit_failure_diagnostics else None,
+                                checkpoint_file=checkpoint_file,
+                            )
+                            _advance_chunk_progress(idx, processed_chunks, failed_chunks, progress_state)
+                        logger.error(f"❌ 致命错误，终止{phase_name}：chunk={idx} err={fatal_error}")
+                        _cancel_pending_futures(futures, current_future=future, executor=executor)
+                        executor_cancelled = True
+                        break
 
-                _commit_chunk_result(
-                    idx,
-                    issues,
-                    heroine_facts,
-                    extra_rel,
-                    next_summary,
-                    ok,
-                    err_msg,
-                    all_issues=all_issues,
-                    all_heroine_facts=all_heroine_facts,
-                    extra_relations_all=extra_relations_all,
-                    processed_chunks=processed_chunks,
-                    failed_chunks=failed_chunks,
-                    progress_state=progress_state,
-                    chunk_text=chunks[idx],
-                    chunk_summaries=summaries if explicit_chunk_summaries else None,
-                    chunk_failure_diagnostics=diagnostics if explicit_failure_diagnostics else None,
-                    checkpoint_file=checkpoint_file,
-                )
+                    _commit_chunk_result(
+                        idx,
+                        issues,
+                        heroine_facts,
+                        extra_rel,
+                        next_summary,
+                        ok,
+                        err_msg,
+                        all_issues=all_issues,
+                        all_heroine_facts=all_heroine_facts,
+                        extra_relations_all=extra_relations_all,
+                        processed_chunks=processed_chunks,
+                        failed_chunks=failed_chunks,
+                        progress_state=progress_state,
+                        chunk_text=chunks[idx],
+                        chunk_summaries=summaries if explicit_chunk_summaries else None,
+                        chunk_failure_diagnostics=diagnostics if explicit_failure_diagnostics else None,
+                        checkpoint_file=checkpoint_file,
+                    )
+            except TimeoutError as exc:
+                fatal_error = str(exc)
+                logger.error(f"{phase_name}阶段等待超时: {fatal_error}")
+                _cancel_pending_futures(futures, executor=executor)
+                executor_cancelled = True
 
             return fatal_error
         finally:

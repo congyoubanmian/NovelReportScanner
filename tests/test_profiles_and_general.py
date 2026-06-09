@@ -473,6 +473,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH=1", env_sample_text)
         self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS: ${HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS:-1200}", compose_text)
         self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS=1200", env_sample_text)
+        self.assertIn("SCAN_FUTURE_STALL_TIMEOUT_SECONDS: ${SCAN_FUTURE_STALL_TIMEOUT_SECONDS:-0}", compose_text)
+        self.assertIn("SCAN_FUTURE_STALL_TIMEOUT_SECONDS=0", env_sample_text)
 
     def test_docker_entrypoint_requires_web_token_and_writable_volumes(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -635,6 +637,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS", text)
         self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH", text)
         self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS", text)
+        self.assertIn("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", text)
         self.assertIn("/api/diagnostics", text)
         self.assertIn("stale_running_count", text)
         self.assertIn("app.commit", text)
@@ -2181,6 +2184,58 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertFalse(current.cancelled)
         self.assertTrue(pending.cancelled)
         self.assertFalse(already_done.cancelled)
+        self.assertEqual(executor.shutdown_args, {"wait": False, "cancel_futures": True})
+
+    def test_iter_completed_futures_default_uses_as_completed(self):
+        class FakeFuture:
+            pass
+
+        first = FakeFuture()
+        second = FakeFuture()
+        called = []
+
+        def fake_as_completed(futures):
+            called.append(list(futures))
+            return iter([second, first])
+
+        with mock.patch.object(novel_scan.concurrent.futures, "as_completed", side_effect=fake_as_completed):
+            result = list(novel_scan._iter_completed_futures({first: "a", second: "b"}, timeout_seconds=0))
+
+        self.assertEqual(result, [second, first])
+        self.assertEqual(called, [[first, second]])
+
+    def test_iter_completed_futures_timeout_cancels_pending(self):
+        class FakeFuture:
+            def __init__(self):
+                self.cancelled = False
+
+            def done(self):
+                return False
+
+            def cancel(self):
+                self.cancelled = True
+
+        class FakeExecutor:
+            def __init__(self):
+                self.shutdown_args = None
+
+            def shutdown(self, **kwargs):
+                self.shutdown_args = kwargs
+
+        pending = FakeFuture()
+        executor = FakeExecutor()
+
+        def fake_wait(fs, timeout=None, return_when=None):
+            self.assertEqual(set(fs), {pending})
+            self.assertEqual(timeout, 3.0)
+            self.assertEqual(return_when, novel_scan.concurrent.futures.FIRST_COMPLETED)
+            return set(), set(fs)
+
+        with mock.patch.object(novel_scan.concurrent.futures, "wait", side_effect=fake_wait):
+            with self.assertRaisesRegex(TimeoutError, "补扫 future stall timeout"):
+                list(novel_scan._iter_completed_futures({pending: 1}, phase_name="补扫", timeout_seconds=3, executor=executor))
+
+        self.assertTrue(pending.cancelled)
         self.assertEqual(executor.shutdown_args, {"wait": False, "cancel_futures": True})
 
     def test_scan_checkpoint_incremental_delta_merges_on_load(self):
@@ -5252,11 +5307,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_CONTEXT_MAX_CHARS",
             "RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER",
             "SCAN_STALL_TIMEOUT_SECONDS",
+            "SCAN_FUTURE_STALL_TIMEOUT_SECONDS",
             "HAREM_PLUS_GENERAL_SCAN",
             "API_KEY",
         ]
         old_env = {key: os.environ.get(key) for key in keys}
         old_stall_timeout = web_manager.SCAN_STALL_TIMEOUT_SECONDS
+        old_future_stall_timeout = web_manager.SCAN_FUTURE_STALL_TIMEOUT_SECONDS
         try:
             os.environ["API_KEY"] = "sk-secret"
             ok, result = web_manager._update_runtime_config({
@@ -5284,6 +5341,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "general_scan_context_max_chars": "800",
                 "rescan_skip_chronic_parse_failure_after": "3",
                 "scan_stall_timeout_seconds": "900",
+                "scan_future_stall_timeout_seconds": "600",
                 "harem_plus_general_scan": True,
             })
 
@@ -5313,6 +5371,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER"], "3")
             self.assertEqual(os.environ["SCAN_STALL_TIMEOUT_SECONDS"], "900")
             self.assertEqual(web_manager.SCAN_STALL_TIMEOUT_SECONDS, 900)
+            self.assertEqual(os.environ["SCAN_FUTURE_STALL_TIMEOUT_SECONDS"], "600")
+            self.assertEqual(web_manager.SCAN_FUTURE_STALL_TIMEOUT_SECONDS, 600)
             self.assertEqual(os.environ["HAREM_PLUS_GENERAL_SCAN"], "1")
             self.assertEqual(result["max_workers"], "4")
             self.assertFalse(result["general_scan_smart_density"])
@@ -5333,6 +5393,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(result["harem_scan_chunk_size"], "6500")
             self.assertEqual(result["harem_scan_max_tokens"], "2800")
             self.assertEqual(result["harem_scan_retry_workers"], "1")
+            self.assertEqual(result["scan_future_stall_timeout_seconds"], "600")
             self.assertEqual(result["web"]["scan_stall_timeout_seconds"], 900)
             self.assertTrue(result["web"]["scan_stall_watchdog_enabled"])
             self.assertTrue(result["harem_plus_general_scan"])
@@ -5358,6 +5419,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertIn("one of", error)
         finally:
             web_manager.SCAN_STALL_TIMEOUT_SECONDS = old_stall_timeout
+            web_manager.SCAN_FUTURE_STALL_TIMEOUT_SECONDS = old_future_stall_timeout
             for key, value in old_env.items():
                 if value is None:
                     os.environ.pop(key, None)
@@ -5523,10 +5585,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_CONTEXT_MAX_CHARS": "general_scan_context_max_chars",
             "RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER": "rescan_skip_chronic_parse_failure_after",
             "SCAN_STALL_TIMEOUT_SECONDS": "scan_stall_timeout_seconds",
+            "SCAN_FUTURE_STALL_TIMEOUT_SECONDS": "scan_future_stall_timeout_seconds",
             "HAREM_PLUS_GENERAL_SCAN": "harem_plus_general_scan",
         }
         old_values = {env: os.environ.get(env) for env in env_field_map}
         old_stall_timeout = web_manager.SCAN_STALL_TIMEOUT_SECONDS
+        old_future_stall_timeout = web_manager.SCAN_FUTURE_STALL_TIMEOUT_SECONDS
 
         with tempfile.TemporaryDirectory() as tmpdir:
             env_path = os.path.join(tmpdir, ".env")
@@ -5571,6 +5635,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "general_scan_context_max_chars": 800,
                     "rescan_skip_chronic_parse_failure_after": 3,
                     "scan_stall_timeout_seconds": 900,
+                    "scan_future_stall_timeout_seconds": 600,
                     "harem_plus_general_scan": True,
                 })
                 self.assertTrue(ok)
@@ -5598,6 +5663,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS=800", lines)
                 self.assertIn("RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER=3", lines)
                 self.assertIn("SCAN_STALL_TIMEOUT_SECONDS=900", lines)
+                self.assertIn("SCAN_FUTURE_STALL_TIMEOUT_SECONDS=600", lines)
                 self.assertIn("HAREM_PLUS_GENERAL_SCAN=1", lines)
                 # 旧值不应残留
                 self.assertNotIn("MAX_WORKERS=4", lines)
@@ -5616,6 +5682,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     else:
                         os.environ[env] = value
                 web_manager.SCAN_STALL_TIMEOUT_SECONDS = old_stall_timeout
+                web_manager.SCAN_FUTURE_STALL_TIMEOUT_SECONDS = old_future_stall_timeout
 
     def test_web_manager_handler_rejects_unauthorized_api_requests(self):
         class FakeHandler(web_manager.Handler):

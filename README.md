@@ -386,6 +386,7 @@ WEB_REQUEST_TIMEOUT=60
 SCAN_CANCEL_TIMEOUT_SECONDS=5
 SCAN_HEARTBEAT_INTERVAL_SECONDS=10
 SCAN_STALL_TIMEOUT_SECONDS=1200
+SCAN_FUTURE_STALL_TIMEOUT_SECONDS=0
 MAX_UPLOAD_SIZE=104857600
 MAX_JSON_BODY_SIZE=65536
 FILE_RESPONSE_CHUNK_SIZE=1048576
@@ -435,6 +436,7 @@ SSE_MAX_CONNECTION_SECONDS=300
 - `HAREM_SCAN_RETRY_WORKERS`：后宫补漏扫描并发，默认 `1`。单 Key 或网关不稳定时保持低并发更稳，多 Key 且服务稳定时可适当调高。
 - `HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH`：后宫单块遇到 `504` / timeout / context overflow 后自动切半降载的最大深度，默认 `1`；设为 `0` 可关闭。默认只把失败块拆成两半，避免额外请求失控。
 - `HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS`：小于该字符数的后宫片段不再切半，默认 `1200`，避免把低信息片段拆得过碎。
+- `SCAN_FUTURE_STALL_TIMEOUT_SECONDS`：扫描进程内部并发阶段如果超过该秒数没有任何线程任务完成，会取消待处理任务并把当前阶段标记为失败，默认 `0` 关闭。它和 Web 层 `SCAN_STALL_TIMEOUT_SECONDS` 不同，后者只看子进程是否持续产生日志；线上排查 SDK/API 调用长期不返回时可临时设为 `600-1800`。
 
 Web 管理端常用配置：
 
@@ -445,7 +447,7 @@ Web 管理端常用配置：
 - `WEB_REQUEST_TIMEOUT`：单个 HTTP 连接的 socket 超时时间，默认 `60` 秒；设为 `0` 可关闭。
 - `SCAN_CANCEL_TIMEOUT_SECONDS`：取消运行中扫描时，等待子进程正常退出的秒数，超时后会强制结束，默认 `5`。
 - `SCAN_HEARTBEAT_INTERVAL_SECONDS`：扫描子进程有日志输出时，Web 状态写入 `updated_at/last_log_at` 的节流间隔，默认 `10` 秒；设为 `0` 表示每条日志都更新。
-- `SCAN_STALL_TIMEOUT_SECONDS`：运行中的扫描子进程如果超过该秒数没有任何日志输出，会被自动终止并标记失败，默认 `1200`。设为 `0` 可关闭；如果模型单次请求经常超过 20 分钟，可以适当调高。
+- `SCAN_STALL_TIMEOUT_SECONDS`：运行中的扫描子进程如果超过该秒数没有任何日志输出，会被自动终止并标记失败，默认 `1200`。设为 `0` 可关闭；如果模型单次请求经常超过 20 分钟，可以适当调高。若日志仍持续输出但扫描阶段内某个线程一直不返回，可再开启 `SCAN_FUTURE_STALL_TIMEOUT_SECONDS`。
 - Web 访问日志写入 `results/web_logs/web_access.log`，使用 `LOG_MAX_BYTES` / `LOG_BACKUP_COUNT` 控制轮转，并会脱敏 URL 中的访问令牌。
 - `MAX_UPLOAD_SIZE`：单个上传 `.txt` 文件大小上限，默认 `104857600` 字节。
 - `MAX_JSON_BODY_SIZE`：JSON API 请求体大小上限，默认 `65536` 字节；写操作接口会校验必填字段和基础类型。
@@ -546,6 +548,7 @@ profiles/
 - `RESCAN_MAX_WINDOW`：全局补扫时，允许截取的最大上下文窗口长度。值越大，单次 prompt 的上下文更完整，但 prompt 本身也会更长、更费 token。
 - `RESCAN_MAX_PROMPT_HEROINES`：单次全局补扫 prompt 最多携带多少名女主。值越大，单次覆盖的人物更多，但 prompt 更拥挤，token 成本也更高。
 - `RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER`：同一片段连续多次因模型输出 JSON 截断、代码块未闭合或括号不平衡失败后，后续补扫轮跳过该片段并保留 failed_chunks 诊断。默认 `2`，可设为 `0` 关闭跳过。
+- `SCAN_FUTURE_STALL_TIMEOUT_SECONDS`：首扫线程块和补扫线程池的“无完成任务”保护。默认 `0` 不启用；启用后如果一个并发阶段超过该秒数没有任何 future 完成，会取消剩余任务、保存已有断点并返回明确的 timeout 错误，避免扫描进程内部无限等待。Python 线程无法强杀已经卡在 SDK/网络栈里的调用，极端情况下仍需要配合 Web 层 `SCAN_STALL_TIMEOUT_SECONDS` 终止整个扫描子进程。
 
 如果你的目标是“先稳定跑通、控制成本”，更推荐先用较保守的配置；只有在你明确发现漏扫比较严重、并且能接受成本上涨时，再逐步调高这些参数。
 
