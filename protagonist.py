@@ -55,6 +55,8 @@ CHUNK_SIZE = read_int_env(
 )
 HAREM_SCAN_MAX_TOKENS = read_int_env("HAREM_SCAN_MAX_TOKENS", 3000, min_value=500)
 HAREM_SCAN_RETRY_WORKERS = read_int_env("HAREM_SCAN_RETRY_WORKERS", 1, min_value=1)
+HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH = read_int_env("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH", 1, min_value=0, max_value=4)
+HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS = read_int_env("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS", 1200, min_value=0)
 GENERAL_CHARACTER_MAX_TOKENS = read_int_env("GENERAL_CHARACTER_MAX_TOKENS", 2400, min_value=500)
 GENERAL_CHARACTER_RETRY_MAX_TOKENS = read_int_env("GENERAL_CHARACTER_RETRY_MAX_TOKENS", 1400, min_value=500)
 GENERAL_CHARACTER_MAX_PER_CHUNK = read_int_env("GENERAL_CHARACTER_MAX_PER_CHUNK", 8, min_value=3, max_value=30)
@@ -1453,18 +1455,19 @@ def _split_text_for_downshift(text):
     return [text[:split_at].strip(), text[split_at:].strip()]
 
 
-def _merge_downshift_character_results(partial_results, chunk_index, error_type):
+def _merge_downshift_character_results(partial_results, chunk_index, error_type, profile_mode="general"):
     merged = {
         "male_protagonist": None,
         "female_characters": [],
-        "general_characters": [],
-        "profile_mode": "general",
+        "profile_mode": profile_mode,
         "discarded_facts": [],
         "_success": True,
         "_error": "",
         "_error_type": "",
         "partial_reason": f"{error_type}_downshift_split",
     }
+    if profile_mode == "general":
+        merged["general_characters"] = []
     seen_chars = set()
     for part_index, result in enumerate(partial_results, 1):
         if not isinstance(result, dict):
@@ -1472,7 +1475,8 @@ def _merge_downshift_character_results(partial_results, chunk_index, error_type)
         if not merged["male_protagonist"] and result.get("male_protagonist"):
             merged["male_protagonist"] = dict(result["male_protagonist"])
             merged["male_protagonist"].setdefault("partial_index", part_index)
-        for field in ("female_characters", "general_characters"):
+        fields = ("female_characters", "general_characters") if profile_mode == "general" else ("female_characters",)
+        for field in fields:
             for item in result.get(field) or []:
                 if not isinstance(item, dict):
                     continue
@@ -1489,30 +1493,36 @@ def _merge_downshift_character_results(partial_results, chunk_index, error_type)
                 merged[field].append(copied)
         merged["discarded_facts"].extend(result.get("discarded_facts") or [])
 
+    scan_field = "general_character_scan" if profile_mode == "general" else "harem_character_scan"
     merged["discarded_facts"].append(discarded_fact(
-        "general_character_scan",
+        scan_field,
         {"partial_count": len(partial_results), "chunk_index": chunk_index},
         merged["partial_reason"],
-        "通用角色识别遇到 API/超时错误后切分文本降载成功",
+        f"{'通用角色识别' if profile_mode == 'general' else '男主/女主识别'}遇到 API/超时或解析错误后切分文本降载成功",
         chunk_index,
     ))
-    return _cap_general_character_response(merged, chunk_index)
+    if profile_mode == "general":
+        return _cap_general_character_response(merged, chunk_index)
+    return merged
 
 
-def _should_downshift_general_character_chunk(profile_mode, text_chunk, depth):
-    return (
-        profile_mode == "general"
-        and depth < max(0, GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH)
-        and len(text_chunk or "") >= max(2, GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS)
-    )
+def _downshift_character_limits(profile_mode):
+    if profile_mode == "general":
+        return GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH, GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS
+    return HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH, HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS
 
 
-def _downshift_general_character_chunk(text_chunk, chunk_index, total_chunks, max_retries, depth, error_type):
+def _should_downshift_character_chunk(profile_mode, text_chunk, depth):
+    max_depth, min_chars = _downshift_character_limits(profile_mode)
+    return depth < max(0, max_depth) and len(text_chunk or "") >= max(2, min_chars)
+
+
+def _downshift_character_chunk(text_chunk, chunk_index, total_chunks, max_retries, depth, error_type, profile_mode):
     parts = [part for part in _split_text_for_downshift(text_chunk) if part.strip()]
     if len(parts) < 2:
         return None
     logger.warning(
-        f"Chunk {chunk_index} 通用角色识别触发降载切分：error_type={error_type} "
+        f"Chunk {chunk_index} {_role_stage_label()}触发降载切分：error_type={error_type} "
         f"depth={depth} chars={len(text_chunk or '')} parts={len(parts)}"
     )
     partial_results = []
@@ -1534,7 +1544,7 @@ def _downshift_general_character_chunk(text_chunk, chunk_index, total_chunks, ma
             }
         partial_results.append(part_result)
     if partial_results:
-        return _merge_downshift_character_results(partial_results, chunk_index, error_type)
+        return _merge_downshift_character_results(partial_results, chunk_index, error_type, profile_mode=profile_mode)
     return None
 
 
@@ -1558,15 +1568,16 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
         should_try_compact_retry = retry < max_retries - 1
         if (
             not should_try_compact_retry
-            and _should_downshift_general_character_chunk(profile_mode, text_chunk, _downshift_depth)
+            and _should_downshift_character_chunk(profile_mode, text_chunk, _downshift_depth)
         ):
-            downshifted = _downshift_general_character_chunk(
+            downshifted = _downshift_character_chunk(
                 text_chunk,
                 chunk_index,
                 total_chunks,
                 max_retries,
                 _downshift_depth,
                 "parse_error",
+                profile_mode,
             )
             if downshifted is not None:
                 return downshifted
@@ -1619,14 +1630,15 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
                 continue
             logger.error(f"Chunk {chunk_index} API调用失败 (尝试 {retry+1}/{max_retries}): {e}")
             if is_retryable_transport_error(e):
-                if _should_downshift_general_character_chunk(profile_mode, text_chunk, _downshift_depth):
-                    downshifted = _downshift_general_character_chunk(
+                if _should_downshift_character_chunk(profile_mode, text_chunk, _downshift_depth):
+                    downshifted = _downshift_character_chunk(
                         text_chunk,
                         chunk_index,
                         total_chunks,
                         max_retries,
                         _downshift_depth,
                         error_type,
+                        profile_mode,
                     )
                     if downshifted is not None:
                         return downshifted

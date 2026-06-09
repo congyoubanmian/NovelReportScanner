@@ -637,6 +637,117 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertIn("API调用失败", result["_error"])
 
+    def test_harem_character_chunk_downshifts_api_504_by_splitting_text(self):
+        class Response:
+            status_code = 504
+
+        class GatewayTimeout(RuntimeError):
+            response = Response()
+
+        calls = []
+        old_call = protagonist._call_json_chat_completion
+        old_sleep = protagonist.time.sleep
+        old_profile = os.environ.get("ANALYSIS_PROFILE")
+        old_depth = protagonist.HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH
+        old_min_chars = protagonist.HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS
+        try:
+            def fake_call(_messages, **_kwargs):
+                calls.append("call")
+                if len(calls) == 1:
+                    raise GatewayTimeout("gateway timeout 504")
+                name = "辛月" if len(calls) == 2 else "李安澜"
+                return {
+                    "male_protagonist": {"name": "云烨", "gender": "male", "summary": "主角行动"},
+                    "female_characters": [{
+                        "name": name,
+                        "score": 8,
+                        "identity": "女主候选",
+                        "summary": f"{name}与云烨互动",
+                        "is_potential_heroine": True,
+                    }],
+                }
+
+            os.environ["ANALYSIS_PROFILE"] = "harem"
+            protagonist._call_json_chat_completion = fake_call
+            protagonist.time.sleep = lambda *_args, **_kwargs: None
+            protagonist.HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH = 1
+            protagonist.HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS = 20
+            result = protagonist.analyze_chunk_for_heroines(
+                "云烨在长安遇见辛月。李安澜随后入场与他对话。" * 20,
+                chunk_index=12,
+                total_chunks=452,
+                max_retries=2,
+            )
+        finally:
+            protagonist._call_json_chat_completion = old_call
+            protagonist.time.sleep = old_sleep
+            protagonist.HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH = old_depth
+            protagonist.HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS = old_min_chars
+            if old_profile is None:
+                os.environ.pop("ANALYSIS_PROFILE", None)
+            else:
+                os.environ["ANALYSIS_PROFILE"] = old_profile
+
+        self.assertTrue(result["_success"])
+        self.assertEqual(result["partial_reason"], "api_error_downshift_split")
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(result["male_protagonist"]["name"], "云烨")
+        self.assertEqual([item["name"] for item in result["female_characters"]], ["辛月", "李安澜"])
+        self.assertEqual(result["discarded_facts"][-1]["field"], "harem_character_scan")
+        self.assertEqual(result["discarded_facts"][-1]["reason"], "api_error_downshift_split")
+
+    def test_harem_character_chunk_downshifts_parse_error_by_splitting_text(self):
+        calls = []
+        old_call = protagonist._call_json_chat_completion
+        old_sleep = protagonist.time.sleep
+        old_profile = os.environ.get("ANALYSIS_PROFILE")
+        old_depth = protagonist.HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH
+        old_min_chars = protagonist.HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS
+        try:
+            def fake_call(_messages, **_kwargs):
+                calls.append("call")
+                if len(calls) <= 2:
+                    raise ValueError("truncated_json_response; response_flags=json_unbalanced; response_len=6200")
+                name = "辛月" if len(calls) == 3 else "李安澜"
+                return {
+                    "male_protagonist": {"name": "云烨", "gender": "male", "summary": "主角行动"},
+                    "female_characters": [{
+                        "name": name,
+                        "score": 8,
+                        "identity": "女主候选",
+                        "summary": f"{name}与云烨互动",
+                        "is_potential_heroine": True,
+                    }],
+                }
+
+            os.environ["ANALYSIS_PROFILE"] = "harem"
+            protagonist._call_json_chat_completion = fake_call
+            protagonist.time.sleep = lambda *_args, **_kwargs: None
+            protagonist.HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH = 1
+            protagonist.HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS = 20
+            result = protagonist.analyze_chunk_for_heroines(
+                "云烨在长安遇见辛月。李安澜随后入场与他对话。" * 20,
+                chunk_index=18,
+                total_chunks=452,
+                max_retries=2,
+            )
+        finally:
+            protagonist._call_json_chat_completion = old_call
+            protagonist.time.sleep = old_sleep
+            protagonist.HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH = old_depth
+            protagonist.HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS = old_min_chars
+            if old_profile is None:
+                os.environ.pop("ANALYSIS_PROFILE", None)
+            else:
+                os.environ["ANALYSIS_PROFILE"] = old_profile
+
+        self.assertTrue(result["_success"])
+        self.assertEqual(result["partial_reason"], "parse_error_downshift_split")
+        self.assertEqual(len(calls), 4)
+        self.assertEqual([item["name"] for item in result["female_characters"]], ["辛月", "李安澜"])
+        self.assertEqual(result["discarded_facts"][-1]["field"], "harem_character_scan")
+        self.assertEqual(result["discarded_facts"][-1]["reason"], "parse_error_downshift_split")
+
     def test_general_character_chunk_downshifts_api_504_by_splitting_text(self):
         class Response:
             status_code = 504
@@ -1701,6 +1812,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("<span>5xx快败</span>", text)
         self.assertIn("harem_scan_chunk_size: '7000'", text)
         self.assertIn("configForm.harem_scan_chunk_size", text)
+        self.assertIn("harem_scan_api_downshift_max_depth: '1'", text)
+        self.assertIn("config.harem_scan_api_downshift_max_depth || '1'", text)
+        self.assertIn("configForm.harem_scan_api_downshift_max_depth", text)
+        self.assertIn("harem_scan_api_downshift_min_chars: '1200'", text)
+        self.assertIn("config.harem_scan_api_downshift_min_chars || '1200'", text)
+        self.assertIn("configForm.harem_scan_api_downshift_min_chars", text)
+        self.assertIn("<span>后宫降载</span>", text)
+        self.assertIn("<span>后宫阈值</span>", text)
         self.assertIn("general_character_api_downshift_max_depth: '1'", text)
         self.assertIn("config.general_character_api_downshift_max_depth || '1'", text)
         self.assertIn("configForm.general_character_api_downshift_max_depth", text)
@@ -6446,6 +6565,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "HAREM_SCAN_CHUNK_SIZE",
             "HAREM_SCAN_MAX_TOKENS",
             "HAREM_SCAN_RETRY_WORKERS",
+            "HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH",
+            "HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS",
             "GENERAL_SCAN_MAX_CHUNKS",
             "GENERAL_CHARACTER_MAX_TOKENS",
             "GENERAL_CHARACTER_RETRY_MAX_TOKENS",
@@ -6486,6 +6607,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "harem_scan_chunk_size": "6500",
                 "harem_scan_max_tokens": "2800",
                 "harem_scan_retry_workers": "1",
+                "harem_scan_api_downshift_max_depth": "2",
+                "harem_scan_api_downshift_min_chars": "900",
                 "general_scan_max_chunks": "120",
                 "general_character_max_tokens": "2300",
                 "general_character_retry_max_tokens": "1200",
@@ -6521,6 +6644,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["HAREM_SCAN_CHUNK_SIZE"], "6500")
             self.assertEqual(os.environ["HAREM_SCAN_MAX_TOKENS"], "2800")
             self.assertEqual(os.environ["HAREM_SCAN_RETRY_WORKERS"], "1")
+            self.assertEqual(os.environ["HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH"], "2")
+            self.assertEqual(os.environ["HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS"], "900")
             self.assertEqual(os.environ["GENERAL_SCAN_MAX_CHUNKS"], "120")
             self.assertEqual(os.environ["GENERAL_CHARACTER_MAX_TOKENS"], "2300")
             self.assertEqual(os.environ["GENERAL_CHARACTER_RETRY_MAX_TOKENS"], "1200")
@@ -6566,6 +6691,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(result["harem_scan_chunk_size"], "6500")
             self.assertEqual(result["harem_scan_max_tokens"], "2800")
             self.assertEqual(result["harem_scan_retry_workers"], "1")
+            self.assertEqual(result["harem_scan_api_downshift_max_depth"], "2")
+            self.assertEqual(result["harem_scan_api_downshift_min_chars"], "900")
             self.assertEqual(result["general_character_api_downshift_max_depth"], "1")
             self.assertEqual(result["general_character_api_downshift_min_chars"], "4000")
             self.assertEqual(result["scan_future_stall_timeout_seconds"], "600")
@@ -6805,6 +6932,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "HAREM_SCAN_CHUNK_SIZE": "harem_scan_chunk_size",
             "HAREM_SCAN_MAX_TOKENS": "harem_scan_max_tokens",
             "HAREM_SCAN_RETRY_WORKERS": "harem_scan_retry_workers",
+            "HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH": "harem_scan_api_downshift_max_depth",
+            "HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS": "harem_scan_api_downshift_min_chars",
             "GENERAL_SCAN_MAX_CHUNKS": "general_scan_max_chunks",
             "GENERAL_CHARACTER_MAX_TOKENS": "general_character_max_tokens",
             "GENERAL_CHARACTER_RETRY_MAX_TOKENS": "general_character_retry_max_tokens",
@@ -6862,6 +6991,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "harem_scan_chunk_size": 6500,
                     "harem_scan_max_tokens": 2800,
                     "harem_scan_retry_workers": 1,
+                    "harem_scan_api_downshift_max_depth": 2,
+                    "harem_scan_api_downshift_min_chars": 900,
                     "general_character_max_tokens": 2300,
                     "general_character_retry_max_tokens": 1200,
                     "general_character_max_per_chunk": 7,
@@ -6896,6 +7027,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("HAREM_SCAN_CHUNK_SIZE=6500", lines)
                 self.assertIn("HAREM_SCAN_MAX_TOKENS=2800", lines)
                 self.assertIn("HAREM_SCAN_RETRY_WORKERS=1", lines)
+                self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH=2", lines)
+                self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS=900", lines)
                 self.assertIn("GENERAL_CHARACTER_MAX_TOKENS=2300", lines)
                 self.assertIn("GENERAL_CHARACTER_RETRY_MAX_TOKENS=1200", lines)
                 self.assertIn("GENERAL_CHARACTER_MAX_PER_CHUNK=7", lines)
