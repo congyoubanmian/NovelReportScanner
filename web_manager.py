@@ -1050,6 +1050,50 @@ def _collect_book_outputs_from_result(book_id, result, profiles=None):
     return _merge_output_links(candidates)[:100]
 
 
+def _book_title_variants(book_id):
+    if not book_id:
+        return []
+    text = str(book_id).strip()
+    variants = [text]
+    if text.startswith("《") and "》" in text:
+        variants.append(text.split("》", 1)[0] + "》")
+    else:
+        variants.append(f"《{text}》")
+    deduped = []
+    for item in variants:
+        if item and item not in deduped:
+            deduped.append(item)
+    return deduped
+
+
+def _result_dir_matches_book(parent, book_id):
+    if not parent or not book_id:
+        return False
+    for marker in ("_scan_", "_general_", "_characters_", "_heroine_", "_protagonist_", "_review_", "_verify_"):
+        if marker in parent:
+            return parent.split(marker, 1)[0] == book_id
+    return parent in _book_title_variants(book_id)
+
+
+def _output_filename_matches_book(filename, book_id, profile_names):
+    if not filename or not book_id:
+        return False
+    exact_filenames = {f"{book_id}_GENERAL_SUMMARY_latest.json"}
+    exact_filenames.update(
+        f"{book_id}_{name}_GENERAL_SUMMARY_latest.json"
+        for name in profile_names
+        if name and name != "general"
+    )
+    if filename in exact_filenames:
+        return True
+    report_suffixes = ("扫书报告", "通用小说报告")
+    return any(
+        filename.startswith(f"{title}{suffix}_") or filename.startswith(f"{title}{suffix}.")
+        for title in _book_title_variants(book_id)
+        for suffix in report_suffixes
+    )
+
+
 def _find_book_outputs(book_id):
     now = time.monotonic()
     results_dir = os.path.join(get_base_dir(), "results")
@@ -1072,28 +1116,19 @@ def _find_book_outputs(book_id):
         _add_output_link(outputs_by_path, path, "final_report")
 
     profile_names = [profile.name for profile in list_available_profiles()]
-    filename_patterns = [
-        f"{book_id}扫书报告",
-        f"《{book_id}》扫书报告",
-        f"{book_id}通用小说报告",
-        f"《{book_id}》通用小说报告",
-        f"{book_id}_GENERAL_SUMMARY_latest.json",
-    ]
-    filename_patterns.extend(f"{book_id}_{name}_GENERAL_SUMMARY_latest.json" for name in profile_names if name != "general")
     scan_dir_outputs = {"GENERAL_SUMMARY.json", "VERIFIED_REPORT.txt", "FULL_REPORT.txt"}
     output_exts = {".txt", ".json", ".log", ".md", ".csv"}
 
     for root, _dirs, files in os.walk(results_dir):
         parent = os.path.basename(root)
-        in_book_dir = book_id in parent
+        in_book_dir = _result_dir_matches_book(parent, book_id)
         for filename in files:
             ext = os.path.splitext(filename)[1].lower()
             if ext not in output_exts:
                 continue
             path = os.path.join(root, filename)
             matched = (
-                any(pattern in filename for pattern in filename_patterns)
-                or book_id in filename
+                _output_filename_matches_book(filename, book_id, profile_names)
                 or (in_book_dir and (filename in scan_dir_outputs or ext in {".txt", ".json"}))
             )
             if matched:

@@ -6302,6 +6302,48 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 with open(checkpoint_path, "w", encoding="utf-8") as f:
                     f.write(old_checkpoint)
 
+    def test_web_manager_book_outputs_do_not_match_substring_books(self):
+        old_base_dir = web_manager.get_base_dir
+        old_cache = dict(web_manager.OUTPUTS_CACHE)
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                results_dir = os.path.join(tmp, "results")
+                os.makedirs(results_dir, exist_ok=True)
+                files = [
+                    "九锡_GENERAL_SUMMARY_latest.json",
+                    "九锡扫书报告_20260609.txt",
+                    "大九锡扫书报告_20260609.txt",
+                    "九锡外传_GENERAL_SUMMARY_latest.json",
+                ]
+                for filename in files:
+                    with open(os.path.join(results_dir, filename), "w", encoding="utf-8") as f:
+                        f.write("{}")
+                right_dir = os.path.join(results_dir, "九锡_scan_20260609")
+                wrong_dir = os.path.join(results_dir, "九锡外传_scan_20260609")
+                os.makedirs(right_dir)
+                os.makedirs(wrong_dir)
+                with open(os.path.join(right_dir, "GENERAL_SUMMARY.json"), "w", encoding="utf-8") as f:
+                    f.write("{}")
+                with open(os.path.join(wrong_dir, "GENERAL_SUMMARY.json"), "w", encoding="utf-8") as f:
+                    f.write("{}")
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.OUTPUTS_CACHE.clear()
+
+                outputs = web_manager._find_book_outputs("九锡")
+
+                names = {item["name"] for item in outputs}
+                self.assertIn("九锡_GENERAL_SUMMARY_latest.json", names)
+                self.assertIn("九锡扫书报告_20260609.txt", names)
+                self.assertIn("GENERAL_SUMMARY.json", names)
+                self.assertNotIn("大九锡扫书报告_20260609.txt", names)
+                self.assertNotIn("九锡外传_GENERAL_SUMMARY_latest.json", names)
+                paths = {item["path"] for item in outputs}
+                self.assertNotIn(os.path.join(wrong_dir, "GENERAL_SUMMARY.json"), paths)
+        finally:
+            web_manager.get_base_dir = old_base_dir
+            web_manager.OUTPUTS_CACHE.clear()
+            web_manager.OUTPUTS_CACHE.update(old_cache)
+
     def test_web_manager_uses_persisted_output_index_without_walking_results(self):
         old_state = web_manager.STATE
         old_base_dir = web_manager.get_base_dir
