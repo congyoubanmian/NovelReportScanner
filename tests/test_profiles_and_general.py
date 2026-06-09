@@ -578,6 +578,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("API_SERVER_ERROR_MAX_RETRIES=2", env_sample_text)
         self.assertIn("API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS: ${API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS:-20000}", compose_text)
         self.assertIn("API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS=20000", env_sample_text)
+        self.assertIn("GENERAL_CHARACTER_MAX_PER_CHUNK: ${GENERAL_CHARACTER_MAX_PER_CHUNK:-12}", compose_text)
+        self.assertIn("GENERAL_CHARACTER_MAX_PER_CHUNK=12", env_sample_text)
         self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH: ${HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH:-1}", compose_text)
         self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH=1", env_sample_text)
         self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS: ${HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS:-1200}", compose_text)
@@ -14864,6 +14866,48 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(sampled_indices, sorted(sampled_indices))
         self.assertTrue(any(450 <= idx <= 550 for idx in sampled_indices))
         self.assertEqual(protagonist._sample_chunk_indices_for_budget(1000, 0), list(range(1000)))
+
+    def test_general_character_prompt_limits_chunk_character_output(self):
+        old_limit = protagonist.GENERAL_CHARACTER_MAX_PER_CHUNK
+        try:
+            protagonist.GENERAL_CHARACTER_MAX_PER_CHUNK = 8
+            system_prompt, user_prompt = protagonist._build_general_character_prompt("正文", 0, 10)
+        finally:
+            protagonist.GENERAL_CHARACTER_MAX_PER_CHUNK = old_limit
+
+        self.assertIn("characters 最多输出 8 个", system_prompt)
+        self.assertIn("identity、traits、summary 每项不超过 50 个汉字", system_prompt)
+        self.assertIn("最多 8 个对剧情", user_prompt)
+
+    def test_general_character_response_caps_over_limit_and_records_discarded(self):
+        old_limit = protagonist.GENERAL_CHARACTER_MAX_PER_CHUNK
+        try:
+            protagonist.GENERAL_CHARACTER_MAX_PER_CHUNK = 3
+            result = {
+                "female_characters": [
+                    {"name": "路人甲", "score": 4, "role_type": "minor"},
+                    {"name": "主角", "score": 10, "role_type": "protagonist"},
+                    {"name": "反派", "score": 8, "role_type": "antagonist"},
+                    {"name": "同伴", "score": 7, "role_type": "supporting"},
+                    {"name": "路人乙", "score": 5, "role_type": "minor"},
+                ],
+                "general_characters": [
+                    {"name": "路人甲", "score": 4, "role_type": "minor"},
+                    {"name": "主角", "score": 10, "role_type": "protagonist"},
+                    {"name": "反派", "score": 8, "role_type": "antagonist"},
+                    {"name": "同伴", "score": 7, "role_type": "supporting"},
+                    {"name": "路人乙", "score": 5, "role_type": "minor"},
+                ],
+                "discarded_facts": [],
+            }
+            capped = protagonist._cap_general_character_response(result, chunk_index=12)
+        finally:
+            protagonist.GENERAL_CHARACTER_MAX_PER_CHUNK = old_limit
+
+        self.assertEqual([item["name"] for item in capped["female_characters"]], ["主角", "反派", "同伴"])
+        self.assertEqual([item["name"] for item in capped["general_characters"]], ["主角", "反派", "同伴"])
+        self.assertEqual(capped["discarded_facts"][0]["reason"], "general_character_over_limit")
+        self.assertIn("路人乙", capped["discarded_facts"][0]["value"])
 
     def test_protagonist_checkpoint_chunk_plan_must_match(self):
         current = protagonist._character_chunk_plan_metadata(

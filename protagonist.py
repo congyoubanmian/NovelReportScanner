@@ -15,7 +15,7 @@ from tqdm import tqdm
 import concurrent.futures
 import threading
 from token_tracker import create_default_tracker
-from fact_validator import classify_scan_error, validate_harem_character_result
+from fact_validator import classify_scan_error, discarded_fact, validate_harem_character_result
 from name_authority import build_conservative_alias_map, is_unsafe_alias
 from shared_utils import (
     DEFAULT_MAX_403_RETRIES,
@@ -52,6 +52,7 @@ CHUNK_SIZE = read_int_env(
 )
 HAREM_SCAN_MAX_TOKENS = read_int_env("HAREM_SCAN_MAX_TOKENS", 3000, min_value=500)
 HAREM_SCAN_RETRY_WORKERS = read_int_env("HAREM_SCAN_RETRY_WORKERS", 1, min_value=1)
+GENERAL_CHARACTER_MAX_PER_CHUNK = read_int_env("GENERAL_CHARACTER_MAX_PER_CHUNK", 12, min_value=3, max_value=30)
 GENERAL_CHARACTER_MAX_CHUNKS = read_int_env(
     "GENERAL_CHARACTER_MAX_CHUNKS",
     read_int_env("GENERAL_SCAN_MAX_CHUNKS", 80, min_value=0),
@@ -1053,6 +1054,7 @@ def _build_harem_character_prompt(text_chunk, chunk_index, total_chunks):
 
 
 def _build_general_character_prompt(text_chunk, chunk_index, total_chunks):
+    max_chars = GENERAL_CHARACTER_MAX_PER_CHUNK
     system_prompt = """你是一个专业的通用小说分析师，负责识别小说片段中的核心角色、重要配角、反派、阵营关系和关键事件。
 
 ## 核心任务：
@@ -1060,6 +1062,7 @@ def _build_general_character_prompt(text_chunk, chunk_index, total_chunks):
 2. 判断主角/视角核心候选；如果片段无法判断，可以输出 null。
 3. 为每个角色记录身份、阵营、关系、行为概要和关键事件，而不是只看恋爱关系。
 4. 评分依据是剧情重要性、事件参与度、关系网络位置和反复出现程度。
+5. characters 只输出本片段最重要的核心角色，按重要性筛选；路人、只出现一句的称谓、无剧情作用的人物不要输出。
 
 ## 评分标准：
 - 10分：主角/视角核心/绝对剧情中心
@@ -1095,7 +1098,12 @@ def _build_general_character_prompt(text_chunk, chunk_index, total_chunks):
   ]
 }
 
-只输出 JSON，不要 Markdown。片段中没有稳定可识别角色时，characters 输出 []。"""
+只输出 JSON，不要 Markdown。片段中没有稳定可识别角色时，characters 输出 []。
+输出压缩要求：
+- characters 最多输出 """ + str(max_chars) + """ 个；优先保留 score>=6 或 role_type 为 protagonist/deuteragonist/antagonist 的角色。
+- other_names 最多 4 个，relationships/key_events 最多各 2 条。
+- identity、traits、summary 每项不超过 50 个汉字；relationships/key_events 每条不超过 40 个汉字。
+- 不要解释评分，不要输出原文长句。"""
 
     user_prompt = f"""请分析以下小说片段（第 {chunk_index + 1}/{total_chunks} 块），按通用小说分析标准识别所有重要角色：
 
@@ -1105,8 +1113,8 @@ def _build_general_character_prompt(text_chunk, chunk_index, total_chunks):
 
 请重点记录：
 1. 主角/视角核心候选。
-2. 所有对剧情、冲突、设定、阵营或人物关系有意义的角色。
-3. 每个角色的身份、阵营、关系、关键事件和本段作用。
+2. 最多 {max_chars} 个对剧情、冲突、设定、阵营或人物关系最有意义的角色。
+3. 每个角色的身份、阵营、关系、关键事件和本段作用，全部用短句。
 
 请以 JSON 格式输出。"""
     return system_prompt, user_prompt
@@ -1246,8 +1254,57 @@ def _normalize_harem_character_response(data, chunk_index):
 
 def _normalize_character_response(data, chunk_index, profile_mode):
     if profile_mode == "general":
-        return validate_harem_character_result(_normalize_general_character_response(data, chunk_index), chunk_index)
+        result = validate_harem_character_result(_normalize_general_character_response(data, chunk_index), chunk_index)
+        return _cap_general_character_response(result, chunk_index)
     return validate_harem_character_result(_normalize_harem_character_response(data, chunk_index), chunk_index)
+
+
+def _general_character_rank(item, position):
+    role = str(item.get("role_type") or "").strip().lower()
+    role_rank = {
+        "protagonist": 0,
+        "deuteragonist": 1,
+        "antagonist": 2,
+        "supporting": 3,
+        "minor": 4,
+    }.get(role, 5)
+    return (-_coerce_score(item.get("score", 0)), role_rank, position)
+
+
+def _cap_general_character_response(result, chunk_index):
+    if not isinstance(result, dict):
+        return result
+    limit = max(0, int(GENERAL_CHARACTER_MAX_PER_CHUNK or 0))
+    if limit <= 0:
+        return result
+    chars = [item for item in (result.get("female_characters") or []) if isinstance(item, dict)]
+    if len(chars) <= limit:
+        return result
+
+    ranked = sorted(enumerate(chars), key=lambda row: _general_character_rank(row[1], row[0]))
+    keep_positions = {position for position, _item in ranked[:limit]}
+    dropped = [item.get("name") for position, item in ranked[limit:] if item.get("name")]
+
+    result["female_characters"] = [
+        item for position, item in enumerate(chars)
+        if position in keep_positions
+    ]
+    if isinstance(result.get("general_characters"), list):
+        result["general_characters"] = [
+            item for position, item in enumerate(result.get("general_characters") or [])
+            if position in keep_positions
+        ]
+    if dropped:
+        discarded = list(result.get("discarded_facts") or [])
+        discarded.append(discarded_fact(
+            "general_characters",
+            dropped[:20],
+            "general_character_over_limit",
+            f"通用角色单块超过上限 {limit}，保留高分/核心角色",
+            chunk_index,
+        ))
+        result["discarded_facts"] = discarded
+    return result
 
 
 def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retries=3):
