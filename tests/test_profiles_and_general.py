@@ -773,9 +773,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         try:
             def fake_call(_messages, **_kwargs):
                 calls.append("call")
-                if len(calls) <= 2:
+                if len(calls) == 1:
                     raise ValueError("truncated_json_response; response_flags=json_unbalanced; response_len=6200")
-                name = "辛月" if len(calls) == 3 else "李安澜"
+                name = "辛月" if len(calls) == 2 else "李安澜"
                 return {
                     "male_protagonist": {"name": "云烨", "gender": "male", "summary": "主角行动"},
                     "female_characters": [{
@@ -810,7 +810,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertTrue(result["_success"])
         self.assertEqual(result["partial_reason"], "parse_error_downshift_split")
-        self.assertEqual(len(calls), 4)
+        self.assertEqual(len(calls), 3)
         self.assertEqual([item["name"] for item in result["female_characters"]], ["辛月", "李安澜"])
         self.assertEqual(result["discarded_facts"][-1]["field"], "harem_character_scan")
         self.assertEqual(result["discarded_facts"][-1]["reason"], "parse_error_downshift_split")
@@ -883,9 +883,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         try:
             def fake_call(messages, **_kwargs):
                 calls.append(messages)
-                if len(calls) <= 2:
+                if len(calls) == 1:
                     raise ValueError("truncated_json_response; response_flags=json_unbalanced; response_len=6200")
-                name = "云烨" if len(calls) == 3 else "李二"
+                name = "云烨" if len(calls) == 2 else "李二"
                 return {
                     "primary_protagonist": {"name": "云烨", "gender": "male", "summary": "主角行动"},
                     "characters": [{
@@ -920,7 +920,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertTrue(result["_success"])
         self.assertEqual(result["partial_reason"], "parse_error_downshift_split")
-        self.assertEqual(len(calls), 4)
+        self.assertEqual(len(calls), 3)
         self.assertIn("李二", [item["name"] for item in result["female_characters"]])
         self.assertEqual(result["discarded_facts"][-1]["reason"], "parse_error_downshift_split")
 
@@ -1063,11 +1063,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         old_profile = os.environ.get("ANALYSIS_PROFILE")
         old_depth = protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH
         old_min_chars = protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS
+        old_parse_retry = protagonist.GENERAL_CHARACTER_PARSE_DOWNSHIFT_RETRY
         try:
             def fake_call(messages, **_kwargs):
                 calls.append(messages)
                 if len(calls) == 1:
-                    raise ValueError("truncated_json_response; response_flags=json_unbalanced; response_len=6200")
+                    raise ValueError("JSON解析失败: Expecting ',' delimiter: line 12 column 8 (char 360)")
                 return {
                     "primary_protagonist": {"name": "云烨", "gender": "male", "summary": "主角行动"},
                     "characters": [],
@@ -1078,6 +1079,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             protagonist.time.sleep = lambda *_args, **_kwargs: None
             protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH = 1
             protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS = 20
+            protagonist.GENERAL_CHARACTER_PARSE_DOWNSHIFT_RETRY = 1
             result = protagonist.analyze_chunk_for_heroines(
                 "云烨在长安处理政务。辛月随后入府协助。" * 20,
                 chunk_index=18,
@@ -1089,6 +1091,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             protagonist.time.sleep = old_sleep
             protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH = old_depth
             protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS = old_min_chars
+            protagonist.GENERAL_CHARACTER_PARSE_DOWNSHIFT_RETRY = old_parse_retry
             if old_profile is None:
                 os.environ.pop("ANALYSIS_PROFILE", None)
             else:
@@ -1098,6 +1101,59 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertNotIn("partial_reason", result)
         self.assertIn("JSON修复重试要求", calls[1][1]["content"])
+
+    def test_general_character_parse_error_downshifts_after_retry_budget(self):
+        calls = []
+        old_call = protagonist._call_json_chat_completion
+        old_sleep = protagonist.time.sleep
+        old_profile = os.environ.get("ANALYSIS_PROFILE")
+        old_depth = protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH
+        old_min_chars = protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS
+        old_parse_retry = protagonist.GENERAL_CHARACTER_PARSE_DOWNSHIFT_RETRY
+        try:
+            def fake_call(messages, **_kwargs):
+                calls.append(messages)
+                if len(calls) <= 2:
+                    raise ValueError("JSON解析失败: Expecting ',' delimiter: line 240 column 6 (char 7200)")
+                name = "云烨" if len(calls) == 3 else "辛月"
+                return {
+                    "primary_protagonist": {"name": "云烨", "gender": "male", "summary": "主角行动"},
+                    "characters": [{
+                        "name": name,
+                        "gender": "male" if name == "云烨" else "female",
+                        "role_type": "protagonist" if name == "云烨" else "supporting",
+                        "score": 10 if name == "云烨" else 7,
+                        "summary": f"{name}参与事件",
+                    }],
+                }
+
+            os.environ["ANALYSIS_PROFILE"] = "general"
+            protagonist._call_json_chat_completion = fake_call
+            protagonist.time.sleep = lambda *_args, **_kwargs: None
+            protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH = 1
+            protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS = 20
+            protagonist.GENERAL_CHARACTER_PARSE_DOWNSHIFT_RETRY = 1
+            result = protagonist.analyze_chunk_for_heroines(
+                "云烨在长安处理政务。辛月随后入府协助。" * 20,
+                chunk_index=19,
+                total_chunks=452,
+                max_retries=3,
+            )
+        finally:
+            protagonist._call_json_chat_completion = old_call
+            protagonist.time.sleep = old_sleep
+            protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH = old_depth
+            protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS = old_min_chars
+            protagonist.GENERAL_CHARACTER_PARSE_DOWNSHIFT_RETRY = old_parse_retry
+            if old_profile is None:
+                os.environ.pop("ANALYSIS_PROFILE", None)
+            else:
+                os.environ["ANALYSIS_PROFILE"] = old_profile
+
+        self.assertTrue(result["_success"])
+        self.assertEqual(result["partial_reason"], "parse_error_downshift_split")
+        self.assertEqual(len(calls), 4)
+        self.assertIn("辛月", [item["name"] for item in result["female_characters"]])
 
     def test_compose_variables_are_documented_in_env_sample(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -11425,6 +11481,125 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("未见明确恋爱推进", overview["romance_progression"])
         self.assertIn("明显感情戏缺失风险", overview["romance_expectation_gap"])
         self.assertIn("工具人女主", overview["female_tooling_risk"])
+
+    def test_harem_romance_overview_compacts_llm_prompt(self):
+        captured = {}
+        old_openai = report.OpenAI
+        old_api_key_pool = report.API_KEY_POOL
+        old_section = report.REPORT_LLM_SECTION_MAX_CHARS
+        old_field = report.REPORT_LLM_FIELD_MAX_CHARS
+        old_items = report.REPORT_LLM_LIST_MAX_ITEMS
+
+        def fake_call(messages, **kwargs):
+            captured["messages"] = messages
+            captured["kwargs"] = kwargs
+            return {
+                "romance_density": "偏低：材料显示感情戏缺失。",
+                "female_presence": "存在感不足。",
+                "romance_progression": "未见明确恋爱推进。",
+                "female_tooling_risk": "女角色偏工具人。",
+                "romance_expectation_gap": "存在预期落差。",
+                "male_past_romance_risk": "男主前世老婆线索需关注。",
+            }
+
+        long_noise = "无关铺垫" * 120
+        try:
+            report.OpenAI = object
+            report.API_KEY_POOL = ["sk-test"]
+            report.REPORT_LLM_SECTION_MAX_CHARS = 6000
+            report.REPORT_LLM_FIELD_MAX_CHARS = 120
+            report.REPORT_LLM_LIST_MAX_ITEMS = 12
+            with mock.patch.object(report, "_call_json_chat_completion", side_effect=fake_call):
+                overview = report._summarize_harem_romance_overview(
+                    {
+                        "all_female_characters": {
+                            "甲女": {
+                                "count": 8,
+                                "relationships": [long_noise for _ in range(20)],
+                                "interactions": [
+                                    long_noise,
+                                    "甲女向男主表白并吃醋，推动暧昧关系。",
+                                    *[long_noise for _ in range(20)],
+                                ],
+                                "emotion_signals": ["喜欢男主并主动表白。"] + [long_noise for _ in range(20)],
+                                "summaries": ["存在感很低，后期神隐。"] + [long_noise for _ in range(40)],
+                            }
+                        }
+                    },
+                    {"heroines_purity": [{"name": f"女{i}"} for i in range(40)]},
+                    [
+                        {
+                            "name": "甲女",
+                            "relationship_type": "暧昧对象",
+                            "summary": long_noise,
+                            "character_traits": long_noise,
+                        }
+                    ],
+                    {
+                        "identity": "穿越者",
+                        "summaries": ["男主前世老婆在他绝症后卷光家产跑路。"] + [long_noise for _ in range(80)],
+                        "relationships": [long_noise for _ in range(40)],
+                    },
+                )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY_POOL = old_api_key_pool
+            report.REPORT_LLM_SECTION_MAX_CHARS = old_section
+            report.REPORT_LLM_FIELD_MAX_CHARS = old_field
+            report.REPORT_LLM_LIST_MAX_ITEMS = old_items
+
+        self.assertEqual(overview["romance_density"], "偏低：材料显示感情戏缺失。")
+        payload_text = captured["messages"][1]["content"]
+        self.assertLess(len(payload_text), 6000)
+        payload = json.loads(payload_text)
+        material = json.dumps(payload["heroine_material"], ensure_ascii=False)
+        self.assertIn("表白", material)
+        self.assertIn("存在感很低", material)
+        self.assertIn("前世老婆", payload["male_material"])
+        self.assertLessEqual(len(payload["heroine_material"]), 12)
+
+    def test_heroine_profile_summary_compacts_llm_prompt(self):
+        captured = {}
+        old_openai = report.OpenAI
+        old_api_key = report.API_KEY
+        old_api_key_pool = report.API_KEY_POOL
+        old_items = report.REPORT_LLM_LIST_MAX_ITEMS
+
+        def fake_call(messages, **_kwargs):
+            captured["payload"] = json.loads(messages[1]["content"])
+            return {"relationship": "暧昧对象", "appearance": "白衣少女", "traits": "核心女主"}
+
+        long_noise = "无关细节" * 120
+        try:
+            report.OpenAI = object
+            report.API_KEY = "sk-test"
+            report.API_KEY_POOL = ["sk-test"]
+            report.REPORT_LLM_LIST_MAX_ITEMS = 10
+            with mock.patch.object(report, "_call_json_chat_completion", side_effect=fake_call):
+                data = report.summarize_heroine_profile_llm(
+                    "甲女",
+                    {"relationship_type": "暧昧", "summary": long_noise, "character_traits": long_noise},
+                    {
+                        "relationships": [long_noise for _ in range(40)],
+                        "features": [long_noise for _ in range(40)],
+                        "interactions": ["甲女向男主表白。"] + [long_noise for _ in range(60)],
+                        "emotion_signals": ["甲女喜欢男主。"] + [long_noise for _ in range(40)],
+                        "summaries": ["后期神隐，存在感不足。"] + [long_noise for _ in range(80)],
+                    },
+                )
+        finally:
+            report.OpenAI = old_openai
+            report.API_KEY = old_api_key
+            report.API_KEY_POOL = old_api_key_pool
+            report.REPORT_LLM_LIST_MAX_ITEMS = old_items
+
+        self.assertEqual(data["relationship"], "暧昧对象")
+        payload_text = json.dumps(captured["payload"], ensure_ascii=False)
+        self.assertLess(len(payload_text), 9000)
+        self.assertIn("表白", payload_text)
+        self.assertIn("喜欢男主", payload_text)
+        self.assertIn("存在感不足", payload_text)
+        self.assertLessEqual(len(captured["payload"]["summaries_raw"]), 40)
 
     def test_harem_report_adds_cross_validation_warnings_for_mismatched_heroine_lists(self):
         old_openai = report.OpenAI

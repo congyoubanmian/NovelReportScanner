@@ -66,12 +66,16 @@ const configForm = ref({
   review_llm_section_max_chars: '12000',
   review_llm_field_max_chars: '220',
   review_llm_list_max_items: '80',
+  report_llm_section_max_chars: '12000',
+  report_llm_field_max_chars: '180',
+  report_llm_list_max_items: '40',
   general_scan_max_chunks: '',
   general_character_max_tokens: '2400',
   general_character_retry_max_tokens: '1400',
   general_character_max_per_chunk: '8',
   general_character_api_downshift_max_depth: '1',
   general_character_api_downshift_min_chars: '4000',
+  general_character_parse_downshift_retry: '1',
   general_scan_smart_density: true,
   general_scan_content_aware_sampling: true,
   general_scan_incremental_reuse: true,
@@ -342,6 +346,9 @@ function syncConfigForm(config) {
     review_llm_section_max_chars: config.review_llm_section_max_chars || '12000',
     review_llm_field_max_chars: config.review_llm_field_max_chars || '220',
     review_llm_list_max_items: config.review_llm_list_max_items || '80',
+    report_llm_section_max_chars: config.report_llm_section_max_chars || '12000',
+    report_llm_field_max_chars: config.report_llm_field_max_chars || '180',
+    report_llm_list_max_items: config.report_llm_list_max_items || '40',
     general_scan_max_chunks: config.general_scan_max_chunks || '80',
     general_character_max_tokens: config.general_character_max_tokens || '2400',
     general_character_retry_max_tokens: config.general_character_retry_max_tokens || '1400',
@@ -350,6 +357,7 @@ function syncConfigForm(config) {
       config.general_character_api_downshift_max_depth || '1',
     general_character_api_downshift_min_chars:
       config.general_character_api_downshift_min_chars || '4000',
+    general_character_parse_downshift_retry: config.general_character_parse_downshift_retry || '1',
     general_scan_smart_density: config.general_scan_smart_density !== false,
     general_scan_content_aware_sampling: config.general_scan_content_aware_sampling !== false,
     general_scan_incremental_reuse: config.general_scan_incremental_reuse !== false,
@@ -396,6 +404,9 @@ async function saveRuntimeConfig() {
       review_llm_section_max_chars: configForm.value.review_llm_section_max_chars,
       review_llm_field_max_chars: configForm.value.review_llm_field_max_chars,
       review_llm_list_max_items: configForm.value.review_llm_list_max_items,
+      report_llm_section_max_chars: configForm.value.report_llm_section_max_chars,
+      report_llm_field_max_chars: configForm.value.report_llm_field_max_chars,
+      report_llm_list_max_items: configForm.value.report_llm_list_max_items,
       general_scan_max_chunks: configForm.value.general_scan_max_chunks,
       general_character_max_tokens: configForm.value.general_character_max_tokens,
       general_character_retry_max_tokens: configForm.value.general_character_retry_max_tokens,
@@ -404,6 +415,8 @@ async function saveRuntimeConfig() {
         configForm.value.general_character_api_downshift_max_depth,
       general_character_api_downshift_min_chars:
         configForm.value.general_character_api_downshift_min_chars,
+      general_character_parse_downshift_retry:
+        configForm.value.general_character_parse_downshift_retry,
       general_scan_smart_density: configForm.value.general_scan_smart_density,
       general_scan_content_aware_sampling: configForm.value.general_scan_content_aware_sampling,
       general_scan_incremental_reuse: configForm.value.general_scan_incremental_reuse,
@@ -888,6 +901,36 @@ useStateEvents(applyState, {
         />
       </label>
       <label>
+        <span>报告预算</span>
+        <input
+          v-model="configForm.report_llm_section_max_chars"
+          type="number"
+          min="2000"
+          max="100000"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>报告字数</span>
+        <input
+          v-model="configForm.report_llm_field_max_chars"
+          type="number"
+          min="40"
+          max="5000"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>报告条数</span>
+        <input
+          v-model="configForm.report_llm_list_max_items"
+          type="number"
+          min="5"
+          max="1000"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
         <span>通用片段</span>
         <input
           v-model="configForm.general_scan_max_chunks"
@@ -943,6 +986,16 @@ useStateEvents(applyState, {
           type="number"
           min="500"
           max="50000"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>解析降载</span>
+        <input
+          v-model="configForm.general_character_parse_downshift_retry"
+          type="number"
+          min="0"
+          max="10"
           @input="runtimeConfigDirty = true"
         />
       </label>

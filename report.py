@@ -526,6 +526,9 @@ BASE_DIR = get_base_dir()
 RESULTS_DIR = os.environ.get("RESULTS_DIR") or os.path.join(BASE_DIR, "results")
 REPORT_CHECKPOINT_FILE = os.path.join(RESULTS_DIR, "report_checkpoint.json")
 REPORT_RUN_LOG_PATH = os.path.join(RESULTS_DIR, "report_generation.log")
+REPORT_LLM_SECTION_MAX_CHARS = read_int_env("REPORT_LLM_SECTION_MAX_CHARS", 12000, min_value=2000)
+REPORT_LLM_FIELD_MAX_CHARS = read_int_env("REPORT_LLM_FIELD_MAX_CHARS", 180, min_value=40)
+REPORT_LLM_LIST_MAX_ITEMS = read_int_env("REPORT_LLM_LIST_MAX_ITEMS", 40, min_value=5)
 _REPORT_LOGGER = None
 
 
@@ -558,6 +561,91 @@ def _call_json_chat_completion(messages, *, model: str = None, temperature: floa
         max_tokens=max_tokens,
         record_usage_func=record_usage,
     )
+
+
+def _report_llm_text(value) -> str:
+    if isinstance(value, (list, tuple)) and len(value) == 2 and isinstance(value[0], (int, float)):
+        try:
+            return f"chunk {int(value[0]) + 1}: {value[1]}"
+        except Exception:
+            return str(value[1])
+    if isinstance(value, dict):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return str(value or "")
+
+
+def _clip_report_llm_text(value, max_chars: int = None) -> str:
+    limit = REPORT_LLM_FIELD_MAX_CHARS if max_chars is None else int(max_chars or 0)
+    text = re.sub(r"\s+", " ", _report_llm_text(value)).strip()
+    if limit <= 0 or len(text) <= limit:
+        return text
+    if limit <= 3:
+        return text[:limit]
+    return text[: max(0, limit - 3)].rstrip() + "..."
+
+
+def _compact_report_llm_list(values, *, max_items: int = None, field_max_chars: int = None, keep_keywords=()):
+    if not values:
+        return []
+    limit = REPORT_LLM_LIST_MAX_ITEMS if max_items is None else int(max_items or 0)
+    field_limit = REPORT_LLM_FIELD_MAX_CHARS if field_max_chars is None else int(field_max_chars or 0)
+    if limit <= 0:
+        return []
+    items = []
+    seen = set()
+    for value in values:
+        text = _clip_report_llm_text(value, field_limit)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        items.append(text)
+    if len(items) <= limit:
+        return items
+
+    head_count = max(1, limit // 3)
+    tail_count = max(1, limit // 3)
+    selected = []
+    selected_set = set()
+
+    def add(text):
+        if text and text not in selected_set and len(selected) < limit:
+            selected.append(text)
+            selected_set.add(text)
+
+    for text in items[:head_count]:
+        add(text)
+    for text in items:
+        if any(keyword in text for keyword in keep_keywords):
+            add(text)
+    for text in items[-tail_count:]:
+        add(text)
+    for text in items:
+        add(text)
+    return selected
+
+
+def _report_prompt_json(payload: dict) -> str:
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def _compact_report_payload_list_for_budget(payload: dict, list_key: str, max_chars: int, min_items: int = 3) -> dict:
+    if max_chars <= 0:
+        return payload
+    items = list(payload.get(list_key) or [])
+    if not items:
+        return payload
+    compacted = dict(payload)
+    selected = []
+    for item in items:
+        candidate = [*selected, item]
+        compacted[list_key] = candidate
+        if len(candidate) >= min_items and len(_report_prompt_json(compacted)) > max_chars:
+            break
+        selected = candidate
+    if not selected:
+        selected = items[:1]
+    compacted[list_key] = selected
+    return compacted
 
 
 def find_latest(pattern: str, base_dir: str = RESULTS_DIR):
@@ -1199,11 +1287,16 @@ def summarize_male_profile_llm(male_obj: dict, model: str = None) -> dict:
             "name": name,
             "identity": identity,
             # 你要求尽量读全：这里保留到 100
-            "aliases": aliases[:100],
-            "summaries": summaries[:100],
+            "aliases": _compact_report_llm_list(aliases, max_items=40, field_max_chars=80),
+            "summaries": _compact_report_llm_list(
+                summaries,
+                max_items=min(40, REPORT_LLM_LIST_MAX_ITEMS),
+                field_max_chars=REPORT_LLM_FIELD_MAX_CHARS,
+                keep_keywords=("前妻", "前女友", "前世", "老婆", "妻子", "分手", "丧偶", "卷钱"),
+            ),
         },
         ensure_ascii=False,
-        indent=2,
+        separators=(",", ":"),
     )
     try:
         data = _call_json_chat_completion(
@@ -2863,21 +2956,33 @@ def summarize_heroine_profile_llm(
     )
     user_payload = {
         "name": name,
-        "aliases": aliases[:30],
-        "relationship_type": rel_type,
-        "relationships": relationships[:30],
-        "character_traits_raw": traits,
-        "summary_raw": summary,
-        "features_raw": features[:80],
-        "key_interactions_raw": interactions[:120],
-        "emotion_signals_raw": emotions[:60],
-        "summaries_raw": summaries[:120],
+        "aliases": _compact_report_llm_list(aliases, max_items=20, field_max_chars=60),
+        "relationship_type": _clip_report_llm_text(rel_type, 80),
+        "relationships": _compact_report_llm_list(relationships, max_items=20),
+        "character_traits_raw": _clip_report_llm_text(traits, 220),
+        "summary_raw": _clip_report_llm_text(summary, 260),
+        "features_raw": _compact_report_llm_list(features, max_items=30),
+        "key_interactions_raw": _compact_report_llm_list(
+            interactions,
+            max_items=40,
+            keep_keywords=("表白", "喜欢", "暧昧", "成亲", "同房", "双修", "亲吻", "牵手", "吃醋"),
+        ),
+        "emotion_signals_raw": _compact_report_llm_list(
+            emotions,
+            max_items=30,
+            keep_keywords=("表白", "喜欢", "爱慕", "暧昧", "吃醋", "心动"),
+        ),
+        "summaries_raw": _compact_report_llm_list(
+            summaries,
+            max_items=40,
+            keep_keywords=("表白", "喜欢", "暧昧", "成亲", "同房", "双修", "工具", "存在感", "神隐"),
+        ),
     }
     try:
         data = _call_json_chat_completion(
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, indent=2)},
+                {"role": "user", "content": _report_prompt_json(user_payload)},
             ],
             temperature=0.2,
             max_tokens=600,
@@ -2931,7 +3036,32 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
         explicit_high_presence = _contains_any_text(blob, ["存在感高", "存在感较高", "存在感很高", "存在感强", "存在感突出"])
         if _has_low_presence_or_tooling_signal(blob) or (count <= 2 and len(blob) < 120 and not explicit_high_presence):
             presence_low += 1
-        heroine_material.append({"name": name, "count": count, "material": blob[:900]})
+        material_parts = [
+            _clip_report_llm_text(h.get("relationship_type", ""), 80),
+            _clip_report_llm_text(h.get("summary", ""), 180),
+            _clip_report_llm_text(h.get("character_traits", ""), 160),
+            *_compact_report_llm_list(evid.get("relationships") or [], max_items=4, field_max_chars=120),
+            *_compact_report_llm_list(
+                evid.get("interactions") or [],
+                max_items=5,
+                field_max_chars=140,
+                keep_keywords=intimacy_words,
+            ),
+            *_compact_report_llm_list(
+                evid.get("emotion_signals") or [],
+                max_items=4,
+                field_max_chars=120,
+                keep_keywords=("喜欢", "爱慕", "暧昧", "吃醋", "心动", "表白"),
+            ),
+            *_compact_report_llm_list(
+                evid.get("summaries") or [],
+                max_items=5,
+                field_max_chars=140,
+                keep_keywords=("工具", "背景", "存在感", "神隐", "表白", "暧昧", "同房", "成亲", "双修"),
+            ),
+        ]
+        compact_material = "；".join(part for part in material_parts if part)
+        heroine_material.append({"name": name, "count": count, "material": _clip_report_llm_text(compact_material, 900)})
 
     issue_blob = "；".join(
         str((item or {}).get(field) or "")
@@ -2948,9 +3078,17 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
     male_blob = "；".join(
         str(x)
         for x in [
-            (male_obj or {}).get("identity", ""),
-            *((male_obj or {}).get("summaries") or [])[:80],
-            *((male_obj or {}).get("relationships") or [])[:40],
+            _clip_report_llm_text((male_obj or {}).get("identity", ""), 300),
+            *_compact_report_llm_list(
+                (male_obj or {}).get("summaries") or [],
+                max_items=40,
+                keep_keywords=("前妻", "前女友", "前世", "老婆", "妻子", "分手", "丧偶", "卷钱"),
+            ),
+            *_compact_report_llm_list(
+                (male_obj or {}).get("relationships") or [],
+                max_items=20,
+                keep_keywords=("前妻", "前女友", "妻子", "老婆", "恋人", "伴侣"),
+            ),
         ]
         if x
     )
@@ -3007,13 +3145,25 @@ def _summarize_harem_romance_overview(detailed_data: dict, reviewer: dict, heroi
 6. 男主前史情感雷点，如前妻、前女友、前世婚姻、丧偶、被卷钱跑路等。
 
 只根据材料输出，不要编造。只输出 JSON 对象。"""
-    user_prompt = json.dumps({
-        "male_material": male_blob[:4000],
+    reviewer_names = [
+        _clip_report_llm_text(x.get("name"), 60)
+        for x in (reviewer or {}).get("heroines_purity", [])[:60]
+        if isinstance(x, dict) and x.get("name")
+    ]
+    overview_payload = {
+        "male_material": _clip_report_llm_text(male_blob, min(3000, REPORT_LLM_SECTION_MAX_CHARS // 3)),
         "heroine_count": len(heroines or []),
-        "heroine_material": heroine_material[:40],
-        "reviewer_heroine_purity_names": [x.get("name") for x in (reviewer or {}).get("heroines_purity", [])[:60]],
+        "heroine_material": heroine_material[: min(40, REPORT_LLM_LIST_MAX_ITEMS)],
+        "reviewer_heroine_purity_names": reviewer_names,
         "output_schema": fallback,
-    }, ensure_ascii=False, indent=2)
+    }
+    overview_payload = _compact_report_payload_list_for_budget(
+        overview_payload,
+        "heroine_material",
+        max(REPORT_LLM_SECTION_MAX_CHARS, 2000),
+        min_items=3,
+    )
+    user_prompt = _report_prompt_json(overview_payload)
     try:
         data = _call_json_chat_completion(
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],

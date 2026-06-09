@@ -62,6 +62,7 @@ GENERAL_CHARACTER_RETRY_MAX_TOKENS = read_int_env("GENERAL_CHARACTER_RETRY_MAX_T
 GENERAL_CHARACTER_MAX_PER_CHUNK = read_int_env("GENERAL_CHARACTER_MAX_PER_CHUNK", 8, min_value=3, max_value=30)
 GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH = read_int_env("GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH", 1, min_value=0, max_value=3)
 GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS = read_int_env("GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS", 4000, min_value=500)
+GENERAL_CHARACTER_PARSE_DOWNSHIFT_RETRY = read_int_env("GENERAL_CHARACTER_PARSE_DOWNSHIFT_RETRY", 1, min_value=0, max_value=10)
 GENERAL_CHARACTER_MAX_CHUNKS = read_int_env(
     "GENERAL_CHARACTER_MAX_CHUNKS",
     read_int_env("GENERAL_SCAN_MAX_CHUNKS", 80, min_value=0),
@@ -1297,6 +1298,16 @@ def _parse_retry_diagnostic(error):
     return flags, err_detail, truncated
 
 
+def _should_downshift_character_parse_error(profile_mode, text_chunk, depth, retry, truncated):
+    if not _should_downshift_character_chunk(profile_mode, text_chunk, depth):
+        return False
+    if truncated:
+        return True
+    if profile_mode == "general" and retry >= max(0, GENERAL_CHARACTER_PARSE_DOWNSHIFT_RETRY):
+        return True
+    return False
+
+
 def _character_max_tokens(profile_mode, retry=0):
     if profile_mode == "general":
         if retry > 0:
@@ -1632,6 +1643,18 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
             f"{err_detail}; truncated={truncated}"
         )
         should_try_compact_retry = retry < max_retries - 1
+        if _should_downshift_character_parse_error(profile_mode, text_chunk, _downshift_depth, retry, truncated):
+            downshifted = _downshift_character_chunk(
+                text_chunk,
+                chunk_index,
+                total_chunks,
+                max_retries,
+                _downshift_depth,
+                "parse_error",
+                profile_mode,
+            )
+            if downshifted is not None:
+                return downshifted
         if (
             not should_try_compact_retry
             and _should_downshift_character_chunk(profile_mode, text_chunk, _downshift_depth)
