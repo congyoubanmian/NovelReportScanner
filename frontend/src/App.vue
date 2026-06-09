@@ -238,8 +238,7 @@ function syncConfigForm(config) {
     general_scan_entity_prescan: config.general_scan_entity_prescan !== false,
     general_scan_knowledge_base_llm_merge: Boolean(config.general_scan_knowledge_base_llm_merge),
     general_scan_context_max_chars: config.general_scan_context_max_chars || '1600',
-    rescan_skip_chronic_parse_failure_after:
-      config.rescan_skip_chronic_parse_failure_after || '2',
+    rescan_skip_chronic_parse_failure_after: config.rescan_skip_chronic_parse_failure_after || '2',
     scan_stall_timeout_seconds: String(config.web?.scan_stall_timeout_seconds ?? '1200'),
     harem_plus_general_scan: Boolean(config.harem_plus_general_scan)
   }
@@ -342,7 +341,9 @@ async function handleRetryFailed(failureTypes, label) {
     if (queued) {
       toastSuccess(`${label}：已重新加入 ${queued} 本${skipped ? `，跳过 ${skipped} 本` : ''}`)
     } else {
-      toastError(matched ? `${label}：匹配到 ${matched} 本但未能加入队列` : `${label}：没有匹配的失败任务`)
+      toastError(
+        matched ? `${label}：匹配到 ${matched} 本但未能加入队列` : `${label}：没有匹配的失败任务`
+      )
     }
     await refreshDiagnostics({ force: true })
     await refresh()
