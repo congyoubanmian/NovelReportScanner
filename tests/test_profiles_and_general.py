@@ -5584,6 +5584,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertTrue(web_manager._is_authorized_request({"Authorization": "Bearer secret-token"}, ""))
             self.assertTrue(web_manager._is_authorized_request({"X-Web-Access-Token": "secret-token"}, ""))
             self.assertTrue(web_manager._is_authorized_request({}, "token=secret-token"))
+            self.assertTrue(web_manager._is_authorized_request({}, "access_token=secret-token"))
+            self.assertTrue(web_manager._is_authorized_request({}, "web_access_token=secret-token"))
+            self.assertFalse(web_manager._is_authorized_request({}, "access_token=wrong"))
             self.assertTrue(web_manager._unsafe_write_confirmed({}))
 
             protected_summary = web_manager._runtime_config_summary()

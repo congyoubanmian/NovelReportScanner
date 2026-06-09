@@ -1078,7 +1078,11 @@ def _request_access_token(headers, query=""):
     if fallback_header:
         return fallback_header.strip()
     params = parse_qs(query or "")
-    return (params.get("token") or [""])[0].strip()
+    for key in ("token", "access_token", "web_access_token"):
+        value = (params.get(key) or [""])[0].strip()
+        if value:
+            return value
+    return ""
 
 
 def _is_authorized_request(headers, query=""):
