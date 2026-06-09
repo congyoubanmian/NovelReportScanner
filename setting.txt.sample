@@ -4,6 +4,9 @@ MODEL_NAME=deepseek-chat
 # 分析模式：auto=按每本书自动识别；harem=后宫/男性向排雷；general=通用；history=历史小说；hard_sci_fi=硬科幻
 ANALYSIS_PROFILE=harem
 
+# 小说目录；留空默认读取项目内 novels/。本机外部样本可设为 /home/ctyun/workspace/novel
+NOVELS_DIR=
+
 # 并发和本地预限流
 MAX_WORKERS=3
 RPM_LIMIT=10

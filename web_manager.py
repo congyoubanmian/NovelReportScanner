@@ -25,7 +25,7 @@ from analysis_profiles import (
     normalize_profile_name,
     profile_options,
 )
-from main import _WEB_SCAN_RESULT_PREFIX, _generate_run_id, get_base_dir, load_configs
+from main import _WEB_SCAN_RESULT_PREFIX, _generate_run_id, get_base_dir, get_novels_dir, load_configs
 from shared_utils import configure_rotating_file_logger, read_float_env, read_int_env
 
 
@@ -221,7 +221,7 @@ class TimeoutHTTPServer(ThreadingHTTPServer):
 
 
 def _novels_dir():
-    path = os.path.join(get_base_dir(), "novels")
+    path = get_novels_dir(get_base_dir())
     os.makedirs(path, exist_ok=True)
     return path
 

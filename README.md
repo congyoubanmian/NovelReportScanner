@@ -88,7 +88,7 @@ Web 端适合管理多本书：先上传 `.txt`，根据自动建议调整分类
 这是当前仓库最直接的启动方式。
 
 1. 安装 Python 3.10 或更高版本。
-2. 把待分析的小说 `.txt` 放进 `novels/` 目录。
+2. 把待分析的小说 `.txt` 放进 `novels/` 目录，或在 `.env` / `setting.txt` 里设置 `NOVELS_DIR` 指向外部小说目录。
 3. 复制 `.env.sample` 为 `.env`，填写 `API_KEY` 或 `API_KEY_POOL`。
 4. 如仍沿用旧方式，也可以在项目根目录创建 `api.txt`，每行写一个可用的 API Key；`api.txt` 只作为 `.env` 未配置时的回退。
 5. 如需旧式配置文件，复制 `setting.txt.sample` 为 `setting.txt` 后修改。
@@ -370,6 +370,7 @@ python web_manager.py
 ```ini
 BASE_URL=https://your-openai-compatible-endpoint/v1
 MODEL_NAME=your-model-name
+NOVELS_DIR=
 MAX_WORKERS=2
 RPM_LIMIT=100
 TPM_LIMIT=10000000
@@ -399,6 +400,8 @@ STORAGE_HEALTH_TTL_SECONDS=10
 ```
 
 配置加载优先级是：进程环境变量 / `.env` > `setting.txt` > 默认值。API Key 优先读取 `API_KEY_POOL` 或 `API_KEY`；如果没有设置，才会回退读取根目录 `api.txt`。
+
+`NOVELS_DIR` 可指向外部本地小说目录；留空时使用项目内 `novels/`。例如本机样本目录可写成 `NOVELS_DIR=/home/ctyun/workspace/novel`。
 
 请只在本地保存真实 key，不要把 `.env` 或真实 `api.txt` 提交到公开仓库。
 

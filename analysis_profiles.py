@@ -780,7 +780,7 @@ def infer_profile_for_text(title: str, text: str) -> str:
 def infer_profile_for_novel(novel_path: str, book_name: str = "") -> str:
     candidates = infer_profile_candidates_for_novel(novel_path, book_name, min_score=1)
     best = candidates[0] if candidates else {"name": "general", "score": 0}
-    if best["name"] != "general" and best["score"] >= AUTO_PROFILE_MIN_SCORE:
+    if best["name"] != "general" and best["score"] >= _min_score_for_profile(best.get("name"), AUTO_PROFILE_MIN_SCORE):
         return best["name"]
     return "general"
 
@@ -804,7 +804,7 @@ def infer_profiles_for_text(title: str, text: str, min_score: int = AUTO_PROFILE
 
 def infer_profiles_for_novel(novel_path: str, book_name: str = "", min_score: int = AUTO_PROFILE_MIN_SCORE) -> List[str]:
     try:
-        text = _read_text_prefix_safely(novel_path, char_limit=20000)
+        text = _read_text_timeline_samples_safely(novel_path, char_limit=30000)
     except Exception:
         text = ""
     title = book_name or os.path.splitext(os.path.basename(novel_path))[0]

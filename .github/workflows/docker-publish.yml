@@ -130,16 +130,16 @@ jobs:
             docker tag "novel-report-scanner:${{ github.sha }}" "$tag"
 
             pushed=false
-            for attempt in 1 2 3 4; do
+            for attempt in 1 2 3 4 5; do
               if docker push "$tag"; then
                 pushed=true
                 break
               fi
-              if [ "$attempt" -eq 4 ]; then
+              if [ "$attempt" -eq 5 ]; then
                 printf '%s\n' "$tag" >> /tmp/docker-push-failures.list
                 break
               fi
-              sleep_seconds=$((attempt * 30))
+              sleep_seconds=$((attempt * 45 + RANDOM % 20))
               echo "Docker push failed for ${tag}, retrying in ${sleep_seconds}s..."
               sleep "$sleep_seconds"
             done

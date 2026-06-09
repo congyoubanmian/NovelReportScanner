@@ -18,6 +18,7 @@ _DEFAULT_ENV_SETTINGS = {
     "BASE_URL": "https://api.deepseek.com",
     "MODEL_NAME": "deepseek-chat",
     "ANALYSIS_PROFILE": "harem",
+    "NOVELS_DIR": "",
     "MAX_WORKERS": "6",
     "RATE_LIMIT_SCOPE": "auto",
     "API_SERVER_ERROR_MAX_RETRIES": "2",
@@ -62,6 +63,7 @@ _PASSTHROUGH_SETTING_KEYS = {
     "BASE_URL",
     "MODEL_NAME",
     "ANALYSIS_PROFILE",
+    "NOVELS_DIR",
     "MAX_WORKERS",
     "RPM_LIMIT",
     "TPM_LIMIT",
@@ -121,6 +123,13 @@ def get_base_dir():
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
+
+
+def get_novels_dir(base_dir=None):
+    raw_path = os.environ.get("NOVELS_DIR", "").strip()
+    if raw_path:
+        return os.path.abspath(os.path.expanduser(raw_path))
+    return os.path.join(base_dir or get_base_dir(), "novels")
 
 
 def _read_file_safely(file_path):
@@ -296,7 +305,7 @@ def load_configs(base_dir, interactive=True):
 
 def scan_novels(base_dir):
     """递归扫描 novels 目录下所有 .txt 文件（匹配 bat 的 for /r 行为）。"""
-    novels_dir = os.path.join(base_dir, "novels")
+    novels_dir = get_novels_dir(base_dir)
     if not os.path.isdir(novels_dir):
         print(f"[ERROR] 未找到 novels 目录: {novels_dir}")
         input("按回车键退出...")

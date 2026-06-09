@@ -420,6 +420,8 @@ def call_json_chat_completion_with_fallback(
     record_usage_func=None,
     parse_json_func=None,
 ) -> Dict[str, Any]:
+    json_mode_kwargs = {"response_format": {"type": "json_object"}}
+
     def parse_content(content):
         if parse_json_func is not None:
             try:
@@ -439,10 +441,11 @@ def call_json_chat_completion_with_fallback(
     if max_tokens is not None:
         base_kwargs["max_tokens"] = max_tokens
 
+    json_mode_supported = True
     try:
         response = chat_completion_func(
             **base_kwargs,
-            response_format={"type": "json_object"},
+            **json_mode_kwargs,
         )
         if record_usage_func is not None:
             record_usage_func(response)
@@ -453,6 +456,7 @@ def call_json_chat_completion_with_fallback(
         err = f"JSON mode调用失败: {exc}"
         if not should_retry_without_json_mode_error(exc):
             raise
+        json_mode_supported = False
 
     fallback_messages = list(messages) + [{
         "role": "user",
@@ -464,6 +468,8 @@ def call_json_chat_completion_with_fallback(
     fallback_kwargs = dict(base_kwargs)
     fallback_kwargs["messages"] = fallback_messages
     fallback_kwargs["temperature"] = 0.0
+    if json_mode_supported:
+        fallback_kwargs.update(json_mode_kwargs)
     fallback_response = chat_completion_func(**fallback_kwargs)
     if record_usage_func is not None:
         record_usage_func(fallback_response)

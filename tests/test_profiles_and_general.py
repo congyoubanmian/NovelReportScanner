@@ -159,7 +159,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 target_logger.addHandler(handler)
             report._REPORT_LOGGER = old_report_logger
 
-    def test_report_json_call_retries_without_json_mode_on_parse_failure(self):
+    def test_report_json_call_retries_with_json_mode_on_parse_failure(self):
         class FakeMessage:
             def __init__(self, content):
                 self.content = content
@@ -192,10 +192,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(data["summary"], "重试成功")
         self.assertEqual(len(calls), 2)
         self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
-        self.assertNotIn("response_format", calls[1])
+        self.assertEqual(calls[1]["response_format"], {"type": "json_object"})
         self.assertIn("上一次回复不是可解析的 JSON 对象", calls[1]["messages"][-1]["content"])
 
-    def test_shared_json_call_helper_retries_without_json_mode(self):
+    def test_shared_json_call_helper_retries_parse_failure_with_json_mode(self):
         class FakeMessage:
             def __init__(self, content):
                 self.content = content
@@ -228,7 +228,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(data["ok"])
         self.assertEqual(len(records), 2)
         self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
-        self.assertNotIn("response_format", calls[1])
+        self.assertEqual(calls[1]["response_format"], {"type": "json_object"})
 
     def test_shared_json_call_helper_retries_when_json_mode_is_rejected(self):
         class FakeMessage:
@@ -309,7 +309,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
 
-    def test_reviewer_json_call_retries_without_json_mode_on_parse_failure(self):
+    def test_reviewer_json_call_retries_with_json_mode_on_parse_failure(self):
         class FakeMessage:
             def __init__(self, content):
                 self.content = content
@@ -342,7 +342,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(data["reason"], "重试成功")
         self.assertEqual(len(calls), 2)
         self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
-        self.assertNotIn("response_format", calls[1])
+        self.assertEqual(calls[1]["response_format"], {"type": "json_object"})
         self.assertIn("上一次回复不是可解析的 JSON 对象", calls[1]["messages"][-1]["content"])
 
     def test_reviewer_checkpoint_recovers_from_backup_when_primary_is_corrupt(self):
@@ -385,7 +385,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(heroine_report["甲女"]["is_clean"], True)
             self.assertTrue(purity_done)
 
-    def test_protagonist_json_call_retries_without_json_mode_on_parse_failure(self):
+    def test_protagonist_json_call_retries_with_json_mode_on_parse_failure(self):
         class FakeMessage:
             def __init__(self, content):
                 self.content = content
@@ -418,7 +418,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(data["male_protagonist"]["name"], "男主")
         self.assertEqual(len(calls), 2)
         self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
-        self.assertNotIn("response_format", calls[1])
+        self.assertEqual(calls[1]["response_format"], {"type": "json_object"})
         self.assertIn("上一次回复不是可解析的 JSON 对象", calls[1]["messages"][-1]["content"])
 
     def test_protagonist_chunk_analysis_does_not_outer_retry_transport_error(self):
@@ -483,6 +483,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("SCAN_FUTURE_STALL_TIMEOUT_SECONDS=0", env_sample_text)
         self.assertIn("STORAGE_HEALTH_TTL_SECONDS: ${STORAGE_HEALTH_TTL_SECONDS:-10}", compose_text)
         self.assertIn("STORAGE_HEALTH_TTL_SECONDS=10", env_sample_text)
+        self.assertIn("NOVELS_DIR: ${NOVELS_DIR:-}", compose_text)
+        self.assertIn("NOVELS_DIR=", env_sample_text)
 
     def test_setting_sample_keys_are_loaded_by_main_config(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -504,6 +506,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertEqual(set(), sample_keys - accepted_keys)
         self.assertIn("WEB_ACCESS_TOKEN", main._PASSTHROUGH_SETTING_KEYS)
+        self.assertIn("NOVELS_DIR", main._PASSTHROUGH_SETTING_KEYS)
         self.assertIn("SCAN_STALL_TIMEOUT_SECONDS", main._VALIDATED_NON_NEGATIVE_FLOAT_KEYS)
         self.assertIn("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", main._VALIDATED_NON_NEGATIVE_FLOAT_KEYS)
         self.assertIn("STORAGE_HEALTH_TTL_SECONDS", main._VALIDATED_NON_NEGATIVE_FLOAT_KEYS)
@@ -1107,6 +1110,17 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertEqual(module.MAX_TIMEOUT_RETRIES, shared_utils.DEFAULT_MAX_TIMEOUT_RETRIES)
                 self.assertEqual(module.MAX_SERVER_ERROR_RETRIES, shared_utils.DEFAULT_MAX_SERVER_ERROR_RETRIES)
                 self.assertEqual(module.REQUEST_TIMEOUT, shared_utils.DEFAULT_REQUEST_TIMEOUT)
+
+    def test_get_novels_dir_can_use_external_directory(self):
+        old_value = os.environ.get("NOVELS_DIR")
+        try:
+            os.environ["NOVELS_DIR"] = "/home/ctyun/workspace/novel"
+            self.assertEqual(main.get_novels_dir("/tmp/app"), "/home/ctyun/workspace/novel")
+        finally:
+            if old_value is None:
+                os.environ.pop("NOVELS_DIR", None)
+            else:
+                os.environ["NOVELS_DIR"] = old_value
 
     def test_future_stall_helper_is_shared_by_scan_stages(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -4669,6 +4683,25 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertIn("__sample_head__", sampled)
             self.assertIn("__sample_tail__", sampled)
             self.assertIn("曲率引擎", sampled)
+        finally:
+            os.remove(path)
+
+    def test_auto_profile_multi_label_novel_uses_timeline_samples(self):
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as f:
+            path = f.name
+            f.write("小镇日常与朋友重逢。\n" * 4000)
+            f.write("皇帝和朝廷商议大唐边军粮饷，宰相、皇后与宦官卷入王朝政争。\n" * 80)
+            f.write("宗门弟子修仙筑基，金丹元婴和法宝秘境成为后续主线。\n" * 80)
+        try:
+            candidates = analysis_profiles.infer_profile_candidates_for_novel(path, "慢热长篇")
+            names = [item["name"] for item in candidates]
+            profiles = analysis_profiles.infer_profiles_for_novel(path, "慢热长篇")
+
+            self.assertIn("history", names)
+            self.assertIn("xianxia_fantasy", names)
+            self.assertIn("history", profiles)
+            self.assertIn("xianxia_fantasy", profiles)
+            self.assertNotEqual(profiles, ["general"])
         finally:
             os.remove(path)
 
@@ -13390,7 +13423,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(profile["level"], "high")
         self.assertEqual(profile["strategy"], "full")
 
-    def test_general_scan_call_json_retries_without_json_mode_on_parse_failure(self):
+    def test_general_scan_call_json_retries_with_json_mode_on_parse_failure(self):
         class FakeMessage:
             def __init__(self, content):
                 self.content = content
@@ -13420,7 +13453,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(data["plot_events"], ["重试成功"])
         self.assertEqual(len(calls), 2)
         self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
-        self.assertNotIn("response_format", calls[1])
+        self.assertEqual(calls[1]["response_format"], {"type": "json_object"})
         self.assertIn("上一次回复不是可解析的 JSON 对象", calls[1]["messages"][-1]["content"])
 
     def test_general_scan_summary_prompt_uses_field_labels(self):

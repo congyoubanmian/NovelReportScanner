@@ -14,6 +14,7 @@ services:
       WEB_ACCESS_TOKEN: ${WEB_ACCESS_TOKEN:-}
       WEB_ALLOW_NO_AUTH: ${WEB_ALLOW_NO_AUTH:-0}
       NOVEL_REPORT_SCANNER_REQUIRE_API_KEY: ${NOVEL_REPORT_SCANNER_REQUIRE_API_KEY:-1}
+      NOVELS_DIR: ${NOVELS_DIR:-}
       BASE_URL: ${BASE_URL:-https://api.deepseek.com}
       MODEL_NAME: ${MODEL_NAME:-deepseek-chat}
       API_KEY: ${API_KEY:-}
