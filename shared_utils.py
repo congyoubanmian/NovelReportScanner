@@ -89,6 +89,7 @@ MAX_WORKERS = read_int_env("MAX_WORKERS", 8, min_value=1)
 LOG_MAX_BYTES = read_int_env("LOG_MAX_BYTES", 10 * 1024 * 1024)
 LOG_BACKUP_COUNT = read_int_env("LOG_BACKUP_COUNT", 5)
 SCAN_FUTURE_STALL_TIMEOUT_SECONDS = read_float_env("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", 0.0, min_value=0.0)
+JSON_FALLBACK_MAX_TOKENS = read_int_env("JSON_FALLBACK_MAX_TOKENS", 1200, min_value=200)
 
 
 def cancel_pending_futures(futures, current_future=None, executor=None):
@@ -676,6 +677,27 @@ def _safe_json_loads_maybe(text: Any) -> Tuple[Optional[Dict[str, Any]], str]:
         return None, f"JSON解析失败: {e}; raw_head={snippet}"
 
 
+def _default_json_fallback_prompt() -> str:
+    return (
+        "上一次回复不是可解析的 JSON 对象，或当前接口不支持 JSON mode。"
+        "请只重新输出一个合法 JSON 对象，不要 Markdown、不要代码块、不要解释。\n"
+        "【降载要求】只保留最关键结论；数组最多 5 条；每条 evidence/detail/reason/summary "
+        "不超过 60 个汉字；不要引用带大量对话引号的原文，改用简短转述。"
+    )
+
+
+def _default_json_fallback_max_tokens(max_tokens: Optional[int]) -> Optional[int]:
+    if max_tokens is None:
+        return JSON_FALLBACK_MAX_TOKENS
+    try:
+        original = int(max_tokens)
+    except (TypeError, ValueError):
+        return JSON_FALLBACK_MAX_TOKENS
+    if original <= 0:
+        return JSON_FALLBACK_MAX_TOKENS
+    return max(1, min(original, JSON_FALLBACK_MAX_TOKENS))
+
+
 def call_json_chat_completion_with_fallback(
     *,
     chat_completion_func,
@@ -750,16 +772,16 @@ def call_json_chat_completion_with_fallback(
 
     fallback_messages = list(messages) + [{
         "role": "user",
-        "content": fallback_prompt or (
-            "上一次回复不是可解析的 JSON 对象，或当前接口不支持 JSON mode。"
-            "请只重新输出一个合法 JSON 对象，不要 Markdown、不要代码块、不要解释。"
-        ),
+        "content": fallback_prompt or _default_json_fallback_prompt(),
     }]
     fallback_kwargs = dict(base_kwargs)
     fallback_kwargs["messages"] = fallback_messages
     fallback_kwargs["temperature"] = 0.0
-    if fallback_max_tokens is not None:
-        fallback_kwargs["max_tokens"] = fallback_max_tokens
+    fallback_kwargs["max_tokens"] = (
+        fallback_max_tokens
+        if fallback_max_tokens is not None
+        else _default_json_fallback_max_tokens(max_tokens)
+    )
     if json_mode_supported:
         fallback_kwargs.update(json_mode_kwargs)
     fallback_response = chat_completion_func(**fallback_kwargs)

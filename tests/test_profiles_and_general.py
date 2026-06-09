@@ -233,6 +233,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(len(records), 2)
         self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
         self.assertEqual(calls[1]["response_format"], {"type": "json_object"})
+        self.assertEqual(calls[1]["max_tokens"], 128)
+        self.assertIn("降载要求", calls[1]["messages"][-1]["content"])
 
     def test_shared_json_call_helper_accepts_custom_retry_prompt_and_tokens(self):
         class FakeMessage:
@@ -268,6 +270,38 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(calls[0]["max_tokens"], 2400)
         self.assertEqual(calls[1]["max_tokens"], 900)
         self.assertEqual(calls[1]["messages"][-1]["content"], "请输出最短合法 JSON")
+
+    def test_shared_json_call_helper_caps_default_retry_tokens(self):
+        class FakeMessage:
+            def __init__(self, content):
+                self.content = content
+
+        class FakeChoice:
+            def __init__(self, content):
+                self.message = FakeMessage(content)
+
+        class FakeResponse:
+            def __init__(self, content):
+                self.choices = [FakeChoice(content)]
+
+        calls = []
+
+        def fake_chat_completion(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return FakeResponse("不是 JSON")
+            return FakeResponse('{"ok": true}')
+
+        data = shared_utils.call_json_chat_completion_with_fallback(
+            chat_completion_func=fake_chat_completion,
+            model="test-model",
+            messages=[{"role": "user", "content": "输出 JSON"}],
+            max_tokens=4000,
+        )
+
+        self.assertTrue(data["ok"])
+        self.assertEqual(calls[0]["max_tokens"], 4000)
+        self.assertEqual(calls[1]["max_tokens"], shared_utils.JSON_FALLBACK_MAX_TOKENS)
 
     def test_shared_json_call_helper_retries_empty_choices_response(self):
         class EmptyResponse:
@@ -1818,6 +1852,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("config.api_server_error_fast_fail_input_chars || '20000'", text)
         self.assertIn("configForm.api_server_error_fast_fail_input_chars", text)
         self.assertIn("<span>5xx快败</span>", text)
+        self.assertIn("json_fallback_max_tokens: '1200'", text)
+        self.assertIn("config.json_fallback_max_tokens || '1200'", text)
+        self.assertIn("configForm.json_fallback_max_tokens", text)
+        self.assertIn("<span>JSON重试</span>", text)
         self.assertIn("harem_scan_chunk_size: '7000'", text)
         self.assertIn("configForm.harem_scan_chunk_size", text)
         self.assertIn("harem_scan_api_downshift_max_depth: '1'", text)
@@ -6799,6 +6837,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "RATE_LIMIT_SCOPE",
             "API_SERVER_ERROR_MAX_RETRIES",
             "API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS",
+            "JSON_FALLBACK_MAX_TOKENS",
             "HAREM_SCAN_CHUNK_SIZE",
             "HAREM_SCAN_MAX_TOKENS",
             "HAREM_SCAN_RETRY_WORKERS",
@@ -6841,6 +6880,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "rate_limit_scope": "per_key",
                 "api_server_error_max_retries": "2",
                 "api_server_error_fast_fail_input_chars": "15000",
+                "json_fallback_max_tokens": "900",
                 "harem_scan_chunk_size": "6500",
                 "harem_scan_max_tokens": "2800",
                 "harem_scan_retry_workers": "1",
@@ -6878,6 +6918,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["RATE_LIMIT_SCOPE"], "per_key")
             self.assertEqual(os.environ["API_SERVER_ERROR_MAX_RETRIES"], "2")
             self.assertEqual(os.environ["API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS"], "15000")
+            self.assertEqual(os.environ["JSON_FALLBACK_MAX_TOKENS"], "900")
             self.assertEqual(os.environ["HAREM_SCAN_CHUNK_SIZE"], "6500")
             self.assertEqual(os.environ["HAREM_SCAN_MAX_TOKENS"], "2800")
             self.assertEqual(os.environ["HAREM_SCAN_RETRY_WORKERS"], "1")
@@ -6925,6 +6966,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(result["rescan_skip_chronic_parse_failure_after"], "3")
             self.assertEqual(result["api_server_error_max_retries"], "2")
             self.assertEqual(result["api_server_error_fast_fail_input_chars"], "15000")
+            self.assertEqual(result["json_fallback_max_tokens"], "900")
             self.assertEqual(result["harem_scan_chunk_size"], "6500")
             self.assertEqual(result["harem_scan_max_tokens"], "2800")
             self.assertEqual(result["harem_scan_retry_workers"], "1")
@@ -7166,6 +7208,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "RATE_LIMIT_SCOPE": "rate_limit_scope",
             "API_SERVER_ERROR_MAX_RETRIES": "api_server_error_max_retries",
             "API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS": "api_server_error_fast_fail_input_chars",
+            "JSON_FALLBACK_MAX_TOKENS": "json_fallback_max_tokens",
             "HAREM_SCAN_CHUNK_SIZE": "harem_scan_chunk_size",
             "HAREM_SCAN_MAX_TOKENS": "harem_scan_max_tokens",
             "HAREM_SCAN_RETRY_WORKERS": "harem_scan_retry_workers",
@@ -7225,6 +7268,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "max_workers": 16,
                     "api_server_error_max_retries": 2,
                     "api_server_error_fast_fail_input_chars": 15000,
+                    "json_fallback_max_tokens": 900,
                     "harem_scan_chunk_size": 6500,
                     "harem_scan_max_tokens": 2800,
                     "harem_scan_retry_workers": 1,
@@ -7261,6 +7305,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("MAX_WORKERS=16", lines)
                 self.assertIn("API_SERVER_ERROR_MAX_RETRIES=2", lines)
                 self.assertIn("API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS=15000", lines)
+                self.assertIn("JSON_FALLBACK_MAX_TOKENS=900", lines)
                 self.assertIn("HAREM_SCAN_CHUNK_SIZE=6500", lines)
                 self.assertIn("HAREM_SCAN_MAX_TOKENS=2800", lines)
                 self.assertIn("HAREM_SCAN_RETRY_WORKERS=1", lines)
@@ -15907,6 +15952,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(any(450 <= idx <= 550 for idx in sampled_indices))
         self.assertEqual(protagonist._sample_chunk_indices_for_budget(1000, 0), list(range(1000)))
 
+    def test_general_character_content_aware_sampling_keeps_high_signal_chunks(self):
+        chunks = ["赶路吃饭睡觉。"] * 100
+        chunks[49] = "大战爆发，主角身份暴露并揭露真相，女主重逢后阵营决裂。"
+
+        sampled = protagonist._sample_chunk_indices_content_aware(chunks, 10)
+        uniform = protagonist._sample_chunk_indices_for_budget(100, 10)
+
+        self.assertEqual(len(sampled), 10)
+        self.assertEqual(sampled[0], 0)
+        self.assertEqual(sampled[-1], 99)
+        self.assertEqual(sampled, sorted(sampled))
+        self.assertIn(49, sampled)
+        self.assertNotIn(49, uniform)
+
     def test_general_character_main_filters_group_title_names_and_uses_role_log_label(self):
         old_profile = os.environ.get("ANALYSIS_PROFILE")
         try:
@@ -16327,10 +16386,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     exported_results.append(heroine_result)
                     return ("detail.json", "snapshot.json", "report.txt")
 
+                chunks = [f"chunk-{i}" for i in range(1000)]
+                chunks[49] = "大战爆发，主角身份暴露并揭露真相，女主重逢后阵营决裂。"
                 with mock.patch.object(protagonist, "get_base_dir", return_value=tmpdir), \
                         mock.patch.object(protagonist, "init_token_tracker"), \
                         mock.patch.object(protagonist, "read_novel", return_value="字" * 10_000_000), \
-                        mock.patch.object(protagonist, "split_text_by_length", return_value=[f"chunk-{i}" for i in range(1000)]), \
+                        mock.patch.object(protagonist, "split_text_by_length", return_value=chunks), \
                         mock.patch.object(protagonist, "validate_config"), \
                         mock.patch.object(protagonist, "tqdm", side_effect=lambda items, **kwargs: items), \
                         mock.patch.object(protagonist, "analyze_chunk_for_heroines", side_effect=fake_analyze), \
@@ -16347,6 +16408,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertEqual(sorted_scanned_indices[0], 0)
                 self.assertEqual(sorted_scanned_indices[-1], 999)
                 self.assertTrue(any(450 <= idx <= 550 for idx in sorted_scanned_indices))
+                self.assertIn(49, sorted_scanned_indices)
                 mock_identify_heroines.assert_not_called()
                 mock_merge_heroines_final.assert_not_called()
                 self.assertEqual(exported_results[0]["profile_mode"], "general")
@@ -16362,6 +16424,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     checkpoint = json.load(f)
                 self.assertTrue(checkpoint["progress"]["scanned"])
                 self.assertEqual(len(checkpoint["completed_chunks"]), 300)
+                self.assertEqual(checkpoint["chunk_plan_metadata"]["sampling_strategy"], "content_aware_timeline")
         finally:
             if old_profile is None:
                 os.environ.pop("ANALYSIS_PROFILE", None)

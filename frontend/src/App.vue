@@ -57,6 +57,7 @@ const configForm = ref({
   rate_limit_scope: 'auto',
   api_server_error_max_retries: '2',
   api_server_error_fast_fail_input_chars: '20000',
+  json_fallback_max_tokens: '1200',
   harem_scan_chunk_size: '7000',
   harem_scan_max_tokens: '3000',
   harem_scan_retry_workers: '1',
@@ -329,6 +330,7 @@ function syncConfigForm(config) {
     api_server_error_max_retries: config.api_server_error_max_retries || '2',
     api_server_error_fast_fail_input_chars:
       config.api_server_error_fast_fail_input_chars || '20000',
+    json_fallback_max_tokens: config.json_fallback_max_tokens || '1200',
     harem_scan_chunk_size: config.harem_scan_chunk_size || '7000',
     harem_scan_max_tokens: config.harem_scan_max_tokens || '3000',
     harem_scan_retry_workers: config.harem_scan_retry_workers || '1',
@@ -379,6 +381,7 @@ async function saveRuntimeConfig() {
       api_server_error_max_retries: configForm.value.api_server_error_max_retries,
       api_server_error_fast_fail_input_chars:
         configForm.value.api_server_error_fast_fail_input_chars,
+      json_fallback_max_tokens: configForm.value.json_fallback_max_tokens,
       harem_scan_chunk_size: configForm.value.harem_scan_chunk_size,
       harem_scan_max_tokens: configForm.value.harem_scan_max_tokens,
       harem_scan_retry_workers: configForm.value.harem_scan_retry_workers,
@@ -782,6 +785,16 @@ useStateEvents(applyState, {
           type="number"
           min="0"
           max="1000000"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>JSON重试</span>
+        <input
+          v-model="configForm.json_fallback_max_tokens"
+          type="number"
+          min="200"
+          max="8000"
           @input="runtimeConfigDirty = true"
         />
       </label>

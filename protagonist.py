@@ -67,6 +67,10 @@ GENERAL_CHARACTER_MAX_CHUNKS = read_int_env(
     read_int_env("GENERAL_SCAN_MAX_CHUNKS", 80, min_value=0),
     min_value=0,
 )
+GENERAL_CHARACTER_CONTENT_AWARE_SAMPLING = os.environ.get(
+    "GENERAL_CHARACTER_CONTENT_AWARE_SAMPLING",
+    os.environ.get("GENERAL_SCAN_CONTENT_AWARE_SAMPLING", "1"),
+).strip() == "1"
 ALIAS_CROSS_MERGE_MAX_PAYLOAD_CHARS = read_int_env("ALIAS_CROSS_MERGE_MAX_PAYLOAD_CHARS", 12000, min_value=0)
 ALIAS_CROSS_MERGE_MAX_LIST_ITEMS = read_int_env("ALIAS_CROSS_MERGE_MAX_LIST_ITEMS", 3, min_value=1)
 ALIAS_CROSS_MERGE_MAX_FIELD_CHARS = read_int_env("ALIAS_CROSS_MERGE_MAX_FIELD_CHARS", 160, min_value=1)
@@ -139,6 +143,68 @@ def _sample_chunk_indices_for_budget(total_chunks: int, max_chunks: int):
         round(i * last_index / (max_chunks - 1))
         for i in range(max_chunks)
     }
+    cursor = 0
+    while len(selected) < max_chunks and cursor < total:
+        selected.add(cursor)
+        cursor += 1
+    return sorted(selected)[:max_chunks]
+
+
+CHARACTER_CONTENT_AWARE_SIGNAL_TERMS = (
+    "主角", "男主", "女主", "视角", "身份", "暴露", "秘密", "真相", "揭露", "反转",
+    "冲突", "决裂", "背叛", "复仇", "逃亡", "追杀", "战斗", "交手", "决战", "死亡", "牺牲",
+    "阵营", "势力", "家族", "宗门", "朝廷", "军队", "皇帝", "公主", "太子", "将军",
+    "表白", "告白", "暧昧", "亲吻", "成亲", "结婚", "联姻", "订婚", "婚约", "吃醋",
+    "修罗场", "双修", "亲密", "重逢", "生离死别", "破案", "凶手", "证据", "审讯",
+)
+CHARACTER_LOW_SIGNAL_TERMS = (
+    "睡觉", "起床", "吃饭", "喝茶", "闲聊", "聊天", "休息", "赶路", "路上", "返回",
+    "日常", "客栈", "闭关", "打坐", "整理物品",
+)
+
+
+def _character_sampling_signal_score(text: str) -> int:
+    sample = (text or "")[:20000]
+    high_hits = sum(1 for term in CHARACTER_CONTENT_AWARE_SIGNAL_TERMS if term in sample)
+    low_hits = sum(1 for term in CHARACTER_LOW_SIGNAL_TERMS if term in sample)
+    dialogue_marks = sample.count("“") + sample.count("”") + sample.count('"')
+    name_markers = sum(sample.count(token) for token in ("说道", "问道", "答道", "笑道", "喝道", "喊道", "冷笑道"))
+    punctuation_events = sum(sample.count(mark) for mark in ("！", "？", "。", "；"))
+    score = (
+        high_hits * 10
+        + min(10, dialogue_marks // 12)
+        + min(8, name_markers // 10)
+        + min(6, punctuation_events // 80)
+        - min(10, low_hits * 2)
+    )
+    return max(0, int(score))
+
+
+def _sample_chunk_indices_content_aware(chunks, max_chunks: int):
+    total = len(chunks or [])
+    if total <= 0:
+        return []
+    if max_chunks <= 0 or total <= max_chunks:
+        return list(range(total))
+    if max_chunks == 1:
+        return [0]
+
+    timeline_quota = max(2, min(max_chunks, int(round(max_chunks * 0.65))))
+    selected = set(_sample_chunk_indices_for_budget(total, timeline_quota))
+
+    scored = []
+    for idx, chunk in enumerate(chunks or []):
+        if idx in selected:
+            continue
+        scored.append((_character_sampling_signal_score(chunk), idx))
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    for score, idx in scored:
+        if len(selected) >= max_chunks:
+            break
+        if score <= 0:
+            continue
+        selected.add(idx)
+
     cursor = 0
     while len(selected) < max_chunks and cursor < total:
         selected.add(cursor)
@@ -4810,9 +4876,12 @@ def main(novel_path=None, book_name=None, run_id=None):
         effective_max_chunks = 0
         if _is_general_profile():
             effective_max_chunks = _effective_general_character_max_chunks(len(text))
-            target_chunk_indices = _sample_chunk_indices_for_budget(source_total_chunks, effective_max_chunks)
+            if GENERAL_CHARACTER_CONTENT_AWARE_SAMPLING:
+                target_chunk_indices = _sample_chunk_indices_content_aware(chunks, effective_max_chunks)
+            else:
+                target_chunk_indices = _sample_chunk_indices_for_budget(source_total_chunks, effective_max_chunks)
             if effective_max_chunks > 0 and len(target_chunk_indices) < source_total_chunks:
-                sampling_strategy = "uniform_timeline"
+                sampling_strategy = "content_aware_timeline" if GENERAL_CHARACTER_CONTENT_AWARE_SAMPLING else "uniform_timeline"
         total_chunks = len(target_chunk_indices)
         target_chunk_set = set(target_chunk_indices)
         final_target_chunk_index = max(target_chunk_indices) if target_chunk_indices else source_total_chunks - 1
