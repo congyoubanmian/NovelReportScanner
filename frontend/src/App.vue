@@ -116,6 +116,14 @@ function formatElapsed(seconds) {
   return minutes ? `${hours}时${minutes}分` : `${hours}时`
 }
 
+function formatStateTime(value) {
+  const text = String(value || '')
+    .replace('T', ' ')
+    .trim()
+  if (!text) return '-'
+  return text.length >= 16 ? text.slice(5, 16) : text
+}
+
 const diagnosticsStatus = computed(() => {
   const data = diagnostics.value || {}
   const errorText = diagnosticsError.value
@@ -125,6 +133,7 @@ const diagnosticsStatus = computed(() => {
   const failedHistory = Number(data.failed_task_history_count || 0)
   const running = Number(data.running_count || 0)
   const queued = Number(data.queue_length || 0)
+  const generatedAtText = formatStateTime(data.generated_at)
   const longestRunningText = formatElapsed(data.longest_running_seconds)
   const oldestQueueWaitText = formatElapsed(data.oldest_queue_wait_seconds)
   const firstStale = (data.running_tasks || []).find((task) => task.stale_without_log)
@@ -156,6 +165,7 @@ const diagnosticsStatus = computed(() => {
       running,
       failed,
       failedHistory,
+      generatedAtText,
       retryApiVisible: false,
       retryParseVisible: false,
       topFailureText: topFailure ? `${topFailure.reason} x${topFailure.count}` : '-',
@@ -179,6 +189,7 @@ const diagnosticsStatus = computed(() => {
     running,
     failed,
     failedHistory,
+    generatedAtText,
     retryApiVisible: retryTypes.has('api_failure'),
     retryParseVisible: retryTypes.has('parse_failure'),
     topFailureText: topFailure ? `${topFailure.reason} x${topFailure.count}` : '-',
@@ -607,6 +618,7 @@ useStateEvents(applyState, {
       <span class="runtime-item"><b>最久等待</b>{{ diagnosticsStatus.oldestQueueWaitText }}</span>
       <span class="runtime-item"><b>运行中</b>{{ diagnosticsStatus.running }}</span>
       <span class="runtime-item"><b>最长运行</b>{{ diagnosticsStatus.longestRunningText }}</span>
+      <span class="runtime-item"><b>更新</b>{{ diagnosticsStatus.generatedAtText }}</span>
       <span class="runtime-item" :class="{ danger: diagnosticsStatus.failed > 0 }"
         ><b>失败</b>{{ diagnosticsStatus.failed }}</span
       >

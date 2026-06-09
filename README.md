@@ -260,7 +260,7 @@ curl -sS -H "Authorization: Bearer $WEB_ACCESS_TOKEN" \
   http://服务器IP:8765/api/diagnostics
 ```
 
-如果 `/api/diagnostics` 里 `health_issues` 包含 `storage`，优先检查宿主机 `novels/`、`results/` 权限和 Compose 的 `PUID` / `PGID`；包含 `config` 则先检查 `.env` / API Key。若 `stale_running_count > 0`，说明存在超过卡死保护阈值仍未产生日志的运行任务；优先确认线上镜像 `app.commit` 是否已经包含最新代码，且 `scan_stall_watchdog_enabled` 是否为 `true`。
+如果 `/api/diagnostics` 里 `health_issues` 包含 `storage`，优先检查宿主机 `novels/`、`results/` 权限和 Compose 的 `PUID` / `PGID`；包含 `config` 则先检查 `.env` / API Key。若 `stale_running_count > 0`，说明存在超过卡死保护阈值仍未产生日志的运行任务；优先确认线上镜像 `app.commit` 是否已经包含最新代码，且 `scan_stall_watchdog_enabled` 是否为 `true`。`generated_at` 可以用来确认页面或反向代理看到的是不是最新诊断结果。
 
 公网反向代理 / TLS 建议：
 

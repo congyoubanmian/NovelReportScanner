@@ -837,6 +837,7 @@ def _latest_failed_tasks_for_current_failed_books(books_by_id, tasks):
 
 
 def _diagnostics_summary():
+    generated_at = datetime.fromtimestamp(time.time()).strftime("%Y-%m-%d %H:%M:%S")
     with STATE_LOCK:
         books_by_id = {book_id: dict(book) for book_id, book in STATE.get("books", {}).items()}
         tasks = [dict(task) for task in STATE.get("tasks", [])]
@@ -876,6 +877,7 @@ def _diagnostics_summary():
         default=0,
     )
     return {
+        "generated_at": generated_at,
         "ok": not health_issues,
         "ready": not health_issues,
         "config_ready": CONFIG_READY,
