@@ -598,6 +598,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("npm run lint", check_script)
         self.assertIn("npm run format:check", check_script)
         self.assertIn("npm run build", check_script)
+        self.assertIn("concurrency:", workflow_text)
+        self.assertIn("group: ci-${{ github.ref }}", workflow_text)
+        self.assertIn("cancel-in-progress: true", workflow_text)
         self.assertIn("npm run check", workflow_text)
 
     def test_gitignore_blocks_runtime_inputs_and_keeps_templates(self):
