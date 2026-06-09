@@ -366,10 +366,19 @@ async function handleBatchScan(bookIds) {
     const response = await enqueueBooks(bookIds)
     const queued = response.result?.queued?.length || 0
     const skipped = response.result?.skipped?.length || 0
+    const skippedReasonText = reasonSummaryText(response.result?.skipped_reasons)
     if (queued) {
-      toastSuccess(skipped ? `已加入 ${queued} 本，跳过 ${skipped} 本` : `已加入 ${queued} 本`)
+      toastSuccess(
+        skipped
+          ? `已加入 ${queued} 本，跳过 ${skipped} 本${skippedReasonText ? `（${skippedReasonText}）` : ''}`
+          : `已加入 ${queued} 本`
+      )
     } else {
-      toastError(skipped ? `没有可加入的书籍，跳过 ${skipped} 本` : '没有可加入的书籍')
+      toastError(
+        skipped
+          ? `没有可加入的书籍，跳过 ${skipped} 本${skippedReasonText ? `（${skippedReasonText}）` : ''}`
+          : '没有可加入的书籍'
+      )
     }
     await refresh()
   } catch (e) {
