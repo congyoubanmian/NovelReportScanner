@@ -1376,10 +1376,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("await callback({ signal: activeController.signal })", text)
         self.assertIn("activeController = null", text)
         self.assertIn("shouldResume = true\n    if (timer || document.hidden) return", text)
-        self.assertIn("shouldResume = false\n    if (timer) {", text)
+        self.assertIn("function pause()", text)
         self.assertIn("if (timer) {\n      clearInterval(timer)\n      timer = null\n    }\n    activeController?.abort()", text)
+        self.assertIn("shouldResume = false\n    pause()", text)
         self.assertIn("running = false", text)
         self.assertIn("setInterval(runCallback, intervalMs)", text)
+        self.assertIn("if (document.hidden) {\n      pause()", text)
         self.assertIn("runCallback()\n      if (shouldResume) start()", text)
 
     def test_rate_limit_scope_auto_resolves_by_key_count(self):

@@ -25,8 +25,7 @@ export function usePolling(callback, intervalMs = 3000, options = {}) {
     timer = setInterval(runCallback, intervalMs)
   }
 
-  function stop() {
-    shouldResume = false
+  function pause() {
     if (timer) {
       clearInterval(timer)
       timer = null
@@ -34,9 +33,14 @@ export function usePolling(callback, intervalMs = 3000, options = {}) {
     activeController?.abort()
   }
 
+  function stop() {
+    shouldResume = false
+    pause()
+  }
+
   function handleVisibilityChange() {
     if (document.hidden) {
-      stop()
+      pause()
     } else {
       runCallback()
       if (shouldResume) start()
