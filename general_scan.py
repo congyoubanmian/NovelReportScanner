@@ -22,6 +22,7 @@ CONTENT_AWARE_SAMPLING = os.environ.get("GENERAL_SCAN_CONTENT_AWARE_SAMPLING", "
 CONTENT_AWARE_SAMPLING_SCHEMA_VERSION = 1
 INCREMENTAL_REUSE = os.environ.get("GENERAL_SCAN_INCREMENTAL_REUSE", "1").strip() == "1"
 WRITING_QUALITY_ENABLED = os.environ.get("GENERAL_SCAN_WRITING_QUALITY", "1").strip() == "1"
+ZHIHU_WRITING_INSIGHTS_SCHEMA_VERSION = 1
 NARRATIVE_ARCHITECTURE_ENABLED = os.environ.get("GENERAL_SCAN_NARRATIVE_ARCHITECTURE", "1").strip() == "1"
 ROLLING_CONTEXT_ENABLED = os.environ.get("GENERAL_SCAN_ROLLING_CONTEXT", "1").strip() == "1"
 CONTEXT_MAX_CHARS = int(os.environ.get("GENERAL_SCAN_CONTEXT_MAX_CHARS", "1600"))
@@ -473,6 +474,8 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
         return False
     if not WRITING_QUALITY_ENABLED and data.get("writing_quality_enabled") not in {None, False}:
         return False
+    if WRITING_QUALITY_ENABLED and data.get("zhihu_writing_insights_schema_version") != ZHIHU_WRITING_INSIGHTS_SCHEMA_VERSION:
+        return False
     if NARRATIVE_ARCHITECTURE_ENABLED and data.get("narrative_architecture_enabled") is not True:
         return False
     if not NARRATIVE_ARCHITECTURE_ENABLED and data.get("narrative_architecture_enabled") not in {None, False}:
@@ -690,7 +693,7 @@ def _detect_stage1_word_poverty(text: str) -> Dict[str, Any]:
             count = text.count(phrase)
             if count <= 0:
                 continue
-            phrase_counts[phrase] = phrase_counts.get(phrase, 0) + count
+            phrase_counts[phrase] = max(phrase_counts.get(phrase, 0), count)
             hits.append({"phrase": phrase, "count": count})
         if hits:
             category_hits[category] = sorted(hits, key=lambda x: x["count"], reverse=True)[:8]
@@ -788,7 +791,7 @@ def _normalize_zhihu_writing_insights(value: Any, deterministic_word_poverty: Di
     }
 
 
-def _normalize_writing_quality(value: Any) -> Dict[str, Any]:
+def _normalize_writing_quality(value: Any, source_text: str = "") -> Dict[str, Any]:
     raw = _safe_dict(value)
     normalized = {}
     for key, label in WRITING_QUALITY_DIMENSIONS.items():
@@ -815,7 +818,11 @@ def _normalize_writing_quality(value: Any) -> Dict[str, Any]:
             break
     normalized["chunk_assessment"] = str(raw.get("chunk_assessment") or "").strip()[:120]
     normalized["evidence"] = [x for x in evidence if x.get("quote") or x.get("note")]
-    normalized["zhihu_insights"] = _normalize_zhihu_writing_insights(raw.get("zhihu_insights"))
+    deterministic_word_poverty = _detect_stage1_word_poverty(source_text) if source_text else {}
+    normalized["zhihu_insights"] = _normalize_zhihu_writing_insights(
+        raw.get("zhihu_insights"),
+        deterministic_word_poverty=deterministic_word_poverty,
+    )
     return normalized
 
 
@@ -1604,6 +1611,107 @@ def _compact_writing_quality_for_summary(chunk_results: List[Dict[str, Any]], li
     return _sample_records_for_summary(compact, limit)
 
 
+def _compact_zhihu_writing_insights_for_summary(chunk_results: List[Dict[str, Any]], limit: int = 80) -> Dict[str, Any]:
+    records = []
+    total_template_count = 0
+    weighted_density_sum = 0.0
+    density_weight = 0
+    phrase_counts = {}
+    category_counts = {}
+    severity_counts = {}
+    for item in chunk_results:
+        if not isinstance(item, dict):
+            continue
+        writing_quality = _safe_dict(item.get("writing_quality"))
+        insights = _safe_dict(writing_quality.get("zhihu_insights"))
+        if not insights:
+            continue
+        word_poverty = _safe_dict(insights.get("word_poverty"))
+        reader_space = _safe_dict(insights.get("reader_inference_space"))
+        communication = _safe_dict(insights.get("communication_efficiency"))
+        style = _safe_dict(insights.get("style_identity"))
+        authenticity = _safe_dict(insights.get("emotional_authenticity"))
+        if not any([word_poverty, reader_space, communication, style, authenticity]):
+            continue
+
+        count = _safe_int(word_poverty.get("template_phrase_count"))
+        density = word_poverty.get("template_phrase_density_per_1k")
+        try:
+            density_value = float(density)
+        except (TypeError, ValueError):
+            density_value = 0.0
+        severity = str(word_poverty.get("severity") or "").strip()
+        if severity:
+            severity_counts[severity] = severity_counts.get(severity, 0) + 1
+        total_template_count += count
+        if density_value:
+            weighted_density_sum += density_value
+            density_weight += 1
+        for item_text in word_poverty.get("most_frequent_templates") or []:
+            text = str(item_text or "").strip()
+            if not text:
+                continue
+            phrase, _, rest = text.partition("(")
+            try:
+                phrase_count = int(rest.split("次", 1)[0])
+            except (TypeError, ValueError):
+                phrase_count = 1
+            phrase_counts[phrase] = phrase_counts.get(phrase, 0) + phrase_count
+        for category, hits in (_safe_dict(word_poverty.get("category_hits"))).items():
+            category_total = 0
+            for hit in hits or []:
+                if isinstance(hit, dict):
+                    category_total += _safe_int(hit.get("count"))
+            if category_total:
+                category_counts[category] = category_counts.get(category, 0) + category_total
+
+        records.append({
+            "chunk_index": item.get("original_chunk_index", item.get("chunk_index")),
+            "summary": item.get("one_sentence_summary"),
+            "word_poverty": {
+                "template_phrase_count": count,
+                "template_phrase_density_per_1k": density_value,
+                "most_frequent_templates": _safe_list(word_poverty.get("most_frequent_templates"), limit=5),
+                "severity": severity,
+            },
+            "reader_inference_space": {
+                "score": reader_space.get("score"),
+                "l1_tell_count": reader_space.get("l1_tell_count"),
+                "l2_show_count": reader_space.get("l2_show_count"),
+                "l3_subtext_count": reader_space.get("l3_subtext_count"),
+                "assessment": reader_space.get("assessment"),
+            },
+            "communication_efficiency": {
+                "level": communication.get("level"),
+                "level_name": communication.get("level_name"),
+                "redundant_expression_rate": communication.get("redundant_expression_rate"),
+                "assessment": communication.get("assessment"),
+            },
+            "style_identity": {
+                "detected_traits": _safe_list(style.get("detected_traits"), limit=4),
+                "originality_score": style.get("originality_score"),
+                "consistency_score": style.get("consistency_score"),
+            },
+            "emotional_authenticity": {
+                "score": authenticity.get("score"),
+                "transcendence_potential": authenticity.get("transcendence_potential"),
+                "assessment": authenticity.get("assessment"),
+            },
+        })
+
+    return {
+        "template_phrase_count": total_template_count,
+        "average_template_density_per_1k": round(weighted_density_sum / density_weight, 3) if density_weight else 0.0,
+        "most_frequent_templates": [
+            f"{phrase}({count}次)"
+            for phrase, count in sorted(phrase_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+        ],
+        "category_counts": dict(sorted(category_counts.items(), key=lambda x: x[1], reverse=True)[:8]),
+        "severity_counts": severity_counts,
+        "sample_chunks": _sample_records_for_summary(records, limit),
+    }
+
+
 def _compact_narrative_architecture_for_summary(chunk_results: List[Dict[str, Any]], limit: int = 120) -> List[Dict[str, Any]]:
     compact = []
     for item in chunk_results:
@@ -2029,6 +2137,45 @@ def _writing_quality_summary_json_hint() -> str:
   "water_chapter_analysis": ["水文/冗余/低效叙事的具体表现"],"""
 
 
+def _zhihu_writing_insights_summary_json_hint() -> str:
+    if not WRITING_QUALITY_ENABLED:
+        return ""
+    return """
+  "zhihu_writing_insights_overall": {
+    "word_poverty": {
+      "severity": "未见明显模板词|偶见模板词|轻度词穷|严重词穷",
+      "template_phrase_count": 0,
+      "template_phrase_density_per_1k": 0,
+      "most_frequent_templates": ["模板词(次数)"],
+      "category_patterns": ["高频模板类别"],
+      "assessment": "词汇精准度和模板化表达评价"
+    },
+    "reader_inference_space": {
+      "score": 0-10,
+      "l1_l2_l3_pattern": "直白告知/行为暗示/意境留白的整体比例判断",
+      "assessment": "是否给读者留出推导空间"
+    },
+    "communication_efficiency": {
+      "level": "1-5",
+      "level_name": "门外汉|入门|发展|进阶|大师",
+      "redundancy_verdict": "冗余和理解负担判断",
+      "assessment": "信息传播效率评价"
+    },
+    "style_identity": {
+      "detected_traits": ["风格标签"],
+      "originality_score": 0-10,
+      "consistency_score": 0-10,
+      "assessment": "文风辨识度评价"
+    },
+    "emotional_authenticity": {
+      "score": 0-10,
+      "transcendence_potential": "高|中|低",
+      "assessment": "情感真实度评价"
+    },
+    "priority_improvements": ["最值得优先修改的写作问题"]
+  },"""
+
+
 def _narrative_architecture_system_instruction() -> str:
     if not NARRATIVE_ARCHITECTURE_ENABLED:
         return ""
@@ -2367,7 +2514,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         "foreshadowing": _safe_list(data.get("foreshadowing")),
         "quality_notes": _safe_list(data.get("quality_notes")),
         "specialty_notes": _safe_list(data.get("specialty_notes")),
-        "writing_quality": _normalize_writing_quality(data.get("writing_quality")) if WRITING_QUALITY_ENABLED else {},
+        "writing_quality": _normalize_writing_quality(data.get("writing_quality"), source_text=text_chunk) if WRITING_QUALITY_ENABLED else {},
         "pacing_analysis": _normalize_pacing_analysis(data.get("pacing_analysis")) if WRITING_QUALITY_ENABLED else {},
         "information_density": _normalize_information_density(data.get("information_density")) if WRITING_QUALITY_ENABLED else {},
         "narrative_structure": _normalize_narrative_structure(data.get("narrative_structure")) if NARRATIVE_ARCHITECTURE_ENABLED else {},
@@ -2532,6 +2679,7 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
     }
     if WRITING_QUALITY_ENABLED:
         material["writing_quality_chunks"] = _compact_writing_quality_for_summary(chunk_results)
+        material["zhihu_writing_insights_material"] = _compact_zhihu_writing_insights_for_summary(chunk_results)
     if NARRATIVE_ARCHITECTURE_ENABLED:
         material["narrative_architecture_chunks"] = _compact_narrative_architecture_for_summary(chunk_results)
     if FORESHADOWING_ENGINEERING_ENABLED:
@@ -2554,6 +2702,7 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
         "pacing_analysis_overall",
         "information_density_audit",
         "water_chapter_analysis",
+        "zhihu_writing_insights_overall",
         "narrative_structure_analysis",
         "outline_architecture_overall",
         "foreshadowing_engineering_analysis",
@@ -2591,6 +2740,8 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 开启读者体验分析时，请基于 reader_experience_chunks 判断投入度曲线、爽点/燃点/甜点/解谜满足、期待管理和体验风险；不要把单个片段的挫败点扩大成整书结论。
 开启连续性审计时，请基于 continuity_audit_material 和 rolling_context_timeline 检查人物关系、世界观设定、伏笔回收、因果链、战力/规则是否前后自洽；只能标记有分块证据支持的风险，不要把“尚未完结”本身判为错误。
 开启滚动上下文时，请基于 rolling_context_timeline 理解全书阶段推进、人物关系延续、未解问题和回收情况；不要要求或引用 context_snapshot_used 这类逐块内部快照。"""
+    if WRITING_QUALITY_ENABLED:
+        system_prompt += "\n开启知乎文笔洞察时，请结合 zhihu_writing_insights_material 中的确定性模板词统计和分块AI判断，归纳词穷症状、读者推导空间、信息传播效率、风格辨识度与情感真实度；模板词次数必须优先服从材料里的程序统计。"
     user_prompt = f"""书名：{book_name}
 
 分块材料：
@@ -2604,7 +2755,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
   "worldbuilding": ["世界观/设定要点"],
   "themes": ["主题表达"],
   "foreshadowing_and_payoff": ["伏笔、悬念、回收情况"],
-{specialty_json_hint}{_narrative_architecture_summary_json_hint()}{_foreshadowing_engineering_summary_json_hint()}{_semantic_layers_summary_json_hint()}{_reader_experience_summary_json_hint()}{_continuity_audit_summary_json_hint()}{_writing_quality_summary_json_hint()}
+{specialty_json_hint}{_narrative_architecture_summary_json_hint()}{_foreshadowing_engineering_summary_json_hint()}{_semantic_layers_summary_json_hint()}{_reader_experience_summary_json_hint()}{_continuity_audit_summary_json_hint()}{_writing_quality_summary_json_hint()}{_zhihu_writing_insights_summary_json_hint()}
   "strengths": ["作品优点"],
   "risks_or_issues": ["可能的问题或阅读门槛"],
   "reader_fit": "适合什么读者",
@@ -2637,6 +2788,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         "pacing_analysis_overall": _normalize_object_summary(data.get("pacing_analysis_overall")),
         "information_density_audit": _normalize_object_summary(data.get("information_density_audit")),
         "water_chapter_analysis": _summary_field_value(data, "water_chapter_analysis"),
+        "zhihu_writing_insights_overall": _normalize_object_summary(data.get("zhihu_writing_insights_overall")),
         "narrative_structure_analysis": _normalize_object_summary(data.get("narrative_structure_analysis")),
         "outline_architecture_overall": _normalize_object_summary(data.get("outline_architecture_overall")),
         "foreshadowing_engineering_analysis": _normalize_object_summary(data.get("foreshadowing_engineering_analysis")),
@@ -2815,6 +2967,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "content_aware_sampling": CONTENT_AWARE_SAMPLING,
         "content_aware_sampling_schema_version": CONTENT_AWARE_SAMPLING_SCHEMA_VERSION if CONTENT_AWARE_SAMPLING else None,
         "writing_quality_enabled": WRITING_QUALITY_ENABLED,
+        "zhihu_writing_insights_schema_version": ZHIHU_WRITING_INSIGHTS_SCHEMA_VERSION if WRITING_QUALITY_ENABLED else None,
         "narrative_architecture_enabled": NARRATIVE_ARCHITECTURE_ENABLED,
         "rolling_context_enabled": ROLLING_CONTEXT_ENABLED,
         "rolling_context_schema_version": ROLLING_CONTEXT_SCHEMA_VERSION if ROLLING_CONTEXT_ENABLED else None,

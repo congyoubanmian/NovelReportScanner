@@ -53,6 +53,7 @@ SUMMARY_FIELD_TITLES = {
     "character_highlights": "角色亮点",
     "pacing_and_emotion": "节奏与情绪曲线",
     "writing_quality_overall": "写作质量总评",
+    "zhihu_writing_insights_overall": "知乎文笔洞察",
     "pacing_analysis_overall": "节奏曲线分析",
     "information_density_audit": "信息密度审计",
     "water_chapter_analysis": "水文与冗余分析",
@@ -266,6 +267,9 @@ SUMMARY_FIELD_ALIASES = {
     "writing_quality": "writing_quality_overall",
     "writing_quality_summary": "writing_quality_overall",
     "craft_quality": "writing_quality_overall",
+    "zhihu_writing_insights": "zhihu_writing_insights_overall",
+    "zhihu_writing_quality": "zhihu_writing_insights_overall",
+    "writing_insights": "zhihu_writing_insights_overall",
     "pacing_analysis": "pacing_analysis_overall",
     "rhythm_curve": "pacing_analysis_overall",
     "density_audit": "information_density_audit",
@@ -3412,6 +3416,10 @@ def _clean_text_items(items, limit=5, max_len=120):
     return out
 
 
+def _has_scalar_value(value) -> bool:
+    return value is not None and str(value).strip() != ""
+
+
 def _general_character_rows(detailed_data: dict, limit=20):
     chars = []
     for info in (detailed_data or {}).get("characters") or []:
@@ -3482,6 +3490,7 @@ WRITING_QUALITY_DIMENSION_LABELS = {
 
 GENERAL_CRAFT_SUMMARY_FIELDS = {
     "writing_quality_overall",
+    "zhihu_writing_insights_overall",
     "pacing_analysis_overall",
     "information_density_audit",
     "water_chapter_analysis",
@@ -3557,11 +3566,13 @@ def _append_text_block(lines: list, title: str, value, *, limit: int = 8):
 def _append_general_craft_sections(lines: list, general_summary: dict):
     summary = (general_summary or {}).get("summary") or {}
     writing = summary.get("writing_quality_overall")
+    zhihu = summary.get("zhihu_writing_insights_overall")
     pacing = summary.get("pacing_analysis_overall")
     density = summary.get("information_density_audit")
     water = summary_field_values(summary, "water_chapter_analysis")
     has_any = any([
         isinstance(writing, dict) and writing,
+        isinstance(zhihu, dict) and zhihu,
         isinstance(pacing, dict) and pacing,
         isinstance(density, dict) and density,
         bool(water),
@@ -3599,6 +3610,71 @@ def _append_general_craft_sections(lines: list, general_summary: dict):
             },
         }
         lines.extend(["", "写作质量JSON：", "```json", json.dumps(frontend, ensure_ascii=False, indent=2), "```"])
+
+    if isinstance(zhihu, dict) and zhihu:
+        lines.extend(["", "【知乎文笔洞察】"])
+        word_poverty = zhihu.get("word_poverty") if isinstance(zhihu.get("word_poverty"), dict) else {}
+        if word_poverty:
+            severity = str(word_poverty.get("severity") or "").strip()
+            count = word_poverty.get("template_phrase_count")
+            density_value = word_poverty.get("template_phrase_density_per_1k")
+            metrics = []
+            if severity:
+                metrics.append(f"严重度：{severity}")
+            if _has_scalar_value(count):
+                metrics.append(f"模板词：{count}次")
+            if _has_scalar_value(density_value):
+                metrics.append(f"密度：{density_value}/千字")
+            if metrics:
+                lines.append("；".join(metrics))
+            frequent = _clean_text_items(word_poverty.get("most_frequent_templates") or [], limit=8, max_len=80)
+            if frequent:
+                lines.append(f"高频模板：{'；'.join(frequent)}")
+            categories = _clean_text_items(word_poverty.get("category_patterns") or [], limit=6, max_len=100)
+            if categories:
+                lines.append(f"集中类型：{'；'.join(categories)}")
+            assessment = str(word_poverty.get("assessment") or "").strip()
+            if assessment:
+                lines.append(assessment)
+
+        insight_rows = [
+            ("读者推导空间", "reader_inference_space", ("score", "l1_l2_l3_pattern", "assessment")),
+            ("信息传播效率", "communication_efficiency", ("level_name", "redundancy_verdict", "assessment")),
+            ("文风辨识度", "style_identity", ("detected_traits", "originality_score", "consistency_score", "assessment")),
+            ("情感真实度", "emotional_authenticity", ("score", "transcendence_potential", "assessment")),
+        ]
+        for title, key, fields in insight_rows:
+            item = zhihu.get(key) if isinstance(zhihu.get(key), dict) else {}
+            if not item:
+                continue
+            parts = []
+            for field in fields:
+                value = item.get(field)
+                if isinstance(value, list):
+                    text = "、".join(_clean_text_items(value, limit=5, max_len=30))
+                elif field == "score" and _has_scalar_value(value):
+                    text = f"{_clamp_score(value):.1f}/10"
+                elif field in {"originality_score", "consistency_score"} and _has_scalar_value(value):
+                    label = "原创度" if field == "originality_score" else "一致性"
+                    text = f"{label}{_clamp_score(value):.1f}/10"
+                else:
+                    text = str(value or "").strip()
+                if text:
+                    parts.append(text[:160])
+            if parts:
+                lines.append(f"- {title}：{'；'.join(parts)}")
+        improvements = _clean_text_items(zhihu.get("priority_improvements") or [], limit=5, max_len=160)
+        if improvements:
+            lines.extend(["", "优先改进："])
+            lines.extend(f"- {item}" for item in improvements)
+        frontend = {
+            "word_poverty": word_poverty,
+            "reader_inference_space": zhihu.get("reader_inference_space") or {},
+            "communication_efficiency": zhihu.get("communication_efficiency") or {},
+            "style_identity": zhihu.get("style_identity") or {},
+            "emotional_authenticity": zhihu.get("emotional_authenticity") or {},
+        }
+        lines.extend(["", "知乎文笔洞察JSON：", "```json", json.dumps(frontend, ensure_ascii=False, indent=2), "```"])
 
     if isinstance(pacing, dict) and pacing:
         _append_text_block(lines, "节奏曲线分析", pacing)

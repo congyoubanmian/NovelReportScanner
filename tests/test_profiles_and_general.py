@@ -7025,6 +7025,39 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "evidence": ["审问段落持续推进证词"],
                     "assessment": "整体写作质量良好。",
                 },
+                "zhihu_writing_insights_overall": {
+                    "word_poverty": {
+                        "severity": "轻度词穷",
+                        "template_phrase_count": 12,
+                        "template_phrase_density_per_1k": 2.4,
+                        "most_frequent_templates": ["不禁(5次)", "冷冷的(3次)"],
+                        "category_patterns": ["情绪副词", "表情描写"],
+                        "assessment": "存在少量模板化表达。",
+                    },
+                    "reader_inference_space": {
+                        "score": 6.5,
+                        "l1_l2_l3_pattern": "L2多于L1，L3偏少",
+                        "assessment": "能用动作暗示情绪，但留白不足。",
+                    },
+                    "communication_efficiency": {
+                        "level": "3",
+                        "level_name": "发展",
+                        "redundancy_verdict": "少量说明重复",
+                        "assessment": "表达基本顺畅。",
+                    },
+                    "style_identity": {
+                        "detected_traits": ["冷静克制", "说明性强"],
+                        "originality_score": 6,
+                        "consistency_score": 7,
+                        "assessment": "风格稳定但辨识度一般。",
+                    },
+                    "emotional_authenticity": {
+                        "score": 6,
+                        "transcendence_potential": "中",
+                        "assessment": "情绪有真实细节但爆发力有限。",
+                    },
+                    "priority_improvements": ["减少直白情绪判断"],
+                },
                 "pacing_analysis_overall": {
                     "rhythm_curve": "调查推进较紧",
                     "high_points": ["获得证词"],
@@ -7051,6 +7084,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("| 信息密度 | 8.0/10 |", text)
         self.assertIn("【写作优势】", text)
         self.assertIn("线索推进密集", text)
+        self.assertIn("【知乎文笔洞察】", text)
+        self.assertIn("严重度：轻度词穷", text)
+        self.assertIn("高频模板：不禁(5次)；冷冷的(3次)", text)
+        self.assertIn("- 读者推导空间：6.5/10；L2多于L1，L3偏少；能用动作暗示情绪，但留白不足。", text)
+        self.assertIn("知乎文笔洞察JSON", text)
         self.assertIn("【节奏曲线分析】", text)
         self.assertIn("调查推进较紧", text)
         self.assertIn("【信息密度审计】", text)
@@ -10621,6 +10659,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         "emotional_impact": {"score": 6, "strength": "紧张感稳定", "weakness": ""},
                         "info_density": {"score": 8, "water_chapter_score": 2, "strength": "线索密集", "weakness": ""},
                         "worldbuilding_integration": {"score": 6, "strength": "警务设定服务剧情", "weakness": ""},
+                        "zhihu_insights": {
+                            "reader_inference_space": {
+                                "score": 6.5,
+                                "l1_tell_count": 2,
+                                "l2_show_count": 4,
+                                "l3_subtext_count": 1,
+                                "assessment": "有动作暗示，留白不足",
+                            },
+                            "communication_efficiency": {
+                                "level": "3",
+                                "level_name": "发展",
+                                "assessment": "表达顺畅但略重复",
+                            },
+                        },
                         "chunk_assessment": "信息密度较高。",
                         "evidence": [{"type": "亮点", "dimension": "对话质量", "quote": "他说出了关键证词", "note": "推进线索"}],
                     },
@@ -10644,13 +10696,22 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 }
 
             general_scan._call_json = fake_call_json
-            result = general_scan._scan_chunk("主角审问嫌疑人并发现证词漏洞。", 0, 1, profile=profile)
+            result = general_scan._scan_chunk(
+                "主角审问嫌疑人并发现证词漏洞，不禁冷冷的追问，围观者倒吸一口凉气。",
+                0,
+                1,
+                profile=profile,
+            )
         finally:
             general_scan._call_json = old_call_json
 
         self.assertTrue(any("写作质量、节奏和信息密度评估" in prompt for prompt in prompts))
         self.assertEqual(result["writing_quality"]["prose_quality"]["score"], 6.8)
         self.assertEqual(result["writing_quality"]["info_density"]["water_chapter_score"], 2.0)
+        zhihu = result["writing_quality"]["zhihu_insights"]
+        self.assertGreaterEqual(zhihu["word_poverty"]["template_phrase_count"], 3)
+        self.assertIn("倒吸一口凉气", zhihu["word_poverty"]["most_frequent_templates"][0])
+        self.assertEqual(zhihu["reader_inference_space"]["score"], 6.5)
         self.assertEqual(result["pacing_analysis"]["pacing_type"], "dense")
         self.assertEqual(result["information_density"]["skipability"], "essential")
         self.assertIn("嫌疑人证词改变", result["information_density"]["key_information"])
@@ -11355,6 +11416,21 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         "skip_advice": "审问段不建议跳读",
                     },
                     "water_chapter_analysis": ["说明性段落略多"],
+                    "zhihu_writing_insights_overall": {
+                        "word_poverty": {
+                            "severity": "轻度词穷",
+                            "template_phrase_count": 6,
+                            "template_phrase_density_per_1k": 2.2,
+                            "most_frequent_templates": ["不禁(3次)"],
+                            "category_patterns": ["情绪副词"],
+                            "assessment": "存在可替换模板词。",
+                        },
+                        "reader_inference_space": {"score": 6.5, "assessment": "留白偏少"},
+                        "communication_efficiency": {"level": "3", "level_name": "发展", "assessment": "表达顺畅"},
+                        "style_identity": {"detected_traits": ["冷静"], "originality_score": 6, "consistency_score": 7},
+                        "emotional_authenticity": {"score": 6, "transcendence_potential": "中", "assessment": "情感自然"},
+                        "priority_improvements": ["减少模板情绪词"],
+                    },
                     "strengths": ["结构清晰"],
                     "risks_or_issues": ["中段略慢"],
                     "reader_fit": "悬疑读者",
@@ -11366,7 +11442,20 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "写作质量测试",
                 [{
                     "one_sentence_summary": "主角审问嫌疑人。",
-                    "writing_quality": {"prose_quality": {"score": 6.5}, "info_density": {"score": 8}},
+                    "writing_quality": {
+                        "prose_quality": {"score": 6.5},
+                        "info_density": {"score": 8},
+                        "zhihu_insights": {
+                            "word_poverty": {
+                                "template_phrase_count": 6,
+                                "template_phrase_density_per_1k": 2.2,
+                                "most_frequent_templates": ["不禁(3次)"],
+                                "category_hits": {"情绪副词": [{"phrase": "不禁", "count": 3}]},
+                                "severity": "轻度词穷",
+                            },
+                            "reader_inference_space": {"score": 6.5, "assessment": "留白偏少"},
+                        },
+                    },
                     "pacing_analysis": {"pacing_type": "dense"},
                     "information_density": {"density_score": "high"},
                 }],
@@ -11376,8 +11465,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             general_scan._call_json = old_call_json
 
         self.assertTrue(any('"writing_quality_chunks"' in prompt for prompt in prompts))
+        self.assertTrue(any('"zhihu_writing_insights_material"' in prompt for prompt in prompts))
+        self.assertTrue(any('"zhihu_writing_insights_overall"' in prompt for prompt in prompts))
         self.assertTrue(any('"writing_quality_overall"' in prompt for prompt in prompts))
         self.assertEqual(summary["writing_quality_overall"]["overall_score"], "7.2")
+        self.assertEqual(summary["zhihu_writing_insights_overall"]["word_poverty"]["severity"], "轻度词穷")
+        self.assertIn("减少模板情绪词", summary["zhihu_writing_insights_overall"]["priority_improvements"])
         self.assertEqual(summary["writing_quality_overall"]["dimension_scores"]["info_density"], "8")
         self.assertIn("调查推进较紧", summary["pacing_analysis_overall"]["rhythm_curve"])
         self.assertIn("信息密度较高", summary["information_density_audit"]["density_verdict"])
@@ -13121,6 +13214,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "content_aware_sampling": general_scan.CONTENT_AWARE_SAMPLING,
                 "content_aware_sampling_schema_version": general_scan.CONTENT_AWARE_SAMPLING_SCHEMA_VERSION,
                 "writing_quality_enabled": general_scan.WRITING_QUALITY_ENABLED,
+                "zhihu_writing_insights_schema_version": general_scan.ZHIHU_WRITING_INSIGHTS_SCHEMA_VERSION,
                 "narrative_architecture_enabled": general_scan.NARRATIVE_ARCHITECTURE_ENABLED,
                 "rolling_context_enabled": general_scan.ROLLING_CONTEXT_ENABLED,
                 "rolling_context_schema_version": general_scan.ROLLING_CONTEXT_SCHEMA_VERSION,
@@ -13152,6 +13246,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             data_without_writing_meta = dict(data)
             data_without_writing_meta.pop("writing_quality_enabled", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_writing_meta, novel_path, "history"))
+            data_without_zhihu_meta = dict(data)
+            data_without_zhihu_meta.pop("zhihu_writing_insights_schema_version", None)
+            self.assertFalse(general_scan._is_fresh_summary(data_without_zhihu_meta, novel_path, "history"))
             data_without_narrative_meta = dict(data)
             data_without_narrative_meta.pop("narrative_architecture_enabled", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_narrative_meta, novel_path, "history"))
@@ -13219,6 +13316,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "content_aware_sampling": general_scan.CONTENT_AWARE_SAMPLING,
                 "content_aware_sampling_schema_version": general_scan.CONTENT_AWARE_SAMPLING_SCHEMA_VERSION,
                 "writing_quality_enabled": general_scan.WRITING_QUALITY_ENABLED,
+                "zhihu_writing_insights_schema_version": general_scan.ZHIHU_WRITING_INSIGHTS_SCHEMA_VERSION,
                 "narrative_architecture_enabled": general_scan.NARRATIVE_ARCHITECTURE_ENABLED,
                 "rolling_context_enabled": general_scan.ROLLING_CONTEXT_ENABLED,
                 "rolling_context_schema_version": general_scan.ROLLING_CONTEXT_SCHEMA_VERSION,
