@@ -2515,15 +2515,23 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 content_length = int(self.headers.get("Content-Length", "0"))
             except ValueError:
-                self.send_error(400, "invalid content length")
+                self._send_json({"error": "invalid content length"}, 400)
                 return
             if content_length > MAX_UPLOAD_SIZE + 1024 * 1024:
-                self.send_error(413, f"file too large, max {MAX_UPLOAD_SIZE} bytes")
+                self._send_json({"error": f"file too large, max {MAX_UPLOAD_SIZE} bytes"}, 413)
                 return
-            form = cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": self.headers.get("Content-Type")})
+            try:
+                form = cgi.FieldStorage(
+                    fp=self.rfile,
+                    headers=self.headers,
+                    environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": self.headers.get("Content-Type")},
+                )
+            except Exception as exc:
+                self._send_json({"error": "invalid multipart form", "detail": str(exc)}, 400)
+                return
             file_item = form["file"] if "file" in form else None
             if file_item is None or not getattr(file_item, "filename", ""):
-                self.send_error(400, "missing file")
+                self._send_json({"error": "missing file"}, 400)
                 return
             filename = _safe_filename(file_item.filename)
             try:

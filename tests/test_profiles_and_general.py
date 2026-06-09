@@ -6255,6 +6255,63 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             else:
                 os.environ["WEB_ACCESS_TOKEN"] = old_token
 
+    def test_web_manager_upload_errors_return_json(self):
+        class FakeHandler(web_manager.Handler):
+            def __init__(self, headers=None):
+                self.path = "/upload"
+                self.headers = {
+                    "Content-Length": "0",
+                    "Content-Type": "multipart/form-data; boundary=x",
+                    "X-Web-Unsafe-Action": "confirm",
+                    **(headers or {}),
+                }
+                self.rfile = io.BytesIO(b"")
+                self.sent = []
+
+            def _send_json(self, data, status=200):
+                self.sent.append((status, data))
+
+        old_token = os.environ.get("WEB_ACCESS_TOKEN")
+        old_max_upload_size = web_manager.MAX_UPLOAD_SIZE
+        old_field_storage = web_manager.cgi.FieldStorage
+        try:
+            os.environ.pop("WEB_ACCESS_TOKEN", None)
+
+            invalid_length = FakeHandler({"Content-Length": "bad"})
+            web_manager.Handler.do_POST(invalid_length)
+            self.assertEqual(invalid_length.sent[0], (400, {"error": "invalid content length"}))
+
+            web_manager.MAX_UPLOAD_SIZE = 10
+            too_large = FakeHandler({"Content-Length": str(10 + 1024 * 1024 + 1)})
+            web_manager.Handler.do_POST(too_large)
+            self.assertEqual(too_large.sent[0], (413, {"error": "file too large, max 10 bytes"}))
+
+            class EmptyForm:
+                def __contains__(self, _key):
+                    return False
+
+            web_manager.cgi.FieldStorage = lambda *_args, **_kwargs: EmptyForm()
+            missing_file = FakeHandler()
+            web_manager.Handler.do_POST(missing_file)
+            self.assertEqual(missing_file.sent[0], (400, {"error": "missing file"}))
+
+            def fail_field_storage(*_args, **_kwargs):
+                raise ValueError("bad multipart")
+
+            web_manager.cgi.FieldStorage = fail_field_storage
+            bad_multipart = FakeHandler()
+            web_manager.Handler.do_POST(bad_multipart)
+            self.assertEqual(bad_multipart.sent[0][0], 400)
+            self.assertEqual(bad_multipart.sent[0][1]["error"], "invalid multipart form")
+            self.assertIn("bad multipart", bad_multipart.sent[0][1]["detail"])
+        finally:
+            web_manager.MAX_UPLOAD_SIZE = old_max_upload_size
+            web_manager.cgi.FieldStorage = old_field_storage
+            if old_token is None:
+                os.environ.pop("WEB_ACCESS_TOKEN", None)
+            else:
+                os.environ["WEB_ACCESS_TOKEN"] = old_token
+
     def test_web_manager_send_public_file_streams_in_chunks(self):
         class TrackingWFile:
             def __init__(self):
