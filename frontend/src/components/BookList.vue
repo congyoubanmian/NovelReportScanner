@@ -41,11 +41,19 @@ function runningLogText(book) {
 }
 
 function messageText(book) {
-  return runningLogText(book) || book.message || ''
+  return runningLogText(book) || book.source_error || book.message || ''
 }
 
 function isBusy(book) {
   return book.status === 'queued' || book.status === 'running'
+}
+
+function hasSourceError(book) {
+  return Boolean(book.file_missing || book.source_error)
+}
+
+function canEnqueue(book) {
+  return !isBusy(book) && !hasSourceError(book)
 }
 
 function isQueued(book) {
@@ -89,7 +97,7 @@ const displayBooks = computed(() =>
   }))
 )
 
-const selectableBooks = computed(() => displayBooks.value.filter((book) => !isBusy(book)))
+const selectableBooks = computed(() => displayBooks.value.filter((book) => canEnqueue(book)))
 const selectableIds = computed(() => selectableBooks.value.map((book) => book.id))
 const selectedReadyIds = computed(() =>
   selectedIds.value.filter((id) => selectableIds.value.includes(id))
@@ -195,7 +203,7 @@ function confirmDelete(book) {
               <input
                 type="checkbox"
                 :checked="selectedReadyIds.includes(book.id)"
-                :disabled="isBusy(book)"
+                :disabled="!canEnqueue(book)"
                 @change="toggleBookSelection(book, $event.target.checked)"
               />
             </td>
@@ -206,7 +214,7 @@ function confirmDelete(book) {
                   <input
                     type="checkbox"
                     :checked="isAutoProfile(book)"
-                    :disabled="isBusy(book)"
+                    :disabled="isBusy(book) || hasSourceError(book)"
                     @change="toggleAuto(book)"
                   />
                   <span>自动前三</span>
@@ -216,7 +224,7 @@ function confirmDelete(book) {
                     <input
                       type="checkbox"
                       :checked="isProfileChecked(book, p.name)"
-                      :disabled="isBusy(book)"
+                      :disabled="isBusy(book) || hasSourceError(book)"
                       @change="toggleManualProfile(book, p.name, $event.target.checked)"
                     />
                     <span>{{ p.display_name || p.name }}</span>
@@ -241,7 +249,11 @@ function confirmDelete(book) {
             <td class="col-msg" :title="messageText(book)">{{ messageText(book) }}</td>
             <td style="text-align: right">
               <div class="actions">
-                <button class="btn btn-sm" @click="emit('scan', book.id)" :disabled="isBusy(book)">
+                <button
+                  class="btn btn-sm"
+                  @click="emit('scan', book.id)"
+                  :disabled="!canEnqueue(book)"
+                >
                   加入队列
                 </button>
                 <button

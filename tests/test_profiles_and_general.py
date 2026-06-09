@@ -3,10 +3,12 @@ import json
 import io
 import logging
 import os
+import queue
 import re
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 import ast
@@ -6562,6 +6564,76 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.SCAN_CANCEL_TIMEOUT_SECONDS = old_cancel_timeout
             web_manager.os.killpg = old_killpg
 
+    def test_web_manager_worker_fails_when_queued_novel_file_disappears(self):
+        class OneShotQueue(queue.Queue):
+            def __init__(self, first_item):
+                super().__init__()
+                self.put(first_item)
+
+            def get(self, *args, **kwargs):
+                if self.empty():
+                    raise SystemExit
+                return super().get(*args, **kwargs)
+
+        old_state = web_manager.STATE
+        old_base_dir = web_manager.get_base_dir
+        old_queue = web_manager.TASK_QUEUE
+        old_queue_ids = set(web_manager.TASK_QUEUE_IDS)
+        old_run_scan = web_manager._run_scan_subprocess
+        old_save_state = web_manager._save_state
+        old_time = web_manager.time.strftime
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                novels_dir = os.path.join(tmp, "novels")
+                os.makedirs(novels_dir, exist_ok=True)
+                missing_path = os.path.join(novels_dir, "missing.txt")
+                task_id = "task-missing-file"
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.STATE = {
+                    "books": {
+                        "missing": {
+                            "id": "missing",
+                            "name": "missing",
+                            "path": missing_path,
+                            "profile": "general",
+                            "status": "queued",
+                            "task_id": task_id,
+                        }
+                    },
+                    "tasks": [{"id": task_id, "book_id": "missing", "profile": "general", "status": "queued"}],
+                }
+                web_manager.TASK_QUEUE = OneShotQueue(task_id)
+                web_manager.TASK_QUEUE_IDS.clear()
+                web_manager.TASK_QUEUE_IDS.add(task_id)
+                web_manager._save_state = lambda: None
+                web_manager.time.strftime = lambda *_args, **_kwargs: "2026-06-09 12:00:00"
+                web_manager._run_scan_subprocess = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                    AssertionError("scan subprocess should not start")
+                )
+
+                worker = threading.Thread(target=web_manager._worker_loop, daemon=True)
+                worker.start()
+                web_manager.TASK_QUEUE.join()
+                worker.join(timeout=1)
+
+                task = web_manager.STATE["tasks"][0]
+                book = web_manager.STATE["books"]["missing"]
+                self.assertEqual(task["status"], "failed")
+                self.assertEqual(task["error"], "源文件不存在，请重新上传小说文件")
+                self.assertEqual(book["status"], "failed")
+                self.assertTrue(book["file_missing"])
+                self.assertNotIn(task_id, web_manager.TASK_QUEUE_IDS)
+                self.assertFalse(worker.is_alive())
+        finally:
+            web_manager.STATE = old_state
+            web_manager.get_base_dir = old_base_dir
+            web_manager.TASK_QUEUE = old_queue
+            web_manager.TASK_QUEUE_IDS.clear()
+            web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
+            web_manager._run_scan_subprocess = old_run_scan
+            web_manager._save_state = old_save_state
+            web_manager.time.strftime = old_time
+
     def test_web_manager_scan_log_heartbeat_updates_running_task(self):
         old_state = web_manager.STATE
         old_save_state = web_manager._save_state
@@ -6981,6 +7053,103 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.LAST_BOOK_SYNC_AT = old_last_sync
             web_manager.SYNC_BOOKS_TTL_SECONDS = old_ttl
 
+    def test_web_manager_sync_marks_missing_novel_files(self):
+        old_state = web_manager.STATE
+        old_base_dir = web_manager.get_base_dir
+        old_save_state = web_manager._save_state
+        old_last_sync = web_manager.LAST_BOOK_SYNC_AT
+        old_ttl = web_manager.SYNC_BOOKS_TTL_SECONDS
+        save_calls = []
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                novels_dir = os.path.join(tmp, "novels")
+                os.makedirs(novels_dir, exist_ok=True)
+                missing_path = os.path.join(novels_dir, "missing.txt")
+                web_manager.STATE = {
+                    "books": {
+                        "missing": {
+                            "id": "missing",
+                            "name": "missing",
+                            "path": missing_path,
+                            "profile": "general",
+                            "status": "completed",
+                            "message": "完成",
+                        }
+                    },
+                    "tasks": [],
+                }
+                web_manager.get_base_dir = lambda: tmp
+                web_manager._save_state = lambda: save_calls.append(json.dumps(web_manager.STATE, sort_keys=True))
+                web_manager.LAST_BOOK_SYNC_AT = 0.0
+                web_manager.SYNC_BOOKS_TTL_SECONDS = 0.0
+
+                web_manager._sync_books_from_disk()
+
+                book = web_manager.STATE["books"]["missing"]
+                self.assertTrue(book["file_missing"])
+                self.assertEqual(book["source_error"], "源文件不存在，请重新上传小说文件")
+                self.assertEqual(book["message"], "源文件不存在，请重新上传小说文件")
+                self.assertEqual(book["status"], "completed")
+                self.assertEqual(len(save_calls), 1)
+        finally:
+            web_manager.STATE = old_state
+            web_manager.get_base_dir = old_base_dir
+            web_manager._save_state = old_save_state
+            web_manager.LAST_BOOK_SYNC_AT = old_last_sync
+            web_manager.SYNC_BOOKS_TTL_SECONDS = old_ttl
+
+    def test_web_manager_sync_clears_missing_marker_when_novel_returns(self):
+        old_state = web_manager.STATE
+        old_base_dir = web_manager.get_base_dir
+        old_profile_suggestions = web_manager._profile_suggestions
+        old_save_state = web_manager._save_state
+        old_last_sync = web_manager.LAST_BOOK_SYNC_AT
+        old_ttl = web_manager.SYNC_BOOKS_TTL_SECONDS
+        save_calls = []
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                novels_dir = os.path.join(tmp, "novels")
+                os.makedirs(novels_dir, exist_ok=True)
+                novel_path = os.path.join(novels_dir, "book.txt")
+                with open(novel_path, "w", encoding="utf-8") as f:
+                    f.write("正文")
+                web_manager.STATE = {
+                    "books": {
+                        "book": {
+                            "id": "book",
+                            "name": "book",
+                            "path": novel_path,
+                            "profile": "general",
+                            "status": "failed",
+                            "file_missing": True,
+                            "source_error": "源文件不存在，请重新上传小说文件",
+                            "message": "源文件不存在，请重新上传小说文件",
+                        }
+                    },
+                    "tasks": [],
+                }
+                web_manager.get_base_dir = lambda: tmp
+                web_manager._profile_suggestions = lambda _path, _book_name: [{"name": "general"}]
+                web_manager._save_state = lambda: save_calls.append(json.dumps(web_manager.STATE, sort_keys=True))
+                web_manager.LAST_BOOK_SYNC_AT = 0.0
+                web_manager.SYNC_BOOKS_TTL_SECONDS = 0.0
+
+                web_manager._sync_books_from_disk()
+
+                book = web_manager.STATE["books"]["book"]
+                self.assertNotIn("file_missing", book)
+                self.assertNotIn("source_error", book)
+                self.assertNotIn("message", book)
+                self.assertEqual(book["profile_suggestions"], [{"name": "general"}])
+                self.assertEqual(len(save_calls), 1)
+        finally:
+            web_manager.STATE = old_state
+            web_manager.get_base_dir = old_base_dir
+            web_manager._profile_suggestions = old_profile_suggestions
+            web_manager._save_state = old_save_state
+            web_manager.LAST_BOOK_SYNC_AT = old_last_sync
+            web_manager.SYNC_BOOKS_TTL_SECONDS = old_ttl
+
     def test_web_manager_recovers_incomplete_tasks_and_queue_positions(self):
         old_state = web_manager.STATE
         old_queue_ids = set(web_manager.TASK_QUEUE_IDS)
@@ -7052,6 +7221,53 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.TASK_QUEUE_IDS.clear()
             web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
             web_manager.STATE = old_state
+
+    def test_web_manager_enqueue_rejects_missing_novel_file(self):
+        old_state = web_manager.STATE
+        old_base_dir = web_manager.get_base_dir
+        old_queue_ids = set(web_manager.TASK_QUEUE_IDS)
+        old_save_state = web_manager._save_state
+        save_calls = []
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                novels_dir = os.path.join(tmp, "novels")
+                os.makedirs(novels_dir, exist_ok=True)
+                missing_path = os.path.join(novels_dir, "missing.txt")
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.TASK_QUEUE_IDS.clear()
+                while not web_manager.TASK_QUEUE.empty():
+                    web_manager.TASK_QUEUE.get_nowait()
+                    web_manager.TASK_QUEUE.task_done()
+                web_manager.STATE = {
+                    "books": {
+                        "missing": {
+                            "id": "missing",
+                            "name": "missing",
+                            "path": missing_path,
+                            "profile": "general",
+                            "status": "idle",
+                        }
+                    },
+                    "tasks": [],
+                }
+                web_manager._save_state = lambda: save_calls.append(json.dumps(web_manager.STATE, sort_keys=True))
+
+                ok, result = web_manager._enqueue("missing")
+
+                self.assertFalse(ok)
+                self.assertEqual(result, "源文件不存在，请重新上传小说文件")
+                self.assertEqual(web_manager.STATE["tasks"], [])
+                self.assertTrue(web_manager.STATE["books"]["missing"]["file_missing"])
+                self.assertEqual(len(save_calls), 1)
+        finally:
+            while not web_manager.TASK_QUEUE.empty():
+                web_manager.TASK_QUEUE.get_nowait()
+                web_manager.TASK_QUEUE.task_done()
+            web_manager.TASK_QUEUE_IDS.clear()
+            web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
+            web_manager.STATE = old_state
+            web_manager.get_base_dir = old_base_dir
+            web_manager._save_state = old_save_state
 
     def test_web_manager_retry_failed_tasks_by_type_uses_latest_failed_task(self):
         old_state = web_manager.STATE

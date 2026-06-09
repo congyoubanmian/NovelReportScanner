@@ -258,6 +258,44 @@ def _validate_upload_target(book_id, path, overwrite=False):
     return True, ""
 
 
+def _book_source_missing_message(book):
+    path = (book or {}).get("path")
+    if not path:
+        return "源文件路径缺失"
+    novels_root = os.path.abspath(_novels_dir())
+    ap = os.path.abspath(path)
+    if not _is_path_inside(ap, novels_root):
+        return ""
+    if not os.path.isfile(ap):
+        return "源文件不存在，请重新上传小说文件"
+    return ""
+
+
+def _mark_book_source_status(book):
+    message = _book_source_missing_message(book)
+    if message:
+        changed = False
+        if book.get("file_missing") is not True:
+            book["file_missing"] = True
+            changed = True
+        if book.get("source_error") != message:
+            book["source_error"] = message
+            changed = True
+        if book.get("status") not in {"queued", "running"} and book.get("message") != message:
+            book["message"] = message
+            changed = True
+        return changed
+    changed = False
+    for key in ("file_missing", "source_error"):
+        if key in book:
+            book.pop(key, None)
+            changed = True
+    if book.get("message") in {"源文件路径缺失", "源文件不存在，请重新上传小说文件"}:
+        book.pop("message", None)
+        changed = True
+    return changed
+
+
 def _load_state():
     global STATE
     path = _state_path()
@@ -380,6 +418,7 @@ def _sync_books_from_disk():
     if LAST_BOOK_SYNC_AT and now - LAST_BOOK_SYNC_AT < SYNC_BOOKS_TTL_SECONDS:
         return
     discovered = []
+    discovered_ids = set()
     for root, _dirs, files in os.walk(_novels_dir()):
         for filename in files:
             if not filename.lower().endswith(".txt"):
@@ -389,7 +428,9 @@ def _sync_books_from_disk():
                 signature = _book_suggestion_signature(path)
             except OSError:
                 continue
-            discovered.append((path, _book_id_from_path(path), signature))
+            book_id = _book_id_from_path(path)
+            discovered.append((path, book_id, signature))
+            discovered_ids.add(book_id)
     refresh_jobs = []
     state_changed = False
     with STATE_LOCK:
@@ -413,9 +454,18 @@ def _sync_books_from_disk():
             if entry.get("path") != path:
                 entry["path"] = path
                 state_changed = True
+            if _mark_book_source_status(entry):
+                state_changed = True
             if entry.get("status") not in {"queued", "running"}:
                 if entry.get("suggestion_signature") != signature or not entry.get("profile_suggestions"):
                     refresh_jobs.append((book_id, path, entry.get("name", ""), signature))
+        for book_id, entry in STATE["books"].items():
+            if book_id in discovered_ids:
+                continue
+            if entry.get("status") in {"queued", "running"}:
+                continue
+            if _mark_book_source_status(entry):
+                state_changed = True
     refreshed = []
     for book_id, path, book_name, signature in refresh_jobs:
         refreshed.append((book_id, signature, _profile_suggestions(path, book_name)))
@@ -1490,6 +1540,11 @@ def _enqueue(book_id):
             return False, "book not found"
         if book.get("status") in {"queued", "running"}:
             return False, "book already queued or running"
+        source_error = _book_source_missing_message(book)
+        if source_error:
+            if _mark_book_source_status(book):
+                _save_state()
+            return False, source_error
         _refresh_book_suggestions(book)
         task_id = uuid.uuid4().hex[:12]
         profile_name = _normalize_web_profile(book.get("profile", "auto")) or "auto"
@@ -1899,6 +1954,20 @@ def _worker_loop():
             if not book:
                 task["status"] = "failed"
                 task["error"] = "book missing"
+                _save_state()
+                TASK_QUEUE.task_done()
+                continue
+            source_error = _book_source_missing_message(book)
+            if source_error:
+                now_text = time.strftime("%Y-%m-%d %H:%M:%S")
+                task["status"] = "failed"
+                task["finished_at"] = now_text
+                task["updated_at"] = now_text
+                task["error"] = source_error
+                task["message"] = source_error
+                book["status"] = "failed"
+                book["message"] = source_error
+                _mark_book_source_status(book)
                 _save_state()
                 TASK_QUEUE.task_done()
                 continue
