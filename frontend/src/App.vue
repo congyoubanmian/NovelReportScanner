@@ -61,6 +61,8 @@ const configForm = ref({
   harem_scan_max_tokens: '3000',
   harem_scan_retry_workers: '1',
   general_scan_max_chunks: '',
+  general_character_api_downshift_max_depth: '1',
+  general_character_api_downshift_min_chars: '4000',
   general_scan_smart_density: true,
   general_scan_content_aware_sampling: true,
   general_scan_incremental_reuse: true,
@@ -321,6 +323,10 @@ function syncConfigForm(config) {
     harem_scan_max_tokens: config.harem_scan_max_tokens || '3000',
     harem_scan_retry_workers: config.harem_scan_retry_workers || '1',
     general_scan_max_chunks: config.general_scan_max_chunks || '80',
+    general_character_api_downshift_max_depth:
+      config.general_character_api_downshift_max_depth || '1',
+    general_character_api_downshift_min_chars:
+      config.general_character_api_downshift_min_chars || '4000',
     general_scan_smart_density: config.general_scan_smart_density !== false,
     general_scan_content_aware_sampling: config.general_scan_content_aware_sampling !== false,
     general_scan_incremental_reuse: config.general_scan_incremental_reuse !== false,
@@ -362,6 +368,10 @@ async function saveRuntimeConfig() {
       harem_scan_max_tokens: configForm.value.harem_scan_max_tokens,
       harem_scan_retry_workers: configForm.value.harem_scan_retry_workers,
       general_scan_max_chunks: configForm.value.general_scan_max_chunks,
+      general_character_api_downshift_max_depth:
+        configForm.value.general_character_api_downshift_max_depth,
+      general_character_api_downshift_min_chars:
+        configForm.value.general_character_api_downshift_min_chars,
       general_scan_smart_density: configForm.value.general_scan_smart_density,
       general_scan_content_aware_sampling: configForm.value.general_scan_content_aware_sampling,
       general_scan_incremental_reuse: configForm.value.general_scan_incremental_reuse,
@@ -791,6 +801,26 @@ useStateEvents(applyState, {
           v-model="configForm.general_scan_max_chunks"
           type="number"
           min="0"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>通用降载</span>
+        <input
+          v-model="configForm.general_character_api_downshift_max_depth"
+          type="number"
+          min="0"
+          max="3"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>降载阈值</span>
+        <input
+          v-model="configForm.general_character_api_downshift_min_chars"
+          type="number"
+          min="500"
+          max="50000"
           @input="runtimeConfigDirty = true"
         />
       </label>

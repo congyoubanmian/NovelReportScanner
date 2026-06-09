@@ -56,6 +56,8 @@ CHUNK_SIZE = read_int_env(
 HAREM_SCAN_MAX_TOKENS = read_int_env("HAREM_SCAN_MAX_TOKENS", 3000, min_value=500)
 HAREM_SCAN_RETRY_WORKERS = read_int_env("HAREM_SCAN_RETRY_WORKERS", 1, min_value=1)
 GENERAL_CHARACTER_MAX_PER_CHUNK = read_int_env("GENERAL_CHARACTER_MAX_PER_CHUNK", 12, min_value=3, max_value=30)
+GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH = read_int_env("GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH", 1, min_value=0, max_value=3)
+GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS = read_int_env("GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS", 4000, min_value=500)
 GENERAL_CHARACTER_MAX_CHUNKS = read_int_env(
     "GENERAL_CHARACTER_MAX_CHUNKS",
     read_int_env("GENERAL_SCAN_MAX_CHUNKS", 80, min_value=0),
@@ -1347,7 +1349,72 @@ def _cap_general_character_response(result, chunk_index):
     return result
 
 
-def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retries=3):
+def _split_text_for_downshift(text):
+    text = text or ""
+    if len(text) < 2:
+        return [text]
+    midpoint = len(text) // 2
+    candidates = [
+        text.rfind("\n", 0, midpoint),
+        text.find("\n", midpoint),
+        text.rfind("。", 0, midpoint),
+        text.find("。", midpoint),
+    ]
+    split_at = min(
+        [pos for pos in candidates if 0 < pos < len(text) - 1],
+        key=lambda pos: abs(pos - midpoint),
+        default=midpoint,
+    )
+    return [text[:split_at].strip(), text[split_at:].strip()]
+
+
+def _merge_downshift_character_results(partial_results, chunk_index, error_type):
+    merged = {
+        "male_protagonist": None,
+        "female_characters": [],
+        "general_characters": [],
+        "profile_mode": "general",
+        "discarded_facts": [],
+        "_success": True,
+        "_error": "",
+        "_error_type": "",
+        "partial_reason": f"{error_type}_downshift_split",
+    }
+    seen_chars = set()
+    for part_index, result in enumerate(partial_results, 1):
+        if not isinstance(result, dict):
+            continue
+        if not merged["male_protagonist"] and result.get("male_protagonist"):
+            merged["male_protagonist"] = dict(result["male_protagonist"])
+            merged["male_protagonist"].setdefault("partial_index", part_index)
+        for field in ("female_characters", "general_characters"):
+            for item in result.get(field) or []:
+                if not isinstance(item, dict):
+                    continue
+                name = _normalize_person_name(item.get("name", ""))
+                if not name:
+                    continue
+                key = (field, name, item.get("role_type", ""), item.get("summary", ""))
+                if key in seen_chars:
+                    continue
+                seen_chars.add(key)
+                copied = dict(item)
+                copied.setdefault("partial_index", part_index)
+                copied.setdefault("chunk_index", chunk_index)
+                merged[field].append(copied)
+        merged["discarded_facts"].extend(result.get("discarded_facts") or [])
+
+    merged["discarded_facts"].append(discarded_fact(
+        "general_character_scan",
+        {"partial_count": len(partial_results), "chunk_index": chunk_index},
+        merged["partial_reason"],
+        "通用角色识别遇到 API/超时错误后切分文本降载成功",
+        chunk_index,
+    ))
+    return _cap_general_character_response(merged, chunk_index)
+
+
+def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retries=3, _downshift_depth=0):
     """
     分析单个文本块。
     harem 模式识别男主/女主候选；general 模式识别通用核心角色并适配到旧统计结构。
@@ -1411,6 +1478,37 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
                 continue
             logger.error(f"Chunk {chunk_index} API调用失败 (尝试 {retry+1}/{max_retries}): {e}")
             if is_retryable_transport_error(e):
+                if (
+                    profile_mode == "general"
+                    and _downshift_depth < max(0, GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH)
+                    and len(text_chunk or "") >= max(2, GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS)
+                ):
+                    parts = [part for part in _split_text_for_downshift(text_chunk) if part.strip()]
+                    if len(parts) >= 2:
+                        logger.warning(
+                            f"Chunk {chunk_index} 通用角色识别触发降载切分：error_type={error_type} "
+                            f"depth={_downshift_depth} chars={len(text_chunk or '')} parts={len(parts)}"
+                        )
+                        partial_results = []
+                        for part in parts:
+                            part_result = analyze_chunk_for_heroines(
+                                part,
+                                chunk_index,
+                                total_chunks,
+                                max_retries=max_retries,
+                                _downshift_depth=_downshift_depth + 1,
+                            )
+                            if not part_result or not part_result.get("_success"):
+                                return {
+                                    "male_protagonist": None,
+                                    "female_characters": [],
+                                    "_success": False,
+                                    "_error": (part_result or {}).get("_error", f"API调用失败: {e}"),
+                                    "_error_type": (part_result or {}).get("_error_type", error_type),
+                                }
+                            partial_results.append(part_result)
+                        if partial_results:
+                            return _merge_downshift_character_results(partial_results, chunk_index, error_type)
                 return {"male_protagonist": None, "female_characters": [], "_success": False, "_error": f"API调用失败: {e}", "_error_type": classify_scan_error(e)}
             if retry < max_retries - 1:
                 time.sleep(2 ** retry)
