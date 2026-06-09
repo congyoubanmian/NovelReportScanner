@@ -1,6 +1,7 @@
 import json
 from typing import Any, Dict, Iterable, List
 
+from Timerror import extract_status_code
 from shared_utils import is_context_overflow_error, is_retryable_transport_error
 from name_authority import clean_aliases, core_name, is_generic_person_name, normalize_name
 
@@ -35,11 +36,14 @@ def classify_scan_error(exc: Exception) -> str:
     if is_context_overflow_error(exc):
         return "context_overflow"
     text = str(exc or "").lower()
+    status_code = extract_status_code(exc)
+    if status_code in (429, 500, 502, 503, 504):
+        return "api_error"
+    if any(token in text for token in ("服务器错误", "server error", "429", "500", "502", "503", "504", "rate limit")):
+        return "api_error"
     if "timeout" in text or "timed out" in text or "超时" in text:
         return "timeout"
     if is_retryable_transport_error(exc):
-        return "api_error"
-    if any(token in text for token in ("服务器错误", "server error", "429", "500", "502", "503", "504", "rate limit")):
         return "api_error"
     if "json" in text or "parse" in text or "解析" in text:
         return "parse_error"

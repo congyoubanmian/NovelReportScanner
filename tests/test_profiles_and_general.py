@@ -59,6 +59,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("generic_person_name", reasons)
         self.assertIn("unsafe_alias", reasons)
 
+    def test_fact_validator_classifies_gateway_timeout_as_api_error(self):
+        self.assertEqual(fact_validator.classify_scan_error(RuntimeError("服务器错误(504)")), "api_error")
+        self.assertEqual(fact_validator.classify_scan_error(RuntimeError("gateway timeout 504")), "api_error")
+        self.assertEqual(fact_validator.classify_scan_error(RuntimeError("模型超时")), "timeout")
+
     def test_scan_log_handler_uses_rotation_defaults(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             log_path = os.path.join(tmpdir, "analysis.log")
@@ -502,7 +507,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("date -u", workflow_text)
         self.assertIn("Build and push to GHCR", workflow_text)
         self.assertIn("Build and push to Docker Hub", workflow_text)
-        self.assertIn("secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''", workflow_text)
+        self.assertIn("DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}", workflow_text)
+        self.assertIn("DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}", workflow_text)
+        self.assertIn("env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''", workflow_text)
+        self.assertNotIn("if: ${{ secrets.DOCKERHUB_USERNAME", workflow_text)
         self.assertIn("steps.meta_ghcr.outputs.tags", workflow_text)
         self.assertIn("steps.meta_dockerhub.outputs.tags", workflow_text)
 
