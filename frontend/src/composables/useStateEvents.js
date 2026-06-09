@@ -47,6 +47,10 @@ export function useStateEvents(onState, options = {}) {
         scheduleRetry()
       }
     })
+    source.addEventListener('retry', () => {
+      closeSource()
+      connect()
+    })
     source.addEventListener('error', () => {
       closeSource()
       onFallback()

@@ -2288,6 +2288,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             except OSError:
                 return
+        try:
+            self.wfile.write(b"event: retry\ndata: {}\n\n")
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError):
+            return
         return
 
     def _send_public_file(self, path):

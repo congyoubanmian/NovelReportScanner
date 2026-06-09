@@ -1307,6 +1307,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("scheduleRetry()", text)
         self.assertIn("onState(JSON.parse(event.data))", text)
         self.assertIn("catch {\n        closeSource()\n        onFallback()\n        scheduleRetry()\n      }", text)
+        self.assertIn("source.addEventListener('retry'", text)
+        self.assertIn("closeSource()\n      connect()", text)
 
     def test_frontend_polling_skips_overlapping_refreshes(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -6350,6 +6352,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
             body = handler.wfile.data.decode("utf-8")
             self.assertGreater(body.count("event: state"), len(sync_calls))
+            self.assertIn("event: retry", body)
             self.assertEqual(len(sync_calls), 2)
             self.assertAlmostEqual(sync_calls[0], 100.0)
             self.assertAlmostEqual(sync_calls[1], 100.03)
