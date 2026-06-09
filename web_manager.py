@@ -1942,6 +1942,11 @@ def _find_task(task_id):
     return None
 
 
+def _clear_book_active_task_locked(book, task_id):
+    if book and book.get("task_id") == task_id:
+        book.pop("task_id", None)
+
+
 def _scan_log_heartbeat(task_id, line):
     text = str(line or "").strip()
     with STATE_LOCK:
@@ -1995,6 +2000,7 @@ def _worker_loop():
                 book["status"] = "failed"
                 book["message"] = source_error
                 _mark_book_source_status(book)
+                _clear_book_active_task_locked(book, task_id)
                 _save_state()
                 TASK_QUEUE.task_done()
                 continue
@@ -2058,6 +2064,7 @@ def _worker_loop():
                 book["message"] = "完成" if task["status"] == "completed" else result.get("error", "失败")
                 if task["status"] == "completed" and output_index:
                     book["output_index"] = output_index
+                _clear_book_active_task_locked(book, task_id)
                 _invalidate_book_outputs(task.get("book_id"))
                 _save_state()
         except Exception as exc:
@@ -2075,6 +2082,7 @@ def _worker_loop():
                 task["error"] = str(exc)
                 book["status"] = "failed"
                 book["message"] = str(exc)
+                _clear_book_active_task_locked(book, task_id)
                 _invalidate_book_outputs(task.get("book_id"))
                 _save_state()
         finally:

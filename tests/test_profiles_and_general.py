@@ -7099,6 +7099,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertEqual(task["error"], "源文件不存在，请重新上传小说文件")
                 self.assertEqual(book["status"], "failed")
                 self.assertTrue(book["file_missing"])
+                self.assertNotIn("task_id", book)
                 self.assertNotIn(task_id, web_manager.TASK_QUEUE_IDS)
                 self.assertFalse(worker.is_alive())
         finally:
@@ -7108,6 +7109,86 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.TASK_QUEUE_IDS.clear()
             web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
             web_manager._run_scan_subprocess = old_run_scan
+            web_manager._save_state = old_save_state
+            web_manager.time.strftime = old_time
+
+    def test_web_manager_worker_clears_task_id_after_completion(self):
+        class OneShotQueue(queue.Queue):
+            def __init__(self, first_item):
+                super().__init__()
+                self.put(first_item)
+
+            def get(self, *args, **kwargs):
+                if self.empty():
+                    raise SystemExit
+                return super().get(*args, **kwargs)
+
+        old_state = web_manager.STATE
+        old_base_dir = web_manager.get_base_dir
+        old_queue = web_manager.TASK_QUEUE
+        old_queue_ids = set(web_manager.TASK_QUEUE_IDS)
+        old_run_scan = web_manager._run_scan_subprocess
+        old_try_load_config = web_manager._try_load_runtime_config
+        old_collect_outputs = web_manager._collect_book_outputs_from_result
+        old_save_state = web_manager._save_state
+        old_time = web_manager.time.strftime
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                novels_dir = os.path.join(tmp, "novels")
+                os.makedirs(novels_dir, exist_ok=True)
+                novel_path = os.path.join(novels_dir, "book.txt")
+                with open(novel_path, "w", encoding="utf-8") as f:
+                    f.write("正文")
+                task_id = "task-complete"
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.STATE = {
+                    "books": {
+                        "book": {
+                            "id": "book",
+                            "name": "book",
+                            "path": novel_path,
+                            "profile": "general",
+                            "status": "queued",
+                            "task_id": task_id,
+                        }
+                    },
+                    "tasks": [{"id": task_id, "book_id": "book", "profile": "general", "status": "queued"}],
+                }
+                web_manager.TASK_QUEUE = OneShotQueue(task_id)
+                web_manager.TASK_QUEUE_IDS.clear()
+                web_manager.TASK_QUEUE_IDS.add(task_id)
+                web_manager._try_load_runtime_config = lambda _context="scan": (True, "")
+                web_manager._run_scan_subprocess = lambda *_args, **_kwargs: {
+                    "status": "ok",
+                    "profile": "general",
+                    "profiles": ["general"],
+                }
+                web_manager._collect_book_outputs_from_result = lambda *_args, **_kwargs: []
+                web_manager._save_state = lambda: None
+                web_manager.time.strftime = lambda *_args, **_kwargs: "2026-06-09 12:00:00"
+
+                worker = threading.Thread(target=web_manager._worker_loop, daemon=True)
+                worker.start()
+                web_manager.TASK_QUEUE.join()
+                worker.join(timeout=1)
+
+                task = web_manager.STATE["tasks"][0]
+                book = web_manager.STATE["books"]["book"]
+                self.assertEqual(task["status"], "completed")
+                self.assertEqual(book["status"], "completed")
+                self.assertEqual(book["message"], "完成")
+                self.assertNotIn("task_id", book)
+                self.assertNotIn(task_id, web_manager.TASK_QUEUE_IDS)
+                self.assertFalse(worker.is_alive())
+        finally:
+            web_manager.STATE = old_state
+            web_manager.get_base_dir = old_base_dir
+            web_manager.TASK_QUEUE = old_queue
+            web_manager.TASK_QUEUE_IDS.clear()
+            web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
+            web_manager._run_scan_subprocess = old_run_scan
+            web_manager._try_load_runtime_config = old_try_load_config
+            web_manager._collect_book_outputs_from_result = old_collect_outputs
             web_manager._save_state = old_save_state
             web_manager.time.strftime = old_time
 
