@@ -278,10 +278,11 @@ async function applyState(data, options = {}) {
 
 async function refresh(options = {}) {
   try {
-    const data = await getState()
+    const data = await getState({ signal: options.signal })
     stateUnauthorizedNotified.value = false
     await applyState(data, options)
   } catch (e) {
+    if (e.name === 'AbortError') return
     console.error('刷新失败:', e)
     if (String(e.message || '').includes('unauthorized')) {
       if (!stateUnauthorizedNotified.value) {

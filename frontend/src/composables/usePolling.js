@@ -3,14 +3,17 @@ import { onMounted, onUnmounted } from 'vue'
 export function usePolling(callback, intervalMs = 3000, options = {}) {
   let timer = null
   let running = false
+  let activeController = null
   const autoStart = options.autoStart !== false
 
   async function runCallback() {
     if (running) return
     running = true
+    activeController = new AbortController()
     try {
-      await callback()
+      await callback({ signal: activeController.signal })
     } finally {
+      activeController = null
       running = false
     }
   }
@@ -21,9 +24,11 @@ export function usePolling(callback, intervalMs = 3000, options = {}) {
   }
 
   function stop() {
-    if (!timer) return
-    clearInterval(timer)
-    timer = null
+    if (timer) {
+      clearInterval(timer)
+      timer = null
+    }
+    activeController?.abort()
   }
 
   function handleVisibilityChange() {

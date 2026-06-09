@@ -1343,6 +1343,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("signal: controller.signal", text)
         self.assertIn("if (!timedOut) throw e", text)
         self.assertIn("externalSignal?.removeEventListener('abort', abortFromExternal)", text)
+        self.assertIn("export function getState(options = {})", text)
+        self.assertIn("return _api('/api/state', options)", text)
 
     def test_frontend_sse_fallback_retries_after_parse_errors(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -1366,9 +1368,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             text = f.read()
 
         self.assertIn("let running = false", text)
+        self.assertIn("let activeController = null", text)
         self.assertIn("async function runCallback()", text)
         self.assertIn("if (running) return", text)
-        self.assertIn("await callback()", text)
+        self.assertIn("activeController = new AbortController()", text)
+        self.assertIn("await callback({ signal: activeController.signal })", text)
+        self.assertIn("activeController = null", text)
+        self.assertIn("if (timer) {\n      clearInterval(timer)\n      timer = null\n    }\n    activeController?.abort()", text)
         self.assertIn("running = false", text)
         self.assertIn("setInterval(runCallback, intervalMs)", text)
         self.assertIn("runCallback()\n      start()", text)

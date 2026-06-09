@@ -122,8 +122,8 @@ function _writeHeaders(headers = {}) {
   return merged
 }
 
-export function getState() {
-  return _api('/api/state')
+export function getState(options = {}) {
+  return _api('/api/state', options)
 }
 
 export function getDiagnostics() {
