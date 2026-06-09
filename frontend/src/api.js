@@ -50,12 +50,23 @@ async function _api(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
 
 async function _request(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  let timedOut = false
+  const externalSignal = options.signal
+  const abortFromExternal = () => controller.abort()
+  if (externalSignal?.aborted) {
+    abortFromExternal()
+  } else {
+    externalSignal?.addEventListener('abort', abortFromExternal, { once: true })
+  }
+  const timeout = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       ...options,
       headers: _requestHeaders(options.headers),
-      signal: options.signal || controller.signal
+      signal: controller.signal
     })
     if (!res.ok) {
       const text = await res.text()
@@ -64,6 +75,7 @@ async function _request(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
     return res
   } catch (e) {
     if (e.name === 'AbortError') {
+      if (!timedOut) throw e
       throw new Error(
         timeoutMs >= UPLOAD_TIMEOUT_MS ? '上传超时，请检查网络或减小文件大小' : '请求超时',
         { cause: e }
@@ -72,6 +84,7 @@ async function _request(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
     throw e
   } finally {
     clearTimeout(timeout)
+    externalSignal?.removeEventListener('abort', abortFromExternal)
   }
 }
 

@@ -1282,6 +1282,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("const basePath = hashIndex >= 0 ? path.slice(0, hashIndex) : path", text)
         self.assertIn("const hash = hashIndex >= 0 ? path.slice(hashIndex) : ''", text)
         self.assertIn("return `${basePath}${joiner}token=${encodeURIComponent(token)}${hash}`", text)
+        self.assertIn("const externalSignal = options.signal", text)
+        self.assertIn("externalSignal?.addEventListener('abort', abortFromExternal, { once: true })", text)
+        self.assertIn("signal: controller.signal", text)
+        self.assertIn("if (!timedOut) throw e", text)
+        self.assertIn("externalSignal?.removeEventListener('abort', abortFromExternal)", text)
 
     def test_frontend_sse_fallback_retries_after_parse_errors(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
