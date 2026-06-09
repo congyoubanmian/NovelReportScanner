@@ -593,6 +593,7 @@ def _failure_reason_label(error_text):
 def _failed_task_diagnostic(task, book):
     log_path = task.get("log_path", "")
     error_text = _task_error_text(task)
+    result = task.get("result") if isinstance(task.get("result"), dict) else {}
     return {
         "task_id": task.get("id"),
         "book_id": task.get("book_id"),
@@ -607,6 +608,11 @@ def _failed_task_diagnostic(task, book):
         "failure_reason": _failure_reason_label(error_text),
         "log_path": log_path,
         "log_file": _file_link(log_path) if log_path else None,
+        "return_code": result.get("return_code"),
+        "elapsed_seconds": result.get("elapsed_seconds"),
+        "last_output": result.get("last_output", ""),
+        "last_result_payload_preview": result.get("last_result_payload_preview", ""),
+        "killed_by_stall_watchdog": bool(result.get("killed_by_stall_watchdog")),
     }
 
 
@@ -1550,6 +1556,7 @@ def _web_scan_command(book_path, profile_name, run_id):
 
 def _run_scan_subprocess(book_path, profile_name, run_id, log_file, task_id=None, heartbeat_callback=None):
     cmd = _web_scan_command(book_path, profile_name, run_id)
+    started_monotonic = time.monotonic()
     popen_kwargs = {
         "cwd": get_base_dir(),
         "stdout": subprocess.PIPE,
@@ -1570,6 +1577,9 @@ def _run_scan_subprocess(book_path, profile_name, run_id, log_file, task_id=None
             RUNNING_TASK_PROCS[task_id] = proc
     result = None
     last_heartbeat_at = 0.0
+    last_output_line = ""
+    last_result_payload = ""
+    killed_by_stall_watchdog = False
     output_queue = queue.Queue()
 
     def reader():
@@ -1593,6 +1603,7 @@ def _run_scan_subprocess(book_path, profile_name, run_id, log_file, task_id=None
                     and proc.poll() is None
                     and time.monotonic() - last_output_at >= SCAN_STALL_TIMEOUT_SECONDS
                 ):
+                    killed_by_stall_watchdog = True
                     result = {
                         "status": "fail",
                         "error": f"scan process stalled without output for {SCAN_STALL_TIMEOUT_SECONDS:g}s",
@@ -1616,8 +1627,10 @@ def _run_scan_subprocess(book_path, profile_name, run_id, log_file, task_id=None
             if line is None:
                 break
             last_output_at = time.monotonic()
+            last_output_line = str(line or "").strip()[:500]
             if line.startswith(_WEB_SCAN_RESULT_PREFIX):
                 payload = line[len(_WEB_SCAN_RESULT_PREFIX):].strip()
+                last_result_payload = payload[:1000]
                 try:
                     result = json.loads(payload)
                 except json.JSONDecodeError as exc:
@@ -1641,6 +1654,12 @@ def _run_scan_subprocess(book_path, profile_name, run_id, log_file, task_id=None
         result = dict(result)
         result["status"] = "fail"
         result["error"] = f"scan process exited with code {return_code}"
+    if isinstance(result, dict):
+        result.setdefault("return_code", return_code)
+        result.setdefault("elapsed_seconds", round(max(0.0, time.monotonic() - started_monotonic), 3))
+        result.setdefault("last_output", last_output_line)
+        result.setdefault("last_result_payload_preview", last_result_payload)
+        result.setdefault("killed_by_stall_watchdog", killed_by_stall_watchdog)
     return result
 
 

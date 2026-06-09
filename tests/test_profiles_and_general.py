@@ -5436,10 +5436,67 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
             self.assertEqual(result["status"], "ok")
             self.assertEqual(result["profile"], "general")
+            self.assertEqual(result["return_code"], 0)
+            self.assertGreaterEqual(result["elapsed_seconds"], 0)
             self.assertIn("scan started", log_file.getvalue())
             self.assertNotIn(web_manager._WEB_SCAN_RESULT_PREFIX, log_file.getvalue())
             self.assertIn("--web-scan-task", calls[0][0])
             self.assertIn("--profile-json", calls[0][0])
+        finally:
+            web_manager.subprocess.Popen = old_popen
+
+    def test_web_manager_scan_subprocess_reports_invalid_result_context(self):
+        class FakeProcess:
+            def __init__(self):
+                self.stdout = iter([
+                    "scan started\n",
+                    web_manager._WEB_SCAN_RESULT_PREFIX + '{"status":\n',
+                ])
+                self.return_code = None
+
+            def wait(self):
+                self.return_code = 0
+                return 0
+
+            def poll(self):
+                return self.return_code
+
+        old_popen = web_manager.subprocess.Popen
+        try:
+            web_manager.subprocess.Popen = lambda _cmd, **_kwargs: FakeProcess()
+            result = web_manager._run_scan_subprocess("/tmp/book.txt", ["general"], "run1", io.StringIO())
+
+            self.assertEqual(result["status"], "fail")
+            self.assertIn("invalid scan result", result["error"])
+            self.assertEqual(result["return_code"], 0)
+            self.assertIn('{"status":', result["last_result_payload_preview"])
+            self.assertTrue(result["last_output"].startswith(web_manager._WEB_SCAN_RESULT_PREFIX))
+        finally:
+            web_manager.subprocess.Popen = old_popen
+
+    def test_web_manager_scan_subprocess_reports_missing_result_context(self):
+        class FakeProcess:
+            def __init__(self):
+                self.stdout = iter(["scan started\n", "scan failed before result\n"])
+                self.return_code = None
+
+            def wait(self):
+                self.return_code = 2
+                return 2
+
+            def poll(self):
+                return self.return_code
+
+        old_popen = web_manager.subprocess.Popen
+        try:
+            web_manager.subprocess.Popen = lambda _cmd, **_kwargs: FakeProcess()
+            result = web_manager._run_scan_subprocess("/tmp/book.txt", ["general"], "run1", io.StringIO())
+
+            self.assertEqual(result["status"], "fail")
+            self.assertIn("exited without result", result["error"])
+            self.assertEqual(result["return_code"], 2)
+            self.assertEqual(result["last_output"], "scan failed before result")
+            self.assertFalse(result["killed_by_stall_watchdog"])
         finally:
             web_manager.subprocess.Popen = old_popen
 
@@ -5536,6 +5593,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertLess(time.monotonic() - started, 1.5)
             self.assertEqual(result["status"], "fail")
             self.assertIn("stalled without output", result["error"])
+            self.assertEqual(result["return_code"], -15)
+            self.assertTrue(result["killed_by_stall_watchdog"])
+            self.assertGreaterEqual(result["elapsed_seconds"], 0)
             self.assertTrue(fake_proc.terminated)
             self.assertFalse(fake_proc.killed)
         finally:
@@ -5676,7 +5736,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                             "status": "failed",
                             "created_at": "2026-06-09 05:10:00",
                             "finished_at": "2026-06-09 05:40:00",
-                            "result": {"status": "fail", "error": "storage write failed: Permission denied"},
+                            "result": {
+                                "status": "fail",
+                                "error": "storage write failed: Permission denied",
+                                "return_code": 2,
+                                "elapsed_seconds": 12.5,
+                                "last_output": "Permission denied",
+                                "last_result_payload_preview": "",
+                                "killed_by_stall_watchdog": False,
+                            },
                         },
                         {
                             "id": "task-failed-3",
@@ -5726,6 +5794,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(recent_failed[0]["task_id"], "task-failed-3")
             failed_with_log = next(item for item in recent_failed if item["task_id"] == "task-failed-1")
             self.assertTrue(failed_with_log["log_file"]["url"].startswith("/files?path="))
+            failed_with_context = next(item for item in recent_failed if item["task_id"] == "task-failed-2")
+            self.assertEqual(failed_with_context["return_code"], 2)
+            self.assertEqual(failed_with_context["elapsed_seconds"], 12.5)
+            self.assertEqual(failed_with_context["last_output"], "Permission denied")
+            self.assertFalse(failed_with_context["killed_by_stall_watchdog"])
             self.assertIn("storage", diagnostics)
         finally:
             web_manager.STATE = old_state
