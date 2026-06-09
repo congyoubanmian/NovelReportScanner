@@ -6194,6 +6194,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "SCAN_FUTURE_STALL_TIMEOUT_SECONDS",
         )
         old_runtime = {name: getattr(web_manager, name) for name in runtime_names}
+        old_load_configs = web_manager.load_configs
+        load_calls = []
         try:
             for key in old_env:
                 os.environ.pop(key, None)
@@ -6219,9 +6221,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 web_manager.TimeoutHTTPServer = FakeServer
                 web_manager._load_state = lambda: None
                 web_manager._start_worker_once = lambda: None
+                def tracked_load_configs(base_dir, interactive=True):
+                    load_calls.append((base_dir, interactive))
+                    return old_load_configs(base_dir, interactive=interactive)
+
+                web_manager.load_configs = tracked_load_configs
 
                 web_manager.run_server()
 
+                self.assertEqual(len(load_calls), 1)
                 self.assertEqual(created_servers[0].address, ("0.0.0.0", 9876))
                 self.assertTrue(web_manager.CONFIG_READY)
                 self.assertEqual(created_servers[0].request_timeout, 7.5)
@@ -6240,6 +6248,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.TimeoutHTTPServer = old_server_class
             web_manager._load_state = old_load_state
             web_manager._start_worker_once = old_start_worker_once
+            web_manager.load_configs = old_load_configs
             web_manager.CONFIG_READY = old_config_ready
             for name, value in old_runtime.items():
                 setattr(web_manager, name, value)

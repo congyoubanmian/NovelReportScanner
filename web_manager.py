@@ -2494,7 +2494,4 @@ def run_server(host=None, port=None):
 
 
 if __name__ == "__main__":
-    _try_load_runtime_config("web")
-    host = os.environ.get("WEB_HOST", "127.0.0.1")
-    port = os.environ.get("WEB_PORT", "8765")
-    run_server(host, port)
+    run_server()
