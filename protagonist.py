@@ -30,6 +30,7 @@ from shared_utils import (
     get_base_dir,
     iter_completed_futures,
     is_retryable_transport_error,
+    parse_json_object_lenient,
     read_int_env,
     read_file_safely,
 )
@@ -691,39 +692,7 @@ def _safe_json_loads(text: str):
     尽最大可能把模型输出解析成 JSON。
     主要应对：Invalid control character / 夹杂不可见控制字符 / ```json``` 包裹等。
     """
-    if text is None:
-        raise json.JSONDecodeError("empty", "", 0)
-    s = str(text).strip()
-    # 去掉 code fence
-    s = re.sub(r"```json\s*|\s*```", "", s).strip()
-
-    # 1) 直接解析
-    try:
-        return json.loads(s)
-    except json.JSONDecodeError:
-        pass
-
-    # 2) 宽松解析（允许控制字符）
-    try:
-        return json.JSONDecoder(strict=False).decode(s)
-    except Exception:
-        pass
-
-    # 3) 清理 ASCII 控制字符（保留 \t \n \r）
-    cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", s)
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        pass
-
-    # 4) 兜底：截取最外层 JSON（从第一个 { 到最后一个 }）
-    l = cleaned.find("{")
-    r = cleaned.rfind("}")
-    if l != -1 and r != -1 and r > l:
-        snippet = cleaned[l : r + 1]
-        return json.loads(snippet)
-
-    raise json.JSONDecodeError("unable to parse json", cleaned[:200], 0)
+    return parse_json_object_lenient(text)
 
 
 def _call_json_chat_completion(messages, *, temperature=0.1, max_tokens=4000):

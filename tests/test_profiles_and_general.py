@@ -265,6 +265,39 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertIn("上一次回复不是可解析的 JSON 对象", calls[1]["messages"][-1]["content"])
 
+    def test_shared_json_call_helper_repairs_unescaped_quotes_inside_strings(self):
+        class FakeMessage:
+            def __init__(self, content):
+                self.content = content
+
+        class FakeChoice:
+            def __init__(self, content):
+                self.message = FakeMessage(content)
+
+        class FakeResponse:
+            def __init__(self, content):
+                self.choices = [FakeChoice(content)]
+
+        calls = []
+
+        def fake_chat_completion(**kwargs):
+            calls.append(kwargs)
+            return FakeResponse(
+                '## 分析结果\n```json\n'
+                '{"plot_events":["云烨说"这是真的"，随后离开"],"one_sentence_summary":"ok"}'
+                '\n```'
+            )
+
+        data = shared_utils.call_json_chat_completion_with_fallback(
+            chat_completion_func=fake_chat_completion,
+            model="test-model",
+            messages=[{"role": "user", "content": "输出 JSON"}],
+            max_tokens=128,
+        )
+
+        self.assertEqual(data["plot_events"], ['云烨说"这是真的"，随后离开'])
+        self.assertEqual(len(calls), 1)
+
     def test_shared_json_call_helper_retries_when_json_mode_is_rejected(self):
         class FakeMessage:
             def __init__(self, content):
@@ -455,6 +488,41 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
         self.assertEqual(calls[1]["response_format"], {"type": "json_object"})
         self.assertIn("上一次回复不是可解析的 JSON 对象", calls[1]["messages"][-1]["content"])
+
+    def test_protagonist_json_call_repairs_dialogue_quotes_without_retry(self):
+        class FakeMessage:
+            def __init__(self, content):
+                self.content = content
+
+        class FakeChoice:
+            def __init__(self, content):
+                self.message = FakeMessage(content)
+
+        class FakeResponse:
+            def __init__(self, content):
+                self.choices = [FakeChoice(content)]
+
+        calls = []
+        old_chat = protagonist.chat_completion
+        try:
+            def fake_chat_completion(**kwargs):
+                calls.append(kwargs)
+                return FakeResponse(
+                    '{"male_protagonist":{"name":"云烨"},'
+                    '"female_characters":[{"name":"辛月","summary":"她说"夫君回来了吗""}]}'
+                )
+
+            protagonist.chat_completion = fake_chat_completion
+            data = protagonist._call_json_chat_completion(
+                [{"role": "user", "content": "输出 JSON"}],
+                max_tokens=128,
+            )
+        finally:
+            protagonist.chat_completion = old_chat
+
+        self.assertEqual(data["male_protagonist"]["name"], "云烨")
+        self.assertEqual(data["female_characters"][0]["summary"], '她说"夫君回来了吗"')
+        self.assertEqual(len(calls), 1)
 
     def test_protagonist_chunk_analysis_does_not_outer_retry_transport_error(self):
         class Response:
@@ -2375,6 +2443,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(data["issues"][0]["type"], "半块1")
         self.assertEqual(data["issues"][0]["content"], "问题1")
 
+    def test_scan_json_parser_repairs_unescaped_dialogue_quotes(self):
+        data = novel_scan._safe_json_loads(
+            '{"issues":[{"type":"擦边","content":"她说"别过来"，随后离开"}],'
+            '"heroine_facts":[],"extra_relations":[]}'
+        )
+        self.assertEqual(data["issues"][0]["content"], '她说"别过来"，随后离开')
+
     def test_scan_json_response_diagnostic_flags_truncated_fence(self):
         diagnostic = novel_scan._diagnose_json_response_text(
             '```json\n{"issues":[{"content":"未闭合"'
@@ -2430,6 +2505,38 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(calls[0][1]["max_tokens"], 6000)
         self.assertEqual(calls[1][1]["max_tokens"], 8000)
         self.assertIn("重试压缩要求", calls[1][0][1]["content"])
+
+    def test_scan_chunk_empty_choices_reports_json_error_not_none_subscript(self):
+        class Response:
+            choices = None
+
+        old_call = novel_scan._call_json_chat_completion
+        old_sleep = novel_scan.time.sleep
+        try:
+            novel_scan._call_json_chat_completion = lambda *_args, **_kwargs: Response()
+            novel_scan.time.sleep = lambda *_args, **_kwargs: None
+
+            issues, facts, extra, summary, ok, fatal, err = novel_scan.scan_chunk(
+                "甲女与男主同行。",
+                0,
+                1,
+                "只输出 JSON",
+                ["甲女"],
+                {"name": "男主"},
+            )
+        finally:
+            novel_scan._call_json_chat_completion = old_call
+            novel_scan.time.sleep = old_sleep
+
+        self.assertFalse(ok)
+        self.assertFalse(fatal)
+        self.assertEqual(issues, [])
+        self.assertEqual(facts, [])
+        self.assertEqual(extra, [])
+        self.assertEqual(summary, "")
+        self.assertIn("content_none", err)
+        self.assertNotIn("NoneType", err)
+        self.assertNotIn("not subscriptable", err)
 
     def test_scan_chunk_downshifts_api_504_by_splitting_text(self):
         class Message:

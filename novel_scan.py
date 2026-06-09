@@ -30,6 +30,7 @@ from shared_utils import (
     read_file_safely,
     read_float_env,
     read_int_env,
+    parse_json_object_lenient,
     should_retry_without_json_mode_error,
 )
 from prompt_templates import prompt_template_metadata, prompt_templates_metadata
@@ -2364,6 +2365,11 @@ def _safe_json_loads(text):
     尽最大可能把模型输出解析成 JSON。
     主要应对：空串/非JSON提示语/```json```包裹/夹杂控制字符/截断。
     """
+    try:
+        return parse_json_object_lenient(text)
+    except Exception:
+        pass
+
     def _normalize_fullwidth_json_punct(src: str) -> str:
         """
         将常见“全角 JSON 结构符号”归一为半角，以降低解析失败率。
@@ -2495,6 +2501,31 @@ def _call_json_chat_completion(messages, max_tokens, temperature=0.1, log_prefix
         )
     record_usage(response)
     return response
+
+
+def _response_message_content(response):
+    try:
+        choices = getattr(response, "choices", None)
+        if choices is None and isinstance(response, dict):
+            choices = response.get("choices")
+        if not choices:
+            return None
+        first_choice = choices[0]
+        message = getattr(first_choice, "message", None)
+        if message is None and isinstance(first_choice, dict):
+            message = first_choice.get("message")
+        if message is None:
+            return None
+        if isinstance(message, dict):
+            return message.get("content")
+        return getattr(message, "content", None)
+    except Exception:
+        return None
+
+
+def _response_json_data(response):
+    return _safe_json_loads(_response_message_content(response))
+
 
 def _normalize_issue(issue, chunk_index):
     """确保 issues 输出包含 category/type/content/reason/chunk_index"""
@@ -2661,7 +2692,7 @@ def _scan_chunk_once(text_chunk, index, total, system_prompt, heroines, male_pro
                 max_tokens=8000 if compact_retry else 6000,
                 log_prefix=f"chunk {index}",
             )
-            content = response.choices[0].message.content
+            content = _response_message_content(response)
 
             try:
                 data = _safe_json_loads(content)
@@ -2762,7 +2793,7 @@ def _scan_chunk_once(text_chunk, index, total, system_prompt, heroines, male_pro
                             max_tokens=4000,
                             log_prefix=f"chunk {index} dim_boost {dimension}",
                         )
-                        boost_data = _safe_json_loads(boost_resp.choices[0].message.content)
+                        boost_data = _response_json_data(boost_resp)
                         if not isinstance(boost_data, dict):
                             continue
                         boost_data.pop("_reasoning", None)
@@ -2886,7 +2917,7 @@ def generate_context_summary(text_chunk, heroines=None, male_protagonist=None, p
             max_tokens=800,
             log_prefix="context_summary",
         )
-        data = _safe_json_loads(response.choices[0].message.content)
+        data = _response_json_data(response)
     except Exception as e:
         logger.warning(f"生成前情提要失败，退化为无上下文扫描: {e}")
         return ""
@@ -3461,7 +3492,7 @@ def generate_single_heroine_profile(heroine_name, facts, male_protagonist=None, 
         max_tokens=1200,
         log_prefix=f"profile {heroine_name}",
     )
-    data = _safe_json_loads(response.choices[0].message.content)
+    data = _response_json_data(response)
     if not isinstance(data, dict):
         return {
             "report_summary": _normalize_profile_report_summary("", detail_json_data),
@@ -4122,7 +4153,7 @@ def global_dimension_rescan(chunks, processed_chunks, all_heroine_facts, heroine
                     log_prefix=f"global_rescan_opt chunk {chunk_idx} ({n_heroines}h x {n_dims}d)",
                 )
                 total_calls += 1
-                data = _safe_json_loads(response.choices[0].message.content)
+                data = _response_json_data(response)
                 if not isinstance(data, dict):
                     continue
 

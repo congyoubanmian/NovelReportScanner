@@ -390,6 +390,176 @@ def _extract_first_json_object(text: str) -> Optional[str]:
     return None
 
 
+def _slice_first_to_last_json_object(text: str) -> Optional[str]:
+    ss = _strip_code_fences(text).strip()
+    start = ss.find("{")
+    end = ss.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    return ss[start : end + 1].strip()
+
+
+def _normalize_fullwidth_json_punctuation(text: str) -> str:
+    if not text:
+        return ""
+    mapping = {
+        "［": "[",
+        "］": "]",
+        "｛": "{",
+        "｝": "}",
+        "，": ",",
+        "：": ":",
+        "“": '"',
+        "”": '"',
+    }
+    out = []
+    in_str = False
+    escape = False
+    for ch in text:
+        if in_str:
+            out.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            continue
+        mapped = mapping.get(ch, ch)
+        out.append(mapped)
+        if mapped == '"':
+            in_str = True
+    return "".join(out)
+
+
+def _remove_ascii_control_chars(text: str) -> str:
+    return "".join(
+        ch for ch in str(text or "")
+        if ch in "\t\n\r" or ord(ch) >= 32
+    )
+
+
+def _escape_unescaped_quotes_in_json_strings(text: str) -> str:
+    """
+    Repair a common LLM JSON failure:
+    {"evidence": "他说"这是真的"，随后离开"}
+
+    A quote inside a JSON string is treated as a literal quote unless the next
+    non-space character looks like JSON structure.
+    """
+    if not text:
+        return ""
+    structural_after_quote = {":", ",", "}", "]"}
+    out = []
+    in_str = False
+    escape = False
+    length = len(text)
+    for idx, ch in enumerate(text):
+        if not in_str:
+            out.append(ch)
+            if ch == '"':
+                in_str = True
+            continue
+        if escape:
+            out.append(ch)
+            escape = False
+            continue
+        if ch == "\\":
+            out.append(ch)
+            escape = True
+            continue
+        if ch != '"':
+            out.append(ch)
+            continue
+
+        next_idx = idx + 1
+        while next_idx < length and text[next_idx].isspace():
+            next_idx += 1
+        if next_idx >= length or text[next_idx] in structural_after_quote:
+            out.append(ch)
+            in_str = False
+        else:
+            out.append('\\"')
+    return "".join(out)
+
+
+def _json_candidate_variants(text: Any):
+    raw = "" if text is None else str(text).strip()
+    if not raw:
+        return []
+    candidates = [
+        raw,
+        _strip_code_fences(raw).strip(),
+        _extract_first_json_object(raw),
+        _slice_first_to_last_json_object(raw),
+    ]
+    seen = set()
+    variants = []
+    for candidate in candidates:
+        if not candidate:
+            continue
+        for variant in (
+            candidate,
+            _normalize_fullwidth_json_punctuation(candidate),
+            _remove_ascii_control_chars(candidate),
+        ):
+            if not variant:
+                continue
+            repaired = _escape_unescaped_quotes_in_json_strings(variant)
+            for item in (variant, repaired):
+                if item and item not in seen:
+                    seen.add(item)
+                    variants.append(item)
+    return variants
+
+
+def parse_json_object_lenient(text: Any) -> Dict[str, Any]:
+    """
+    Parse an LLM JSON object with targeted repairs for Markdown wrappers,
+    control characters, full-width JSON punctuation and unescaped quotes inside
+    string values.
+    """
+    if text is None:
+        raise json.JSONDecodeError("message.content is None", "", 0)
+    if not str(text).strip():
+        raise json.JSONDecodeError("message.content is empty", "", 0)
+
+    last_error = None
+    for candidate in _json_candidate_variants(text):
+        for loader in (
+            json.loads,
+            lambda value: json.JSONDecoder(strict=False).decode(value),
+        ):
+            try:
+                obj = loader(candidate)
+                if isinstance(obj, dict):
+                    return obj
+                last_error = TypeError(f"解析到非对象类型: {type(obj)}")
+            except Exception as exc:
+                last_error = exc
+
+    try:
+        from json_repair import repair_json
+
+        for candidate in _json_candidate_variants(text):
+            try:
+                try:
+                    repaired_obj = repair_json(candidate, return_objects=True)
+                except TypeError:
+                    repaired_obj = json.loads(repair_json(candidate))
+                if isinstance(repaired_obj, dict):
+                    return repaired_obj
+                last_error = TypeError(f"解析到非对象类型: {type(repaired_obj)}")
+            except Exception as exc:
+                last_error = exc
+    except Exception:
+        pass
+
+    if last_error is not None:
+        raise json.JSONDecodeError(str(last_error), str(text)[:200], 0)
+    raise json.JSONDecodeError("unable to parse json", str(text)[:200], 0)
+
+
 def _safe_json_loads_maybe(text: Any) -> Tuple[Optional[Dict[str, Any]], str]:
     """
     尝试从模型输出中解析 JSON 对象。成功返回(dict,"")，失败返回(None,错误原因)。
@@ -399,11 +569,8 @@ def _safe_json_loads_maybe(text: Any) -> Tuple[Optional[Dict[str, Any]], str]:
     raw = str(text).strip()
     if not raw:
         return None, "message.content 为空"
-    candidate = _extract_first_json_object(raw) or raw
     try:
-        obj = json.loads(candidate)
-        if not isinstance(obj, dict):
-            return None, f"解析到非对象类型: {type(obj)}"
+        obj = parse_json_object_lenient(raw)
         return obj, ""
     except Exception as e:
         snippet = raw[:120].replace("\n", "\\n")
