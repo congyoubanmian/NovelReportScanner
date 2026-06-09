@@ -739,7 +739,9 @@ def call_json_chat_completion_with_fallback(
                     return data, ""
                 return None, f"解析到非对象类型: {type(data)}"
             except Exception as exc:
-                return None, f"JSON解析失败: {exc}"
+                raw = "" if content is None else str(content)
+                snippet = raw[:120].replace("\n", "\\n")
+                return None, f"JSON解析失败: {exc}; raw_head={snippet}"
         return _safe_json_loads_maybe(content)
 
     base_kwargs = {

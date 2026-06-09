@@ -338,6 +338,39 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertIn("上一次回复不是可解析的 JSON 对象", calls[1]["messages"][-1]["content"])
 
+    def test_shared_json_call_helper_reports_raw_head_for_custom_parser_failures(self):
+        class FakeMessage:
+            def __init__(self, content):
+                self.content = content
+
+        class FakeChoice:
+            def __init__(self, content):
+                self.message = FakeMessage(content)
+
+        class FakeResponse:
+            def __init__(self, content):
+                self.choices = [FakeChoice(content)]
+
+        calls = []
+
+        def fake_chat_completion(**kwargs):
+            calls.append(kwargs)
+            return FakeResponse('{"bad": "云烨说"这是真的"')
+
+        def always_fail(_content):
+            raise json.JSONDecodeError("Expecting ',' delimiter", "", 0)
+
+        with self.assertRaisesRegex(ValueError, "raw_head=.*云烨"):
+            shared_utils.call_json_chat_completion_with_fallback(
+                chat_completion_func=fake_chat_completion,
+                model="test-model",
+                messages=[{"role": "user", "content": "输出 JSON"}],
+                max_tokens=128,
+                parse_json_func=always_fail,
+            )
+
+        self.assertEqual(len(calls), 2)
+
     def test_shared_json_call_helper_repairs_unescaped_quotes_inside_strings(self):
         class FakeMessage:
             def __init__(self, content):
@@ -917,6 +950,35 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("JSON解析失败", result["_error"])
         self.assertNotIn("API调用失败", result["_error"])
         self.assertEqual(len(calls), 2)
+
+    def test_protagonist_chunk_analysis_handles_filtered_male_protagonist(self):
+        old_call = protagonist._call_json_chat_completion
+        old_profile = os.environ.get("ANALYSIS_PROFILE")
+        try:
+            def fake_call(*_args, **_kwargs):
+                return {
+                    "primary_protagonist": {"name": "男主", "summary": "泛称会被过滤"},
+                    "characters": [{"name": "辛月", "score": 8, "summary": "关键角色"}],
+                }
+
+            os.environ["ANALYSIS_PROFILE"] = "general"
+            protagonist._call_json_chat_completion = fake_call
+            result = protagonist.analyze_chunk_for_heroines(
+                "云烨遇见辛月。",
+                chunk_index=0,
+                total_chunks=1,
+                max_retries=1,
+            )
+        finally:
+            protagonist._call_json_chat_completion = old_call
+            if old_profile is None:
+                os.environ.pop("ANALYSIS_PROFILE", None)
+            else:
+                os.environ["ANALYSIS_PROFILE"] = old_profile
+
+        self.assertTrue(result["_success"])
+        self.assertIsNone(result["male_protagonist"])
+        self.assertEqual(result["female_characters"][0]["name"], "辛月")
 
     def test_protagonist_chunk_analysis_adds_compact_retry_prompt_after_parse_error(self):
         calls = []

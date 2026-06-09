@@ -1676,8 +1676,11 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
 
                 lead_label = "主角" if profile_mode == "general" else "男主"
                 char_label = "角色" if profile_mode == "general" else "女性角色"
-                lead_info = f", {lead_label}: {result['male_protagonist']['name']}" if result['male_protagonist'] else ""
-                logger.info(f"Chunk {chunk_index} 分析完成，发现 {len(result['female_characters'])} 个{char_label}{lead_info}")
+                male_protagonist = result.get("male_protagonist") if isinstance(result, dict) else None
+                lead_name = male_protagonist.get("name") if isinstance(male_protagonist, dict) else ""
+                lead_info = f", {lead_label}: {lead_name}" if lead_name else ""
+                characters = result.get("female_characters") if isinstance(result, dict) else []
+                logger.info(f"Chunk {chunk_index} 分析完成，发现 {len(characters or [])} 个{char_label}{lead_info}")
                 result["_success"] = True  # 标记为成功
                 return result
                 
