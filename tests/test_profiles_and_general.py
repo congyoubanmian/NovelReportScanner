@@ -500,6 +500,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertIn(name, workflow_text)
         self.assertIn("github.sha", workflow_text)
         self.assertIn("date -u", workflow_text)
+        self.assertIn("Build and push to GHCR", workflow_text)
+        self.assertIn("Build and push to Docker Hub", workflow_text)
+        self.assertIn("secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''", workflow_text)
+        self.assertIn("steps.meta_ghcr.outputs.tags", workflow_text)
+        self.assertIn("steps.meta_dockerhub.outputs.tags", workflow_text)
 
     def test_frontend_check_script_covers_lint_format_and_build(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -13658,6 +13663,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertAlmostEqual(data["scan_coverage_ratio"], 2 / 3, places=5)
             self.assertEqual(data["failed_chunks"][0]["chunk_index"], 1)
             self.assertIn("模型超时", data["failed_chunks"][0]["error"])
+            self.assertEqual(data["failed_chunks"][0]["error_type"], "timeout")
 
     def test_process_single_novel_returns_general_partial_warning(self):
         with tempfile.TemporaryDirectory() as tmpdir:

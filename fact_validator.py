@@ -34,15 +34,15 @@ def discarded_fact(field: str, value: Any, reason: str, detail: str = "", chunk_
 def classify_scan_error(exc: Exception) -> str:
     if is_context_overflow_error(exc):
         return "context_overflow"
+    text = str(exc or "").lower()
+    if "timeout" in text or "timed out" in text or "超时" in text:
+        return "timeout"
     if is_retryable_transport_error(exc):
         return "api_error"
-    text = str(exc or "").lower()
     if any(token in text for token in ("服务器错误", "server error", "429", "500", "502", "503", "504", "rate limit")):
         return "api_error"
     if "json" in text or "parse" in text or "解析" in text:
         return "parse_error"
-    if "timeout" in text or "timed out" in text or "超时" in text:
-        return "timeout"
     return "unknown"
 
 

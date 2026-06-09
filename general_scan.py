@@ -3322,7 +3322,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
             failed.append({
                 "chunk_index": original_chunk_index - 1,
                 "error": str(exc),
-                "error_type": "context_overflow" if is_context_overflow_error(exc) else "api_error",
+                "error_type": classify_scan_error(exc),
             })
 
     raw_knowledge_base = _build_knowledge_base(chunk_results) if chunk_results else {}
