@@ -243,6 +243,18 @@ def _record_has_high_signal(record: Dict[str, Any]) -> bool:
         "warnings",
         "weaknesses",
     }
+    risk_text_keys = {
+        "summary",
+        "error",
+        "issue",
+        "issues",
+        "note",
+        "notes",
+        "description",
+        "power_inconsistency",
+        "coincidence_dependency",
+        "worldbuilding_consistency",
+    }
     risk_terms = ("风险", "问题", "崩", "矛盾", "注水", "强行", "割裂", "违和", "失败", "低")
 
     def visit(value, key_hint=""):
@@ -255,7 +267,7 @@ def _record_has_high_signal(record: Dict[str, Any]) -> bool:
         if isinstance(value, str):
             if key_hint in signal_keys and value.strip():
                 return True
-            return any(term in value for term in risk_terms)
+            return key_hint in risk_text_keys and any(term in value for term in risk_terms)
         return False
 
     return visit(record)
@@ -1482,9 +1494,7 @@ def _compact_narrative_architecture_for_summary(chunk_results: List[Dict[str, An
             "integrity_score": integrity.get("integrity_score"),
             "forced_plot_devices": integrity.get("forced_plot_devices") or [],
         })
-        if len(compact) >= limit:
-            break
-    return compact
+    return _sample_records_for_summary(compact, limit)
 
 
 def _compact_foreshadowing_engineering_for_summary(chunk_results: List[Dict[str, Any]], limit: int = 120) -> List[Dict[str, Any]]:
@@ -1510,9 +1520,7 @@ def _compact_foreshadowing_engineering_for_summary(chunk_results: List[Dict[str,
             "engineering_notes": engineering.get("engineering_notes") or [],
             "recycling_rate": engineering.get("recycling_rate") or "",
         })
-        if len(compact) >= limit:
-            break
-    return compact
+    return _sample_records_for_summary(compact, limit)
 
 
 def _compact_semantic_layers_for_summary(chunk_results: List[Dict[str, Any]], limit: int = 120) -> List[Dict[str, Any]]:
@@ -1543,9 +1551,7 @@ def _compact_semantic_layers_for_summary(chunk_results: List[Dict[str, Any]], li
             "subtext_or_irony": semantic.get("subtext_or_irony") or [],
             "confidence": semantic.get("confidence"),
         })
-        if len(compact) >= limit:
-            break
-    return compact
+    return _sample_records_for_summary(compact, limit)
 
 
 def _compact_reader_experience_for_summary(chunk_results: List[Dict[str, Any]], limit: int = 120) -> List[Dict[str, Any]]:
@@ -1578,9 +1584,7 @@ def _compact_reader_experience_for_summary(chunk_results: List[Dict[str, Any]], 
             "engagement_level": experience.get("engagement_level"),
             "experience_notes": experience.get("experience_notes") or [],
         })
-        if len(compact) >= limit:
-            break
-    return compact
+    return _sample_records_for_summary(compact, limit)
 
 
 def _compact_continuity_for_summary(chunk_results: List[Dict[str, Any]], limit: int = 120) -> List[Dict[str, Any]]:
@@ -1616,9 +1620,7 @@ def _compact_continuity_for_summary(chunk_results: List[Dict[str, Any]], limit: 
         if not any(value for key, value in material.items() if key not in {"chunk_index", "summary"}):
             continue
         compact.append(material)
-        if len(compact) >= limit:
-            break
-    return compact
+    return _sample_records_for_summary(compact, limit)
 
 
 def _merge_foreshadowing_engineering_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:

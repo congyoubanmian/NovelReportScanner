@@ -10884,6 +10884,73 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(any(130 <= idx <= 170 for idx in indices))
         self.assertIn("后期严重注水，节奏明显崩坏", summaries)
 
+    def test_general_scan_compact_specialty_material_keeps_late_high_signal(self):
+        chunk_results = []
+        for i in range(300):
+            chunk_results.append({
+                "chunk_index": i,
+                "original_chunk_index": i + 1,
+                "one_sentence_summary": f"第{i + 1}段",
+                "narrative_structure": {"structural_function_tag": "推进"},
+                "outline_architecture": {
+                    "architecture_integrity": {"integrity_score": 7},
+                    "causal_chain": {"causal_strength": "自然"},
+                },
+                "foreshadowing_engineering": {
+                    "new_foreshadowing": [{"description": "常规伏笔"}],
+                },
+                "semantic_layers": {
+                    "literal_meaning": "表层事件",
+                    "reader_effect": "平稳",
+                    "confidence": 0.7,
+                },
+                "reader_experience": {
+                    "immediate_emotion": {"emotion": "平稳"},
+                    "engagement_level": "中",
+                },
+                "context_state_update": {
+                    "open_threads": ["常规悬念"],
+                },
+            })
+        chunk_results[-1]["one_sentence_summary"] = "尾段问题集中爆发"
+        chunk_results[-1]["outline_architecture"] = {
+            "architecture_integrity": {
+                "integrity_score": 2,
+                "forced_plot_devices": ["后期强行转折"],
+                "power_inconsistency": "战力矛盾",
+            },
+            "causal_chain": {
+                "causal_strength": "低",
+                "forced_elements": ["关键巧合强行推动"],
+            },
+        }
+        chunk_results[-1]["foreshadowing_engineering"] = {
+            "false_foreshadowing": ["尾段伏笔未回收"],
+        }
+        chunk_results[-1]["reader_experience"] = {
+            "immediate_emotion": {"emotion": "疲惫"},
+            "frustration_points": ["阅读疲劳严重"],
+            "engagement_level": "低",
+        }
+
+        narrative = general_scan._compact_narrative_architecture_for_summary(chunk_results, limit=80)
+        foreshadowing = general_scan._compact_foreshadowing_engineering_for_summary(chunk_results, limit=80)
+        reader = general_scan._compact_reader_experience_for_summary(chunk_results, limit=80)
+        continuity = general_scan._compact_continuity_for_summary(chunk_results, limit=80)
+
+        self.assertIn(300, [item["chunk_index"] for item in narrative])
+        self.assertTrue(any("后期强行转折" in item["forced_plot_devices"] for item in narrative))
+        self.assertIn(300, [item["chunk_index"] for item in foreshadowing])
+        self.assertTrue(any("尾段伏笔未回收" in item["false_foreshadowing"] for item in foreshadowing))
+        self.assertIn(300, [item["chunk_index"] for item in reader])
+        self.assertTrue(any(
+            point.get("description") == "阅读疲劳严重"
+            for item in reader
+            for point in item["frustration_points"]
+        ))
+        self.assertIn(300, [item["chunk_index"] for item in continuity])
+        self.assertTrue(any("战力矛盾" in (item.get("power_inconsistency") or "") for item in continuity))
+
     def test_general_scan_llm_merge_normalizes_knowledge_base(self):
         fallback = {
             "schema_version": general_scan.KNOWLEDGE_BASE_SCHEMA_VERSION,
