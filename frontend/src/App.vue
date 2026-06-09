@@ -240,6 +240,11 @@ async function refresh() {
   }
 }
 
+async function refreshAfterMutation() {
+  await refreshDiagnostics({ force: true })
+  await refresh()
+}
+
 async function saveAccessToken() {
   setAccessToken(accessTokenInput.value)
   toastSuccess(accessTokenInput.value.trim() ? '访问令牌已保存' : '访问令牌已清除')
@@ -354,7 +359,7 @@ async function handleScan(bookId) {
     const result = await enqueueBook(bookId)
     if (result.ok) {
       toastSuccess('已加入扫描队列')
-      await refresh()
+      await refreshAfterMutation()
     }
   } catch (e) {
     toastError('加入队列失败: ' + e.message)
@@ -380,7 +385,7 @@ async function handleBatchScan(bookIds) {
           : '没有可加入的书籍'
       )
     }
-    await refresh()
+    await refreshAfterMutation()
   } catch (e) {
     toastError('批量加入失败: ' + e.message)
   }
@@ -405,8 +410,7 @@ async function handleRetryFailed(failureTypes, label) {
           : `${label}：没有匹配的失败任务${unmatchedReasonText ? `（${unmatchedReasonText}）` : ''}`
       )
     }
-    await refreshDiagnostics({ force: true })
-    await refresh()
+    await refreshAfterMutation()
   } catch (e) {
     toastError(`${label}失败: ` + e.message)
   }
@@ -416,7 +420,7 @@ async function handleCancel(bookId) {
   try {
     await cancelQueuedBook(bookId)
     toastSuccess('已取消任务')
-    await refresh()
+    await refreshAfterMutation()
   } catch (e) {
     toastError('取消任务失败: ' + e.message)
   }
@@ -426,7 +430,7 @@ async function handlePrioritize(bookId) {
   try {
     await prioritizeQueuedBook(bookId)
     toastSuccess('已置顶排队')
-    await refresh()
+    await refreshAfterMutation()
   } catch (e) {
     toastError('置顶排队失败: ' + e.message)
   }
@@ -436,7 +440,7 @@ async function handleMoveQueued(bookId, direction) {
   try {
     await moveQueuedBook(bookId, direction)
     toastSuccess('已调整排队顺序')
-    await refresh()
+    await refreshAfterMutation()
   } catch (e) {
     toastError('调整排队顺序失败: ' + e.message)
   }
@@ -450,7 +454,7 @@ async function handleDelete(bookId) {
       selectedBookId.value = null
       selectedBook.value = null
     }
-    await refresh()
+    await refreshAfterMutation()
   } catch (e) {
     toastError('删除书籍失败: ' + e.message)
   }
@@ -479,7 +483,7 @@ async function handleBatchDelete(bookIds) {
       selectedBookId.value = null
       selectedBook.value = null
     }
-    await refresh()
+    await refreshAfterMutation()
   } catch (e) {
     toastError('批量删除失败: ' + e.message)
   }
@@ -489,7 +493,7 @@ async function handleProfileChange(bookId, profile) {
   try {
     await setProfile(bookId, profile)
     toastSuccess('分类已更新')
-    await refresh()
+    await refreshAfterMutation()
   } catch (e) {
     toastError('更新分类失败: ' + e.message)
   }
@@ -497,7 +501,7 @@ async function handleProfileChange(bookId, profile) {
 
 async function handleUploaded() {
   toastSuccess('上传成功')
-  await refresh()
+  await refreshAfterMutation()
 }
 
 const polling = usePolling(refresh, 3000, { autoStart: false })
