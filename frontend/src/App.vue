@@ -128,6 +128,9 @@ const diagnosticsStatus = computed(() => {
   const firstStale = (data.running_tasks || []).find((task) => task.stale_without_log)
   const topFailure = (data.failure_reasons || [])[0]
   const recentFailure = (data.recent_failed_tasks || []).find((task) => task.log_file?.url)
+  const retryTypes = new Set(
+    (data.recent_failed_tasks || []).map((task) => task.retry_type).filter(Boolean)
+  )
   const failureTitle = (data.failure_reasons || [])
     .map((item) => `${item.reason || 'unknown failure'} x${item.count || 0}`)
     .join('\n')
@@ -152,6 +155,8 @@ const diagnosticsStatus = computed(() => {
     running,
     failed,
     failedHistory,
+    retryApiVisible: retryTypes.has('api_failure'),
+    retryParseVisible: retryTypes.has('parse_failure'),
     topFailureText: topFailure ? `${topFailure.reason} x${topFailure.count}` : '-',
     longestRunningText,
     oldestQueueWaitText,
@@ -569,14 +574,14 @@ useStateEvents(applyState, {
         ><b>失败日志</b>打开</a
       >
       <button
-        v-if="diagnosticsStatus.failed > 0"
+        v-if="diagnosticsStatus.retryApiVisible"
         class="runtime-item runtime-link runtime-button"
         @click="handleRetryFailed(['api_failure'], '重试API失败')"
       >
         <b>重试</b>API失败
       </button>
       <button
-        v-if="diagnosticsStatus.failed > 0"
+        v-if="diagnosticsStatus.retryParseVisible"
         class="runtime-item runtime-link runtime-button"
         @click="handleRetryFailed(['parse_failure'], '重试解析失败')"
       >
