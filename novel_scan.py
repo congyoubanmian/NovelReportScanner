@@ -22,9 +22,11 @@ from shared_utils import (
     DEFAULT_MAX_SERVER_ERROR_RETRIES,
     DEFAULT_MAX_TIMEOUT_RETRIES,
     DEFAULT_REQUEST_TIMEOUT,
+    cancel_pending_futures,
     configure_rotating_file_logger,
     create_chat_completion,
     get_base_dir,
+    iter_completed_futures,
     read_file_safely,
     should_retry_without_json_mode_error,
 )
@@ -65,7 +67,6 @@ RESCAN_MAX_PROMPT_HEROINES = int(os.environ.get("RESCAN_MAX_PROMPT_HEROINES", "4
 RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER = int(os.environ.get("RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER", "2"))
 HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH = int(os.environ.get("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH", "1"))
 HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS = int(os.environ.get("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS", "1200"))
-SCAN_FUTURE_STALL_TIMEOUT_SECONDS = float(os.environ.get("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", "0"))
 
 RULES_FILE = os.environ.get("ANALYSIS_RULES_FILE") or os.path.join(
     get_base_dir(),
@@ -3103,43 +3104,16 @@ def _commit_chunk_result(idx, issues, heroine_facts, extra_rel, next_summary, ok
 
 
 def _cancel_pending_futures(futures, current_future=None, executor=None):
-    for future in futures:
-        if future is current_future or future.done():
-            continue
-        future.cancel()
-    if executor is not None:
-        try:
-            executor.shutdown(wait=False, cancel_futures=True)
-        except TypeError:
-            executor.shutdown(wait=False)
+    cancel_pending_futures(futures, current_future=current_future, executor=executor)
 
 
 def _iter_completed_futures(futures, phase_name="", timeout_seconds=None, executor=None):
-    timeout = SCAN_FUTURE_STALL_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
-    try:
-        timeout = float(timeout or 0)
-    except (TypeError, ValueError):
-        timeout = 0.0
-
-    if timeout <= 0:
-        yield from concurrent.futures.as_completed(futures)
-        return
-
-    pending = set(futures)
-    while pending:
-        done, pending = concurrent.futures.wait(
-            pending,
-            timeout=timeout,
-            return_when=concurrent.futures.FIRST_COMPLETED,
-        )
-        if not done:
-            _cancel_pending_futures(pending, executor=executor)
-            prefix = f"{phase_name} " if phase_name else ""
-            raise TimeoutError(
-                f"{prefix}future stall timeout after {timeout:g}s without completed task"
-            )
-        for future in done:
-            yield future
+    yield from iter_completed_futures(
+        futures,
+        phase_name=phase_name,
+        timeout_seconds=timeout_seconds,
+        executor=executor,
+    )
 
 
 def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protagonist, fact_boost_prompt,
@@ -3514,7 +3488,9 @@ def generate_heroine_profiles(all_heroine_facts, heroines, male_protagonist=None
 
     profiles = {}
     workers = max(1, min(int(RESCAN_MAX_WORKERS or 1), len(merged)))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
+    executor_cancelled = False
+    try:
         futures = {
             executor.submit(
                 generate_single_heroine_profile,
@@ -3525,18 +3501,27 @@ def generate_heroine_profiles(all_heroine_facts, heroines, male_protagonist=None
             ): name
             for name, facts in merged.items()
         }
-        for future in concurrent.futures.as_completed(futures):
-            name = futures[future]
-            try:
-                profiles[name] = future.result()
-            except Exception as exc:
-                logger.warning(f"女主总结失败 {name}: {exc}")
-                profiles[name] = {
-                    "report_summary": _normalize_profile_report_summary({}, {}),
-                    "rescan_context": "",
-                }
-            if callable(checkpoint_callback):
-                checkpoint_callback(heroine_name=name, heroine_profiles=profiles)
+        try:
+            completed_iter = _iter_completed_futures(futures, phase_name="女主展示画像", executor=executor)
+            for future in completed_iter:
+                name = futures[future]
+                try:
+                    profiles[name] = future.result()
+                except Exception as exc:
+                    logger.warning(f"女主总结失败 {name}: {exc}")
+                    profiles[name] = {
+                        "report_summary": _normalize_profile_report_summary({}, {}),
+                        "rescan_context": "",
+                    }
+                if callable(checkpoint_callback):
+                    checkpoint_callback(heroine_name=name, heroine_profiles=profiles)
+        except TimeoutError as exc:
+            logger.error(f"女主展示画像等待超时: {exc}")
+            _cancel_pending_futures(futures, executor=executor)
+            executor_cancelled = True
+    finally:
+        if not executor_cancelled:
+            executor.shutdown(wait=True)
     return profiles
 
 

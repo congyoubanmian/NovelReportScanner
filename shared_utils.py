@@ -3,6 +3,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 import sys
+import concurrent.futures
 from typing import Any, Dict, Optional, Tuple
 
 from openai import OpenAI
@@ -66,6 +67,20 @@ def read_int_env(name: str, default: int, *, min_value: int = 0, max_value: int 
     return value
 
 
+def read_float_env(name: str, default: float, *, min_value: float = 0.0, max_value: float = None) -> float:
+    raw_value = os.environ.get(name)
+    if raw_value is None or str(raw_value).strip() == "":
+        return default
+    try:
+        value = float(str(raw_value).strip())
+    except (TypeError, ValueError):
+        return default
+    value = max(min_value, value)
+    if max_value is not None:
+        value = min(max_value, value)
+    return value
+
+
 _read_int_env = read_int_env
 
 
@@ -73,6 +88,47 @@ _read_int_env = read_int_env
 MAX_WORKERS = read_int_env("MAX_WORKERS", 8, min_value=1)
 LOG_MAX_BYTES = read_int_env("LOG_MAX_BYTES", 10 * 1024 * 1024)
 LOG_BACKUP_COUNT = read_int_env("LOG_BACKUP_COUNT", 5)
+SCAN_FUTURE_STALL_TIMEOUT_SECONDS = read_float_env("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", 0.0, min_value=0.0)
+
+
+def cancel_pending_futures(futures, current_future=None, executor=None):
+    for future in futures:
+        if future is current_future or future.done():
+            continue
+        future.cancel()
+    if executor is not None:
+        try:
+            executor.shutdown(wait=False, cancel_futures=True)
+        except TypeError:
+            executor.shutdown(wait=False)
+
+
+def iter_completed_futures(futures, phase_name="", timeout_seconds=None, executor=None):
+    timeout = SCAN_FUTURE_STALL_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
+    try:
+        timeout = float(timeout or 0)
+    except (TypeError, ValueError):
+        timeout = 0.0
+
+    if timeout <= 0:
+        yield from concurrent.futures.as_completed(futures)
+        return
+
+    pending = set(futures)
+    while pending:
+        done, pending = concurrent.futures.wait(
+            pending,
+            timeout=timeout,
+            return_when=concurrent.futures.FIRST_COMPLETED,
+        )
+        if not done:
+            cancel_pending_futures(pending, executor=executor)
+            prefix = f"{phase_name} " if phase_name else ""
+            raise TimeoutError(
+                f"{prefix}future stall timeout after {timeout:g}s without completed task"
+            )
+        for future in done:
+            yield future
 
 
 def create_rotating_file_handler(

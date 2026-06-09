@@ -1054,6 +1054,19 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertEqual(module.MAX_SERVER_ERROR_RETRIES, shared_utils.DEFAULT_MAX_SERVER_ERROR_RETRIES)
                 self.assertEqual(module.REQUEST_TIMEOUT, shared_utils.DEFAULT_REQUEST_TIMEOUT)
 
+    def test_future_stall_helper_is_shared_by_scan_stages(self):
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        with open(os.path.join(base_dir, "protagonist.py"), "r", encoding="utf-8") as f:
+            protagonist_text = f.read()
+        with open(os.path.join(base_dir, "novel_scan.py"), "r", encoding="utf-8") as f:
+            novel_scan_text = f.read()
+
+        self.assertNotIn("concurrent.futures.as_completed(", protagonist_text)
+        self.assertIn("iter_completed_futures", protagonist_text)
+        self.assertIn("cancel_pending_futures", protagonist_text)
+        self.assertIn("iter_completed_futures", novel_scan_text)
+        self.assertIn("cancel_pending_futures", novel_scan_text)
+
     def test_new_runtime_int_envs_fallback_when_invalid(self):
         self.assertEqual(shared_utils.read_int_env("__MISSING_INT_ENV__", 7, min_value=1), 7)
 
@@ -2198,8 +2211,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             called.append(list(futures))
             return iter([second, first])
 
-        with mock.patch.object(novel_scan.concurrent.futures, "as_completed", side_effect=fake_as_completed):
-            result = list(novel_scan._iter_completed_futures({first: "a", second: "b"}, timeout_seconds=0))
+        with mock.patch.object(shared_utils.concurrent.futures, "as_completed", side_effect=fake_as_completed):
+            result = list(shared_utils.iter_completed_futures({first: "a", second: "b"}, timeout_seconds=0))
 
         self.assertEqual(result, [second, first])
         self.assertEqual(called, [[first, second]])
@@ -2231,9 +2244,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(return_when, novel_scan.concurrent.futures.FIRST_COMPLETED)
             return set(), set(fs)
 
-        with mock.patch.object(novel_scan.concurrent.futures, "wait", side_effect=fake_wait):
+        with mock.patch.object(shared_utils.concurrent.futures, "wait", side_effect=fake_wait):
             with self.assertRaisesRegex(TimeoutError, "补扫 future stall timeout"):
-                list(novel_scan._iter_completed_futures({pending: 1}, phase_name="补扫", timeout_seconds=3, executor=executor))
+                list(shared_utils.iter_completed_futures({pending: 1}, phase_name="补扫", timeout_seconds=3, executor=executor))
 
         self.assertTrue(pending.cancelled)
         self.assertEqual(executor.shutdown_args, {"wait": False, "cancel_futures": True})

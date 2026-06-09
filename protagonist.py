@@ -24,9 +24,11 @@ from shared_utils import (
     DEFAULT_MAX_TIMEOUT_RETRIES,
     DEFAULT_REQUEST_TIMEOUT,
     call_json_chat_completion_with_fallback,
+    cancel_pending_futures,
     configure_rotating_file_logger,
     create_chat_completion,
     get_base_dir,
+    iter_completed_futures,
     is_retryable_transport_error,
     read_int_env,
     read_file_safely,
@@ -166,6 +168,20 @@ def get_latest_report_files(prefix: str = None):
     progress = data.get("progress", {}) if isinstance(data, dict) else {}
     report_files = progress.get("report_files", {}) if isinstance(progress, dict) else {}
     return dict(report_files or {})
+
+
+def _cancel_pending_futures(futures, current_future=None, executor=None):
+    cancel_pending_futures(futures, current_future=current_future, executor=executor)
+
+
+def _iter_completed_futures(futures, phase_name="", timeout_seconds=None, executor=None):
+    yield from iter_completed_futures(
+        futures,
+        phase_name=phase_name,
+        timeout_seconds=timeout_seconds,
+        executor=executor,
+    )
+
 
 # ---- API 调用封装：统一收敛到 Timerror.py（只需修改 Timerror.py 即可全局生效）----
 MAX_RETRIES = DEFAULT_MAX_RETRIES
@@ -2329,13 +2345,15 @@ def merge_aliases(global_stats):
             
             # 第一轮：多线程并行分批内部合并
             merge_results_lock = threading.Lock()
-            with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS)
+            executor_cancelled = False
+            try:
                 future_to_batch = {
                     executor.submit(process_batch, batch_data): batch_data[1]
                     for batch_data in batches
                 }
-                
-                for future in tqdm(concurrent.futures.as_completed(future_to_batch),
+
+                for future in tqdm(_iter_completed_futures(future_to_batch, phase_name="别称合并分批", executor=executor),
                                    total=len(batches), desc="别称合并分批", unit="批"):
                     batch_num = future_to_batch[future]
                     try:
@@ -2350,7 +2368,15 @@ def merge_aliases(global_stats):
                                     logger.info(f"拒绝合并: {rej.get('names')} - {rej.get('reason')}")
                     except Exception as e:
                         logger.warning(f"第 {batch_num} 批处理异常: {e}")
-            
+            except TimeoutError as exc:
+                logger.error(f"别称合并分批等待超时: {exc}")
+                _cancel_pending_futures(future_to_batch, executor=executor)
+                executor_cancelled = True
+                raise
+            finally:
+                if not executor_cancelled:
+                    executor.shutdown(wait=True)
+
             logger.info(f"第一轮分批处理完成，共收集到 {len(all_merge_groups)} 个合并组")
             
             # 第二轮：跨批次合并检查
@@ -2631,13 +2657,15 @@ def merge_aliases(global_stats):
                     logger.info(f"拒绝合并: {name_a} 和 {name_b} - {judge_reason}")
                     return None
             
-            with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS)
+            executor_cancelled = False
+            try:
                 futures = {
                     executor.submit(judge_pair, pair): pair 
                     for pair in final_mutual_pairs
                 }
-                
-                for future in tqdm(concurrent.futures.as_completed(futures), 
+
+                for future in tqdm(_iter_completed_futures(futures, phase_name="单对判断", executor=executor),
                                    total=len(futures), desc="单对判断", unit="对"):
                     try:
                         result = future.result()
@@ -2646,7 +2674,15 @@ def merge_aliases(global_stats):
                     except Exception as e:
                         pair = futures[future]
                         logger.warning(f"判断失败 ({pair[0]} vs {pair[1]}): {e}")
-            
+            except TimeoutError as exc:
+                logger.error(f"单对判断等待超时: {exc}")
+                _cancel_pending_futures(futures, executor=executor)
+                executor_cancelled = True
+                raise
+            finally:
+                if not executor_cancelled:
+                    executor.shutdown(wait=True)
+
             # 应用额外的合并
             if additional_merges:
                 logger.info(f"第三阶段发现 {len(additional_merges)} 对需要合并的角色")
@@ -2865,14 +2901,16 @@ def identify_heroines(merged_stats):
     
     # 逐个判断每个角色是否为女主（并行处理）
     confirmed_heroines = []
-    
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS)
+    executor_cancelled = False
+    try:
         future_to_char = {
             executor.submit(_judge_single_character, char, char.get("_evidence_profile")): char
             for char in potential_heroines
         }
-        
-        for future in tqdm(concurrent.futures.as_completed(future_to_char), 
+
+        for future in tqdm(_iter_completed_futures(future_to_char, phase_name="逐个判断女主", executor=executor),
                           total=len(potential_heroines), desc="逐个判断女主", unit="人"):
             char = future_to_char[future]
             try:
@@ -2881,7 +2919,15 @@ def identify_heroines(merged_stats):
                     confirmed_heroines.append(result)
             except Exception as e:
                 logger.warning(f"判断角色 {char['name']} 时出错: {e}")
-    
+    except TimeoutError as exc:
+        logger.error(f"逐个判断女主等待超时: {exc}")
+        _cancel_pending_futures(future_to_char, executor=executor)
+        executor_cancelled = True
+        raise
+    finally:
+        if not executor_cancelled:
+            executor.shutdown(wait=True)
+
     logger.info(f"逐个判断完成，确认 {len(confirmed_heroines)} 位女主角")
     
     # 最终排序和汇总分析
@@ -4521,14 +4567,16 @@ def main(novel_path=None, book_name=None, run_id=None):
                 return True
 
             failed_chunks = []  # 记录失败的块
-            
-            with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS)
+            executor_cancelled = False
+            try:
                 future_to_chunk = {
                     executor.submit(analyze_chunk_for_heroines, chunk_data[0], chunk_data[1], source_total_chunks): chunk_data[1]
                     for chunk_data in chunks_to_process
                 }
-                
-                for future in tqdm(concurrent.futures.as_completed(future_to_chunk), 
+
+                for future in tqdm(_iter_completed_futures(future_to_chunk, phase_name="角色扫描", executor=executor),
                                  total=len(chunks_to_process), desc="扫描中", unit="块"):
                     chunk_idx = future_to_chunk[future]
                     try:
@@ -4540,7 +4588,23 @@ def main(novel_path=None, book_name=None, run_id=None):
                     except Exception as exc:
                         logger.error(f"块 {chunk_idx} 处理异常: {exc}")
                         failed_chunks.append(chunk_idx)
-            
+            except TimeoutError as exc:
+                logger.error(f"角色扫描等待超时: {exc}")
+                _cancel_pending_futures(future_to_chunk, executor=executor)
+                executor_cancelled = True
+                save_checkpoint(
+                    global_stats,
+                    male_protagonist_stats,
+                    max(completed_chunks) if completed_chunks else -1,
+                    progress_flags,
+                    completed_chunks=completed_chunks,
+                    chunk_plan_metadata=chunk_plan_metadata,
+                )
+                raise
+            finally:
+                if not executor_cancelled:
+                    executor.shutdown(wait=True)
+
             # ========== 补漏：扫描结束后立即检查遗漏块并补扫 ==========
             # 说明：某些情况下 API 会慢/超时导致单块失败。以前需要下次运行才重试，这里改为当次补齐。
             MAX_PATCH_ROUNDS = 3
@@ -4554,13 +4618,15 @@ def main(novel_path=None, book_name=None, run_id=None):
 
                 retry_workers = max(1, min(HAREM_SCAN_RETRY_WORKERS, MAX_WORKERS))
                 retry_failed = []
-                with concurrent.futures.ThreadPoolExecutor(max_workers=retry_workers) as executor:
+                executor = concurrent.futures.ThreadPoolExecutor(max_workers=retry_workers)
+                executor_cancelled = False
+                try:
                     future_to_idx = {
                         executor.submit(analyze_chunk_for_heroines, chunks[i], i, source_total_chunks): i
                         for i in missing
                     }
                     for future in tqdm(
-                        concurrent.futures.as_completed(future_to_idx),
+                        _iter_completed_futures(future_to_idx, phase_name=f"补漏扫描第{round_no}轮", executor=executor),
                         total=len(missing),
                         desc=f"补漏中(第{round_no}轮)",
                         unit="块",
@@ -4574,6 +4640,22 @@ def main(novel_path=None, book_name=None, run_id=None):
                         except Exception as exc:
                             logger.error(f"补漏块 {idx} 处理异常: {exc}")
                             retry_failed.append(idx)
+                except TimeoutError as exc:
+                    logger.error(f"补漏扫描第{round_no}轮等待超时: {exc}")
+                    _cancel_pending_futures(future_to_idx, executor=executor)
+                    executor_cancelled = True
+                    save_checkpoint(
+                        global_stats,
+                        male_protagonist_stats,
+                        max(completed_chunks) if completed_chunks else -1,
+                        progress_flags,
+                        completed_chunks=completed_chunks,
+                        chunk_plan_metadata=chunk_plan_metadata,
+                    )
+                    raise
+                finally:
+                    if not executor_cancelled:
+                        executor.shutdown(wait=True)
 
                 # 轮次结束后保存断点
                 save_checkpoint(
