@@ -674,6 +674,113 @@ def _health_issues(config_ready, storage, stale_running_count=0, failed_count=0,
     return issues
 
 
+def _safe_tail_text(path, max_bytes=256 * 1024):
+    try:
+        if not path or not os.path.isfile(path):
+            return ""
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            if size > max_bytes:
+                f.seek(max(0, size - max_bytes))
+            data = f.read(max_bytes)
+        return data.decode("utf-8", "replace")
+    except Exception:
+        return ""
+
+
+def _scan_log_health_summary(tasks, limit=20):
+    recent = [
+        dict(task)
+        for task in tasks
+        if task.get("log_path") and task.get("status") in {"running", "completed", "failed", "interrupted"}
+    ]
+    recent.sort(key=_task_recency_key, reverse=True)
+    summary = {
+        "checked_task_count": 0,
+        "json_parse_errors": 0,
+        "server_504_errors": 0,
+        "server_5xx_errors": 0,
+        "permission_errors": 0,
+        "legacy_pr_errors": 0,
+        "multi_name_warnings": 0,
+        "downshift_events": 0,
+        "legacy_max_tokens_4000": 0,
+        "latest_logs": [],
+        "issues": [],
+    }
+    for task in recent[:max(0, int(limit or 0))]:
+        text = _safe_tail_text(task.get("log_path"))
+        if not text:
+            continue
+        item = {
+            "task_id": task.get("id"),
+            "book_id": task.get("book_id"),
+            "status": task.get("status"),
+            "json_parse_errors": text.count("JSON解析失败"),
+            "server_504_errors": text.count("服务器错误(504)"),
+            "server_5xx_errors": sum(text.count(f"服务器错误({code})") for code in ("500", "502", "503", "504")),
+            "permission_errors": text.count("PermissionError") + text.count("Permission denied"),
+            "legacy_pr_errors": text.count("cannot access local variable 'pr'"),
+            "multi_name_warnings": text.count("女性角色字段疑似包含多个名字"),
+            "downshift_events": text.count("触发降载切分"),
+            "legacy_max_tokens_4000": text.count("max_tokens=4000"),
+            "log_file": _file_link(task.get("log_path")),
+        }
+        summary["checked_task_count"] += 1
+        for key in (
+            "json_parse_errors",
+            "server_504_errors",
+            "server_5xx_errors",
+            "permission_errors",
+            "legacy_pr_errors",
+            "multi_name_warnings",
+            "downshift_events",
+            "legacy_max_tokens_4000",
+        ):
+            summary[key] += item[key]
+        if any(item[key] for key in (
+            "json_parse_errors",
+            "server_504_errors",
+            "permission_errors",
+            "legacy_pr_errors",
+            "multi_name_warnings",
+            "legacy_max_tokens_4000",
+        )):
+            summary["latest_logs"].append(item)
+
+    if summary["json_parse_errors"] >= 10:
+        summary["issues"].append({
+            "type": "json_parse_errors",
+            "message": "recent scan logs contain frequent JSON parse failures",
+            "count": summary["json_parse_errors"],
+        })
+    if summary["server_504_errors"] >= 10:
+        summary["issues"].append({
+            "type": "server_504_errors",
+            "message": "recent scan logs contain frequent upstream 504 errors",
+            "count": summary["server_504_errors"],
+        })
+    if summary["legacy_max_tokens_4000"] and not os.environ.get("GENERAL_CHARACTER_MAX_TOKENS"):
+        summary["issues"].append({
+            "type": "legacy_runtime_config",
+            "message": "recent logs still use max_tokens=4000 and runtime config does not expose GENERAL_CHARACTER_MAX_TOKENS",
+            "count": summary["legacy_max_tokens_4000"],
+        })
+    if summary["legacy_pr_errors"]:
+        summary["issues"].append({
+            "type": "legacy_pr_error",
+            "message": "recent scan logs contain legacy local variable pr errors",
+            "count": summary["legacy_pr_errors"],
+        })
+    if summary["multi_name_warnings"]:
+        summary["issues"].append({
+            "type": "legacy_multi_name_warning",
+            "message": "recent scan logs contain old female-character multi-name warnings",
+            "count": summary["multi_name_warnings"],
+        })
+    return summary
+
+
 def _task_diagnostic(task, book):
     last_log_at = task.get("last_log_at") or task.get("updated_at") or book.get("last_log_at") or book.get("updated_at")
     seconds_since_last_log = _seconds_since_state_time(last_log_at)
@@ -883,6 +990,14 @@ def _diagnostics_summary():
     stale_running_count = sum(1 for item in running_tasks if item.get("stale_without_log"))
     storage = _storage_health_summary()
     health_issues = _health_issues(CONFIG_READY, storage, stale_running_count, failed_count)
+    log_health = _scan_log_health_summary(tasks)
+    if log_health.get("issues"):
+        health_issues.append({
+            "type": "scan_log_errors",
+            "message": "recent scan logs contain recurring errors",
+            "count": len(log_health.get("issues") or []),
+            "details": log_health.get("issues") or [],
+        })
     longest_running_seconds = max(
         (item.get("seconds_since_started") or 0 for item in running_tasks),
         default=0,
@@ -916,6 +1031,7 @@ def _diagnostics_summary():
         "recent_failed_tasks": failed_tasks[:10],
         "failure_reasons": _failure_reason_summary(failed_tasks),
         "retry_types": _retry_type_summary(failed_tasks),
+        "log_health": log_health,
         "storage": storage,
     }
 

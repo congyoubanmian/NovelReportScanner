@@ -8263,7 +8263,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 log_path = os.path.join(tmpdir, "results", "web_logs", "task-running.log")
                 os.makedirs(os.path.dirname(log_path), exist_ok=True)
                 with open(log_path, "w", encoding="utf-8") as f:
-                    f.write("Chunk 367 JSON解析失败")
+                    f.write("\n".join(["Chunk 367 JSON解析失败"] * 10))
                 failed_log_path = os.path.join(tmpdir, "results", "web_logs", "task-failed-1.log")
                 with open(failed_log_path, "w", encoding="utf-8") as f:
                     f.write("Permission denied")
@@ -8384,10 +8384,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertTrue(diagnostics["storage_ready"])
             self.assertEqual(
                 [item["type"] for item in diagnostics["health_issues"]],
-                ["config", "stale_tasks", "failed_tasks"],
+                ["config", "stale_tasks", "failed_tasks", "scan_log_errors"],
             )
             self.assertEqual(diagnostics["health_issues"][1]["count"], 1)
             self.assertEqual(diagnostics["health_issues"][2]["count"], 3)
+            self.assertEqual(diagnostics["health_issues"][3]["count"], 1)
             self.assertEqual(diagnostics["oldest_queue_wait_seconds"], 3000)
             self.assertEqual(diagnostics["longest_running_seconds"], 4200)
             self.assertEqual(diagnostics["task_counts"]["queued"], 1)
@@ -8414,6 +8415,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 {"type": "storage_failure", "count": 2},
                 {"type": "parse_failure", "count": 1},
             ])
+            self.assertEqual(diagnostics["log_health"]["json_parse_errors"], 10)
+            self.assertEqual(diagnostics["log_health"]["checked_task_count"], 2)
             recent_failed = diagnostics["recent_failed_tasks"]
             self.assertEqual(len(recent_failed), 3)
             self.assertEqual(recent_failed[0]["task_id"], "task-failed-3")
@@ -8431,6 +8434,49 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.APP_COMMIT = old_app_commit
             web_manager.CONFIG_READY = old_config_ready
             web_manager.time.time = old_time
+
+    def test_web_manager_log_health_summarizes_recent_scan_errors(self):
+        old_general_tokens = os.environ.get("GENERAL_CHARACTER_MAX_TOKENS")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            try:
+                os.environ.pop("GENERAL_CHARACTER_MAX_TOKENS", None)
+                log_path = os.path.join(tmpdir, "results", "web_logs", "task-running.log")
+                os.makedirs(os.path.dirname(log_path), exist_ok=True)
+                with open(log_path, "w", encoding="utf-8") as f:
+                    f.write("\n".join([
+                        "API_KEY[0] 发起请求：max_tokens=4000",
+                        "Chunk 1 JSON解析失败",
+                        "Chunk 2 JSON解析失败",
+                        "API_KEY[0] 服务器错误(504)",
+                        "女性角色字段疑似包含多个名字",
+                        "chunk 5 维度补抽失败 dim=physical_contacts: cannot access local variable 'pr' where it is not associated with a value",
+                    ]))
+                summary = web_manager._scan_log_health_summary([
+                    {
+                        "id": "task-running",
+                        "book_id": "唐砖",
+                        "status": "running",
+                        "created_at": "2026-06-09 01:00:00",
+                        "log_path": log_path,
+                    }
+                ])
+            finally:
+                if old_general_tokens is None:
+                    os.environ.pop("GENERAL_CHARACTER_MAX_TOKENS", None)
+                else:
+                    os.environ["GENERAL_CHARACTER_MAX_TOKENS"] = old_general_tokens
+
+        self.assertEqual(summary["checked_task_count"], 1)
+        self.assertEqual(summary["json_parse_errors"], 2)
+        self.assertEqual(summary["server_504_errors"], 1)
+        self.assertEqual(summary["legacy_max_tokens_4000"], 1)
+        self.assertEqual(summary["legacy_pr_errors"], 1)
+        self.assertEqual(summary["multi_name_warnings"], 1)
+        issue_types = [item["type"] for item in summary["issues"]]
+        self.assertIn("legacy_runtime_config", issue_types)
+        self.assertIn("legacy_pr_error", issue_types)
+        self.assertIn("legacy_multi_name_warning", issue_types)
+        self.assertEqual(summary["latest_logs"][0]["book_id"], "唐砖")
 
     def test_web_manager_diagnostics_ignores_resolved_failure_history(self):
         old_state = web_manager.STATE
