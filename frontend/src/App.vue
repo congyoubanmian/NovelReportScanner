@@ -49,6 +49,10 @@ const configForm = ref({
   rpm_limit: '',
   tpm_limit: '',
   rate_limit_scope: 'auto',
+  api_server_error_max_retries: '2',
+  harem_scan_chunk_size: '7000',
+  harem_scan_max_tokens: '3000',
+  harem_scan_retry_workers: '1',
   general_scan_max_chunks: '',
   general_scan_smart_density: true,
   general_scan_content_aware_sampling: true,
@@ -60,6 +64,7 @@ const configForm = ref({
   general_scan_reader_experience: true,
   general_scan_continuity_audit: true,
   general_scan_rolling_context: true,
+  general_scan_entity_prescan: true,
   general_scan_knowledge_base_llm_merge: false,
   general_scan_context_max_chars: '1600',
   rescan_skip_chronic_parse_failure_after: '2',
@@ -214,6 +219,10 @@ function syncConfigForm(config) {
     rpm_limit: config.rpm_limit || '',
     tpm_limit: config.tpm_limit || '',
     rate_limit_scope: config.rate_limit_scope || 'auto',
+    api_server_error_max_retries: config.api_server_error_max_retries || '2',
+    harem_scan_chunk_size: config.harem_scan_chunk_size || '7000',
+    harem_scan_max_tokens: config.harem_scan_max_tokens || '3000',
+    harem_scan_retry_workers: config.harem_scan_retry_workers || '1',
     general_scan_max_chunks: config.general_scan_max_chunks || '80',
     general_scan_smart_density: config.general_scan_smart_density !== false,
     general_scan_content_aware_sampling: config.general_scan_content_aware_sampling !== false,
@@ -225,6 +234,7 @@ function syncConfigForm(config) {
     general_scan_reader_experience: config.general_scan_reader_experience !== false,
     general_scan_continuity_audit: config.general_scan_continuity_audit !== false,
     general_scan_rolling_context: config.general_scan_rolling_context !== false,
+    general_scan_entity_prescan: config.general_scan_entity_prescan !== false,
     general_scan_knowledge_base_llm_merge: Boolean(config.general_scan_knowledge_base_llm_merge),
     general_scan_context_max_chars: config.general_scan_context_max_chars || '1600',
     rescan_skip_chronic_parse_failure_after:
@@ -242,6 +252,10 @@ async function saveRuntimeConfig() {
       rpm_limit: configForm.value.rpm_limit,
       tpm_limit: configForm.value.tpm_limit,
       rate_limit_scope: configForm.value.rate_limit_scope,
+      api_server_error_max_retries: configForm.value.api_server_error_max_retries,
+      harem_scan_chunk_size: configForm.value.harem_scan_chunk_size,
+      harem_scan_max_tokens: configForm.value.harem_scan_max_tokens,
+      harem_scan_retry_workers: configForm.value.harem_scan_retry_workers,
       general_scan_max_chunks: configForm.value.general_scan_max_chunks,
       general_scan_smart_density: configForm.value.general_scan_smart_density,
       general_scan_content_aware_sampling: configForm.value.general_scan_content_aware_sampling,
@@ -254,6 +268,7 @@ async function saveRuntimeConfig() {
       general_scan_reader_experience: configForm.value.general_scan_reader_experience,
       general_scan_continuity_audit: configForm.value.general_scan_continuity_audit,
       general_scan_rolling_context: configForm.value.general_scan_rolling_context,
+      general_scan_entity_prescan: configForm.value.general_scan_entity_prescan,
       general_scan_knowledge_base_llm_merge: configForm.value.general_scan_knowledge_base_llm_merge,
       general_scan_context_max_chars: configForm.value.general_scan_context_max_chars,
       rescan_skip_chronic_parse_failure_after:
@@ -553,6 +568,46 @@ useStateEvents(applyState, {
         </select>
       </label>
       <label>
+        <span>5xx重试</span>
+        <input
+          v-model="configForm.api_server_error_max_retries"
+          type="number"
+          min="1"
+          max="10"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>后宫块</span>
+        <input
+          v-model="configForm.harem_scan_chunk_size"
+          type="number"
+          min="1000"
+          max="20000"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>首扫输出</span>
+        <input
+          v-model="configForm.harem_scan_max_tokens"
+          type="number"
+          min="500"
+          max="8000"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>补漏并发</span>
+        <input
+          v-model="configForm.harem_scan_retry_workers"
+          type="number"
+          min="1"
+          max="16"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
         <span>通用片段</span>
         <input
           v-model="configForm.general_scan_max_chunks"
@@ -640,6 +695,14 @@ useStateEvents(applyState, {
           @change="runtimeConfigDirty = true"
         />
         <span>滚动上下文</span>
+      </label>
+      <label class="runtime-toggle">
+        <input
+          v-model="configForm.general_scan_entity_prescan"
+          type="checkbox"
+          @change="runtimeConfigDirty = true"
+        />
+        <span>实体预扫描</span>
       </label>
       <label class="runtime-toggle">
         <input

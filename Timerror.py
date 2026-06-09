@@ -81,6 +81,7 @@ class RetryConfig:
     base_delay: float = 2.0
     max_403_retries: int = 3
     max_timeout_retries: int = 3
+    max_server_error_retries: int = 2
     request_timeout: int = 120
 
 
@@ -462,6 +463,7 @@ def make_chat_completion(
     max_retries: int = 5,
     max_403_retries: int = 3,
     max_timeout_retries: int = 3,
+    max_server_error_retries: Optional[int] = None,
     base_delay: float = 2.0,
     # -------- 超时/慢响应的区分与误杀保护 --------
     rate_limit_grace_seconds: int = 180,
@@ -496,6 +498,11 @@ def make_chat_completion(
         base_delay=float(base_delay),
         max_403_retries=int(max_403_retries),
         max_timeout_retries=int(max_timeout_retries),
+        max_server_error_retries=max(1, int(
+            max_server_error_retries
+            if max_server_error_retries is not None
+            else os.environ.get("API_SERVER_ERROR_MAX_RETRIES", "2")
+        )),
         request_timeout=int(request_timeout),
     )
 
@@ -912,24 +919,25 @@ def make_chat_completion(
 
                         # ========== 5xx：服务端错误 ==========
                         if code in (500, 502, 503, 504):
-                            # 503 + 近期有限速信号 → 视为 IP 限流
-                            if code == 503 and ip_cooldown.has_recent_rate_limit(within_seconds=60.0):
+                            # 503/504 + 近期有限速信号 → 视为 IP 限流/网关排队
+                            if code in (503, 504) and ip_cooldown.has_recent_rate_limit(within_seconds=60.0):
                                 cooldown_secs = ip_cooldown.trigger(reason=f"503 during rate-limit storm on key[{key_tag}]")
                                 _log(
                                     logger,
                                     "warning",
-                                    f"API_KEY[{idx}|{key_tag}] 503+近期限速信号，视为IP限流，"
+                                    f"API_KEY[{idx}|{key_tag}] {code}+近期限速信号，视为IP限流，"
                                     f"IP全局冷却 {cooldown_secs:.1f}s",
                                 )
                                 break_to_outer = True
                                 break
 
-                            # 正常 5xx：线性退避重试；最后一次直接失败，避免单 key 同一请求无限循环。
-                            if real_attempt >= cfg.max_retries:
+                            # 正常 5xx：短重试后失败，交给上层断点/补扫，避免同一大请求反复撞网关。
+                            server_error_limit = min(cfg.max_retries, cfg.max_server_error_retries)
+                            if real_attempt >= server_error_limit:
                                 _log(
                                     logger,
                                     "warning",
-                                    f"API_KEY[{idx}|{key_tag}] 服务器错误({code})已达本轮上限，停止重试",
+                                    f"API_KEY[{idx}|{key_tag}] 服务器错误({code})已达本轮上限({server_error_limit})，停止重试",
                                 )
                                 raise
                             wait_time = cfg.base_delay * attempt_no
@@ -937,7 +945,7 @@ def make_chat_completion(
                                 logger,
                                 "warning",
                                 f"API_KEY[{idx}|{key_tag}] 服务器错误({code})，"
-                                f"等待 {wait_time:.1f}s 后重试 ({attempt_no}/{cfg.max_retries})",
+                                f"等待 {wait_time:.1f}s 后重试 ({attempt_no}/{server_error_limit})",
                             )
                             time.sleep(wait_time)
                             continue

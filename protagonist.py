@@ -18,6 +18,7 @@ from token_tracker import create_default_tracker
 from shared_utils import (
     DEFAULT_MAX_403_RETRIES,
     DEFAULT_MAX_RETRIES,
+    DEFAULT_MAX_SERVER_ERROR_RETRIES,
     DEFAULT_MAX_TIMEOUT_RETRIES,
     DEFAULT_REQUEST_TIMEOUT,
     call_json_chat_completion_with_fallback,
@@ -38,7 +39,9 @@ API_KEY_POOL = [
 ]
 API_KEY = API_KEY_POOL[0] if API_KEY_POOL else ""
 
-CHUNK_SIZE = 10000
+CHUNK_SIZE = int(os.environ.get("HAREM_SCAN_CHUNK_SIZE", os.environ.get("PROTAGONIST_CHUNK_SIZE", "7000")))
+HAREM_SCAN_MAX_TOKENS = int(os.environ.get("HAREM_SCAN_MAX_TOKENS", "3000"))
+HAREM_SCAN_RETRY_WORKERS = int(os.environ.get("HAREM_SCAN_RETRY_WORKERS", "1"))
 GENERAL_CHARACTER_MAX_CHUNKS = int(os.environ.get("GENERAL_CHARACTER_MAX_CHUNKS", os.environ.get("GENERAL_SCAN_MAX_CHUNKS", "80")))
 ALIAS_CROSS_MERGE_MAX_PAYLOAD_CHARS = int(os.environ.get("ALIAS_CROSS_MERGE_MAX_PAYLOAD_CHARS", "12000"))
 ALIAS_CROSS_MERGE_MAX_LIST_ITEMS = int(os.environ.get("ALIAS_CROSS_MERGE_MAX_LIST_ITEMS", "3"))
@@ -156,6 +159,7 @@ def get_latest_report_files(prefix: str = None):
 MAX_RETRIES = DEFAULT_MAX_RETRIES
 MAX_403_RETRIES = DEFAULT_MAX_403_RETRIES
 MAX_TIMEOUT_RETRIES = DEFAULT_MAX_TIMEOUT_RETRIES
+MAX_SERVER_ERROR_RETRIES = DEFAULT_MAX_SERVER_ERROR_RETRIES
 REQUEST_TIMEOUT = DEFAULT_REQUEST_TIMEOUT
 
 def _normalize_person_name(name: str) -> str:
@@ -648,6 +652,7 @@ chat_completion = create_chat_completion(
     max_retries=MAX_RETRIES,
     max_403_retries=MAX_403_RETRIES,
     max_timeout_retries=MAX_TIMEOUT_RETRIES,
+    max_server_error_retries=MAX_SERVER_ERROR_RETRIES,
     base_delay=2,
     logger=logger,
 )
@@ -769,7 +774,40 @@ def _serialize_character_stats(stats_dict):
     return serialized
 
 
-def save_checkpoint(global_stats, male_protagonist_stats, last_processed_index, progress_flags=None, merged_stats=None, heroine_result=None, male_protagonist_final=None, completed_chunks=None):
+def _character_chunk_plan_metadata(text_length=None, source_total_chunks=None, target_chunk_indices=None, sampling_strategy=None, effective_max_chunks=None):
+    return {
+        "schema_version": 1,
+        "chunk_size": CHUNK_SIZE,
+        "text_length": int(text_length or 0),
+        "source_total_chunks": int(source_total_chunks or 0),
+        "target_chunk_count": len(target_chunk_indices or []),
+        "first_target_chunk": (target_chunk_indices or [None])[0],
+        "last_target_chunk": (target_chunk_indices or [None])[-1],
+        "sampling_strategy": sampling_strategy or "full",
+        "effective_max_chunks": int(effective_max_chunks or 0),
+    }
+
+
+def _checkpoint_chunk_plan_matches(stored_plan, current_plan):
+    if not isinstance(stored_plan, dict):
+        return False
+    for key in (
+        "schema_version",
+        "chunk_size",
+        "text_length",
+        "source_total_chunks",
+        "target_chunk_count",
+        "first_target_chunk",
+        "last_target_chunk",
+        "sampling_strategy",
+        "effective_max_chunks",
+    ):
+        if stored_plan.get(key) != current_plan.get(key):
+            return False
+    return True
+
+
+def save_checkpoint(global_stats, male_protagonist_stats, last_processed_index, progress_flags=None, merged_stats=None, heroine_result=None, male_protagonist_final=None, completed_chunks=None, chunk_plan_metadata=None):
     """
     保存分析进度和结果，用于断点续传（包含男主和女性角色信息）
     progress_flags 用于记录阶段性状态：是否完成各阶段
@@ -811,6 +849,7 @@ def save_checkpoint(global_stats, male_protagonist_stats, last_processed_index, 
         "heroine_result": heroine_result,
         "male_protagonist_final": male_protagonist_final,
         "completed_chunks": list(completed_chunks) if completed_chunks else [],  # 实际成功的块索引列表
+        "chunk_plan_metadata": chunk_plan_metadata,
     }
     
     checkpoint_file = f"{OUTPUT_DIR}/latest_checkpoint.json"
@@ -853,7 +892,7 @@ def _restore_character_stats(serialized_stats):
     return restored
 
 
-def load_checkpoint():
+def load_checkpoint(chunk_plan_metadata=None):
     """加载最新的断点文件（包含男主和女性角色信息）"""
     checkpoint_file = f"{OUTPUT_DIR}/latest_checkpoint.json"
     if os.path.exists(checkpoint_file):
@@ -861,6 +900,13 @@ def load_checkpoint():
             with open(checkpoint_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 
+                stored_chunk_plan = data.get("chunk_plan_metadata")
+                if chunk_plan_metadata and not _checkpoint_chunk_plan_matches(stored_chunk_plan, chunk_plan_metadata):
+                    logger.warning("断点分块计划与当前配置不一致，将从头开始扫描，避免旧块索引污染新结果。")
+                    default_progress = dict(DEFAULT_PROGRESS_FLAGS)
+                    default_progress["report_files"] = {}
+                    return {}, {}, set(), default_progress, None, None, None
+
                 # 加载已完成的块索引集合（优先使用新格式）
                 completed_chunks = set(data.get('completed_chunks', []))
                 last_index = data.get('last_processed_chunk', -1)
@@ -1217,7 +1263,7 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
                         {"role": "user", "content": user_prompt},
                     ],
                     temperature=0.1,
-                    max_tokens=4000,
+                    max_tokens=HAREM_SCAN_MAX_TOKENS,
                 )
                 result = _normalize_character_response(data, chunk_index, profile_mode)
 
@@ -4195,6 +4241,13 @@ def main(novel_path=None, book_name=None, run_id=None):
         total_chunks = len(target_chunk_indices)
         target_chunk_set = set(target_chunk_indices)
         final_target_chunk_index = max(target_chunk_indices) if target_chunk_indices else source_total_chunks - 1
+        chunk_plan_metadata = _character_chunk_plan_metadata(
+            text_length=len(text),
+            source_total_chunks=source_total_chunks,
+            target_chunk_indices=target_chunk_indices,
+            sampling_strategy=sampling_strategy,
+            effective_max_chunks=effective_max_chunks,
+        )
         if _is_general_profile():
             print(
                 f"? 总共 {source_total_chunks} 个分析块，通用角色识别实际扫描 {total_chunks} 个"
@@ -4204,7 +4257,9 @@ def main(novel_path=None, book_name=None, run_id=None):
             print(f"? 总共 {total_chunks} 个分析块")
         
         # 4. 尝试加载断点（包含女性角色和男主信息，及阶段标记）
-        global_stats, male_protagonist_stats, completed_chunks, progress_flags, loaded_merged_stats, loaded_heroine_result, loaded_male_final = load_checkpoint()
+        global_stats, male_protagonist_stats, completed_chunks, progress_flags, loaded_merged_stats, loaded_heroine_result, loaded_male_final = load_checkpoint(
+            chunk_plan_metadata=chunk_plan_metadata
+        )
 
         # -------- 断点升级：旧版本男主信息过于精简（identity 仅1条、summaries 仅3条）--------
         # 说明：
@@ -4409,6 +4464,7 @@ def main(novel_path=None, book_name=None, run_id=None):
                         max(completed_chunks) if completed_chunks else -1,
                         progress_flags,
                         completed_chunks=completed_chunks,
+                        chunk_plan_metadata=chunk_plan_metadata,
                     )
                 return True
 
@@ -4444,7 +4500,7 @@ def main(novel_path=None, book_name=None, run_id=None):
                 print(f"\n🔁 补漏扫描：发现 {len(missing)} 个遗漏块，开始第 {round_no}/{MAX_PATCH_ROUNDS} 轮补扫（降低并发避免限速）...")
                 logger.warning(f"补漏扫描第{round_no}轮：遗漏块={missing[:20]}{'...' if len(missing) > 20 else ''}")
 
-                retry_workers = max(1, min(3, MAX_WORKERS))  # 降低并发，减少限速导致的慢/超时
+                retry_workers = max(1, min(HAREM_SCAN_RETRY_WORKERS, MAX_WORKERS))
                 retry_failed = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=retry_workers) as executor:
                     future_to_idx = {
@@ -4474,6 +4530,7 @@ def main(novel_path=None, book_name=None, run_id=None):
                     max(completed_chunks) if completed_chunks else -1,
                     progress_flags,
                     completed_chunks=completed_chunks,
+                    chunk_plan_metadata=chunk_plan_metadata,
                 )
 
                 if retry_failed:
@@ -4495,7 +4552,7 @@ def main(novel_path=None, book_name=None, run_id=None):
             else:
                 logger.info(f"扫描进度: {len(completed_chunks & target_chunk_set)}/{total_chunks} 块完成")
             
-            save_checkpoint(global_stats, male_protagonist_stats, max(completed_chunks) if completed_chunks else -1, progress_flags, completed_chunks=completed_chunks)
+            save_checkpoint(global_stats, male_protagonist_stats, max(completed_chunks) if completed_chunks else -1, progress_flags, completed_chunks=completed_chunks, chunk_plan_metadata=chunk_plan_metadata)
 
         # 识别男主（简单逻辑：出现次数最多的）
         print("\n" + "=" * 70)
@@ -4510,7 +4567,7 @@ def main(novel_path=None, book_name=None, run_id=None):
                 male_protagonist = identify_male_protagonist(male_protagonist_stats)
                 print(f"★ 阶段二（升级）已重新汇总男主: {male_protagonist.get('name') if male_protagonist else '未知'}")
                 progress_flags["male_identified"] = True
-                save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=loaded_merged_stats, heroine_result=loaded_heroine_result, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks)
+                save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=loaded_merged_stats, heroine_result=loaded_heroine_result, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks, chunk_plan_metadata=chunk_plan_metadata)
         else:
             male_protagonist = identify_male_protagonist(male_protagonist_stats)
             if male_protagonist:
@@ -4518,7 +4575,7 @@ def main(novel_path=None, book_name=None, run_id=None):
                 if male_protagonist.get('other_names'):
                     print(f"    别称: {', '.join(male_protagonist['other_names'])}")
             progress_flags["male_identified"] = True
-            save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=None, heroine_result=None, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks)
+            save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=None, heroine_result=None, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks, chunk_plan_metadata=chunk_plan_metadata)
         
         print("\n" + "=" * 70)
         print(f"【阶段三】别称识别与合并（共发现 {len(global_stats)} 个女性角色名）...")
@@ -4530,7 +4587,7 @@ def main(novel_path=None, book_name=None, run_id=None):
         else:
             merged_stats = merge_aliases(global_stats)
             progress_flags["alias_merged"] = True
-            save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=merged_stats, heroine_result=None, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks)
+            save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=merged_stats, heroine_result=None, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks, chunk_plan_metadata=chunk_plan_metadata)
         
         print("\n" + "=" * 70)
         print("【阶段四】最终女主角识别...")
@@ -4542,7 +4599,7 @@ def main(novel_path=None, book_name=None, run_id=None):
         else:
             heroine_result = identify_heroines(merged_stats)
             progress_flags["heroines_identified"] = True
-            save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=merged_stats, heroine_result=heroine_result, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks)
+            save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=merged_stats, heroine_result=heroine_result, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks, chunk_plan_metadata=chunk_plan_metadata)
         
         # 女主最终合并检查
         if progress_flags.get("heroines_final_merged"):
@@ -4552,7 +4609,7 @@ def main(novel_path=None, book_name=None, run_id=None):
             print("【阶段四点五】女主最终合并检查...")
             heroine_result = merge_heroines_final(heroine_result, merged_stats)
             progress_flags["heroines_final_merged"] = True
-            save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=merged_stats, heroine_result=heroine_result, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks)
+            save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=merged_stats, heroine_result=heroine_result, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks, chunk_plan_metadata=chunk_plan_metadata)
         
         print("\n" + "=" * 70)
         print("【阶段五】生成分析报告...")
@@ -4582,7 +4639,7 @@ def main(novel_path=None, book_name=None, run_id=None):
                 "detailed_snapshot": detailed_snapshot_file,
                 "report": report_file
             }
-            save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=merged_stats, heroine_result=heroine_result, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks)
+            save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=merged_stats, heroine_result=heroine_result, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks, chunk_plan_metadata=chunk_plan_metadata)
         
         print("\n" + "=" * 70)
         print("? 分析完成！")

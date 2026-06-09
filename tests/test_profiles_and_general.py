@@ -409,6 +409,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(set(), compose_vars - env_sample_vars)
         self.assertIn("SCAN_STALL_TIMEOUT_SECONDS: ${SCAN_STALL_TIMEOUT_SECONDS:-1200}", compose_text)
         self.assertIn("SCAN_STALL_TIMEOUT_SECONDS=1200", env_sample_text)
+        self.assertIn("HAREM_SCAN_CHUNK_SIZE: ${HAREM_SCAN_CHUNK_SIZE:-7000}", compose_text)
+        self.assertIn("HAREM_SCAN_CHUNK_SIZE=7000", env_sample_text)
+        self.assertIn("API_SERVER_ERROR_MAX_RETRIES: ${API_SERVER_ERROR_MAX_RETRIES:-2}", compose_text)
+        self.assertIn("API_SERVER_ERROR_MAX_RETRIES=2", env_sample_text)
 
     def test_docker_entrypoint_requires_web_token_and_writable_volumes(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -539,6 +543,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("GENERAL_SCAN_CONTINUITY_AUDIT", text)
         self.assertIn("GENERAL_SCAN_CONTENT_AWARE_SAMPLING", text)
         self.assertIn("GENERAL_SCAN_ROLLING_CONTEXT", text)
+        self.assertIn("GENERAL_SCAN_ENTITY_PRESCAN", text)
         self.assertIn("GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE", text)
         self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS", text)
         self.assertIn("/api/diagnostics", text)
@@ -944,6 +949,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(shared_utils.DEFAULT_MAX_RETRIES, 5)
         self.assertEqual(shared_utils.DEFAULT_MAX_403_RETRIES, 3)
         self.assertEqual(shared_utils.DEFAULT_MAX_TIMEOUT_RETRIES, 3)
+        self.assertEqual(shared_utils.DEFAULT_MAX_SERVER_ERROR_RETRIES, 2)
         self.assertEqual(shared_utils.DEFAULT_REQUEST_TIMEOUT, 120)
 
         for module in [novel_scan, protagonist, report]:
@@ -951,6 +957,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertEqual(module.MAX_RETRIES, shared_utils.DEFAULT_MAX_RETRIES)
                 self.assertEqual(module.MAX_403_RETRIES, shared_utils.DEFAULT_MAX_403_RETRIES)
                 self.assertEqual(module.MAX_TIMEOUT_RETRIES, shared_utils.DEFAULT_MAX_TIMEOUT_RETRIES)
+                self.assertEqual(module.MAX_SERVER_ERROR_RETRIES, shared_utils.DEFAULT_MAX_SERVER_ERROR_RETRIES)
                 self.assertEqual(module.REQUEST_TIMEOUT, shared_utils.DEFAULT_REQUEST_TIMEOUT)
 
     def test_frontend_runtime_config_exposes_auto_rate_limit_scope(self):
@@ -961,6 +968,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("rate_limit_scope: 'auto'", text)
         self.assertIn("config.rate_limit_scope || 'auto'", text)
         self.assertIn('<option value="auto">auto</option>', text)
+        self.assertIn("api_server_error_max_retries: '2'", text)
+        self.assertIn("harem_scan_chunk_size: '7000'", text)
+        self.assertIn("configForm.harem_scan_chunk_size", text)
         self.assertIn("general_scan_writing_quality: true", text)
         self.assertIn("config.general_scan_writing_quality !== false", text)
         self.assertIn("configForm.general_scan_writing_quality", text)
@@ -979,6 +989,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("general_scan_continuity_audit: true", text)
         self.assertIn("config.general_scan_continuity_audit !== false", text)
         self.assertIn("configForm.general_scan_continuity_audit", text)
+        self.assertIn("general_scan_entity_prescan: true", text)
+        self.assertIn("config.general_scan_entity_prescan !== false", text)
+        self.assertIn("configForm.general_scan_entity_prescan", text)
         self.assertIn("general_scan_knowledge_base_llm_merge: false", text)
         self.assertIn("Boolean(config.general_scan_knowledge_base_llm_merge)", text)
         self.assertIn("configForm.general_scan_knowledge_base_llm_merge", text)
@@ -1083,6 +1096,43 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             base_url="https://example.test/v1",
             request_timeout=1,
             max_retries=2,
+            base_delay=0,
+            rpm_limit=0,
+            tpm_limit=0,
+            logger=None,
+        )
+
+        with self.assertRaises(ServerError):
+            chat_completion(messages=[{"role": "user", "content": "hello"}], max_tokens=1)
+        self.assertEqual(len(calls), 2)
+
+    def test_make_chat_completion_uses_short_5xx_retry_budget(self):
+        calls = []
+
+        class Response:
+            status_code = 504
+
+        class ServerError(RuntimeError):
+            response = Response()
+
+        class FakeCompletions:
+            def create(self, **_kwargs):
+                calls.append("call")
+                raise ServerError("gateway timeout")
+
+        class FakeChat:
+            completions = FakeCompletions()
+
+        class FakeClient:
+            chat = FakeChat()
+
+        chat_completion = Timerror.make_chat_completion(
+            openai_client_factory=lambda _key, _base_url, _timeout: FakeClient(),
+            api_key_pool=["sk-test"],
+            base_url="https://example.test/v1",
+            request_timeout=1,
+            max_retries=5,
+            max_server_error_retries=2,
             base_delay=0,
             rpm_limit=0,
             tpm_limit=0,
@@ -4844,6 +4894,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "RPM_LIMIT",
             "TPM_LIMIT",
             "RATE_LIMIT_SCOPE",
+            "API_SERVER_ERROR_MAX_RETRIES",
+            "HAREM_SCAN_CHUNK_SIZE",
+            "HAREM_SCAN_MAX_TOKENS",
+            "HAREM_SCAN_RETRY_WORKERS",
             "GENERAL_SCAN_MAX_CHUNKS",
             "GENERAL_SCAN_SMART_DENSITY",
             "GENERAL_SCAN_CONTENT_AWARE_SAMPLING",
@@ -4855,6 +4909,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_READER_EXPERIENCE",
             "GENERAL_SCAN_CONTINUITY_AUDIT",
             "GENERAL_SCAN_ROLLING_CONTEXT",
+            "GENERAL_SCAN_ENTITY_PRESCAN",
             "GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE",
             "GENERAL_SCAN_CONTEXT_MAX_CHARS",
             "RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER",
@@ -4871,6 +4926,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "rpm_limit": "",
                 "tpm_limit": "5000",
                 "rate_limit_scope": "per_key",
+                "api_server_error_max_retries": "2",
+                "harem_scan_chunk_size": "6500",
+                "harem_scan_max_tokens": "2800",
+                "harem_scan_retry_workers": "1",
                 "general_scan_max_chunks": "120",
                 "general_scan_smart_density": False,
                 "general_scan_content_aware_sampling": False,
@@ -4882,6 +4941,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "general_scan_reader_experience": False,
                 "general_scan_continuity_audit": False,
                 "general_scan_rolling_context": False,
+                "general_scan_entity_prescan": False,
                 "general_scan_knowledge_base_llm_merge": True,
                 "general_scan_context_max_chars": "800",
                 "rescan_skip_chronic_parse_failure_after": "3",
@@ -4894,6 +4954,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["RPM_LIMIT"], "")
             self.assertEqual(os.environ["TPM_LIMIT"], "5000")
             self.assertEqual(os.environ["RATE_LIMIT_SCOPE"], "per_key")
+            self.assertEqual(os.environ["API_SERVER_ERROR_MAX_RETRIES"], "2")
+            self.assertEqual(os.environ["HAREM_SCAN_CHUNK_SIZE"], "6500")
+            self.assertEqual(os.environ["HAREM_SCAN_MAX_TOKENS"], "2800")
+            self.assertEqual(os.environ["HAREM_SCAN_RETRY_WORKERS"], "1")
             self.assertEqual(os.environ["GENERAL_SCAN_MAX_CHUNKS"], "120")
             self.assertEqual(os.environ["GENERAL_SCAN_SMART_DENSITY"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_CONTENT_AWARE_SAMPLING"], "0")
@@ -4905,6 +4969,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["GENERAL_SCAN_READER_EXPERIENCE"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_CONTINUITY_AUDIT"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_ROLLING_CONTEXT"], "0")
+            self.assertEqual(os.environ["GENERAL_SCAN_ENTITY_PRESCAN"], "0")
             self.assertEqual(os.environ["GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE"], "1")
             self.assertEqual(os.environ["GENERAL_SCAN_CONTEXT_MAX_CHARS"], "800")
             self.assertEqual(os.environ["RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER"], "3")
@@ -4922,9 +4987,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertFalse(result["general_scan_reader_experience"])
             self.assertFalse(result["general_scan_continuity_audit"])
             self.assertFalse(result["general_scan_rolling_context"])
+            self.assertFalse(result["general_scan_entity_prescan"])
             self.assertTrue(result["general_scan_knowledge_base_llm_merge"])
             self.assertEqual(result["general_scan_context_max_chars"], "800")
             self.assertEqual(result["rescan_skip_chronic_parse_failure_after"], "3")
+            self.assertEqual(result["api_server_error_max_retries"], "2")
+            self.assertEqual(result["harem_scan_chunk_size"], "6500")
+            self.assertEqual(result["harem_scan_max_tokens"], "2800")
+            self.assertEqual(result["harem_scan_retry_workers"], "1")
             self.assertEqual(result["web"]["scan_stall_timeout_seconds"], 900)
             self.assertTrue(result["web"]["scan_stall_watchdog_enabled"])
             self.assertTrue(result["harem_plus_general_scan"])
@@ -5095,6 +5165,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "RPM_LIMIT": "rpm_limit",
             "TPM_LIMIT": "tpm_limit",
             "RATE_LIMIT_SCOPE": "rate_limit_scope",
+            "API_SERVER_ERROR_MAX_RETRIES": "api_server_error_max_retries",
+            "HAREM_SCAN_CHUNK_SIZE": "harem_scan_chunk_size",
+            "HAREM_SCAN_MAX_TOKENS": "harem_scan_max_tokens",
+            "HAREM_SCAN_RETRY_WORKERS": "harem_scan_retry_workers",
             "GENERAL_SCAN_MAX_CHUNKS": "general_scan_max_chunks",
             "GENERAL_SCAN_SMART_DENSITY": "general_scan_smart_density",
             "GENERAL_SCAN_CONTENT_AWARE_SAMPLING": "general_scan_content_aware_sampling",
@@ -5106,6 +5180,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "GENERAL_SCAN_READER_EXPERIENCE": "general_scan_reader_experience",
             "GENERAL_SCAN_CONTINUITY_AUDIT": "general_scan_continuity_audit",
             "GENERAL_SCAN_ROLLING_CONTEXT": "general_scan_rolling_context",
+            "GENERAL_SCAN_ENTITY_PRESCAN": "general_scan_entity_prescan",
             "GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE": "general_scan_knowledge_base_llm_merge",
             "GENERAL_SCAN_CONTEXT_MAX_CHARS": "general_scan_context_max_chars",
             "RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER": "rescan_skip_chronic_parse_failure_after",
@@ -5139,6 +5214,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     f.write("# 注释\nAPI_KEY=secret\nMAX_WORKERS=4\n\n")
                 ok, _ = web_manager._update_runtime_config({
                     "max_workers": 16,
+                    "api_server_error_max_retries": 2,
+                    "harem_scan_chunk_size": 6500,
+                    "harem_scan_max_tokens": 2800,
+                    "harem_scan_retry_workers": 1,
                     "general_scan_smart_density": False,
                     "general_scan_content_aware_sampling": False,
                     "general_scan_incremental_reuse": False,
@@ -5149,6 +5228,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "general_scan_reader_experience": False,
                     "general_scan_continuity_audit": False,
                     "general_scan_rolling_context": False,
+                    "general_scan_entity_prescan": False,
                     "general_scan_knowledge_base_llm_merge": True,
                     "general_scan_context_max_chars": 800,
                     "rescan_skip_chronic_parse_failure_after": 3,
@@ -5161,6 +5241,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("# 注释", lines)
                 self.assertIn("API_KEY=secret", lines)
                 self.assertIn("MAX_WORKERS=16", lines)
+                self.assertIn("API_SERVER_ERROR_MAX_RETRIES=2", lines)
+                self.assertIn("HAREM_SCAN_CHUNK_SIZE=6500", lines)
+                self.assertIn("HAREM_SCAN_MAX_TOKENS=2800", lines)
+                self.assertIn("HAREM_SCAN_RETRY_WORKERS=1", lines)
                 self.assertIn("GENERAL_SCAN_SMART_DENSITY=0", lines)
                 self.assertIn("GENERAL_SCAN_CONTENT_AWARE_SAMPLING=0", lines)
                 self.assertIn("GENERAL_SCAN_INCREMENTAL_REUSE=0", lines)
@@ -5171,6 +5255,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("GENERAL_SCAN_READER_EXPERIENCE=0", lines)
                 self.assertIn("GENERAL_SCAN_CONTINUITY_AUDIT=0", lines)
                 self.assertIn("GENERAL_SCAN_ROLLING_CONTEXT=0", lines)
+                self.assertIn("GENERAL_SCAN_ENTITY_PRESCAN=0", lines)
                 self.assertIn("GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE=1", lines)
                 self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS=800", lines)
                 self.assertIn("RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER=3", lines)
@@ -10635,6 +10720,73 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(calls[0]["max_tokens"], 2400)
         self.assertIn("密度策略：light", calls[0]["prompt"])
 
+    def test_general_scan_entity_prescan_extracts_candidates_safely(self):
+        text = """
+第一章：青云城旧案
+“先退下。”张三说道。
+李四道：“我去玄天宗查线索。”
+旁人只知道他名叫赵明远。
+青云城中，玄天宗弟子往来，青云城旧案反复被提起。
+"""
+        candidates = general_scan._entity_prescan_candidates(text, max_items=10, max_chars=1000)
+        by_name = {item["name"]: item for item in candidates}
+
+        self.assertIn("张三", by_name)
+        self.assertNotIn("张三说", by_name)
+        self.assertIn("李四", by_name)
+        self.assertIn("赵明远", by_name)
+        self.assertIn("青云城", by_name)
+        self.assertIn("玄天宗", by_name)
+        self.assertEqual(by_name["张三"]["entity_type"], "person")
+        self.assertEqual(by_name["青云城"]["entity_type"], "location")
+        self.assertEqual(by_name["玄天宗"]["entity_type"], "organization")
+
+    def test_general_scan_entity_prescan_prompt_is_hint_only(self):
+        section = general_scan._entity_prescan_prompt_section([
+            {"name": "张三", "entity_type": "person", "confidence": "high", "score": 5},
+            {"name": "青云城", "entity_type": "location", "confidence": "medium", "score": 4},
+        ])
+
+        self.assertIn("全书预扫描实体候选", section)
+        self.assertIn("只用于提醒不要漏掉高频实体", section)
+        self.assertIn("仍必须以当前片段原文为准", section)
+        self.assertIn("张三（人物", section)
+        self.assertIn("青云城（地点", section)
+
+    def test_general_scan_injects_entity_prescan_into_chunk_prompt(self):
+        profile = analysis_profiles.load_analysis_profile("general")
+        prompts = []
+        old_call_json = general_scan._call_json
+        try:
+            def fake_call_json(messages, max_tokens=3000):
+                prompts.append("\n".join(item.get("content", "") for item in messages))
+                return {
+                    "plot_events": ["张三抵达青云城"],
+                    "conflicts": [],
+                    "worldbuilding": ["青云城是旧案地点"],
+                    "themes": [],
+                    "foreshadowing": [],
+                    "quality_notes": [],
+                    "specialty_notes": [],
+                    "one_sentence_summary": "张三抵达青云城。",
+                }
+
+            general_scan._call_json = fake_call_json
+            general_scan._scan_chunk(
+                "张三抵达城门。",
+                0,
+                1,
+                profile=profile,
+                entity_prescan=[
+                    {"name": "张三", "entity_type": "person", "confidence": "high", "score": 5},
+                ],
+            )
+        finally:
+            general_scan._call_json = old_call_json
+
+        self.assertTrue(any("全书预扫描实体候选" in prompt for prompt in prompts))
+        self.assertTrue(any("张三（人物" in prompt for prompt in prompts))
+
     def test_general_scan_outputs_writing_quality_pacing_and_density(self):
         profile = analysis_profiles.load_analysis_profile("general")
         prompts = []
@@ -11841,10 +11993,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         old_scan_chunk = general_scan._scan_chunk
         calls = []
         snapshots = []
+        entity_prescans = []
         try:
-            def fake_scan(chunk, chunk_index, total_chunks, profile=None, density_profile=None, context_snapshot=None):
+            def fake_scan(chunk, chunk_index, total_chunks, profile=None, density_profile=None, context_snapshot=None, entity_prescan=None):
                 calls.append(chunk)
                 snapshots.append(context_snapshot or {})
+                entity_prescans.append(entity_prescan or [])
                 if len(calls) == 1:
                     raise RuntimeError("maximum context length exceeded")
                 return {
@@ -11866,11 +12020,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 10,
                 profile=analysis_profiles.load_analysis_profile("general"),
                 context_snapshot={"previous_progress": "旧进展" * 200, "active_characters": ["林澈"]},
+                entity_prescan=[{"name": "林澈", "entity_type": "person", "confidence": "high", "score": 3}],
             )
         finally:
             general_scan._scan_chunk = old_scan_chunk
 
         self.assertEqual(len(calls), 3)
+        self.assertTrue(all((items or [{}])[0].get("name") == "林澈" for items in entity_prescans))
         self.assertLessEqual(
             len(json.dumps(snapshots[1], ensure_ascii=False)),
             max(400, general_scan.CONTEXT_MAX_CHARS // 2),
@@ -12534,6 +12690,19 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(any(450 <= idx <= 550 for idx in sampled_indices))
         self.assertEqual(protagonist._sample_chunk_indices_for_budget(1000, 0), list(range(1000)))
 
+    def test_protagonist_checkpoint_chunk_plan_must_match(self):
+        current = protagonist._character_chunk_plan_metadata(
+            text_length=10000,
+            source_total_chunks=2,
+            target_chunk_indices=[0, 1],
+            sampling_strategy="full",
+            effective_max_chunks=0,
+        )
+        self.assertTrue(protagonist._checkpoint_chunk_plan_matches(dict(current), current))
+        stale = dict(current)
+        stale["chunk_size"] = current["chunk_size"] + 1
+        self.assertFalse(protagonist._checkpoint_chunk_plan_matches(stale, current))
+
     def test_alias_cross_merge_batches_respect_payload_budget(self):
         candidates = [
             {
@@ -12704,7 +12873,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             }
             manifest["chunks"][499]["text"] = "大战爆发，主角突破并揭露真相，旧伏笔回收。"
 
-            def fake_scan(chunk, chunk_index, total_chunks, profile=None):
+            def fake_scan(chunk, chunk_index, total_chunks, profile=None, entity_prescan=None):
                 return {
                     "chunk_index": chunk_index,
                     "one_sentence_summary": f"{chunk}/{total_chunks}",
@@ -12750,6 +12919,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(data["reader_experience_schema_version"], general_scan.READER_EXPERIENCE_SCHEMA_VERSION)
             self.assertTrue(data["continuity_audit_enabled"])
             self.assertEqual(data["continuity_audit_schema_version"], general_scan.CONTINUITY_AUDIT_SCHEMA_VERSION)
+            self.assertTrue(data["entity_prescan_enabled"])
+            self.assertEqual(data["entity_prescan_schema_version"], general_scan.ENTITY_PRESCAN_SCHEMA_VERSION)
+            self.assertIn("entity_prescan_type_counts", data)
             self.assertTrue(data["knowledge_base_enabled"])
             self.assertEqual(data["knowledge_base_schema_version"], general_scan.KNOWLEDGE_BASE_SCHEMA_VERSION)
             self.assertTrue(data["knowledge_base_llm_merge_enabled"])
@@ -12768,6 +12940,157 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(sampled_indices[-1], 1000)
             self.assertIn(500, sampled_indices)
             self.assertTrue(any(450 <= idx <= 550 for idx in sampled_indices))
+
+    def test_general_scan_main_reuses_overall_summary_when_all_chunks_reused(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            novels_dir = os.path.join(tmpdir, "novels")
+            results_dir = os.path.join(tmpdir, "results")
+            os.makedirs(novels_dir, exist_ok=True)
+            os.makedirs(results_dir, exist_ok=True)
+            novel_path = os.path.join(novels_dir, "all_reused.txt")
+            with open(novel_path, "w", encoding="utf-8") as f:
+                f.write("same")
+
+            chunk_text = "第一段旧内容，不禁推进剧情。"
+            chunk_hash = general_scan._chunk_text_hash(chunk_text)
+            manifest = {
+                "text_length": len(chunk_text),
+                "chunks": [{"chunk_index": 1, "text": chunk_text}],
+            }
+            old_summary = {
+                "story_overview": "旧总评可直接复用。",
+                "zhihu_writing_insights_overall": {
+                    "word_poverty": {"severity": "轻度词穷", "template_phrase_count": 1},
+                },
+            }
+            latest_path = os.path.join(results_dir, "all_reused_GENERAL_SUMMARY_latest.json")
+            with open(latest_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "schema_version": 1,
+                    "analysis_profile": "general",
+                    "specialty_profile": "general",
+                    "chunk_size": general_scan.CHUNK_SIZE,
+                    "chunk_overlap": general_scan.CHUNK_OVERLAP,
+                    "smart_density": general_scan.SMART_DENSITY,
+                    "content_aware_sampling": general_scan.CONTENT_AWARE_SAMPLING,
+                    "content_aware_sampling_schema_version": general_scan.CONTENT_AWARE_SAMPLING_SCHEMA_VERSION,
+                    "writing_quality_enabled": general_scan.WRITING_QUALITY_ENABLED,
+                    "zhihu_writing_insights_schema_version": general_scan.ZHIHU_WRITING_INSIGHTS_SCHEMA_VERSION,
+                    "narrative_architecture_enabled": general_scan.NARRATIVE_ARCHITECTURE_ENABLED,
+                    "foreshadowing_engineering_enabled": general_scan.FORESHADOWING_ENGINEERING_ENABLED,
+                    "semantic_layers_enabled": general_scan.SEMANTIC_LAYERS_ENABLED,
+                    "reader_experience_enabled": general_scan.READER_EXPERIENCE_ENABLED,
+                    "continuity_audit_enabled": general_scan.CONTINUITY_AUDIT_ENABLED,
+                    "continuity_audit_schema_version": general_scan.CONTINUITY_AUDIT_SCHEMA_VERSION,
+                    "entity_prescan_enabled": general_scan.ENTITY_PRESCAN_ENABLED,
+                    "entity_prescan_schema_version": general_scan.ENTITY_PRESCAN_SCHEMA_VERSION,
+                    "prompt_templates": {
+                        "general_scan_chunk": {"name": "general_scan_chunk", "version": "v1"},
+                        "general_summary": {"name": "general_summary", "version": "v1"},
+                    },
+                    "summary": old_summary,
+                    "chunk_results": [{
+                        "chunk_index": 0,
+                        "chunk_hash": chunk_hash,
+                        "plot_events": ["旧事件"],
+                        "writing_quality": {
+                            "prose_quality": {"score": 6},
+                            "zhihu_insights": {
+                                "word_poverty": {
+                                    "template_phrase_count": 1,
+                                    "template_phrase_density_per_1k": 1.0,
+                                    "most_frequent_templates": ["不禁(1次)"],
+                                    "severity": "偶见模板词",
+                                },
+                            },
+                        },
+                        "pacing_analysis": {"pacing_type": "transition"},
+                        "information_density": {"density_score": "medium"},
+                        "narrative_structure": {"structural_function_tag": "transition"},
+                        "outline_architecture": {"causal_chain": {"causal_strength": "自然发展"}},
+                        "foreshadowing_engineering": {"new_foreshadowing": [{"description": "旧伏笔"}]},
+                        "semantic_layers": {"literal_meaning": "旧片段事实", "author_intent": "旧片段意图"},
+                        "reader_experience": {
+                            "immediate_emotion": {"emotion": "期待", "intensity": 6, "trigger": "旧片段推进"},
+                            "immersion_anchor": "旧片段主角目标",
+                            "anticipation": {"expected": "旧线索继续推进", "intensity": 6, "hook_type": "悬念"},
+                            "satisfaction_points": [{"type": "解谜", "description": "旧线索给出进展", "intensity": 6}],
+                            "frustration_points": [],
+                            "engagement_level": "medium",
+                            "experience_notes": ["旧片段体验可复用"],
+                        },
+                        "one_sentence_summary": "旧摘要",
+                    }],
+                }, f, ensure_ascii=False)
+
+            with mock.patch.object(general_scan, "get_base_dir", return_value=tmpdir), \
+                    mock.patch.object(general_scan, "init_token_tracker"), \
+                    mock.patch.object(general_scan, "_read_novel", return_value="same"), \
+                    mock.patch.object(general_scan, "build_chunk_manifest", return_value=manifest), \
+                    mock.patch.object(general_scan, "save_chunk_manifest"), \
+                    mock.patch.object(general_scan, "tqdm", side_effect=lambda items, desc=None: items), \
+                    mock.patch.object(general_scan, "ROLLING_CONTEXT_ENABLED", False), \
+                    mock.patch.object(general_scan, "_scan_chunk") as scan_mock, \
+                    mock.patch.object(general_scan, "_summarize_book") as summarize_mock:
+                self.assertEqual(general_scan.main(novel_path=novel_path, book_name="all_reused"), 0)
+
+            with open(latest_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            scan_mock.assert_not_called()
+            summarize_mock.assert_not_called()
+            self.assertTrue(data["summary_reused"])
+            self.assertEqual(data["summary"]["story_overview"], "旧总评可直接复用。")
+            self.assertEqual(data["reused_chunk_count"], 1)
+            self.assertEqual(data["scanned_chunk_count"], 0)
+
+    def test_general_scan_main_passes_entity_prescan_to_chunks(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            novels_dir = os.path.join(tmpdir, "novels")
+            results_dir = os.path.join(tmpdir, "results")
+            os.makedirs(novels_dir, exist_ok=True)
+            os.makedirs(results_dir, exist_ok=True)
+            novel_path = os.path.join(novels_dir, "entity_prescan.txt")
+            text = "第一章：青云城\n“出发。”张三说道。李四道：“去玄天宗。”"
+            with open(novel_path, "w", encoding="utf-8") as f:
+                f.write(text)
+
+            manifest = {
+                "text_length": len(text),
+                "chunks": [{"chunk_index": 1, "text": text}],
+            }
+            seen_prescans = []
+
+            def fake_scan(chunk, chunk_index, total_chunks, profile=None, context_snapshot=None, entity_prescan=None):
+                seen_prescans.append(entity_prescan or [])
+                return {
+                    "chunk_index": chunk_index,
+                    "plot_events": ["张三前往玄天宗"],
+                    "one_sentence_summary": "张三和李四出发。",
+                }
+
+            with mock.patch.object(general_scan, "get_base_dir", return_value=tmpdir), \
+                    mock.patch.object(general_scan, "init_token_tracker"), \
+                    mock.patch.object(general_scan, "_read_novel", return_value=text), \
+                    mock.patch.object(general_scan, "build_chunk_manifest", return_value=manifest), \
+                    mock.patch.object(general_scan, "save_chunk_manifest"), \
+                    mock.patch.object(general_scan, "tqdm", side_effect=lambda items, desc=None: items), \
+                    mock.patch.object(general_scan, "_scan_chunk_with_context_overflow_fallback", side_effect=fake_scan), \
+                    mock.patch.object(general_scan, "_summarize_book", return_value={"story_overview": "ok"}):
+                self.assertEqual(general_scan.main(novel_path=novel_path, book_name="entity_prescan"), 0)
+
+            latest_path = os.path.join(results_dir, "entity_prescan_GENERAL_SUMMARY_latest.json")
+            with open(latest_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            self.assertEqual(data["failed_chunks"], [])
+            names = {item.get("name") for item in seen_prescans[0]}
+            self.assertIn("张三", names)
+            self.assertIn("李四", names)
+            self.assertIn("青云城", names)
+            self.assertTrue(data["entity_prescan_enabled"])
+            self.assertEqual(data["entity_prescan_count"], len(data["entity_prescan"]))
+            self.assertGreaterEqual(data["entity_prescan_type_counts"]["person"], 2)
 
     def test_general_scan_main_reuses_unchanged_chunk_results(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -12798,9 +13121,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "chunk_size": general_scan.CHUNK_SIZE,
                     "chunk_overlap": general_scan.CHUNK_OVERLAP,
                     "smart_density": general_scan.SMART_DENSITY,
+                    "writing_quality_enabled": general_scan.WRITING_QUALITY_ENABLED,
+                    "zhihu_writing_insights_schema_version": general_scan.ZHIHU_WRITING_INSIGHTS_SCHEMA_VERSION,
                     "foreshadowing_engineering_enabled": general_scan.FORESHADOWING_ENGINEERING_ENABLED,
                     "semantic_layers_enabled": general_scan.SEMANTIC_LAYERS_ENABLED,
                     "reader_experience_enabled": general_scan.READER_EXPERIENCE_ENABLED,
+                    "entity_prescan_enabled": general_scan.ENTITY_PRESCAN_ENABLED,
+                    "entity_prescan_schema_version": general_scan.ENTITY_PRESCAN_SCHEMA_VERSION,
                     "prompt_templates": {
                         "general_scan_chunk": {"name": "general_scan_chunk", "version": "v1"},
                         "general_summary": {"name": "general_summary", "version": "v1"},
@@ -12809,7 +13136,17 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         "chunk_index": 0,
                         "chunk_hash": reused_hash,
                         "plot_events": ["旧事件"],
-                        "writing_quality": {"prose_quality": {"score": 6}},
+                        "writing_quality": {
+                            "prose_quality": {"score": 6},
+                            "zhihu_insights": {
+                                "word_poverty": {
+                                    "template_phrase_count": 1,
+                                    "template_phrase_density_per_1k": 1.0,
+                                    "most_frequent_templates": ["不禁(1次)"],
+                                    "severity": "偶见模板词",
+                                },
+                            },
+                        },
                         "pacing_analysis": {"pacing_type": "transition"},
                         "information_density": {"density_score": "medium"},
                         "narrative_structure": {"structural_function_tag": "transition"},
@@ -12831,7 +13168,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
             scanned = []
 
-            def fake_scan(chunk, chunk_index, total_chunks, profile=None):
+            def fake_scan(chunk, chunk_index, total_chunks, profile=None, entity_prescan=None):
                 scanned.append(chunk)
                 return {
                     "chunk_index": chunk_index,
@@ -12861,6 +13198,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertTrue(data["foreshadowing_engineering_enabled"])
             self.assertTrue(data["semantic_layers_enabled"])
             self.assertTrue(data["reader_experience_enabled"])
+            self.assertTrue(data["entity_prescan_enabled"])
+            self.assertEqual(data["entity_prescan_schema_version"], general_scan.ENTITY_PRESCAN_SCHEMA_VERSION)
             self.assertEqual(data["reused_chunk_count"], 1)
             self.assertEqual(data["scanned_chunk_count"], 1)
             self.assertTrue(data["chunk_results"][0]["reused_from_previous"])
@@ -12933,7 +13272,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
             scanned = []
 
-            def fake_scan(chunk, chunk_index, total_chunks, profile=None):
+            def fake_scan(chunk, chunk_index, total_chunks, profile=None, entity_prescan=None):
                 scanned.append(chunk)
                 return {
                     "chunk_index": chunk_index,
@@ -13002,7 +13341,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
             scanned = []
 
-            def fake_scan(chunk, chunk_index, total_chunks, profile=None):
+            def fake_scan(chunk, chunk_index, total_chunks, profile=None, entity_prescan=None):
                 scanned.append(chunk)
                 return {
                     "chunk_index": chunk_index,
@@ -13045,7 +13384,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             }
             calls = []
 
-            def fake_scan(chunk, chunk_index, total_chunks, profile=None):
+            def fake_scan(chunk, chunk_index, total_chunks, profile=None, entity_prescan=None):
                 calls.append(chunk)
                 if len(calls) == 1:
                     raise RuntimeError("context_length_exceeded")
@@ -13096,7 +13435,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 ],
             }
 
-            def fake_scan(chunk, chunk_index, total_chunks, profile=None, context_snapshot=None):
+            def fake_scan(chunk, chunk_index, total_chunks, profile=None, context_snapshot=None, entity_prescan=None):
                 if chunk_index == 1:
                     raise RuntimeError("模型超时")
                 return {
@@ -13227,6 +13566,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "reader_experience_schema_version": general_scan.READER_EXPERIENCE_SCHEMA_VERSION,
                 "continuity_audit_enabled": general_scan.CONTINUITY_AUDIT_ENABLED,
                 "continuity_audit_schema_version": general_scan.CONTINUITY_AUDIT_SCHEMA_VERSION,
+                "entity_prescan_enabled": general_scan.ENTITY_PRESCAN_ENABLED,
+                "entity_prescan_schema_version": general_scan.ENTITY_PRESCAN_SCHEMA_VERSION,
                 "knowledge_base_enabled": True,
                 "knowledge_base_schema_version": general_scan.KNOWLEDGE_BASE_SCHEMA_VERSION,
                 "knowledge_base_llm_merge_enabled": general_scan.KNOWLEDGE_BASE_LLM_MERGE_ENABLED,
@@ -13267,6 +13608,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             data_without_continuity_meta = dict(data)
             data_without_continuity_meta.pop("continuity_audit_enabled", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_continuity_meta, novel_path, "history"))
+            data_without_entity_prescan_meta = dict(data)
+            data_without_entity_prescan_meta.pop("entity_prescan_schema_version", None)
+            self.assertFalse(general_scan._is_fresh_summary(data_without_entity_prescan_meta, novel_path, "history"))
             data_without_knowledge_base_meta = dict(data)
             data_without_knowledge_base_meta.pop("knowledge_base_schema_version", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_knowledge_base_meta, novel_path, "history"))
@@ -13329,6 +13673,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "reader_experience_schema_version": general_scan.READER_EXPERIENCE_SCHEMA_VERSION,
                 "continuity_audit_enabled": general_scan.CONTINUITY_AUDIT_ENABLED,
                 "continuity_audit_schema_version": general_scan.CONTINUITY_AUDIT_SCHEMA_VERSION,
+                "entity_prescan_enabled": general_scan.ENTITY_PRESCAN_ENABLED,
+                "entity_prescan_schema_version": general_scan.ENTITY_PRESCAN_SCHEMA_VERSION,
                 "knowledge_base_enabled": True,
                 "knowledge_base_schema_version": general_scan.KNOWLEDGE_BASE_SCHEMA_VERSION,
                 "knowledge_base_llm_merge_enabled": general_scan.KNOWLEDGE_BASE_LLM_MERGE_ENABLED,

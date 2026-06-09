@@ -2,6 +2,8 @@ import json
 import os
 import hashlib
 import inspect
+import re
+from collections import Counter
 from datetime import datetime
 from typing import Any, Dict, List
 
@@ -37,6 +39,11 @@ CONTINUITY_AUDIT_ENABLED = os.environ.get("GENERAL_SCAN_CONTINUITY_AUDIT", "1").
 CONTINUITY_AUDIT_SCHEMA_VERSION = 1
 KNOWLEDGE_BASE_SCHEMA_VERSION = 1
 KNOWLEDGE_BASE_LLM_MERGE_ENABLED = os.environ.get("GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE", "0").strip() == "1"
+ENTITY_PRESCAN_ENABLED = os.environ.get("GENERAL_SCAN_ENTITY_PRESCAN", "1").strip() == "1"
+ENTITY_PRESCAN_SCHEMA_VERSION = 1
+ENTITY_PRESCAN_MAX_CHARS = int(os.environ.get("GENERAL_SCAN_ENTITY_PRESCAN_MAX_CHARS", "500000"))
+ENTITY_PRESCAN_MAX_ITEMS = int(os.environ.get("GENERAL_SCAN_ENTITY_PRESCAN_MAX_ITEMS", "80"))
+ENTITY_PRESCAN_PROMPT_ITEMS = int(os.environ.get("GENERAL_SCAN_ENTITY_PRESCAN_PROMPT_ITEMS", "40"))
 LOW_DENSITY_TERMS = (
     "睡觉", "起床", "吃饭", "喝茶", "闲聊", "聊天", "休息", "赶路", "路上", "返回",
     "日常", "家常", "客栈", "修炼打坐", "打坐", "闭关", "练功", "整理物品",
@@ -105,6 +112,144 @@ def _term_hits(text: str, terms) -> List[str]:
         if term in normalized and term not in hits:
             hits.append(term)
     return hits
+
+
+ENTITY_PRESCAN_STOPWORDS = {
+    "自己", "什么", "不是", "没有", "这个", "那个", "我们", "他们", "你们", "只是", "已经", "还是", "然后",
+    "突然", "现在", "这里", "那里", "出来", "进去", "起来", "下来", "过去", "回来", "时候", "地方", "东西",
+    "众人", "所有人", "大家", "所有", "因为", "所以", "但是", "只是", "一道", "一下", "一声", "一种",
+    "说道", "问道", "答道", "笑道", "喝道", "喊道", "冷笑道", "低声道", "冷笑", "低声",
+}
+ENTITY_NAMING_PATTERN = re.compile(r"(?:叫作|叫做|名叫|名字叫|唤作|称作|绰号|外号|表字|字|号)[“\"'‘’]?([\u4e00-\u9fffA-Za-z][\u4e00-\u9fffA-Za-z0-9·]{1,7})")
+ENTITY_SPEECH_VERBS = "冷笑道|低声道|说道|问道|答道|笑道|喝道|喊道|道"
+ENTITY_DIALOGUE_PATTERN = re.compile(rf"[“\"'‘][^”\"'’]{{1,80}}[”\"'’][ \t]*([\u4e00-\u9fffA-Za-z][\u4e00-\u9fffA-Za-z0-9·]{{1,5}}?)({ENTITY_SPEECH_VERBS})")
+ENTITY_SPEAKER_BEFORE_PATTERN = re.compile(rf"([\u4e00-\u9fffA-Za-z][\u4e00-\u9fffA-Za-z0-9·]{{1,5}}?)({ENTITY_SPEECH_VERBS})[：:]?[“\"'‘]")
+ENTITY_CHAPTER_TITLE_PATTERN = re.compile(r"^\s*(?:第[\u4e00-\u9fff零〇一二三四五六七八九十百千万0-9]+[章节回卷部集]|序章|楔子|终章)\s*[：:\-、 ]{0,3}([^\r\n]{2,30})", re.MULTILINE)
+ENTITY_TITLE_TOKEN_PATTERN = re.compile(r"[\u4e00-\u9fffA-Za-z][\u4e00-\u9fffA-Za-z0-9·]{1,7}")
+ENTITY_SUFFIX_TYPES = {
+    "person": ("帝", "王", "皇", "侯", "公", "妃", "后", "太子", "公主", "王爷", "将军", "先生", "姑娘", "仙子", "真人", "道人", "长老", "师兄", "师姐", "师妹"),
+    "location": ("城", "镇", "村", "山", "峰", "谷", "府", "宫", "殿", "阁", "楼", "寺", "观", "院", "岛", "海", "洲", "国", "郡", "州", "县", "界"),
+    "organization": ("宗", "门", "派", "教", "帮", "会", "阁", "楼", "军", "营", "司", "府", "院", "公司", "集团", "学院", "帝国", "王朝"),
+}
+
+
+def _entity_candidate_type(name: str) -> str:
+    text = str(name or "")
+    for entity_type, suffixes in ENTITY_SUFFIX_TYPES.items():
+        for suffix in suffixes:
+            if text.endswith(suffix) and len(text) > len(suffix):
+                return entity_type
+    return "unknown"
+
+
+def _entity_prescan_candidates(text: str, max_items: int = None, max_chars: int = None) -> List[Dict[str, Any]]:
+    if not ENTITY_PRESCAN_ENABLED:
+        return []
+    limit = ENTITY_PRESCAN_MAX_ITEMS if max_items is None else max(0, int(max_items or 0))
+    if limit <= 0:
+        return []
+    sample_limit = ENTITY_PRESCAN_MAX_CHARS if max_chars is None else max(0, int(max_chars or 0))
+    sample = (text or "")[:sample_limit] if sample_limit > 0 else (text or "")
+
+    freq = Counter()
+    sources = {}
+
+    def add(name: str, source: str, weight: int = 1):
+        normalized = str(name or "").strip(" \t\r\n，。！？；：、“”‘’\"'")
+        if not (2 <= len(normalized) <= 8):
+            return
+        if normalized in ENTITY_PRESCAN_STOPWORDS:
+            return
+        if not re.search(r"[\u4e00-\u9fffA-Za-z]", normalized):
+            return
+        freq[normalized] += max(1, int(weight or 1))
+        sources.setdefault(normalized, set()).add(source)
+
+    for pattern, source, weight in (
+        (ENTITY_NAMING_PATTERN, "naming", 8),
+        (ENTITY_DIALOGUE_PATTERN, "dialogue", 5),
+        (ENTITY_SPEAKER_BEFORE_PATTERN, "dialogue", 5),
+    ):
+        for match in pattern.finditer(sample):
+            add(match.group(1), source, weight)
+
+    for match in ENTITY_CHAPTER_TITLE_PATTERN.finditer(sample):
+        title = match.group(1)
+        for token in ENTITY_TITLE_TOKEN_PATTERN.findall(title):
+            if _entity_candidate_type(token) != "unknown":
+                add(token, "chapter_title", 4)
+
+    cjk_segments = re.findall(r"[\u4e00-\u9fff]{2,}", sample[: min(len(sample), 300000)])
+    ngram_freq = Counter()
+    for segment in cjk_segments:
+        for n in (2, 3, 4):
+            if len(segment) < n:
+                continue
+            for idx in range(0, len(segment) - n + 1):
+                gram = segment[idx:idx + n]
+                if gram not in ENTITY_PRESCAN_STOPWORDS:
+                    ngram_freq[gram] += 1
+    text_len = len(sample)
+    min_freq = 8 if text_len > 300000 else 5 if text_len > 80000 else 3
+    for name, count in ngram_freq.items():
+        entity_type = _entity_candidate_type(name)
+        known_type_min_freq = max(2, min_freq - 1)
+        if (
+            (entity_type != "unknown" and count >= known_type_min_freq)
+            or (entity_type == "unknown" and count >= min_freq * 2)
+        ):
+            add(name, "freq", count)
+
+    results = []
+    for name, score in freq.items():
+        source_set = sources.get(name, set())
+        entity_type = _entity_candidate_type(name)
+        if entity_type == "unknown" and ("dialogue" in source_set or "naming" in source_set):
+            entity_type = "person"
+        confidence = "high" if source_set & {"naming", "dialogue"} else "medium" if score >= min_freq * 2 else "low"
+        results.append({
+            "name": name,
+            "entity_type": entity_type,
+            "score": int(score),
+            "confidence": confidence,
+            "sources": sorted(source_set),
+        })
+    results.sort(key=lambda item: (
+        0 if item.get("confidence") == "high" else 1 if item.get("confidence") == "medium" else 2,
+        -int(item.get("score") or 0),
+        item.get("name") or "",
+    ))
+    return results[:limit]
+
+
+def _entity_prescan_prompt_section(entity_prescan: List[Dict[str, Any]], limit: int = None) -> str:
+    if not entity_prescan:
+        return ""
+    max_prompt_items = ENTITY_PRESCAN_PROMPT_ITEMS if limit is None else max(0, int(limit or 0))
+    if max_prompt_items <= 0:
+        return ""
+    lines = [
+        "【全书预扫描实体候选】",
+        "以下名称来自程序预扫描，只用于提醒不要漏掉高频实体；仍必须以当前片段原文为准，不能把候选当成已确认事实或别名。",
+    ]
+    type_labels = {"person": "人物", "location": "地点", "organization": "组织", "unknown": "未知"}
+    for item in entity_prescan[:max_prompt_items]:
+        name = item.get("name")
+        if not name:
+            continue
+        label = type_labels.get(item.get("entity_type") or "unknown", item.get("entity_type") or "未知")
+        lines.append(f"- {name}（{label}，{item.get('confidence', 'low')}，score={item.get('score', 0)}）")
+    return "\n".join(lines)
+
+
+def _entity_prescan_type_counts(entity_prescan: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts = {"person": 0, "location": 0, "organization": 0, "unknown": 0}
+    for item in entity_prescan or []:
+        entity_type = item.get("entity_type") or "unknown"
+        if entity_type not in counts:
+            counts[entity_type] = 0
+        counts[entity_type] += 1
+    return counts
 
 
 def _chunk_density_profile(text: str) -> Dict[str, Any]:
@@ -523,6 +668,15 @@ def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str =
         return False
     if data.get("knowledge_base_llm_merge_enabled") != KNOWLEDGE_BASE_LLM_MERGE_ENABLED:
         return False
+    if data.get("entity_prescan_enabled") not in {None, ENTITY_PRESCAN_ENABLED}:
+        return False
+    if ENTITY_PRESCAN_ENABLED:
+        if data.get("entity_prescan_enabled") is not True:
+            return False
+        if data.get("entity_prescan_schema_version") != ENTITY_PRESCAN_SCHEMA_VERSION:
+            return False
+    elif data.get("entity_prescan_enabled") not in {None, False}:
+        return False
     stored_prompt_templates = data.get("prompt_templates")
     if isinstance(stored_prompt_templates, dict):
         current_prompt_templates = prompt_templates_metadata("general_scan_chunk", "general_summary")
@@ -561,6 +715,8 @@ def _summary_can_reuse_chunk_results(data: Dict[str, Any], profile_name: str = "
         return False
     if data.get("writing_quality_enabled") not in {None, WRITING_QUALITY_ENABLED}:
         return False
+    if WRITING_QUALITY_ENABLED and data.get("zhihu_writing_insights_schema_version") not in {None, ZHIHU_WRITING_INSIGHTS_SCHEMA_VERSION}:
+        return False
     if data.get("narrative_architecture_enabled") not in {None, NARRATIVE_ARCHITECTURE_ENABLED}:
         return False
     if data.get("foreshadowing_engineering_enabled") not in {None, FORESHADOWING_ENGINEERING_ENABLED}:
@@ -568,6 +724,19 @@ def _summary_can_reuse_chunk_results(data: Dict[str, Any], profile_name: str = "
     if data.get("semantic_layers_enabled") not in {None, SEMANTIC_LAYERS_ENABLED}:
         return False
     if data.get("reader_experience_enabled") not in {None, READER_EXPERIENCE_ENABLED}:
+        return False
+    if data.get("continuity_audit_enabled") not in {None, CONTINUITY_AUDIT_ENABLED}:
+        return False
+    if CONTINUITY_AUDIT_ENABLED and data.get("continuity_audit_schema_version") not in {None, CONTINUITY_AUDIT_SCHEMA_VERSION}:
+        return False
+    if data.get("entity_prescan_enabled") not in {None, ENTITY_PRESCAN_ENABLED}:
+        return False
+    if ENTITY_PRESCAN_ENABLED:
+        if data.get("entity_prescan_enabled") is not True:
+            return False
+        if data.get("entity_prescan_schema_version") != ENTITY_PRESCAN_SCHEMA_VERSION:
+            return False
+    elif data.get("entity_prescan_enabled") not in {None, False}:
         return False
     stored_prompt_templates = data.get("prompt_templates")
     if isinstance(stored_prompt_templates, dict):
@@ -588,10 +757,12 @@ def _reusable_chunk_result_map(data: Dict[str, Any]) -> Dict[str, Dict[str, Any]
     for item in data.get("chunk_results") or []:
         if not isinstance(item, dict):
             continue
-        if WRITING_QUALITY_ENABLED and not (
-            item.get("writing_quality") and item.get("pacing_analysis") and item.get("information_density")
-        ):
-            continue
+        if WRITING_QUALITY_ENABLED:
+            writing_quality = item.get("writing_quality")
+            if not (writing_quality and item.get("pacing_analysis") and item.get("information_density")):
+                continue
+            if not (_safe_dict(writing_quality).get("zhihu_insights") or {}).get("word_poverty"):
+                continue
         if NARRATIVE_ARCHITECTURE_ENABLED and not (
             item.get("narrative_structure") and item.get("outline_architecture")
         ):
@@ -606,6 +777,17 @@ def _reusable_chunk_result_map(data: Dict[str, Any]) -> Dict[str, Dict[str, Any]
         if isinstance(chunk_hash, str) and chunk_hash:
             reusable.setdefault(chunk_hash, item)
     return reusable
+
+
+def _summary_can_reuse_overall(data: Dict[str, Any], profile_name: str = "general") -> bool:
+    if not _summary_can_reuse_chunk_results(data, profile_name):
+        return False
+    summary = data.get("summary")
+    if not isinstance(summary, dict) or not _summary_field_text(summary, "story_overview"):
+        return False
+    if WRITING_QUALITY_ENABLED and not summary.get("zhihu_writing_insights_overall"):
+        return False
+    return True
 
 
 def _copy_reused_chunk_result(result: Dict[str, Any], sample_index: int, original_chunk_index: int, chunk_hash: str, density_profile: Dict[str, Any]) -> Dict[str, Any]:
@@ -2441,7 +2623,7 @@ def _continuity_audit_summary_json_hint() -> str:
   },"""
 
 
-def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None, context_snapshot=None) -> Dict[str, Any]:
+def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None, context_snapshot=None, entity_prescan=None) -> Dict[str, Any]:
     profile = profile or load_analysis_profile("general")
     density_profile = density_profile or _chunk_density_profile(text_chunk)
     rules_text = _profile_rules_text(profile)
@@ -2472,6 +2654,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 {_semantic_layers_system_instruction()}
 {_reader_experience_system_instruction()}
 {_rolling_context_instruction(context_snapshot or {})}
+{_entity_prescan_prompt_section(entity_prescan or [])}
 
 要求：
 1. 只根据片段内容输出，不要凭空补全。
@@ -2528,13 +2711,15 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
     }
 
 
-def _call_scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None, context_snapshot=None) -> Dict[str, Any]:
+def _call_scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None, context_snapshot=None, entity_prescan=None) -> Dict[str, Any]:
     parameters = inspect.signature(_scan_chunk).parameters
     kwargs = {"profile": profile}
     if "density_profile" in parameters:
         kwargs["density_profile"] = density_profile
     if "context_snapshot" in parameters:
         kwargs["context_snapshot"] = context_snapshot
+    if "entity_prescan" in parameters:
+        kwargs["entity_prescan"] = entity_prescan
     return _scan_chunk(text_chunk, chunk_index, total_chunks, **kwargs)
 
 
@@ -2606,7 +2791,7 @@ def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int,
     return merged
 
 
-def _scan_chunk_with_context_overflow_fallback(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, context_snapshot=None) -> Dict[str, Any]:
+def _scan_chunk_with_context_overflow_fallback(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, context_snapshot=None, entity_prescan=None) -> Dict[str, Any]:
     density_profile = _chunk_density_profile(text_chunk)
     context_snapshot = _trim_context_snapshot(context_snapshot or {}) if ROLLING_CONTEXT_ENABLED else {}
     try:
@@ -2617,6 +2802,7 @@ def _scan_chunk_with_context_overflow_fallback(text_chunk: str, chunk_index: int
             profile=profile,
             density_profile=density_profile,
             context_snapshot=context_snapshot,
+            entity_prescan=entity_prescan,
         )
         result.setdefault("density_profile", density_profile)
         return result
@@ -2637,6 +2823,7 @@ def _scan_chunk_with_context_overflow_fallback(text_chunk: str, chunk_index: int
                 profile=profile,
                 density_profile=_chunk_density_profile(part),
                 context_snapshot=fallback_context,
+                entity_prescan=entity_prescan,
             )
             result["partial_index"] = part_index
             partial_results.append(result)
@@ -2827,6 +3014,9 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
     os.makedirs(output_dir, exist_ok=True)
 
     text = _read_novel(novel_file)
+    entity_prescan = _entity_prescan_candidates(text) if ENTITY_PRESCAN_ENABLED else []
+    if ENTITY_PRESCAN_ENABLED:
+        print(f"★ 实体预扫描候选 {len(entity_prescan)} 个（仅作为片段抽取提示）")
     manifest = build_chunk_manifest(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
     save_chunk_manifest(manifest, os.path.join(output_dir, "chunk_manifest.json"))
     source_chunk_entries = list(manifest.get("chunks", []) or [])
@@ -2899,6 +3089,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
                 source_chunk_count or len(chunks),
                 profile=profile,
                 context_snapshot=context_snapshot,
+                entity_prescan=entity_prescan,
             )
             result["sample_index"] = idx
             result["original_chunk_index"] = original_chunk_index
@@ -2928,7 +3119,18 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
                 knowledge_base_llm_merge_applied = True
         except Exception as exc:
             knowledge_base_llm_merge_error = str(exc) or exc.__class__.__name__
-    summary = _summarize_book(clean_name, chunk_results, profile=profile, knowledge_base=knowledge_base) if chunk_results else {}
+    summary_reused = False
+    if (
+        chunk_results
+        and reused_chunk_count == len(chunk_results)
+        and scanned_chunk_count == 0
+        and not failed
+        and _summary_can_reuse_overall(latest_data, profile.name)
+    ):
+        summary = json.loads(json.dumps(latest_data.get("summary") or {}, ensure_ascii=False))
+        summary_reused = True
+    else:
+        summary = _summarize_book(clean_name, chunk_results, profile=profile, knowledge_base=knowledge_base) if chunk_results else {}
     density_counts = {"low": 0, "medium": 0, "high": 0}
     for item in chunk_results:
         level = ((item.get("density_profile") or {}).get("level") or "medium")
@@ -2986,6 +3188,12 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "continuity_audit_enabled": CONTINUITY_AUDIT_ENABLED,
         "continuity_audit_schema_version": CONTINUITY_AUDIT_SCHEMA_VERSION if CONTINUITY_AUDIT_ENABLED else None,
         "continuity_audit_timeline_count": len(_compact_continuity_for_summary(chunk_results)) if CONTINUITY_AUDIT_ENABLED else 0,
+        "entity_prescan_enabled": ENTITY_PRESCAN_ENABLED,
+        "entity_prescan_schema_version": ENTITY_PRESCAN_SCHEMA_VERSION if ENTITY_PRESCAN_ENABLED else None,
+        "entity_prescan_max_chars": ENTITY_PRESCAN_MAX_CHARS if ENTITY_PRESCAN_ENABLED else 0,
+        "entity_prescan_count": len(entity_prescan),
+        "entity_prescan_type_counts": _entity_prescan_type_counts(entity_prescan),
+        "entity_prescan": entity_prescan,
         "knowledge_base_enabled": True,
         "knowledge_base_schema_version": KNOWLEDGE_BASE_SCHEMA_VERSION,
         "knowledge_base_llm_merge_enabled": KNOWLEDGE_BASE_LLM_MERGE_ENABLED,
@@ -2994,6 +3202,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "raw_knowledge_base_counts": _knowledge_base_counts(raw_knowledge_base),
         "density_counts": density_counts,
         "incremental_reuse": INCREMENTAL_REUSE,
+        "summary_reused": summary_reused,
         "reused_chunk_count": reused_chunk_count,
         "scanned_chunk_count": scanned_chunk_count,
         "successful_chunk_count": successful_chunk_count,

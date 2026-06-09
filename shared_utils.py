@@ -114,6 +114,7 @@ def configure_rotating_file_logger(
 DEFAULT_MAX_RETRIES = 5
 DEFAULT_MAX_403_RETRIES = 3  # 连续 3 次 403 才标记为不可用
 DEFAULT_MAX_TIMEOUT_RETRIES = 3  # 连续超时 3 次则标记 key 不可用
+DEFAULT_MAX_SERVER_ERROR_RETRIES = int(os.environ.get("API_SERVER_ERROR_MAX_RETRIES", "2"))
 DEFAULT_REQUEST_TIMEOUT = 120  # 请求超时时间（秒）
 CONTEXT_OVERFLOW_ERROR_HINTS = (
     "context length",
@@ -135,6 +136,7 @@ CONTEXT_OVERFLOW_ERROR_HINTS = (
 # Backward-compatible aliases for older imports.
 MAX_403_RETRIES = DEFAULT_MAX_403_RETRIES
 MAX_TIMEOUT_RETRIES = DEFAULT_MAX_TIMEOUT_RETRIES
+MAX_SERVER_ERROR_RETRIES = DEFAULT_MAX_SERVER_ERROR_RETRIES
 REQUEST_TIMEOUT = DEFAULT_REQUEST_TIMEOUT
 
 
@@ -186,6 +188,7 @@ def create_chat_completion(
     max_retries: int = DEFAULT_MAX_RETRIES,
     max_403_retries: int = DEFAULT_MAX_403_RETRIES,
     max_timeout_retries: int = DEFAULT_MAX_TIMEOUT_RETRIES,
+    max_server_error_retries: int = DEFAULT_MAX_SERVER_ERROR_RETRIES,
     base_delay: int = 2,
     logger=None,
 ):
@@ -197,6 +200,7 @@ def create_chat_completion(
         max_retries=max_retries,
         max_403_retries=max_403_retries,
         max_timeout_retries=max_timeout_retries,
+        max_server_error_retries=max_server_error_retries,
         base_delay=base_delay,
         logger=logger,
     )

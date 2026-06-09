@@ -19,6 +19,7 @@ from token_tracker import create_default_tracker
 from shared_utils import (
     DEFAULT_MAX_403_RETRIES,
     DEFAULT_MAX_RETRIES,
+    DEFAULT_MAX_SERVER_ERROR_RETRIES,
     DEFAULT_MAX_TIMEOUT_RETRIES,
     DEFAULT_REQUEST_TIMEOUT,
     configure_rotating_file_logger,
@@ -512,6 +513,7 @@ def _build_rescan_plan_metadata(chunk_plan_metadata=None, heroines=None, male_pr
 MAX_RETRIES = DEFAULT_MAX_RETRIES
 MAX_403_RETRIES = DEFAULT_MAX_403_RETRIES
 MAX_TIMEOUT_RETRIES = DEFAULT_MAX_TIMEOUT_RETRIES
+MAX_SERVER_ERROR_RETRIES = DEFAULT_MAX_SERVER_ERROR_RETRIES
 REQUEST_TIMEOUT = DEFAULT_REQUEST_TIMEOUT
 
 chat_completion = create_chat_completion(
@@ -521,6 +523,7 @@ chat_completion = create_chat_completion(
     max_retries=MAX_RETRIES,
     max_403_retries=MAX_403_RETRIES,
     max_timeout_retries=MAX_TIMEOUT_RETRIES,
+    max_server_error_retries=MAX_SERVER_ERROR_RETRIES,
     base_delay=2,
     logger=logger,
 )
