@@ -85,6 +85,18 @@ class RetryConfig:
     request_timeout: int = 120
 
 
+def _coerce_int(value: Any, default: int, min_value: int = None, max_value: int = None) -> int:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        parsed = default
+    if min_value is not None:
+        parsed = max(min_value, parsed)
+    if max_value is not None:
+        parsed = min(max_value, parsed)
+    return parsed
+
+
 def _log(logger: Any, level: str, msg: str) -> None:
     """logger 既支持 logging.Logger，也支持 None（退化为 print）。"""
     try:
@@ -494,16 +506,18 @@ def make_chat_completion(
     4. 改进的软禁用/永久禁用判定（保护近期成功的 key）
     """
     cfg = RetryConfig(
-        max_retries=int(max_retries),
+        max_retries=_coerce_int(max_retries, 5, min_value=1),
         base_delay=float(base_delay),
-        max_403_retries=int(max_403_retries),
-        max_timeout_retries=int(max_timeout_retries),
-        max_server_error_retries=max(1, int(
+        max_403_retries=_coerce_int(max_403_retries, 3, min_value=1),
+        max_timeout_retries=_coerce_int(max_timeout_retries, 3, min_value=1),
+        max_server_error_retries=_coerce_int(
             max_server_error_retries
             if max_server_error_retries is not None
-            else os.environ.get("API_SERVER_ERROR_MAX_RETRIES", "2")
-        )),
-        request_timeout=int(request_timeout),
+            else os.environ.get("API_SERVER_ERROR_MAX_RETRIES", "2"),
+            2,
+            min_value=1,
+        ),
+        request_timeout=_coerce_int(request_timeout, 120, min_value=1),
     )
 
     # 限流器（始终启用，防止冷启动时多线程同时涌入触发 IP 限速）

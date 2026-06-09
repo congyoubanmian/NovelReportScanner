@@ -49,13 +49,10 @@ RULES_FILE = os.environ.get("ANALYSIS_RULES_FILE") or os.path.join(
 )
 if not os.path.exists(RULES_FILE):
     RULES_FILE = os.path.join(BASE_DIR, "rules2.json")
-# 并发线程数：按环境值执行，避免 Web 端显示值与实际请求并发不一致。
-MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "8"))
-
 logger = logging.getLogger("reviewer")
 
 
-def _read_int_env(name: str, default: int, *, min_value: int = 0) -> int:
+def read_int_env(name: str, default: int, *, min_value: int = 0, max_value: int = None) -> int:
     raw_value = os.environ.get(name)
     if raw_value is None or str(raw_value).strip() == "":
         return default
@@ -63,11 +60,19 @@ def _read_int_env(name: str, default: int, *, min_value: int = 0) -> int:
         value = int(str(raw_value).strip())
     except (TypeError, ValueError):
         return default
-    return max(min_value, value)
+    value = max(min_value, value)
+    if max_value is not None:
+        value = min(max_value, value)
+    return value
 
 
-LOG_MAX_BYTES = _read_int_env("LOG_MAX_BYTES", 10 * 1024 * 1024)
-LOG_BACKUP_COUNT = _read_int_env("LOG_BACKUP_COUNT", 5)
+_read_int_env = read_int_env
+
+
+# 并发线程数：按环境值执行，避免 Web 端显示值与实际请求并发不一致。
+MAX_WORKERS = read_int_env("MAX_WORKERS", 8, min_value=1)
+LOG_MAX_BYTES = read_int_env("LOG_MAX_BYTES", 10 * 1024 * 1024)
+LOG_BACKUP_COUNT = read_int_env("LOG_BACKUP_COUNT", 5)
 
 
 def create_rotating_file_handler(
@@ -114,7 +119,7 @@ def configure_rotating_file_logger(
 DEFAULT_MAX_RETRIES = 5
 DEFAULT_MAX_403_RETRIES = 3  # 连续 3 次 403 才标记为不可用
 DEFAULT_MAX_TIMEOUT_RETRIES = 3  # 连续超时 3 次则标记 key 不可用
-DEFAULT_MAX_SERVER_ERROR_RETRIES = int(os.environ.get("API_SERVER_ERROR_MAX_RETRIES", "2"))
+DEFAULT_MAX_SERVER_ERROR_RETRIES = read_int_env("API_SERVER_ERROR_MAX_RETRIES", 2, min_value=1)
 DEFAULT_REQUEST_TIMEOUT = 120  # 请求超时时间（秒）
 CONTEXT_OVERFLOW_ERROR_HINTS = (
     "context length",

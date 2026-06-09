@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 from analysis_profiles import load_analysis_profile
 from prompt_templates import prompt_template_metadata, prompt_templates_metadata
-from shared_utils import MODEL, chat_completion, get_base_dir, init_token_tracker, is_context_overflow_error, read_file_safely, record_usage
+from shared_utils import MODEL, chat_completion, get_base_dir, init_token_tracker, is_context_overflow_error, read_file_safely, read_int_env, record_usage
 from shared_utils import call_json_chat_completion_with_fallback
 from text_anchor import build_chunk_manifest, save_chunk_manifest
 
@@ -41,9 +41,9 @@ KNOWLEDGE_BASE_SCHEMA_VERSION = 1
 KNOWLEDGE_BASE_LLM_MERGE_ENABLED = os.environ.get("GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE", "0").strip() == "1"
 ENTITY_PRESCAN_ENABLED = os.environ.get("GENERAL_SCAN_ENTITY_PRESCAN", "1").strip() == "1"
 ENTITY_PRESCAN_SCHEMA_VERSION = 1
-ENTITY_PRESCAN_MAX_CHARS = int(os.environ.get("GENERAL_SCAN_ENTITY_PRESCAN_MAX_CHARS", "500000"))
-ENTITY_PRESCAN_MAX_ITEMS = int(os.environ.get("GENERAL_SCAN_ENTITY_PRESCAN_MAX_ITEMS", "80"))
-ENTITY_PRESCAN_PROMPT_ITEMS = int(os.environ.get("GENERAL_SCAN_ENTITY_PRESCAN_PROMPT_ITEMS", "40"))
+ENTITY_PRESCAN_MAX_CHARS = read_int_env("GENERAL_SCAN_ENTITY_PRESCAN_MAX_CHARS", 500000, min_value=0)
+ENTITY_PRESCAN_MAX_ITEMS = read_int_env("GENERAL_SCAN_ENTITY_PRESCAN_MAX_ITEMS", 80, min_value=0)
+ENTITY_PRESCAN_PROMPT_ITEMS = read_int_env("GENERAL_SCAN_ENTITY_PRESCAN_PROMPT_ITEMS", 40, min_value=0)
 LOW_DENSITY_TERMS = (
     "睡觉", "起床", "吃饭", "喝茶", "闲聊", "聊天", "休息", "赶路", "路上", "返回",
     "日常", "家常", "客栈", "修炼打坐", "打坐", "闭关", "练功", "整理物品",
@@ -214,12 +214,74 @@ def _entity_prescan_candidates(text: str, max_items: int = None, max_chars: int 
             "confidence": confidence,
             "sources": sorted(source_set),
         })
+    results = _filter_entity_prescan_substrings(results)
     results.sort(key=lambda item: (
         0 if item.get("confidence") == "high" else 1 if item.get("confidence") == "medium" else 2,
         -int(item.get("score") or 0),
         item.get("name") or "",
     ))
     return results[:limit]
+
+
+def _filter_entity_prescan_substrings(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    items = [item for item in (candidates or []) if isinstance(item, dict) and item.get("name")]
+    if len(items) <= 1:
+        return items
+
+    def confidence_rank(item):
+        confidence = item.get("confidence")
+        if confidence == "high":
+            return 3
+        if confidence == "medium":
+            return 2
+        return 1
+
+    filtered = []
+    for item in items:
+        name = str(item.get("name") or "")
+        item_type = item.get("entity_type") or "unknown"
+        sources = set(item.get("sources") or [])
+        score = int(item.get("score") or 0)
+        drop = False
+        for other in items:
+            if other is item:
+                continue
+            other_name = str(other.get("name") or "")
+            if item_type != (other.get("entity_type") or "unknown"):
+                if (
+                    item_type == "unknown"
+                    and name in other_name
+                    and (other.get("entity_type") or "unknown") != "unknown"
+                    and int(other.get("score") or 0) >= score
+                ):
+                    drop = True
+                    break
+                continue
+            other_sources = set(other.get("sources") or [])
+            other_score = int(other.get("score") or 0)
+            if other_name in name:
+                if (
+                    sources <= {"freq", "chapter_title"}
+                    and not (sources & {"dialogue", "naming"})
+                    and confidence_rank(item) <= confidence_rank(other)
+                    and score < other_score
+                ):
+                    drop = True
+                    break
+                continue
+            if len(other_name) <= len(name) or name not in other_name:
+                continue
+            if sources & {"dialogue", "naming"} and not (other_sources & {"dialogue", "naming"}):
+                continue
+            if confidence_rank(other) < confidence_rank(item):
+                continue
+            if other_score < score:
+                continue
+            drop = True
+            break
+        if not drop:
+            filtered.append(item)
+    return filtered
 
 
 def _entity_prescan_prompt_section(entity_prescan: List[Dict[str, Any]], limit: int = None) -> str:

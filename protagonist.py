@@ -26,12 +26,13 @@ from shared_utils import (
     create_chat_completion,
     get_base_dir,
     is_retryable_transport_error,
+    read_int_env,
     read_file_safely,
 )
 
 BASE_URL = os.environ.get("BASE_URL", "https://api.deepseek.com")
 MODEL = os.environ.get("MODEL_NAME", "deepseek-chat")
-MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "6"))
+MAX_WORKERS = read_int_env("MAX_WORKERS", 6, min_value=1)
 
 API_KEY_POOL = [
     k.strip() for k in os.environ.get("API_KEY_POOL", os.environ.get("API_KEY", "")).split(",")
@@ -39,10 +40,18 @@ API_KEY_POOL = [
 ]
 API_KEY = API_KEY_POOL[0] if API_KEY_POOL else ""
 
-CHUNK_SIZE = int(os.environ.get("HAREM_SCAN_CHUNK_SIZE", os.environ.get("PROTAGONIST_CHUNK_SIZE", "7000")))
-HAREM_SCAN_MAX_TOKENS = int(os.environ.get("HAREM_SCAN_MAX_TOKENS", "3000"))
-HAREM_SCAN_RETRY_WORKERS = int(os.environ.get("HAREM_SCAN_RETRY_WORKERS", "1"))
-GENERAL_CHARACTER_MAX_CHUNKS = int(os.environ.get("GENERAL_CHARACTER_MAX_CHUNKS", os.environ.get("GENERAL_SCAN_MAX_CHUNKS", "80")))
+CHUNK_SIZE = read_int_env(
+    "HAREM_SCAN_CHUNK_SIZE",
+    read_int_env("PROTAGONIST_CHUNK_SIZE", 7000, min_value=1000),
+    min_value=1000,
+)
+HAREM_SCAN_MAX_TOKENS = read_int_env("HAREM_SCAN_MAX_TOKENS", 3000, min_value=500)
+HAREM_SCAN_RETRY_WORKERS = read_int_env("HAREM_SCAN_RETRY_WORKERS", 1, min_value=1)
+GENERAL_CHARACTER_MAX_CHUNKS = read_int_env(
+    "GENERAL_CHARACTER_MAX_CHUNKS",
+    read_int_env("GENERAL_SCAN_MAX_CHUNKS", 80, min_value=0),
+    min_value=0,
+)
 ALIAS_CROSS_MERGE_MAX_PAYLOAD_CHARS = int(os.environ.get("ALIAS_CROSS_MERGE_MAX_PAYLOAD_CHARS", "12000"))
 ALIAS_CROSS_MERGE_MAX_LIST_ITEMS = int(os.environ.get("ALIAS_CROSS_MERGE_MAX_LIST_ITEMS", "3"))
 ALIAS_CROSS_MERGE_MAX_FIELD_CHARS = int(os.environ.get("ALIAS_CROSS_MERGE_MAX_FIELD_CHARS", "160"))

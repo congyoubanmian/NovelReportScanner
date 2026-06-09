@@ -960,6 +960,39 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertEqual(module.MAX_SERVER_ERROR_RETRIES, shared_utils.DEFAULT_MAX_SERVER_ERROR_RETRIES)
                 self.assertEqual(module.REQUEST_TIMEOUT, shared_utils.DEFAULT_REQUEST_TIMEOUT)
 
+    def test_new_runtime_int_envs_fallback_when_invalid(self):
+        self.assertEqual(shared_utils.read_int_env("__MISSING_INT_ENV__", 7, min_value=1), 7)
+
+        old_values = {
+            "API_SERVER_ERROR_MAX_RETRIES": os.environ.get("API_SERVER_ERROR_MAX_RETRIES"),
+            "HAREM_SCAN_CHUNK_SIZE": os.environ.get("HAREM_SCAN_CHUNK_SIZE"),
+        }
+        try:
+            os.environ["API_SERVER_ERROR_MAX_RETRIES"] = ""
+            os.environ["HAREM_SCAN_CHUNK_SIZE"] = "bad"
+            self.assertEqual(shared_utils.read_int_env("API_SERVER_ERROR_MAX_RETRIES", 2, min_value=1), 2)
+            self.assertEqual(shared_utils.read_int_env("HAREM_SCAN_CHUNK_SIZE", 7000, min_value=1000), 7000)
+
+            chat_completion = Timerror.make_chat_completion(
+                openai_client_factory=lambda *_args: None,
+                api_key_pool=["sk-test"],
+                base_url="https://example.test/v1",
+                request_timeout="bad",
+                max_retries="bad",
+                max_server_error_retries="",
+                base_delay=0,
+                rpm_limit=0,
+                tpm_limit=0,
+                logger=None,
+            )
+            self.assertTrue(callable(chat_completion))
+        finally:
+            for key, value in old_values.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
     def test_frontend_runtime_config_exposes_auto_rate_limit_scope(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
         app_path = os.path.join(base_dir, "frontend", "src", "App.vue")
@@ -10727,12 +10760,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 李四道：“我去玄天宗查线索。”
 旁人只知道他名叫赵明远。
 青云城中，玄天宗弟子往来，青云城旧案反复被提起。
+青云城旧案青云城旧案青云城旧案。
 """
         candidates = general_scan._entity_prescan_candidates(text, max_items=10, max_chars=1000)
         by_name = {item["name"]: item for item in candidates}
 
         self.assertIn("张三", by_name)
         self.assertNotIn("张三说", by_name)
+        self.assertNotIn("云城", by_name)
+        self.assertNotIn("案青云城", by_name)
         self.assertIn("李四", by_name)
         self.assertIn("赵明远", by_name)
         self.assertIn("青云城", by_name)
