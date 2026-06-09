@@ -1856,6 +1856,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("config.general_scan_content_aware_sampling !== false", text)
         self.assertIn("configForm.general_scan_content_aware_sampling", text)
         self.assertIn("data.health_issues", text)
+        self.assertIn("data.degraded_running_count", text)
+        self.assertIn("data.degraded_running_tasks", text)
+        self.assertIn("firstDegraded", text)
+        self.assertIn("degraded_running_tasks: `${degraded} 个异常运行`", text)
+        self.assertIn("firstDegraded.degraded_reason", text)
         self.assertIn("data.failed_task_history_count", text)
         self.assertIn("data.generated_at", text)
         self.assertIn("const hasStorageStatus =", text)
@@ -8481,13 +8486,22 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         old_app_commit = web_manager.APP_COMMIT
         old_config_ready = web_manager.CONFIG_READY
         old_time = web_manager.time.time
+        old_general_tokens = os.environ.get("GENERAL_CHARACTER_MAX_TOKENS")
         try:
+            os.environ.pop("GENERAL_CHARACTER_MAX_TOKENS", None)
             with tempfile.TemporaryDirectory() as tmpdir, \
                     mock.patch.object(web_manager, "get_base_dir", return_value=tmpdir):
                 log_path = os.path.join(tmpdir, "results", "web_logs", "task-running.log")
                 os.makedirs(os.path.dirname(log_path), exist_ok=True)
                 with open(log_path, "w", encoding="utf-8") as f:
                     f.write("\n".join(["Chunk 367 JSON解析失败"] * 10))
+                degraded_log_path = os.path.join(tmpdir, "results", "web_logs", "task-degraded.log")
+                with open(degraded_log_path, "w", encoding="utf-8") as f:
+                    f.write("\n".join(
+                        ["API_KEY[0] 发起请求：max_tokens=4000"] * 60
+                        + ["Chunk 368 JSON解析失败"] * 55
+                        + ["API_KEY[0] 服务器错误(504)"] * 25
+                    ))
                 failed_log_path = os.path.join(tmpdir, "results", "web_logs", "task-failed-1.log")
                 with open(failed_log_path, "w", encoding="utf-8") as f:
                     f.write("Permission denied")
@@ -8533,6 +8547,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                             "status": "failed",
                             "task_id": "task-failed-3",
                         },
+                        "degraded-book": {
+                            "id": "degraded-book",
+                            "name": "异常运行书",
+                            "status": "running",
+                            "task_id": "task-degraded",
+                            "last_log": "Chunk 368 JSON解析失败",
+                            "last_log_at": "2026-06-09 07:19:30",
+                        },
                     },
                     "tasks": [
                         {
@@ -8545,6 +8567,17 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                             "last_log": "Chunk 367 JSON解析失败",
                             "last_log_at": "2026-06-09 06:50:00",
                             "log_path": log_path,
+                        },
+                        {
+                            "id": "task-degraded",
+                            "book_id": "degraded-book",
+                            "profile": "general",
+                            "status": "running",
+                            "created_at": "2026-06-09 05:30:00",
+                            "started_at": "2026-06-09 05:40:00",
+                            "last_log": "Chunk 368 JSON解析失败",
+                            "last_log_at": "2026-06-09 07:19:30",
+                            "log_path": degraded_log_path,
                         },
                         {
                             "id": "task-queued",
@@ -8599,8 +8632,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(diagnostics["app"]["commit"], "abc123")
             self.assertEqual(diagnostics["scan_stall_timeout_seconds"], 1200)
             self.assertEqual(diagnostics["queue_length"], 1)
-            self.assertEqual(diagnostics["running_count"], 1)
+            self.assertEqual(diagnostics["running_count"], 2)
             self.assertEqual(diagnostics["stale_running_count"], 1)
+            self.assertEqual(diagnostics["degraded_running_count"], 1)
             self.assertEqual(diagnostics["failed_count"], 3)
             self.assertEqual(diagnostics["failed_book_count"], 3)
             self.assertEqual(diagnostics["failed_task_history_count"], 3)
@@ -8608,17 +8642,18 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertTrue(diagnostics["storage_ready"])
             self.assertEqual(
                 [item["type"] for item in diagnostics["health_issues"]],
-                ["config", "stale_tasks", "failed_tasks", "scan_log_errors"],
+                ["config", "stale_tasks", "failed_tasks", "degraded_running_tasks", "scan_log_errors"],
             )
             self.assertEqual(diagnostics["health_issues"][1]["count"], 1)
             self.assertEqual(diagnostics["health_issues"][2]["count"], 3)
             self.assertEqual(diagnostics["health_issues"][3]["count"], 1)
+            self.assertEqual(diagnostics["health_issues"][4]["count"], 3)
             self.assertEqual(diagnostics["oldest_queue_wait_seconds"], 3000)
-            self.assertEqual(diagnostics["longest_running_seconds"], 4200)
+            self.assertEqual(diagnostics["longest_running_seconds"], 6000)
             self.assertEqual(diagnostics["task_counts"]["queued"], 1)
-            self.assertEqual(diagnostics["task_counts"]["running"], 1)
+            self.assertEqual(diagnostics["task_counts"]["running"], 2)
             self.assertEqual(diagnostics["task_counts"]["failed"], 3)
-            running = diagnostics["running_tasks"][0]
+            running = next(item for item in diagnostics["running_tasks"] if item["task_id"] == "task-running")
             self.assertEqual(running["task_id"], "task-running")
             self.assertEqual(running["book_name"], "运行书")
             self.assertEqual(running["last_log"], "Chunk 367 JSON解析失败")
@@ -8627,6 +8662,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(running["seconds_since_last_log"], 1800)
             self.assertTrue(running["stale_without_log"])
             self.assertTrue(running["log_file"]["url"].startswith("/files?path="))
+            degraded = diagnostics["degraded_running_tasks"][0]
+            self.assertEqual(degraded["task_id"], "task-degraded")
+            self.assertEqual(degraded["book_name"], "异常运行书")
+            self.assertTrue(degraded["log_degraded"])
+            self.assertEqual(degraded["degraded_reason"], "frequent_json_parse_errors")
+            self.assertEqual(degraded["log_issue"]["server_504_errors"], 25)
             queued = diagnostics["queued_tasks"][0]
             self.assertEqual(queued["task_id"], "task-queued")
             self.assertEqual(queued["book_name"], "排队书")
@@ -8639,8 +8680,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 {"type": "storage_failure", "count": 2},
                 {"type": "parse_failure", "count": 1},
             ])
-            self.assertEqual(diagnostics["log_health"]["json_parse_errors"], 10)
-            self.assertEqual(diagnostics["log_health"]["checked_task_count"], 2)
+            self.assertEqual(diagnostics["log_health"]["json_parse_errors"], 65)
+            self.assertEqual(diagnostics["log_health"]["checked_task_count"], 3)
             recent_failed = diagnostics["recent_failed_tasks"]
             self.assertEqual(len(recent_failed), 3)
             self.assertEqual(recent_failed[0]["task_id"], "task-failed-3")
@@ -8658,6 +8699,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.APP_COMMIT = old_app_commit
             web_manager.CONFIG_READY = old_config_ready
             web_manager.time.time = old_time
+            if old_general_tokens is None:
+                os.environ.pop("GENERAL_CHARACTER_MAX_TOKENS", None)
+            else:
+                os.environ["GENERAL_CHARACTER_MAX_TOKENS"] = old_general_tokens
 
     def test_web_manager_log_health_summarizes_recent_scan_errors(self):
         old_general_tokens = os.environ.get("GENERAL_CHARACTER_MAX_TOKENS")

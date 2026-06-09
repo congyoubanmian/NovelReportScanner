@@ -56,6 +56,10 @@ SCAN_CANCEL_TIMEOUT_SECONDS = read_float_env("SCAN_CANCEL_TIMEOUT_SECONDS", 5.0,
 SCAN_HEARTBEAT_INTERVAL_SECONDS = read_float_env("SCAN_HEARTBEAT_INTERVAL_SECONDS", 10.0, min_value=0.0)
 SCAN_STALL_TIMEOUT_SECONDS = read_float_env("SCAN_STALL_TIMEOUT_SECONDS", 1200.0, min_value=0.0)
 SCAN_FUTURE_STALL_TIMEOUT_SECONDS = read_float_env("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", 0.0, min_value=0.0)
+SCAN_LOG_DEGRADED_MIN_SECONDS = read_float_env("SCAN_LOG_DEGRADED_MIN_SECONDS", 3600.0, min_value=0.0)
+SCAN_LOG_DEGRADED_JSON_PARSE_THRESHOLD = read_int_env("SCAN_LOG_DEGRADED_JSON_PARSE_THRESHOLD", 50, min_value=0)
+SCAN_LOG_DEGRADED_504_THRESHOLD = read_int_env("SCAN_LOG_DEGRADED_504_THRESHOLD", 20, min_value=0)
+SCAN_LOG_DEGRADED_LEGACY_TOKEN_THRESHOLD = read_int_env("SCAN_LOG_DEGRADED_LEGACY_TOKEN_THRESHOLD", 50, min_value=0)
 STORAGE_HEALTH_TTL_SECONDS = read_float_env("STORAGE_HEALTH_TTL_SECONDS", 10.0, min_value=0.0)
 APP_VERSION = os.environ.get("APP_VERSION", "dev").strip() or "dev"
 APP_COMMIT = os.environ.get("APP_COMMIT", "").strip() or "unknown"
@@ -706,6 +710,7 @@ def _scan_log_health_summary(tasks, limit=20):
         "downshift_events": 0,
         "legacy_max_tokens_4000": 0,
         "latest_logs": [],
+        "running_log_issues": [],
         "issues": [],
     }
     for task in recent[:max(0, int(limit or 0))]:
@@ -747,6 +752,13 @@ def _scan_log_health_summary(tasks, limit=20):
             "legacy_max_tokens_4000",
         )):
             summary["latest_logs"].append(item)
+        if task.get("status") == "running" and any(item[key] for key in (
+            "json_parse_errors",
+            "server_504_errors",
+            "legacy_max_tokens_4000",
+            "legacy_pr_errors",
+        )):
+            summary["running_log_issues"].append(item)
 
     if summary["json_parse_errors"] >= 10:
         summary["issues"].append({
@@ -779,6 +791,47 @@ def _scan_log_health_summary(tasks, limit=20):
             "count": summary["multi_name_warnings"],
         })
     return summary
+
+
+def _log_item_degraded_reason(item):
+    if not isinstance(item, dict):
+        return ""
+    if SCAN_LOG_DEGRADED_JSON_PARSE_THRESHOLD > 0 and item.get("json_parse_errors", 0) >= SCAN_LOG_DEGRADED_JSON_PARSE_THRESHOLD:
+        return "frequent_json_parse_errors"
+    if SCAN_LOG_DEGRADED_504_THRESHOLD > 0 and item.get("server_504_errors", 0) >= SCAN_LOG_DEGRADED_504_THRESHOLD:
+        return "frequent_504_errors"
+    if (
+        SCAN_LOG_DEGRADED_LEGACY_TOKEN_THRESHOLD > 0
+        and item.get("legacy_max_tokens_4000", 0) >= SCAN_LOG_DEGRADED_LEGACY_TOKEN_THRESHOLD
+        and not os.environ.get("GENERAL_CHARACTER_MAX_TOKENS")
+    ):
+        return "legacy_runtime_config"
+    if item.get("legacy_pr_errors", 0):
+        return "legacy_pr_error"
+    return ""
+
+
+def _degraded_running_tasks(running_tasks, log_health):
+    log_items_by_task = {
+        item.get("task_id"): item
+        for item in (log_health or {}).get("running_log_issues", [])
+        if item.get("task_id")
+    }
+    degraded = []
+    for task in running_tasks or []:
+        seconds = task.get("seconds_since_started")
+        if seconds is None or seconds < SCAN_LOG_DEGRADED_MIN_SECONDS:
+            continue
+        item = log_items_by_task.get(task.get("task_id"))
+        reason = _log_item_degraded_reason(item)
+        if not reason:
+            continue
+        copied = dict(task)
+        copied["log_degraded"] = True
+        copied["degraded_reason"] = reason
+        copied["log_issue"] = item
+        degraded.append(copied)
+    return degraded
 
 
 def _task_diagnostic(task, book):
@@ -991,6 +1044,14 @@ def _diagnostics_summary():
     storage = _storage_health_summary()
     health_issues = _health_issues(CONFIG_READY, storage, stale_running_count, failed_count)
     log_health = _scan_log_health_summary(tasks)
+    degraded_running_tasks = _degraded_running_tasks(running_tasks, log_health)
+    degraded_running_count = len(degraded_running_tasks)
+    if degraded_running_count:
+        health_issues.append({
+            "type": "degraded_running_tasks",
+            "message": f"{degraded_running_count} running task(s) show repeated API/JSON errors",
+            "count": degraded_running_count,
+        })
     if log_health.get("issues"):
         health_issues.append({
             "type": "scan_log_errors",
@@ -1021,12 +1082,14 @@ def _diagnostics_summary():
         "queue_runtime_length": len(queued_positions),
         "running_count": len(running_tasks),
         "stale_running_count": stale_running_count,
+        "degraded_running_count": degraded_running_count,
         "failed_count": failed_count,
         "failed_book_count": failed_book_count,
         "failed_task_history_count": failed_task_history_count,
         "oldest_queue_wait_seconds": oldest_queue_wait_seconds,
         "longest_running_seconds": longest_running_seconds,
         "running_tasks": running_tasks,
+        "degraded_running_tasks": degraded_running_tasks,
         "queued_tasks": queued_tasks,
         "recent_failed_tasks": failed_tasks[:10],
         "failure_reasons": _failure_reason_summary(failed_tasks),

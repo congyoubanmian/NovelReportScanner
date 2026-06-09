@@ -153,10 +153,12 @@ const diagnosticsStatus = computed(() => {
   const failedHistory = Number(data.failed_task_history_count || 0)
   const running = Number(data.running_count || 0)
   const queued = Number(data.queue_length || 0)
+  const degraded = Number(data.degraded_running_count || 0)
   const generatedAtText = formatStateTime(data.generated_at)
   const longestRunningText = formatElapsed(data.longest_running_seconds)
   const oldestQueueWaitText = formatElapsed(data.oldest_queue_wait_seconds)
   const firstStale = (data.running_tasks || []).find((task) => task.stale_without_log)
+  const firstDegraded = (data.degraded_running_tasks || [])[0]
   const topFailure = (data.failure_reasons || [])[0]
   const recentFailure = (data.recent_failed_tasks || []).find((task) => task.log_file?.url)
   const retryTypeItems =
@@ -174,6 +176,7 @@ const diagnosticsStatus = computed(() => {
     config: '配置异常',
     storage: '存储异常',
     stale_tasks: `${stale} 个卡住`,
+    degraded_running_tasks: `${degraded} 个异常运行`,
     failed_tasks: `${failed} 个失败`
   }
   const topIssue = issues[0]
@@ -215,13 +218,15 @@ const diagnosticsStatus = computed(() => {
     topFailureText: topFailure ? `${topFailure.reason} x${topFailure.count}` : '-',
     longestRunningText,
     oldestQueueWaitText,
-    logUrl: firstStale?.log_file?.url || '',
+    logUrl: firstStale?.log_file?.url || firstDegraded?.log_file?.url || '',
     failureLogUrl: recentFailure?.log_file?.url || '',
     title:
       issueTitle ||
       (firstStale
         ? `${firstStale.book_name || firstStale.book_id || '运行任务'}\n无日志 ${formatElapsed(firstStale.seconds_since_last_log)}\n${firstStale.log_file?.url ? `日志: ${firstStale.log_file.url}\n` : ''}${firstStale.last_log || ''}`
-        : failureTitle)
+        : firstDegraded
+          ? `${firstDegraded.book_name || firstDegraded.book_id || '运行任务'}\n异常原因：${firstDegraded.degraded_reason || '-'}\n运行 ${formatElapsed(firstDegraded.seconds_since_started)}\n${firstDegraded.log_file?.url ? `日志: ${firstDegraded.log_file.url}` : ''}`
+          : failureTitle)
   }
 })
 
