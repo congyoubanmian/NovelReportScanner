@@ -49,6 +49,7 @@ from shared_utils import (
     get_token_tracker,
     init_token_tracker,
     logger,
+    read_int_env,
     record_usage,
 )
 from toxic_reviewer import batch_review_toxic_points, load_rules_dict
@@ -90,6 +91,12 @@ _EXTENDED_FACT_DIMENSIONS = [
 ]
 _FACT_DIMENSIONS = _CORE_FACT_DIMENSIONS + _EXTENDED_FACT_DIMENSIONS
 
+# 后宫二审会汇总 scan/detail 的大量证据。这里限制进入单次 LLM 的文本体积，
+# 避免 5万到 17万字符的大请求触发网关 504 或返回残缺 JSON。
+REVIEW_LLM_SECTION_MAX_CHARS = read_int_env("REVIEW_LLM_SECTION_MAX_CHARS", 12000, min_value=2000)
+REVIEW_LLM_FIELD_MAX_CHARS = read_int_env("REVIEW_LLM_FIELD_MAX_CHARS", 220, min_value=40)
+REVIEW_LLM_LIST_MAX_ITEMS = read_int_env("REVIEW_LLM_LIST_MAX_ITEMS", 80, min_value=5)
+
 
 def _call_json_chat_completion(messages, *, model: str = None, temperature: float = 0.1, max_tokens: int = None) -> Dict[str, Any]:
     return call_json_chat_completion_with_fallback(
@@ -114,6 +121,100 @@ def _normalize_purity_fact_bucket(facts: Dict[str, Any]) -> Dict[str, List[Any]]
         value = facts.get(key, [])
         normalized[key] = list(value or []) if isinstance(value, list) else []
     return normalized
+
+
+def _clip_llm_text(value: Any, max_chars: Optional[int] = None) -> str:
+    limit = REVIEW_LLM_FIELD_MAX_CHARS if max_chars is None else max(0, int(max_chars or 0))
+    text = str(value or "").strip()
+    if not limit or len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + f"...(截断{len(text) - limit}字)"
+
+
+def _unique_llm_lines(lines: List[Any]) -> List[str]:
+    unique: List[str] = []
+    seen = set()
+    for line in lines or []:
+        text = str(line or "").strip()
+        if not text:
+            continue
+        key = re.sub(r"\s+", " ", text)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(text)
+    return unique
+
+
+def _head_tail_llm_lines(lines: List[str], max_items: Optional[int], label: str) -> List[str]:
+    if max_items is None:
+        max_items = REVIEW_LLM_LIST_MAX_ITEMS
+    max_items = int(max_items or 0)
+    if max_items <= 0 or len(lines) <= max_items:
+        return list(lines)
+
+    tail_count = min(10, max(1, max_items // 5))
+    head_count = max(1, max_items - tail_count - 1)
+    omitted = len(lines) - head_count - tail_count
+    if omitted <= 0:
+        return lines[:max_items]
+    return (
+        lines[:head_count]
+        + [f"...(已省略{omitted}条{label}，保留首尾样本)..."]
+        + lines[-tail_count:]
+    )
+
+
+def _compact_llm_lines(
+    lines: List[Any],
+    *,
+    max_chars: Optional[int] = None,
+    max_items: Optional[int] = None,
+    label: str = "记录",
+    empty: str = "（无记录）",
+) -> str:
+    budget = REVIEW_LLM_SECTION_MAX_CHARS if max_chars is None else int(max_chars or 0)
+    unique = _unique_llm_lines(lines)
+    if not unique:
+        return empty
+
+    selected = _head_tail_llm_lines(unique, max_items, label)
+    text = "\n".join(selected)
+    if budget <= 0 or len(text) <= budget:
+        return text
+
+    tail_count = min(6, max(1, len(selected) // 6))
+    tail = selected[-tail_count:] if len(selected) > tail_count else []
+    tail_keys = set(tail)
+    tail_text_len = sum(len(item) + 1 for item in tail)
+    note_len = 40
+    head: List[str] = []
+    used = 0
+    for line in selected:
+        if line in tail_keys:
+            continue
+        projected = used + len(line) + 1 + tail_text_len + note_len
+        if head and projected > budget:
+            break
+        if len(line) + 1 > max(1, budget - note_len):
+            line = _clip_llm_text(line, max(120, budget - note_len))
+        head.append(line)
+        used += len(line) + 1
+        if used + tail_text_len + note_len >= budget:
+            break
+
+    omitted = max(0, len(selected) - len(head) - len(tail))
+    compacted = list(head)
+    if omitted:
+        compacted.append(f"...(已因输入预算省略{omitted}条{label})...")
+    for item in tail:
+        if item not in compacted:
+            compacted.append(item)
+
+    text = "\n".join(compacted)
+    if len(text) > budget:
+        text = _clip_llm_text(text, budget)
+    return text
 
 
 def _dedupe_fact_bucket_by_evidence(facts: Dict[str, List[Any]]) -> Dict[str, List[Any]]:
@@ -4577,9 +4678,9 @@ def _derive_partners_from_children_info(
 
         # 检查 origin/evidence/detail 是否含非亲生关键词
         origin = str(child.get("origin", "") or "")
-        evidence = str(child.get("evidence", "") or "")
-        detail = str(child.get("detail", "") or "")
-        child_blob = "\n".join([origin, evidence, detail])
+        raw_evidence = str(child.get("evidence", "") or "")
+        raw_detail = str(child.get("detail", "") or "")
+        child_blob = "\n".join([origin, raw_evidence, raw_detail])
         if any(kw in child_blob for kw in NON_BIOLOGICAL_KEYWORDS):
             continue
 
@@ -4591,6 +4692,7 @@ def _derive_partners_from_children_info(
 
         child_name = str(child.get("child_name", "") or "")
         chunk_index = child.get("chunk_index")
+        evidence = _clip_llm_text(raw_evidence, 180)
 
         derived.append({
             "partner": father_name,
@@ -5055,8 +5157,9 @@ def verify_purity_by_llm(name: str, facts: Dict[str, Any], program_result: Dict[
     for sr in facts.get("sexual_relations", []):
         partner = sr.get("partner", "未知")
         is_ml = "男主" if sr.get("is_male_lead") else "非男主"
-        evidence = sr.get("evidence", "")[:100]
-        facts_text.append(f"[性关系] 与{partner}({is_ml}): {sr.get('detail', '')} | 证据: {evidence}")
+        detail = _clip_llm_text(sr.get("detail", ""), 120)
+        evidence = _clip_llm_text(sr.get("evidence", ""), 120)
+        facts_text.append(f"[性关系] 与{partner}({is_ml}): {detail} | 证据: {evidence}")
     
     for ci in facts.get("children_info", []):
         # 双保险：即使上游没清干净，这里也跳过明显“身世句”
@@ -5078,20 +5181,20 @@ def verify_purity_by_llm(name: str, facts: Dict[str, Any], program_result: Dict[
             pass
         father = ci.get("father", "未知")
         origin = ci.get("origin", "未知")
-        evidence = ci.get("evidence", "")[:100]
+        evidence = _clip_llm_text(ci.get("evidence", ""), 120)
         facts_text.append(f"[孩子] 父亲:{father}, 来源:{origin} | 证据: {evidence}")
     
     for pc in facts.get("physical_contacts", []):
         partner = pc.get("partner", "未知")
         is_ml = "男主" if pc.get("is_male_lead") else "非男主"
         ctype = pc.get("contact_type", "")
-        evidence = pc.get("evidence", "")[:100]
+        evidence = _clip_llm_text(pc.get("evidence", ""), 120)
         facts_text.append(f"[肉体接触] 与{partner}({is_ml}){ctype} | 证据: {evidence}")
     
     for rf in facts.get("romantic_feelings", []):
         target = rf.get("target", "未知")
         is_ml = "男主" if rf.get("is_male_lead") else "非男主"
-        evidence = rf.get("evidence", "")[:100]
+        evidence = _clip_llm_text(rf.get("evidence", ""), 120)
         facts_text.append(f"[感情] 对{target}({is_ml})有感情 | 证据: {evidence}")
     
     for pr in facts.get("partner_relations", []):
@@ -5101,7 +5204,7 @@ def verify_purity_by_llm(name: str, facts: Dict[str, Any], program_result: Dict[
         status = pr.get("status", "")
         forced_flag = pr.get("forced", None)
         forced = "被迫" if forced_flag is True else ("自愿" if forced_flag is False else "未知")
-        evidence = pr.get("evidence", "")[:100]
+        evidence = _clip_llm_text(pr.get("evidence", ""), 120)
         facts_text.append(f"[伴侣] 与{partner}({is_ml})的{rel}关系, 状态:{status}, {forced} | 证据: {evidence}")
 
     _append_extended_relationship_facts_text(facts_text, facts)
@@ -5109,7 +5212,7 @@ def verify_purity_by_llm(name: str, facts: Dict[str, Any], program_result: Dict[
     if not facts_text:
         facts_text.append("（无任何事实记录）")
     
-    facts_str = "\n".join(facts_text)
+    facts_str = _compact_llm_lines(facts_text, label="结构化事实")
     
     # 构建程序判定结果描述
     program_str = f"""
@@ -5201,8 +5304,9 @@ def verify_purity_second_round(name: str, facts: Dict[str, Any], program_result:
     for sr in facts.get("sexual_relations", []):
         partner = sr.get("partner", "未知")
         is_ml = "男主" if sr.get("is_male_lead") else "非男主"
-        evidence = sr.get("evidence", "")[:100]
-        facts_text.append(f"[性关系] 与{partner}({is_ml}): {sr.get('detail', '')} | 证据: {evidence}")
+        detail = _clip_llm_text(sr.get("detail", ""), 120)
+        evidence = _clip_llm_text(sr.get("evidence", ""), 120)
+        facts_text.append(f"[性关系] 与{partner}({is_ml}): {detail} | 证据: {evidence}")
     
     for ci in facts.get("children_info", []):
         # 双保险：跳过明显“身世句”
@@ -5224,20 +5328,20 @@ def verify_purity_second_round(name: str, facts: Dict[str, Any], program_result:
             pass
         father = ci.get("father", "未知")
         origin = ci.get("origin", "未知")
-        evidence = ci.get("evidence", "")[:100]
+        evidence = _clip_llm_text(ci.get("evidence", ""), 120)
         facts_text.append(f"[孩子] 父亲:{father}, 来源:{origin} | 证据: {evidence}")
     
     for pc in facts.get("physical_contacts", []):
         partner = pc.get("partner", "未知")
         is_ml = "男主" if pc.get("is_male_lead") else "非男主"
         ctype = pc.get("contact_type", "")
-        evidence = pc.get("evidence", "")[:100]
+        evidence = _clip_llm_text(pc.get("evidence", ""), 120)
         facts_text.append(f"[肉体接触] 与{partner}({is_ml}){ctype} | 证据: {evidence}")
     
     for rf in facts.get("romantic_feelings", []):
         target = rf.get("target", "未知")
         is_ml = "男主" if rf.get("is_male_lead") else "非男主"
-        evidence = rf.get("evidence", "")[:100]
+        evidence = _clip_llm_text(rf.get("evidence", ""), 120)
         facts_text.append(f"[感情] 对{target}({is_ml})有感情 | 证据: {evidence}")
     
     for pr in facts.get("partner_relations", []):
@@ -5247,7 +5351,7 @@ def verify_purity_second_round(name: str, facts: Dict[str, Any], program_result:
         status = pr.get("status", "")
         forced_flag = pr.get("forced", None)
         forced = "被迫" if forced_flag is True else ("自愿" if forced_flag is False else "未知")
-        evidence = pr.get("evidence", "")[:100]
+        evidence = _clip_llm_text(pr.get("evidence", ""), 120)
         facts_text.append(f"[伴侣] 与{partner}({is_ml})的{rel}关系, 状态:{status}, {forced} | 证据: {evidence}")
 
     _append_extended_relationship_facts_text(facts_text, facts)
@@ -5255,7 +5359,7 @@ def verify_purity_second_round(name: str, facts: Dict[str, Any], program_result:
     if not facts_text:
         facts_text.append("（无任何事实记录）")
     
-    facts_str = "\n".join(facts_text)
+    facts_str = _compact_llm_lines(facts_text, label="结构化事实")
     
     system_prompt = f"""你是一个严格的二次校验专家。第一轮校验发现程序与LLM判定不一致，现在请你再次仔细判断。
 
@@ -5481,7 +5585,7 @@ def _llm_merge_children_records(
             f"  evidence: {evidence if evidence else '无'}\n"
             f"  detail: {detail if detail else '无'}"
         )
-    records_str = "\n\n".join(records_text)
+    records_str = _compact_llm_lines(records_text, label="孩子记录")
     
     system_prompt = f"""你是小说角色分析专家。你的任务是分析女性角色【{heroine_name}】的孩子记录，判断哪些记录描述的是同一个孩子。
 
@@ -5696,8 +5800,8 @@ def _llm_group_partner_relations(
         partner_raw = str(rec.get("_partner_raw", "") or rec.get("partner", "") or pr.get("partner", "") or "未知").strip() or "未知"
         relationship = str(pr.get("relationship", "") or rec.get("relationship", "") or "未知")
         status = str(pr.get("status", "") or "未知")
-        evidence = str(pr.get("evidence", "") or "")
-        detail = str(pr.get("detail", "") or "")
+        evidence = _clip_llm_text(pr.get("evidence", ""), 180)
+        detail = _clip_llm_text(pr.get("detail", ""), 180)
         is_forced = rec.get("is_forced", None)
         has_feelings = rec.get("has_feelings", None)
         # 为分组提供“语义锚点”，但不要求模型相信这些结论（分组只看同一对象）
@@ -5707,7 +5811,7 @@ def _llm_group_partner_relations(
             f"  evidence: {evidence if evidence else '无'}\n"
             f"  detail: {detail if detail else '无'}"
         )
-    records_str = "\n\n".join(lines)
+    records_str = _compact_llm_lines(lines, label="伴侣分组记录")
 
     system_prompt = f"""你是严格的小说信息归一化专家。你的任务是把女性角色【{heroine_name}】的伴侣关系记录按“是否指向同一个真实对象”进行分组（归一化/聚合）。
 
@@ -5777,8 +5881,8 @@ def _llm_judge_single_partner_forced(
     partner = pr.get("partner", "未知")
     relationship = pr.get("relationship", "未知")
     status = pr.get("status", "未知")
-    evidence = str(pr.get("evidence", "") or "")
-    detail = str(pr.get("detail", "") or "")
+    evidence = _clip_llm_text(pr.get("evidence", ""), 600)
+    detail = _clip_llm_text(pr.get("detail", ""), 400)
     forced_tag = pr.get("forced", None)
     is_ml = pr.get("is_male_lead", False)
     heuristic_is_fact = not _is_nonfact_relation_or_feeling_record({
@@ -6060,7 +6164,7 @@ def _llm_analyze_and_merge_partner_relations(
         
         # 理由合并
         reasons = [i.get("reason", "") for i in items if i.get("reason")]
-        reason_merged = " | ".join(reasons)
+        reason_merged = " | ".join(_clip_llm_text(item, 120) for item in reasons[:20])
         
         # 证据合并
         evidences = []
@@ -6068,14 +6172,14 @@ def _llm_analyze_and_merge_partner_relations(
             for key in ("evidence", "detail"):
                 s = str(r.get(key, "") or "").strip()
                 if s:
-                    evidences.append(s)
+                    evidences.append(_clip_llm_text(s, 180))
         seen = set()
         dedup = []
         for s in evidences:
             if s not in seen:
                 seen.add(s)
                 dedup.append(s)
-        evidence_merged = " | ".join(dedup)
+        evidence_merged = _compact_llm_lines(dedup, max_chars=1600, max_items=12, label="伴侣证据")
         
         merged.append({
             "partner": partner_display,
@@ -6156,10 +6260,10 @@ def _simple_merge_partner_relations(partner_relations: List[Dict[str, Any]]) -> 
             for key in ("evidence", "detail"):
                 s = str(i.get(key, "") or "").strip()
                 if s:
-                    evidences.append(s)
+                    evidences.append(_clip_llm_text(s, 180))
         seen = set()
         dedup = [s for s in evidences if not (s in seen or seen.add(s))]
-        evidence_merged = " | ".join(dedup)
+        evidence_merged = _compact_llm_lines(dedup, max_chars=1600, max_items=12, label="伴侣证据")
         
         merged.append({
             "partner": partner_display,
@@ -6219,7 +6323,7 @@ def _extract_father_statistics(child_records: List[Dict[str, Any]], male_lead: s
             known_fathers.add(male_lead)
             # 收集样本
             if len(male_lead_evidence_samples) < 3:
-                sample = evidence if evidence else detail
+                sample = _clip_llm_text(evidence if evidence else detail, 120)
                 if sample:
                     male_lead_evidence_samples.append(sample)
     
@@ -6271,15 +6375,15 @@ def _llm_judge_single_child(
     for i, record in enumerate(child_records):
         father = record.get("father", "未知")
         origin = record.get("origin", "未知")
-        detail = record.get("detail", "")
-        evidence = record.get("evidence", "")
+        detail = _clip_llm_text(record.get("detail", ""), 180)
+        evidence = _clip_llm_text(record.get("evidence", ""), 180)
         is_bio_tag = record.get("is_biological", "未标注")
         evidence_list.append(
             f"记录{i+1}: 父亲={father}, 来源={origin}, is_biological标注={is_bio_tag}\n"
             f"  detail: {detail if detail else '无'}\n"
             f"  evidence: {evidence if evidence else '无'}"
         )
-    evidence_str = "\n".join(evidence_list)
+    evidence_str = _compact_llm_lines(evidence_list, label="孩子来源证据")
     
     # 添加父亲统计信息（关键！）
     stats_hint = f"\n\n【⚠️ 父亲信息统计 - 非常重要！】：\n{father_stats['summary']}"
@@ -6287,7 +6391,9 @@ def _llm_judge_single_child(
         stats_hint += f"\n★★★ 警告：有 {father_stats['male_lead_mention_count']} 条记录的 evidence 中提到了男主【{male_lead}】！"
         stats_hint += f"\n    这强烈暗示孩子的父亲就是男主，请务必仔细检查！"
         if father_stats["male_lead_evidence_samples"]:
-            stats_hint += f"\n    样本证据: " + " | ".join(father_stats["male_lead_evidence_samples"])
+            stats_hint += f"\n    样本证据: " + " | ".join(
+                _clip_llm_text(item, 120) for item in father_stats["male_lead_evidence_samples"]
+            )
     if father_stats["explicit_male_lead_father_count"] > 0:
         stats_hint += f"\n★★★ 已有 {father_stats['explicit_male_lead_father_count']} 条记录的 father 字段明确为男主！"
     if father_stats["known_fathers"]:
@@ -6468,25 +6574,25 @@ def _llm_verify_non_male_children(
         child_name = child.get("child_name", "未知")
         birth_method = child.get("birth_method", "未知")
         father = child.get("father", "未知")
-        reason = child.get("reason", "")
+        reason = _clip_llm_text(child.get("reason", ""), 180)
         # 提取原始证据
         records = child.get("records", [])
-        evidences = [r.get("evidence", "") for r in records if r.get("evidence")]
+        evidences = [_clip_llm_text(r.get("evidence", ""), 160) for r in records if r.get("evidence")]
         children_text.append(
             f"孩子【{child_name}】：\n"
             f"  第一轮判定：诞生方式={birth_method}, 父亲={father}\n"
             f"  判定理由：{reason}\n"
             f"  原始证据：{' | '.join(evidences) if evidences else '无'}"
         )
-    children_str = "\n\n".join(children_text)
+    children_str = _compact_llm_lines(children_text, label="非男性参与孩子")
     
     # 构建处女暗示信息
     virgin_hints = []
     if virginity_mentions:
-        virgin_hints.extend([f"[处女提及] {v[:]}" for v in virginity_mentions[:]])
+        virgin_hints.extend([f"[处女提及] {_clip_llm_text(v, 160)}" for v in virginity_mentions])
     if male_lead_intimacy:
-        virgin_hints.extend([f"[与男主亲密] {m[:]}" for m in male_lead_intimacy[:]])
-    virgin_str = "\n".join(virgin_hints) if virgin_hints else "（无处女相关记录）"
+        virgin_hints.extend([f"[与男主亲密] {_clip_llm_text(m, 160)}" for m in male_lead_intimacy])
+    virgin_str = _compact_llm_lines(virgin_hints, label="处女相关记录", empty="（无处女相关记录）")
     
     system_prompt = f"""你是严格的小说角色分析专家。你的任务是验证女性角色【{name}】的孩子来源判定是否逻辑自洽。
 
@@ -6922,7 +7028,7 @@ def _llm_judge_partner(
         speech_act = str(pr.get("speech_act", "") or "").strip() or "未知"
         fact_flag = pr.get("is_fact_statement", None)
         fact_label = "事实" if fact_flag is True else ("非事实/假设" if fact_flag is False else "未知")
-        evidence = pr.get("evidence", "")[:]
+        evidence = _clip_llm_text(pr.get("evidence", ""), 180)
         gender_hint = _is_likely_male_counterpart(
             partner,
             " ".join([
@@ -6947,7 +7053,7 @@ def _llm_judge_partner(
     for rf in romantic_feelings:
         target = str(rf.get("target", "未知") or "未知")
         is_ml = "男主" if rf.get("is_male_lead") else "非男主"
-        evidence = rf.get("evidence", "")[:]
+        evidence = _clip_llm_text(rf.get("evidence", ""), 180)
         gender_hint = _is_likely_male_counterpart(
             target,
             " ".join([
@@ -6963,8 +7069,8 @@ def _llm_judge_partner(
         partner_text.append(f"[感情] 对{target}({is_ml},{gender_label})有感情, 证据:{evidence}")
 
     # 关键补充：很多“男友/对象/前任”等信息会落在旧字段 non_male_male_interactions 里
-    for it in (non_male_male_interactions or [])[:]:
-        s = str(it or "").strip()
+    for it in (non_male_male_interactions or []):
+        s = _clip_llm_text(it, 180)
         if s:
             partner = _extract_partner_from_contact_interaction(s)
             gender_hint = _is_likely_male_counterpart(partner, s, female_name_norm_set)
@@ -6973,9 +7079,9 @@ def _llm_judge_partner(
                 continue
             gender_label = "男性" if gender_hint is True else "性别未知"
             if partner:
-                partner_text.append(f"[非男主互动] 对象:{partner}({gender_label}) | {s[:]}")
+                partner_text.append(f"[非男主互动] 对象:{partner}({gender_label}) | {s}")
             else:
-                partner_text.append(f"[非男主互动] 对象:未知({gender_label}) | {s[:]}")
+                partner_text.append(f"[非男主互动] 对象:未知({gender_label}) | {s}")
 
     # 补充亲生孩子信息，帮助 LLM 推断隐含伴侣
     if has_bio_children and bio_children:
@@ -6984,7 +7090,7 @@ def _llm_judge_partner(
                 continue
             child_name = child.get("child_name", "未知")
             father = child.get("father", "未知")
-            child_evidence = child.get("evidence", "")
+            child_evidence = _clip_llm_text(child.get("evidence", child.get("reason", "")), 180)
             partner_text.append(
                 f"[亲生孩子] {child_name}, 父亲:{father}, 证据:{child_evidence}"
             )
@@ -7002,7 +7108,7 @@ def _llm_judge_partner(
             "analyzed_partners": filtered_partner_relations,  # 仅保留非女性对象，供后续Step使用
         }
     
-    partner_str = "\n".join(partner_text)
+    partner_str = _compact_llm_lines(partner_text, label="伴侣/感情信息")
     female_name_hint = "、".join(female_role_names[:40]) if female_role_names else "无"
     
     system_prompt = f"""你是严格的小说角色分析专家。判断女性角色【{name}】是否有非男主的正式男伴。
@@ -7160,12 +7266,12 @@ def _llm_judge_contact(
             continue
         is_ml = "男主" if pc.get("is_male_lead") else "非男主"
         ctype = pc.get("contact_type", "未知")
-        evidence = pc.get("evidence", "")[:]
+        evidence = _clip_llm_text(pc.get("evidence", ""), 180)
         gender_hint = "男性" if male_hint is True else "性别未知"
         contact_text.append(f"[肉体接触] 与{partner}({is_ml},{gender_hint}){ctype}, 证据:{evidence}")
     
-    for interaction in (non_male_male_interactions or [])[:]:
-        interaction_text = str(interaction or "").strip()
+    for interaction in (non_male_male_interactions or []):
+        interaction_text = _clip_llm_text(interaction, 180)
         if not interaction_text:
             continue
         partner = _extract_partner_from_contact_interaction(interaction_text)
@@ -7175,9 +7281,9 @@ def _llm_judge_contact(
             continue
         gender_hint = "男性" if male_hint is True else "性别未知"
         if partner:
-            contact_text.append(f"[非男主互动] 对象:{partner}({gender_hint}) | {interaction_text[:]}")
+            contact_text.append(f"[非男主互动] 对象:{partner}({gender_hint}) | {interaction_text}")
         else:
-            contact_text.append(f"[非男主互动] 对象:未知({gender_hint}) | {interaction_text[:]}")
+            contact_text.append(f"[非男主互动] 对象:未知({gender_hint}) | {interaction_text}")
     
     if not contact_text:
         reason = "无任何非男主男性肉体接触记录"
@@ -7190,7 +7296,7 @@ def _llm_judge_contact(
             "contact_reason": reason,
         }
     
-    contact_str = "\n".join(contact_text)
+    contact_str = _compact_llm_lines(contact_text, label="接触/互动信息")
     female_name_hint = "、".join(female_role_names[:40]) if female_role_names else "无"
     
     system_prompt = f"""你是严格的小说角色分析专家。判断女性角色【{name}】是否被非男主男性实际触碰过身体。
@@ -7313,7 +7419,7 @@ def _llm_judge_spirit(
             has_feelings_flag = p.get("has_feelings", None)
             forced = "被迫" if forced_flag is True else ("自愿" if forced_flag is False else "未知")
             feelings = "有感情" if has_feelings_flag is True else ("无感情" if has_feelings_flag is False else "未知")
-            analysis_reason = p.get("analysis_reason", "")[:]
+            analysis_reason = _clip_llm_text(p.get("analysis_reason", ""), 180)
             spirit_text.append(f"[男伴] {pname}, 关系:{rel}, {forced}, {feelings}" + (f", 分析:{analysis_reason}" if analysis_reason else ""))
     
     # 非男主伴侣（不限性别）：用于精神判定，不能只看“男伴”维度
@@ -7334,7 +7440,7 @@ def _llm_judge_spirit(
             continue
         rel = str(pr.get("relationship", "") or "").strip()
         status = str(pr.get("status", "") or "").strip()
-        evidence = str(pr.get("evidence", "") or "")[:]
+        evidence = _clip_llm_text(pr.get("evidence", ""), 180)
         non_ml_partner_history.append(pr)
         is_exempt, exempt_reason = _is_spirit_exempt_partner_relation(
             pr,
@@ -7346,7 +7452,7 @@ def _llm_judge_spirit(
                 {
                     "partner": partner,
                     "reason": exempt_reason,
-                    "evidence": evidence[:80],
+                    "evidence": _clip_llm_text(evidence, 80),
                 }
             )
             spirit_text.append(
@@ -7371,7 +7477,7 @@ def _llm_judge_spirit(
         evidence_strength = str(rf.get("evidence_strength", "") or "").strip().lower()
         if evidence_strength in {"weak", "low"}:
             continue
-        evidence = rf.get("evidence", "")[:]  # 会截断：仅取前150字符
+        evidence = _clip_llm_text(rf.get("evidence", ""), 180)
         non_ml_feelings_history.append(rf)
         positive_flag = _is_positive_non_ml_feeling_record(rf)
         if positive_flag:
@@ -7386,7 +7492,7 @@ def _llm_judge_spirit(
             "spirit_reason": "无任何非男主对象的感情或伴侣记录",
         }
     
-    spirit_str = "\n".join(spirit_text)
+    spirit_str = _compact_llm_lines(spirit_text, label="精神洁证据")
     
     system_prompt = f"""你是严格的小说角色分析专家。判断女性角色【{name}】的精神纯洁度。
 
@@ -7563,8 +7669,8 @@ def _llm_judge_virgin(
     for sr in sexual_relations:
         partner = sr.get("partner", "未知")
         is_ml = "男主" if sr.get("is_male_lead") else "非男主"
-        detail = sr.get("detail", "")[:]
-        evidence = sr.get("evidence", "")[:]
+        detail = _clip_llm_text(sr.get("detail", ""), 180)
+        evidence = _clip_llm_text(sr.get("evidence", ""), 180)
         virgin_text.append(f"[性关系] 与{partner}({is_ml}): {detail}, 证据:{evidence}")
     
     # 男伴信息（如果有伴侣，可能有性关系）
@@ -7577,12 +7683,12 @@ def _llm_judge_virgin(
     # 处女暗示信息
     virgin_hints = []
     if virginity_mentions:
-        virgin_hints.extend([f"[处女提及] {v[:]}" for v in virginity_mentions[:]])
+        virgin_hints.extend([f"[处女提及] {_clip_llm_text(v, 180)}" for v in virginity_mentions])
     if male_lead_intimacy:
-        virgin_hints.extend([f"[与男主亲密] {m[:]}" for m in male_lead_intimacy[:]])
+        virgin_hints.extend([f"[与男主亲密] {_clip_llm_text(m, 180)}" for m in male_lead_intimacy])
     
-    virgin_str = "\n".join(virgin_text) if virgin_text else "（无性关系记录）"
-    hints_str = "\n".join(virgin_hints) if virgin_hints else "（无处女暗示记录）"
+    virgin_str = _compact_llm_lines(virgin_text, label="性关系/男伴信息", empty="（无性关系记录）")
+    hints_str = _compact_llm_lines(virgin_hints, label="处女暗示信息", empty="（无处女暗示记录）")
     
     system_prompt = f"""你是严格的小说角色分析专家。判断女性角色【{name}】是否为处女。
 
@@ -7999,7 +8105,11 @@ def judge_character_purity_llm(name, evidence_list, male_lead):
     - 无男伴：从未有过非男主的男性伴侣 = ✅
     - 有男伴：有过前男友/前夫/前恋人等 = ❌
     """
-    evidence_text = "\n".join([f"- {e}" for e in evidence_list]) if evidence_list else "（无其他证据）"
+    evidence_text = _compact_llm_lines(
+        [f"- {_clip_llm_text(e, 240)}" for e in evidence_list],
+        label="综合证据",
+        empty="（无其他证据）",
+    )
 
     system_prompt = f"""你是一个严格的小说角色鉴赏专家，需结合"规则+证据"判定女性角色【{name}】的肉体与精神洁度。
 

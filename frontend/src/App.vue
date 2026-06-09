@@ -63,6 +63,9 @@ const configForm = ref({
   harem_scan_retry_workers: '1',
   harem_scan_api_downshift_max_depth: '1',
   harem_scan_api_downshift_min_chars: '1200',
+  review_llm_section_max_chars: '12000',
+  review_llm_field_max_chars: '220',
+  review_llm_list_max_items: '80',
   general_scan_max_chunks: '',
   general_character_max_tokens: '2400',
   general_character_retry_max_tokens: '1400',
@@ -336,6 +339,9 @@ function syncConfigForm(config) {
     harem_scan_retry_workers: config.harem_scan_retry_workers || '1',
     harem_scan_api_downshift_max_depth: config.harem_scan_api_downshift_max_depth || '1',
     harem_scan_api_downshift_min_chars: config.harem_scan_api_downshift_min_chars || '1200',
+    review_llm_section_max_chars: config.review_llm_section_max_chars || '12000',
+    review_llm_field_max_chars: config.review_llm_field_max_chars || '220',
+    review_llm_list_max_items: config.review_llm_list_max_items || '80',
     general_scan_max_chunks: config.general_scan_max_chunks || '80',
     general_character_max_tokens: config.general_character_max_tokens || '2400',
     general_character_retry_max_tokens: config.general_character_retry_max_tokens || '1400',
@@ -387,6 +393,9 @@ async function saveRuntimeConfig() {
       harem_scan_retry_workers: configForm.value.harem_scan_retry_workers,
       harem_scan_api_downshift_max_depth: configForm.value.harem_scan_api_downshift_max_depth,
       harem_scan_api_downshift_min_chars: configForm.value.harem_scan_api_downshift_min_chars,
+      review_llm_section_max_chars: configForm.value.review_llm_section_max_chars,
+      review_llm_field_max_chars: configForm.value.review_llm_field_max_chars,
+      review_llm_list_max_items: configForm.value.review_llm_list_max_items,
       general_scan_max_chunks: configForm.value.general_scan_max_chunks,
       general_character_max_tokens: configForm.value.general_character_max_tokens,
       general_character_retry_max_tokens: configForm.value.general_character_retry_max_tokens,
@@ -845,6 +854,36 @@ useStateEvents(applyState, {
           type="number"
           min="0"
           max="50000"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>二审预算</span>
+        <input
+          v-model="configForm.review_llm_section_max_chars"
+          type="number"
+          min="2000"
+          max="100000"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>证据字数</span>
+        <input
+          v-model="configForm.review_llm_field_max_chars"
+          type="number"
+          min="40"
+          max="5000"
+          @input="runtimeConfigDirty = true"
+        />
+      </label>
+      <label>
+        <span>二审条数</span>
+        <input
+          v-model="configForm.review_llm_list_max_items"
+          type="number"
+          min="5"
+          max="1000"
           @input="runtimeConfigDirty = true"
         />
       </label>

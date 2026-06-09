@@ -2648,11 +2648,26 @@ def merge_aliases(global_stats):
             "name": name,
             "avg_score": round(avg_score, 1),
             "count": data['count'],
-            "other_names": list(data.get('other_names', set())),
-            "appearances": data.get('appearances', [])[:3],
-            "features": data.get('features', [])[:3],
-            "relationships": data.get('relationships', [])[:3],
-            "summaries": data.get('summaries', [])[:3]
+            "other_names": [
+                _truncate_alias_merge_value(item)
+                for item in list(data.get('other_names', set()))[:10]
+            ],
+            "appearances": [
+                _truncate_alias_merge_value(item)
+                for item in data.get('appearances', [])[:3]
+            ],
+            "features": [
+                _truncate_alias_merge_value(item)
+                for item in data.get('features', [])[:3]
+            ],
+            "relationships": [
+                _truncate_alias_merge_value(item)
+                for item in data.get('relationships', [])[:3]
+            ],
+            "summaries": [
+                _truncate_alias_merge_value(item)
+                for item in data.get('summaries', [])[:3]
+            ]
         }
         characters_info.append(char_info)
     
@@ -2773,10 +2788,22 @@ def merge_aliases(global_stats):
                     "aliases": group.get('aliases', []),
                     "avg_score": round(avg_score, 1),
                     "count": data['count'],
-                    "other_names": list(set(all_other_names))[:10],  # 添加 other_names
-                    "features": all_features[:5],
-                    "appearances": all_appearances[:5],
-                    "relationships": data.get('relationships', [])[:3]
+                    "other_names": [
+                        _truncate_alias_merge_value(item)
+                        for item in list(set(all_other_names))[:10]
+                    ],
+                    "features": [
+                        _truncate_alias_merge_value(item)
+                        for item in all_features[:5]
+                    ],
+                    "appearances": [
+                        _truncate_alias_merge_value(item)
+                        for item in all_appearances[:5]
+                    ],
+                    "relationships": [
+                        _truncate_alias_merge_value(item)
+                        for item in data.get('relationships', [])[:3]
+                    ],
                 })
             
             # 添加未被合并的高频角色

@@ -1143,6 +1143,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH=1", env_sample_text)
         self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS: ${HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS:-1200}", compose_text)
         self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS=1200", env_sample_text)
+        self.assertIn("REVIEW_LLM_SECTION_MAX_CHARS: ${REVIEW_LLM_SECTION_MAX_CHARS:-12000}", compose_text)
+        self.assertIn("REVIEW_LLM_SECTION_MAX_CHARS=12000", env_sample_text)
+        self.assertIn("REVIEW_LLM_FIELD_MAX_CHARS: ${REVIEW_LLM_FIELD_MAX_CHARS:-220}", compose_text)
+        self.assertIn("REVIEW_LLM_FIELD_MAX_CHARS=220", env_sample_text)
+        self.assertIn("REVIEW_LLM_LIST_MAX_ITEMS: ${REVIEW_LLM_LIST_MAX_ITEMS:-80}", compose_text)
+        self.assertIn("REVIEW_LLM_LIST_MAX_ITEMS=80", env_sample_text)
         self.assertIn("SCAN_FUTURE_STALL_TIMEOUT_SECONDS: ${SCAN_FUTURE_STALL_TIMEOUT_SECONDS:-0}", compose_text)
         self.assertIn("SCAN_FUTURE_STALL_TIMEOUT_SECONDS=0", env_sample_text)
         self.assertIn("STORAGE_HEALTH_TTL_SECONDS: ${STORAGE_HEALTH_TTL_SECONDS:-10}", compose_text)
@@ -6905,6 +6911,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "HAREM_SCAN_RETRY_WORKERS",
             "HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH",
             "HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS",
+            "REVIEW_LLM_SECTION_MAX_CHARS",
+            "REVIEW_LLM_FIELD_MAX_CHARS",
+            "REVIEW_LLM_LIST_MAX_ITEMS",
             "GENERAL_SCAN_MAX_CHUNKS",
             "GENERAL_CHARACTER_MAX_TOKENS",
             "GENERAL_CHARACTER_RETRY_MAX_TOKENS",
@@ -6948,6 +6957,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "harem_scan_retry_workers": "1",
                 "harem_scan_api_downshift_max_depth": "2",
                 "harem_scan_api_downshift_min_chars": "900",
+                "review_llm_section_max_chars": "10000",
+                "review_llm_field_max_chars": "180",
+                "review_llm_list_max_items": "60",
                 "general_scan_max_chunks": "120",
                 "general_character_max_tokens": "2300",
                 "general_character_retry_max_tokens": "1200",
@@ -6986,6 +6998,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(os.environ["HAREM_SCAN_RETRY_WORKERS"], "1")
             self.assertEqual(os.environ["HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH"], "2")
             self.assertEqual(os.environ["HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS"], "900")
+            self.assertEqual(os.environ["REVIEW_LLM_SECTION_MAX_CHARS"], "10000")
+            self.assertEqual(os.environ["REVIEW_LLM_FIELD_MAX_CHARS"], "180")
+            self.assertEqual(os.environ["REVIEW_LLM_LIST_MAX_ITEMS"], "60")
             self.assertEqual(os.environ["GENERAL_SCAN_MAX_CHUNKS"], "120")
             self.assertEqual(os.environ["GENERAL_CHARACTER_MAX_TOKENS"], "2300")
             self.assertEqual(os.environ["GENERAL_CHARACTER_RETRY_MAX_TOKENS"], "1200")
@@ -7034,6 +7049,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(result["harem_scan_retry_workers"], "1")
             self.assertEqual(result["harem_scan_api_downshift_max_depth"], "2")
             self.assertEqual(result["harem_scan_api_downshift_min_chars"], "900")
+            self.assertEqual(result["review_llm_section_max_chars"], "10000")
+            self.assertEqual(result["review_llm_field_max_chars"], "180")
+            self.assertEqual(result["review_llm_list_max_items"], "60")
             self.assertEqual(result["general_character_api_downshift_max_depth"], "1")
             self.assertEqual(result["general_character_api_downshift_min_chars"], "4000")
             self.assertEqual(result["scan_future_stall_timeout_seconds"], "600")
@@ -7276,6 +7294,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             "HAREM_SCAN_RETRY_WORKERS": "harem_scan_retry_workers",
             "HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH": "harem_scan_api_downshift_max_depth",
             "HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS": "harem_scan_api_downshift_min_chars",
+            "REVIEW_LLM_SECTION_MAX_CHARS": "review_llm_section_max_chars",
+            "REVIEW_LLM_FIELD_MAX_CHARS": "review_llm_field_max_chars",
+            "REVIEW_LLM_LIST_MAX_ITEMS": "review_llm_list_max_items",
             "GENERAL_SCAN_MAX_CHUNKS": "general_scan_max_chunks",
             "GENERAL_CHARACTER_MAX_TOKENS": "general_character_max_tokens",
             "GENERAL_CHARACTER_RETRY_MAX_TOKENS": "general_character_retry_max_tokens",
@@ -7336,6 +7357,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     "harem_scan_retry_workers": 1,
                     "harem_scan_api_downshift_max_depth": 2,
                     "harem_scan_api_downshift_min_chars": 900,
+                    "review_llm_section_max_chars": 10000,
+                    "review_llm_field_max_chars": 180,
+                    "review_llm_list_max_items": 60,
                     "general_character_max_tokens": 2300,
                     "general_character_retry_max_tokens": 1200,
                     "general_character_max_per_chunk": 7,
@@ -7373,6 +7397,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("HAREM_SCAN_RETRY_WORKERS=1", lines)
                 self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH=2", lines)
                 self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS=900", lines)
+                self.assertIn("REVIEW_LLM_SECTION_MAX_CHARS=10000", lines)
+                self.assertIn("REVIEW_LLM_FIELD_MAX_CHARS=180", lines)
+                self.assertIn("REVIEW_LLM_LIST_MAX_ITEMS=60", lines)
                 self.assertIn("GENERAL_CHARACTER_MAX_TOKENS=2300", lines)
                 self.assertIn("GENERAL_CHARACTER_RETRY_MAX_TOKENS=1200", lines)
                 self.assertIn("GENERAL_CHARACTER_MAX_PER_CHUNK=7", lines)
@@ -13738,6 +13765,113 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertTrue(result["is_clean"])
         self.assertTrue(result["verification"]["partner_exempted_for_clean"])
 
+    def test_reviewer_llm_compacts_large_evidence_sections(self):
+        lines = [f"证据{i}-" + ("长文本" * 120) for i in range(120)]
+        with mock.patch.object(novel_reviewer, "REVIEW_LLM_SECTION_MAX_CHARS", 1000), \
+                mock.patch.object(novel_reviewer, "REVIEW_LLM_FIELD_MAX_CHARS", 40), \
+                mock.patch.object(novel_reviewer, "REVIEW_LLM_LIST_MAX_ITEMS", 20):
+            compacted = novel_reviewer._compact_llm_lines(
+                [novel_reviewer._clip_llm_text(item) for item in lines],
+                label="测试证据",
+            )
+
+        self.assertLessEqual(len(compacted), 1000)
+        self.assertIn("省略", compacted)
+        self.assertIn("证据0", compacted)
+        self.assertIn("证据119", compacted)
+
+    def test_partner_judge_caps_large_prompt_inputs(self):
+        captured = []
+
+        def fake_call(messages, **_kwargs):
+            captured.append("\n".join(item.get("content", "") for item in messages))
+            return {
+                "no_partner": False,
+                "partner_status": "❌ 有男伴",
+                "partner_list": [{"name": "路人甲", "relationship": "前夫", "forced": False}],
+                "partner_reason": "存在前夫记录",
+            }
+
+        partner_relations = [
+            {
+                "partner": f"路人{i}",
+                "is_male_lead": False,
+                "relationship": "前夫",
+                "status": "已离婚",
+                "forced": False,
+                "is_fact_statement": True,
+                "evidence": f"她与路人{i}曾是夫妻。" + ("长证据" * 260),
+            }
+            for i in range(160)
+        ]
+
+        with mock.patch.object(novel_reviewer, "_call_json_chat_completion", side_effect=fake_call), \
+                mock.patch.object(novel_reviewer, "REVIEW_LLM_SECTION_MAX_CHARS", 1800), \
+                mock.patch.object(novel_reviewer, "REVIEW_LLM_FIELD_MAX_CHARS", 60), \
+                mock.patch.object(novel_reviewer, "REVIEW_LLM_LIST_MAX_ITEMS", 24):
+            result = novel_reviewer._llm_judge_partner(
+                "甲女",
+                romantic_feelings=[],
+                partner_relations=[],
+                non_male_male_interactions=[],
+                male_lead="男主",
+                analyzed_partner_relations=partner_relations,
+            )
+
+        self.assertFalse(result["no_partner"])
+        self.assertEqual(len(captured), 1)
+        prompt = captured[0]
+        self.assertLess(len(prompt), 9000)
+        self.assertIn("省略", prompt)
+        self.assertIn("路人0", prompt)
+        self.assertIn("路人159", prompt)
+
+    def test_virgin_judge_caps_hint_prompt_inputs(self):
+        captured = []
+
+        def fake_call(messages, **_kwargs):
+            captured.append("\n".join(item.get("content", "") for item in messages))
+            return {
+                "is_virgin": True,
+                "virgin_status": "✅ 处女",
+                "virgin_reason": "未见非男主性关系",
+                "non_ml_sex_partners": [],
+            }
+
+        sexual_relations = [
+            {
+                "partner": "男主",
+                "is_male_lead": True,
+                "detail": f"与男主亲密{i}。" + ("细节" * 240),
+                "evidence": f"她只与男主发生关系{i}。" + ("证据" * 240),
+            }
+            for i in range(80)
+        ]
+        hints = [f"初夜暗示{i}。" + ("提示" * 260) for i in range(120)]
+
+        with mock.patch.object(novel_reviewer, "_call_json_chat_completion", side_effect=fake_call), \
+                mock.patch.object(novel_reviewer, "REVIEW_LLM_SECTION_MAX_CHARS", 1600), \
+                mock.patch.object(novel_reviewer, "REVIEW_LLM_FIELD_MAX_CHARS", 50), \
+                mock.patch.object(novel_reviewer, "REVIEW_LLM_LIST_MAX_ITEMS", 20):
+            result = novel_reviewer._llm_judge_virgin(
+                "甲女",
+                no_partner=True,
+                partner_list=[],
+                has_biological_children=False,
+                biological_children=[],
+                sexual_relations=sexual_relations,
+                virginity_mentions=hints,
+                male_lead_intimacy=hints,
+                male_lead="男主",
+            )
+
+        self.assertTrue(result["is_virgin"])
+        prompt = captured[0]
+        self.assertLess(len(prompt), 10000)
+        self.assertIn("省略", prompt)
+        self.assertIn("截断", prompt)
+        self.assertNotIn("提示" * 200, prompt)
+
     def test_report_summarizes_heroine_relationship_structure(self):
         summary = report._summarize_heroine_relationship_structure(
             {
@@ -16339,6 +16473,44 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertGreater(len(payload_lengths), 1)
         self.assertTrue(all(length <= 1200 for length in payload_lengths))
+
+    def test_merge_aliases_truncates_first_round_character_fields(self):
+        global_stats = {}
+        for i in range(35):
+            global_stats[f"甲女{i}"] = {
+                "total_score": 20,
+                "count": 6,
+                "chunk_scores": [],
+                "summaries": ["超长摘要" * 200],
+                "types": set(),
+                "other_names": {f"阿甲{i}", "超长别名" * 200},
+                "appearances": ["超长出场" * 200],
+                "features": ["超长特征" * 200],
+                "relationships": ["超长关系" * 200],
+                "interactions": [],
+                "emotion_signals": [],
+            }
+
+        payloads = []
+
+        def fake_call_merge_ai(characters_batch, conflict_pairs, batch_info="", mutual_pairs=None):
+            payloads.append(json.dumps(characters_batch, ensure_ascii=False))
+            return [], []
+
+        with mock.patch.object(protagonist, "MAX_WORKERS", 1), \
+                mock.patch.object(protagonist, "tqdm", side_effect=lambda items, **kwargs: items), \
+                mock.patch.object(protagonist, "_get_generation_conflict_pairs", return_value=[]), \
+                mock.patch.object(protagonist, "_detect_same_name_prefix_pairs", return_value=[]), \
+                mock.patch.object(protagonist, "_clean_contaminated_other_names", return_value=0), \
+                mock.patch.object(protagonist, "_detect_mutual_other_names", return_value=[]), \
+                mock.patch.object(protagonist, "_call_merge_ai", side_effect=fake_call_merge_ai), \
+                mock.patch.object(protagonist, "ALIAS_CROSS_MERGE_MAX_FIELD_CHARS", 24):
+            protagonist.merge_aliases(global_stats)
+
+        self.assertTrue(payloads)
+        serialized = "\n".join(payloads)
+        self.assertIn("...", serialized)
+        self.assertNotIn("超长摘要" * 40, serialized)
 
     def test_heroine_final_merge_candidate_filter_keeps_only_strong_alias_evidence(self):
         heroines = [
