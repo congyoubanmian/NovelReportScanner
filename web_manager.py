@@ -279,12 +279,20 @@ def _load_state():
 def _save_state():
     path = _state_path()
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp_path = f"{path}.{os.getpid()}.tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(STATE, f, ensure_ascii=False, indent=2)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp_path, path)
+    tmp_path = f"{path}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex}.tmp"
+    try:
+        with STATE_LOCK:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(STATE, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def _recover_incomplete_tasks():

@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 import io
 import logging
@@ -5339,6 +5340,63 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.STATE = old_state
             web_manager._recover_incomplete_tasks = old_recover
             web_manager._sync_books_from_disk = old_sync
+
+    def test_web_manager_save_state_uses_unique_temp_files_and_cleans_up(self):
+        old_base_dir = web_manager.get_base_dir
+        old_state = web_manager.STATE
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.STATE = {
+                    "books": {"book": {"id": "book", "status": "idle"}},
+                    "tasks": [{"id": "task", "status": "queued"}],
+                }
+
+                web_manager._save_state()
+                web_manager.STATE["books"]["book"]["message"] = "updated"
+                web_manager._save_state()
+
+                state_path = os.path.join(tmp, "results", "web_manager_state.json")
+                with open(state_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self.assertEqual(data["books"]["book"]["message"], "updated")
+                leftovers = [
+                    name for name in os.listdir(os.path.dirname(state_path))
+                    if name.startswith("web_manager_state.json.") and name.endswith(".tmp")
+                ]
+                self.assertEqual(leftovers, [])
+        finally:
+            web_manager.get_base_dir = old_base_dir
+            web_manager.STATE = old_state
+
+    def test_web_manager_save_state_is_thread_safe(self):
+        old_base_dir = web_manager.get_base_dir
+        old_state = web_manager.STATE
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.STATE = {"books": {}, "tasks": []}
+
+                def save_worker(index):
+                    with web_manager.STATE_LOCK:
+                        web_manager.STATE["books"][f"book-{index}"] = {"id": f"book-{index}"}
+                    web_manager._save_state()
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                    list(executor.map(save_worker, range(8)))
+
+                state_path = os.path.join(tmp, "results", "web_manager_state.json")
+                with open(state_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self.assertEqual(len(data["books"]), 8)
+                leftovers = [
+                    name for name in os.listdir(os.path.dirname(state_path))
+                    if name.startswith("web_manager_state.json.") and name.endswith(".tmp")
+                ]
+                self.assertEqual(leftovers, [])
+        finally:
+            web_manager.get_base_dir = old_base_dir
+            web_manager.STATE = old_state
 
     def test_web_manager_access_token_auth_is_optional_and_secret(self):
         old_token = os.environ.get("WEB_ACCESS_TOKEN")
