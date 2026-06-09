@@ -205,7 +205,7 @@ async function refreshDiagnostics(options = {}) {
   }
 }
 
-async function applyState(data) {
+async function applyState(data, options = {}) {
   books.value = data.books || []
   profiles.value = data.profiles || profiles.value
   runtimeConfig.value = data.config || runtimeConfig.value
@@ -223,13 +223,15 @@ async function applyState(data) {
     }
   }
   loading.value = false
-  void refreshDiagnostics()
+  if (options.refreshDiagnostics !== false) {
+    void refreshDiagnostics()
+  }
 }
 
-async function refresh() {
+async function refresh(options = {}) {
   try {
     const data = await getState()
-    await applyState(data)
+    await applyState(data, options)
   } catch (e) {
     console.error('刷新失败:', e)
     if (String(e.message || '').includes('unauthorized')) {
@@ -241,7 +243,7 @@ async function refresh() {
 }
 
 async function refreshAfterMutation() {
-  await refresh()
+  await refresh({ refreshDiagnostics: false })
   await refreshDiagnostics({ force: true })
 }
 
