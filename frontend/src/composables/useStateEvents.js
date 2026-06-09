@@ -21,6 +21,14 @@ export function useStateEvents(onState, options = {}) {
     retryTimer = null
   }
 
+  function scheduleRetry() {
+    if (retryTimer) return
+    retryTimer = setTimeout(() => {
+      retryTimer = null
+      connect()
+    }, retryMs)
+  }
+
   function connect() {
     if (source || document.hidden) return
     if (typeof EventSource === 'undefined') {
@@ -36,12 +44,13 @@ export function useStateEvents(onState, options = {}) {
       } catch {
         closeSource()
         onFallback()
+        scheduleRetry()
       }
     })
     source.addEventListener('error', () => {
       closeSource()
       onFallback()
-      retryTimer = setTimeout(connect, retryMs)
+      scheduleRetry()
     })
   }
 

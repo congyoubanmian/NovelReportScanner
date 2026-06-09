@@ -1275,6 +1275,19 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("HTTP ${status}: ${cleanTitle}", text)
         self.assertIn("plainText.slice(0, 300)", text)
 
+    def test_frontend_sse_fallback_retries_after_parse_errors(self):
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        composable_path = os.path.join(base_dir, "frontend", "src", "composables", "useStateEvents.js")
+        with open(composable_path, "r", encoding="utf-8") as f:
+            text = f.read()
+
+        self.assertIn("function scheduleRetry()", text)
+        self.assertIn("if (retryTimer) return", text)
+        self.assertIn("retryTimer = null", text)
+        self.assertIn("scheduleRetry()", text)
+        self.assertIn("onState(JSON.parse(event.data))", text)
+        self.assertIn("catch {\n        closeSource()\n        onFallback()\n        scheduleRetry()\n      }", text)
+
     def test_rate_limit_scope_auto_resolves_by_key_count(self):
         self.assertEqual(Timerror.normalize_rate_limit_scope("auto", 1), "global")
         self.assertEqual(Timerror.normalize_rate_limit_scope("auto", 2), "per_key")
