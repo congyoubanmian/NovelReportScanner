@@ -6469,6 +6469,83 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             else:
                 os.environ["WEB_ACCESS_TOKEN"] = old_token
 
+    def test_web_manager_upload_metadata_error_returns_json(self):
+        class FakeFileItem:
+            filename = "book.txt"
+
+            def __init__(self):
+                self.file = io.BytesIO(b"content")
+
+        class FakeForm:
+            def __init__(self):
+                self.file_item = FakeFileItem()
+
+            def __contains__(self, key):
+                return key == "file"
+
+            def __getitem__(self, key):
+                if key != "file":
+                    raise KeyError(key)
+                return self.file_item
+
+            def getlist(self, key):
+                return [] if key == "profile" else []
+
+            def getfirst(self, key, default=None):
+                return default
+
+        class FakeHandler(web_manager.Handler):
+            def __init__(self):
+                self.path = "/upload"
+                self.headers = {
+                    "Content-Length": "7",
+                    "Content-Type": "multipart/form-data; boundary=x",
+                    "X-Web-Unsafe-Action": "confirm",
+                }
+                self.rfile = io.BytesIO(b"content")
+                self.sent = []
+
+            def _send_json(self, data, status=200):
+                self.sent.append((status, data))
+
+        old_token = os.environ.get("WEB_ACCESS_TOKEN")
+        old_base_dir = web_manager.get_base_dir
+        old_state = web_manager.STATE
+        old_field_storage = web_manager.cgi.FieldStorage
+        old_signature = web_manager._book_suggestion_signature
+        old_profile_suggestions = web_manager._profile_suggestions
+        try:
+            os.environ.pop("WEB_ACCESS_TOKEN", None)
+            with tempfile.TemporaryDirectory() as tmp:
+                os.makedirs(os.path.join(tmp, "novels"), exist_ok=True)
+                os.makedirs(os.path.join(tmp, "results"), exist_ok=True)
+                web_manager.get_base_dir = lambda: tmp
+                web_manager.STATE = {"books": {}, "tasks": []}
+                web_manager.cgi.FieldStorage = lambda *_args, **_kwargs: FakeForm()
+                web_manager._profile_suggestions = lambda _path, _book_name: [{"name": "general"}]
+
+                def fail_signature(_path):
+                    raise PermissionError("metadata denied")
+
+                web_manager._book_suggestion_signature = fail_signature
+                handler = FakeHandler()
+                web_manager.Handler.do_POST(handler)
+
+                self.assertEqual(handler.sent[0][0], 500)
+                self.assertEqual(handler.sent[0][1]["error"], "uploaded file metadata unavailable")
+                self.assertIn("metadata denied", handler.sent[0][1]["detail"])
+                self.assertEqual(web_manager.STATE["books"], {})
+        finally:
+            web_manager.get_base_dir = old_base_dir
+            web_manager.STATE = old_state
+            web_manager.cgi.FieldStorage = old_field_storage
+            web_manager._book_suggestion_signature = old_signature
+            web_manager._profile_suggestions = old_profile_suggestions
+            if old_token is None:
+                os.environ.pop("WEB_ACCESS_TOKEN", None)
+            else:
+                os.environ["WEB_ACCESS_TOKEN"] = old_token
+
     def test_web_manager_send_public_file_streams_in_chunks(self):
         class TrackingWFile:
             def __init__(self):

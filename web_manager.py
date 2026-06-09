@@ -2590,12 +2590,17 @@ class Handler(BaseHTTPRequestHandler):
             profile = _normalize_web_profile(profile_values if len(profile_values) > 1 else profile_values[0]) or "auto"
             _invalidate_book_outputs(book_id)
             suggestions = _profile_suggestions(path, book_id)
+            try:
+                suggestion_signature = _book_suggestion_signature(path)
+            except (PermissionError, OSError) as exc:
+                self._send_json({"error": "uploaded file metadata unavailable", "detail": str(exc)}, 500)
+                return
             uploaded_at = time.strftime("%Y-%m-%d %H:%M:%S")
             outputs_reset_after = None
             if overwrite:
                 try:
-                    outputs_reset_after = os.path.getmtime(path)
-                except OSError:
+                    outputs_reset_after = float(suggestion_signature.split(":", 1)[0])
+                except (IndexError, TypeError, ValueError):
                     outputs_reset_after = time.time()
             with STATE_LOCK:
                 if overwrite and book_id in STATE["books"]:
@@ -2608,7 +2613,7 @@ class Handler(BaseHTTPRequestHandler):
                     "path": path,
                     "profile": profile,
                     "profile_suggestions": suggestions,
-                    "suggestion_signature": f"{os.path.getmtime(path)}:{os.path.getsize(path)}",
+                    "suggestion_signature": suggestion_signature,
                     "status": "idle",
                     "message": f"已上传（{uploaded_size} 字节）",
                     "created_at": uploaded_at,
