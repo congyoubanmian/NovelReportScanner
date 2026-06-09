@@ -660,6 +660,57 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("辛月", [item["name"] for item in result["female_characters"]])
         self.assertEqual(result["discarded_facts"][-1]["reason"], "api_error_downshift_split")
 
+    def test_general_character_chunk_downshifts_parse_error_by_splitting_text(self):
+        calls = []
+        old_call = protagonist._call_json_chat_completion
+        old_sleep = protagonist.time.sleep
+        old_profile = os.environ.get("ANALYSIS_PROFILE")
+        old_depth = protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH
+        old_min_chars = protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS
+        try:
+            def fake_call(messages, **_kwargs):
+                calls.append(messages)
+                if len(calls) == 1:
+                    raise ValueError("truncated_json_response; response_flags=json_unbalanced; response_len=6200")
+                name = "云烨" if len(calls) == 2 else "李二"
+                return {
+                    "primary_protagonist": {"name": "云烨", "gender": "male", "summary": "主角行动"},
+                    "characters": [{
+                        "name": name,
+                        "gender": "male",
+                        "role_type": "protagonist" if name == "云烨" else "supporting",
+                        "score": 10 if name == "云烨" else 7,
+                        "summary": f"{name}参与事件",
+                    }],
+                }
+
+            os.environ["ANALYSIS_PROFILE"] = "general"
+            protagonist._call_json_chat_completion = fake_call
+            protagonist.time.sleep = lambda *_args, **_kwargs: None
+            protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH = 1
+            protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS = 20
+            result = protagonist.analyze_chunk_for_heroines(
+                "云烨在长安处理政务。李二召见群臣商议军国大事。" * 20,
+                chunk_index=18,
+                total_chunks=452,
+                max_retries=2,
+            )
+        finally:
+            protagonist._call_json_chat_completion = old_call
+            protagonist.time.sleep = old_sleep
+            protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH = old_depth
+            protagonist.GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS = old_min_chars
+            if old_profile is None:
+                os.environ.pop("ANALYSIS_PROFILE", None)
+            else:
+                os.environ["ANALYSIS_PROFILE"] = old_profile
+
+        self.assertTrue(result["_success"])
+        self.assertEqual(result["partial_reason"], "parse_error_downshift_split")
+        self.assertEqual(len(calls), 3)
+        self.assertIn("李二", [item["name"] for item in result["female_characters"]])
+        self.assertEqual(result["discarded_facts"][-1]["reason"], "parse_error_downshift_split")
+
     def test_protagonist_chunk_analysis_classifies_empty_response_as_parse_error(self):
         calls = []
         old_call = protagonist._call_json_chat_completion
@@ -15294,6 +15345,86 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(capped["discarded_facts"][0]["reason"], "general_character_over_limit")
         self.assertIn("路人乙", capped["discarded_facts"][0]["value"])
 
+    def test_general_focus_characters_include_mixed_gender_roles_without_heroine_judgement(self):
+        merged_stats = {
+            "辛月": {
+                "total_score": 27,
+                "count": 3,
+                "summaries": [(3, "辛月主持家务并支持云烨。")],
+                "types": set(),
+                "other_names": {"小月"},
+                "appearances": ["沉稳"],
+                "features": ["聪慧稳重"],
+                "relationships": ["云烨的家人"],
+                "interactions": [(3, "辛月与云烨商议家事。")],
+                "emotion_signals": [],
+                "gender": {"female"},
+                "role_types": {"supporting"},
+                "factions": {"云家"},
+                "key_events": [(3, "稳定云家内部。")],
+            },
+            "李二": {
+                "total_score": 28,
+                "count": 4,
+                "summaries": [(2, "李二召见云烨议政。")],
+                "types": set(),
+                "other_names": {"唐太宗"},
+                "appearances": ["帝王"],
+                "features": ["强势务实"],
+                "relationships": ["皇帝与臣子"],
+                "interactions": [(2, "李二与云烨讨论国策。")],
+                "emotion_signals": [],
+                "gender": {"male"},
+                "role_types": {"deuteragonist"},
+                "factions": {"大唐朝廷"},
+                "key_events": [(2, "推动朝堂线。")],
+            },
+            "云烨": {
+                "total_score": 20,
+                "count": 2,
+                "summaries": [(1, "云烨穿越后推动技术变革。")],
+                "types": set(),
+                "other_names": {"云侯"},
+                "appearances": ["穿越者"],
+                "features": ["善用现代知识"],
+                "relationships": ["剧情视角核心"],
+                "interactions": [(1, "云烨介入朝堂与家族事务。")],
+                "emotion_signals": [],
+                "gender": {"male"},
+                "role_types": {"protagonist"},
+                "factions": {"云家"},
+                "key_events": [(1, "开启主线。")],
+            },
+            "反派甲": {
+                "total_score": 30,
+                "count": 5,
+                "summaries": [(4, "反派甲制造冲突。")],
+                "types": set(),
+                "other_names": set(),
+                "appearances": [],
+                "features": ["阴沉"],
+                "relationships": ["与云烨敌对"],
+                "interactions": [(4, "反派甲针对云烨。")],
+                "emotion_signals": [],
+                "gender": {"male"},
+                "role_types": {"antagonist"},
+                "factions": {"敌对势力"},
+                "key_events": [(4, "制造主线冲突。")],
+            },
+        }
+
+        result = protagonist._build_general_focus_characters_result(merged_stats, max_count=3)
+
+        self.assertEqual(result["profile_mode"], "general")
+        self.assertIn("未执行后宫女主判定", result["analysis"])
+        names = [item["name"] for item in result["heroines"]]
+        self.assertEqual(names[0], "云烨")
+        self.assertIn("李二", names)
+        self.assertIn("反派甲", names)
+        self.assertNotIn("辛月", names)
+        self.assertEqual(result["heroines"][0]["heroine_type"], "general_character")
+        self.assertEqual(result["heroines"][0]["gender"], "male")
+
     def test_protagonist_checkpoint_chunk_plan_must_match(self):
         current = protagonist._character_chunk_plan_metadata(
             text_length=10000,
@@ -15418,8 +15549,39 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     return {
                         "_success": True,
                         "male_protagonist": {"name": "主角", "summary": "行动"},
-                        "female_characters": [],
+                        "female_characters": [{
+                            "name": "主角",
+                            "score": 10,
+                            "summary": "主角行动",
+                            "gender": "male",
+                            "role_type": "protagonist",
+                        }],
                     }
+
+                merged_stats = {
+                    "主角": {
+                        "total_score": 30,
+                        "count": 3,
+                        "chunk_scores": [(0, 10), (500, 10), (999, 10)],
+                        "summaries": [(0, "主角开局"), (500, "主角推进中段"), (999, "主角收束")],
+                        "types": set(),
+                        "other_names": set(),
+                        "appearances": ["视角核心"],
+                        "features": ["行动稳定"],
+                        "relationships": ["剧情视角核心"],
+                        "interactions": [],
+                        "emotion_signals": [],
+                        "gender": {"male"},
+                        "role_types": {"protagonist"},
+                        "factions": set(),
+                        "key_events": [(500, "推进关键事件")],
+                    }
+                }
+                exported_results = []
+
+                def fake_export(_merged_stats, heroine_result, *_args, **_kwargs):
+                    exported_results.append(heroine_result)
+                    return ("detail.json", "snapshot.json", "report.txt")
 
                 with mock.patch.object(protagonist, "get_base_dir", return_value=tmpdir), \
                         mock.patch.object(protagonist, "init_token_tracker"), \
@@ -15429,11 +15591,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         mock.patch.object(protagonist, "tqdm", side_effect=lambda items, **kwargs: items), \
                         mock.patch.object(protagonist, "analyze_chunk_for_heroines", side_effect=fake_analyze), \
                         mock.patch.object(protagonist, "identify_male_protagonist", return_value={"name": "主角"}), \
-                        mock.patch.object(protagonist, "merge_aliases", return_value={}), \
-                        mock.patch.object(protagonist, "identify_heroines", return_value={"heroines": []}), \
-                        mock.patch.object(protagonist, "merge_heroines_final", side_effect=lambda result, stats: result), \
+                        mock.patch.object(protagonist, "merge_aliases", return_value=merged_stats), \
+                        mock.patch.object(protagonist, "identify_heroines") as mock_identify_heroines, \
+                        mock.patch.object(protagonist, "merge_heroines_final") as mock_merge_heroines_final, \
                         mock.patch.object(protagonist, "generate_final_report", return_value="report"), \
-                        mock.patch.object(protagonist, "export_results", return_value=("detail.json", "snapshot.json", "report.txt")):
+                        mock.patch.object(protagonist, "export_results", side_effect=fake_export):
                     self.assertEqual(protagonist.main(novel_path=novel_path, book_name="ten_million"), 0)
 
                 sorted_scanned_indices = sorted(scanned_indices)
@@ -15441,6 +15603,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertEqual(sorted_scanned_indices[0], 0)
                 self.assertEqual(sorted_scanned_indices[-1], 999)
                 self.assertTrue(any(450 <= idx <= 550 for idx in sorted_scanned_indices))
+                mock_identify_heroines.assert_not_called()
+                mock_merge_heroines_final.assert_not_called()
+                self.assertEqual(exported_results[0]["profile_mode"], "general")
+                self.assertEqual(exported_results[0]["heroines"][0]["name"], "主角")
 
                 checkpoint_path = os.path.join(
                     tmpdir,

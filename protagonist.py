@@ -314,6 +314,20 @@ def _extract_indexed_texts(raw_list, limit: int = 50):
     return texts[:limit]
 
 
+def _dedupe_texts_preserve_order(values, limit=None):
+    result = []
+    seen = set()
+    for value in values or []:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+        if limit and len(result) >= limit:
+            break
+    return result
+
+
 def _extract_chunk_indices(stats_entry: dict) -> set:
     """
     从角色的 summaries/interactions/emotion_signals/chunk_scores 中
@@ -1414,6 +1428,45 @@ def _merge_downshift_character_results(partial_results, chunk_index, error_type)
     return _cap_general_character_response(merged, chunk_index)
 
 
+def _should_downshift_general_character_chunk(profile_mode, text_chunk, depth):
+    return (
+        profile_mode == "general"
+        and depth < max(0, GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH)
+        and len(text_chunk or "") >= max(2, GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS)
+    )
+
+
+def _downshift_general_character_chunk(text_chunk, chunk_index, total_chunks, max_retries, depth, error_type):
+    parts = [part for part in _split_text_for_downshift(text_chunk) if part.strip()]
+    if len(parts) < 2:
+        return None
+    logger.warning(
+        f"Chunk {chunk_index} 通用角色识别触发降载切分：error_type={error_type} "
+        f"depth={depth} chars={len(text_chunk or '')} parts={len(parts)}"
+    )
+    partial_results = []
+    for part in parts:
+        part_result = analyze_chunk_for_heroines(
+            part,
+            chunk_index,
+            total_chunks,
+            max_retries=max_retries,
+            _downshift_depth=depth + 1,
+        )
+        if not part_result or not part_result.get("_success"):
+            return {
+                "male_protagonist": None,
+                "female_characters": [],
+                "_success": False,
+                "_error": (part_result or {}).get("_error", "降载切分后仍失败"),
+                "_error_type": (part_result or {}).get("_error_type", error_type),
+            }
+        partial_results.append(part_result)
+    if partial_results:
+        return _merge_downshift_character_results(partial_results, chunk_index, error_type)
+    return None
+
+
 def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retries=3, _downshift_depth=0):
     """
     分析单个文本块。
@@ -1431,6 +1484,17 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
             f"Chunk {chunk_index} JSON解析失败 (尝试 {retry+1}/{max_retries}): {error}; "
             f"{err_detail}; truncated={truncated}"
         )
+        if _should_downshift_general_character_chunk(profile_mode, text_chunk, _downshift_depth):
+            downshifted = _downshift_general_character_chunk(
+                text_chunk,
+                chunk_index,
+                total_chunks,
+                max_retries,
+                _downshift_depth,
+                "parse_error",
+            )
+            if downshifted is not None:
+                return downshifted
         if retry < max_retries - 1:
             time.sleep(1)
             return None
@@ -1478,37 +1542,17 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
                 continue
             logger.error(f"Chunk {chunk_index} API调用失败 (尝试 {retry+1}/{max_retries}): {e}")
             if is_retryable_transport_error(e):
-                if (
-                    profile_mode == "general"
-                    and _downshift_depth < max(0, GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH)
-                    and len(text_chunk or "") >= max(2, GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS)
-                ):
-                    parts = [part for part in _split_text_for_downshift(text_chunk) if part.strip()]
-                    if len(parts) >= 2:
-                        logger.warning(
-                            f"Chunk {chunk_index} 通用角色识别触发降载切分：error_type={error_type} "
-                            f"depth={_downshift_depth} chars={len(text_chunk or '')} parts={len(parts)}"
-                        )
-                        partial_results = []
-                        for part in parts:
-                            part_result = analyze_chunk_for_heroines(
-                                part,
-                                chunk_index,
-                                total_chunks,
-                                max_retries=max_retries,
-                                _downshift_depth=_downshift_depth + 1,
-                            )
-                            if not part_result or not part_result.get("_success"):
-                                return {
-                                    "male_protagonist": None,
-                                    "female_characters": [],
-                                    "_success": False,
-                                    "_error": (part_result or {}).get("_error", f"API调用失败: {e}"),
-                                    "_error_type": (part_result or {}).get("_error_type", error_type),
-                                }
-                            partial_results.append(part_result)
-                        if partial_results:
-                            return _merge_downshift_character_results(partial_results, chunk_index, error_type)
+                if _should_downshift_general_character_chunk(profile_mode, text_chunk, _downshift_depth):
+                    downshifted = _downshift_general_character_chunk(
+                        text_chunk,
+                        chunk_index,
+                        total_chunks,
+                        max_retries,
+                        _downshift_depth,
+                        error_type,
+                    )
+                    if downshifted is not None:
+                        return downshifted
                 return {"male_protagonist": None, "female_characters": [], "_success": False, "_error": f"API调用失败: {e}", "_error_type": classify_scan_error(e)}
             if retry < max_retries - 1:
                 time.sleep(2 ** retry)
@@ -2949,6 +2993,123 @@ def merge_aliases(global_stats):
         return global_stats
 
 
+def _primary_value(values, default=""):
+    for value in values or []:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return default
+
+
+def _rank_general_focus_character(name, data, position):
+    count = int(data.get("count", 0) or 0)
+    total_score = float(data.get("total_score", 0) or 0)
+    avg_score = total_score / count if count > 0 else 0.0
+    role_values = {
+        str(value or "").strip().lower()
+        for value in (data.get("role_types") or [])
+        if str(value or "").strip()
+    }
+    role_priority = 5
+    if "protagonist" in role_values:
+        role_priority = 0
+    elif "deuteragonist" in role_values:
+        role_priority = 1
+    elif "antagonist" in role_values:
+        role_priority = 2
+    elif "supporting" in role_values:
+        role_priority = 3
+    elif "minor" in role_values:
+        role_priority = 4
+    return (role_priority, -avg_score, -count, position, name)
+
+
+def _build_general_focus_characters_result(merged_stats, max_count=30):
+    """
+    通用/专项角色扫描不做后宫女主判定。
+    这里按剧情重要性生成“重点角色”兼容结果，沿用 heroines 字段以保持导出和报告兼容。
+    """
+    if not merged_stats:
+        return {
+            "heroines": [],
+            "analysis": "通用模式：未识别到稳定重点角色，未执行后宫女主判定。",
+            "novel_type": "通用角色分析",
+            "profile_mode": "general",
+        }
+
+    ranked_items = sorted(
+        [(name, data, idx) for idx, (name, data) in enumerate(merged_stats.items())],
+        key=lambda row: _rank_general_focus_character(row[0], row[1], row[2]),
+    )
+    focus_characters = []
+    for rank, (name, data, _idx) in enumerate(ranked_items[:max(1, int(max_count or 30))], 1):
+        aliases = sorted({
+            str(alias or "").strip()
+            for alias in (data.get("other_names") or [])
+            if str(alias or "").strip() and str(alias or "").strip() != name
+        })
+        summaries = _dedupe_texts_preserve_order(_extract_indexed_texts(data.get("summaries", []), limit=6), limit=3)
+        interactions = _dedupe_texts_preserve_order(_extract_indexed_texts(data.get("interactions", []), limit=6), limit=2)
+        events = _dedupe_texts_preserve_order(_extract_indexed_texts(data.get("key_events", []), limit=4), limit=2)
+        features = _dedupe_texts_preserve_order(data.get("features", []), limit=3)
+        appearances = _dedupe_texts_preserve_order(data.get("appearances", []), limit=3)
+        relationships = _dedupe_texts_preserve_order(data.get("relationships", []), limit=3)
+        role_values = [
+            str(value or "").strip()
+            for value in (data.get("role_types") or [])
+            if str(value or "").strip() and str(value or "").strip() != "unknown"
+        ]
+        gender_values = [
+            str(value or "").strip()
+            for value in (data.get("gender") or [])
+            if str(value or "").strip() and str(value or "").strip() != "unknown"
+        ]
+        faction_values = [
+            str(value or "").strip()
+            for value in (data.get("factions") or [])
+            if str(value or "").strip()
+        ]
+        count = int(data.get("count", 0) or 0)
+        total_score = float(data.get("total_score", 0) or 0)
+        avg_score = total_score / count if count > 0 else 0.0
+        role_type = _primary_value(role_values, "supporting")
+        gender = _primary_value(gender_values, "unknown")
+        relation_text = "；".join(relationships[:2]) or (
+            f"阵营：{faction_values[0]}" if faction_values else f"角色类型：{role_type}"
+        )
+        traits = "；".join(features[:2] or appearances[:2]) or "暂无稳定特征"
+        summary = _primary_value(summaries or events or interactions, "暂无稳定剧情摘要")
+        key_interactions = "；".join(events[:2] or interactions[:2] or summaries[:1])
+
+        focus_characters.append({
+            "name": name,
+            "aliases": aliases,
+            "other_names": aliases,
+            "importance_rank": rank,
+            "relationship_type": relation_text,
+            "is_mutual": False,
+            "heroine_type": "general_character",
+            "key_interactions": key_interactions,
+            "character_traits": traits,
+            "summary": summary,
+            "role_type": role_type,
+            "gender": gender,
+            "factions": faction_values,
+            "count": count,
+            "avg_score": avg_score,
+        })
+
+    return {
+        "heroines": focus_characters,
+        "analysis": (
+            f"通用模式：按剧情重要性、角色类型、出场频次和平均评分生成前 "
+            f"{len(focus_characters)} 位重点角色；未执行后宫女主判定或女主合并。"
+        ),
+        "novel_type": "通用角色分析",
+        "profile_mode": "general",
+    }
+
+
 def identify_heroines(merged_stats):
     """
     最终识别女主角（逐个判断模式）
@@ -4194,11 +4355,11 @@ def generate_final_report(heroine_result, merged_stats, male_protagonist=None):
     report_lines.extend([
         "",
         "=" * 70,
-        "【重要女性角色分析】" if general_profile else "【女主体系分析】",
+        "【重点角色分析】" if general_profile else "【女主体系分析】",
         analysis,
         "",
         "-" * 70,
-        f"【共识别出 {len(heroines)} 位重点女性角色】" if general_profile else f"【共识别出 {len(heroines)} 位女主角】",
+        f"【共识别出 {len(heroines)} 位重点角色】" if general_profile else f"【共识别出 {len(heroines)} 位女主角】",
         "-" * 70,
     ])
     
@@ -4217,11 +4378,11 @@ def generate_final_report(heroine_result, merged_stats, male_protagonist=None):
         
         report_lines.extend([
             "",
-            f"【第{rank}重要女性角色】{name}" if general_profile else f"【第{rank}女主】{name}",
+            f"【第{rank}重点角色】{name}" if general_profile else f"【第{rank}女主】{name}",
             f"  别称：{', '.join(aliases) if aliases else '无'}",
             f"  重要性评分：{avg_score:.1f}/10",
             f"  出场频次：{count} 次",
-            f"  与男主关系：{rel_type}",
+            f"  {'关系/叙事功能' if general_profile else '与男主关系'}：{rel_type}",
             f"  性格特点：{traits}",
             f"  角色简介：{summary}",
         ])
@@ -4261,8 +4422,10 @@ def export_results(merged_stats, heroine_result, final_report, male_protagonist=
 
         active_profile = load_analysis_profile()
         profile_name = active_profile.name
+        general_profile = active_profile.report_mode == "general"
     except Exception:
         profile_name = os.environ.get("ANALYSIS_PROFILE", "harem")
+        general_profile = _is_general_profile()
     
     # 详细数据 JSON
     detailed_data = {
@@ -4301,7 +4464,12 @@ def export_results(merged_stats, heroine_result, final_report, male_protagonist=
             "features": [],
         })
 
-    heroine_names = {h.get("name") for h in heroine_result.get("heroines", []) if h.get("name")}
+    heroines_by_name = {
+        h.get("name"): h
+        for h in heroine_result.get("heroines", [])
+        if isinstance(h, dict) and h.get("name")
+    }
+    heroine_names = set(heroines_by_name)
 
     for name, data in merged_stats.items():
         avg_score = data['total_score'] / data['count'] if data['count'] > 0 else 0
@@ -4317,9 +4485,13 @@ def export_results(merged_stats, heroine_result, final_report, male_protagonist=
         gender_values = [x for x in list(data.get("gender", set()) or []) if x and x != "unknown"]
         role_type_values = [x for x in list(data.get("role_types", set()) or []) if x and x != "unknown"]
         faction_values = [x for x in list(data.get("factions", set()) or []) if x]
-        gender = gender_values[0] if gender_values else "female"
-        role_type = role_type_values[0] if role_type_values else ("heroine" if name in heroine_names else "supporting")
-        if name in heroine_names and role_type in {"supporting", "heroine_candidate", "unknown"}:
+        gender = gender_values[0] if gender_values else ("unknown" if general_profile else "female")
+        focus_entry = heroines_by_name.get(name, {})
+        role_type = role_type_values[0] if role_type_values else (
+            focus_entry.get("role_type") if general_profile and focus_entry.get("role_type")
+            else ("focus_character" if general_profile and name in heroine_names else ("heroine" if name in heroine_names else "supporting"))
+        )
+        if (not general_profile) and name in heroine_names and role_type in {"supporting", "heroine_candidate", "unknown"}:
             role_type = "heroine"
         identity_parts = []
         appearances = data.get("appearances", [])
@@ -4504,6 +4676,17 @@ def main(novel_path=None, book_name=None, run_id=None):
                 if not isinstance(loaded_male_final, dict) or "identities" not in loaded_male_final:
                     logger.warning("检测到旧断点男主信息精简版，将触发一次报告重生成以写入全量 identities/summaries（若扫描阶段曾被截断，需清空断点重跑扫描才能真正补齐）。")
                     progress_flags["report_generated"] = False
+        except Exception:
+            pass
+
+        try:
+            if _is_general_profile() and progress_flags.get("heroines_identified") and loaded_heroine_result is not None:
+                if not isinstance(loaded_heroine_result, dict) or loaded_heroine_result.get("profile_mode") != "general":
+                    logger.warning("检测到旧版通用角色断点仍使用女主识别结果，将重建重点角色列表并重生成报告。")
+                    progress_flags["heroines_identified"] = False
+                    progress_flags["heroines_final_merged"] = False
+                    progress_flags["report_generated"] = False
+                    loaded_heroine_result = None
         except Exception:
             pass
 
@@ -4848,7 +5031,8 @@ def main(novel_path=None, book_name=None, run_id=None):
             save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=None, heroine_result=None, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks, chunk_plan_metadata=chunk_plan_metadata)
         
         print("\n" + "=" * 70)
-        print(f"【阶段三】别称识别与合并（共发现 {len(global_stats)} 个女性角色名）...")
+        role_count_label = "角色名" if _is_general_profile() else "女性角色名"
+        print(f"【阶段三】别称识别与合并（共发现 {len(global_stats)} 个{role_count_label}）...")
         
         # 进行别称合并
         if progress_flags.get("alias_merged") and loaded_merged_stats is not None:
@@ -4860,19 +5044,27 @@ def main(novel_path=None, book_name=None, run_id=None):
             save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=merged_stats, heroine_result=None, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks, chunk_plan_metadata=chunk_plan_metadata)
         
         print("\n" + "=" * 70)
-        print("【阶段四】最终女主角识别...")
+        print("【阶段四】生成重点角色列表..." if _is_general_profile() else "【阶段四】最终女主角识别...")
         
-        # 识别女主角
+        # 后宫模式识别女主角；通用/专项模式只生成重点角色列表，不进入女主判定。
         if progress_flags.get("heroines_identified") and loaded_heroine_result is not None:
             heroine_result = loaded_heroine_result
-            print("★ 阶段四已完成，跳过女主识别。")
+            print("★ 阶段四已完成，跳过重点角色列表生成。" if _is_general_profile() else "★ 阶段四已完成，跳过女主识别。")
         else:
-            heroine_result = identify_heroines(merged_stats)
+            if _is_general_profile():
+                heroine_result = _build_general_focus_characters_result(merged_stats)
+            else:
+                heroine_result = identify_heroines(merged_stats)
             progress_flags["heroines_identified"] = True
             save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=merged_stats, heroine_result=heroine_result, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks, chunk_plan_metadata=chunk_plan_metadata)
         
         # 女主最终合并检查
-        if progress_flags.get("heroines_final_merged"):
+        if _is_general_profile():
+            if not progress_flags.get("heroines_final_merged"):
+                progress_flags["heroines_final_merged"] = True
+                save_checkpoint(global_stats, male_protagonist_stats, final_target_chunk_index, progress_flags, merged_stats=merged_stats, heroine_result=heroine_result, male_protagonist_final=male_protagonist, completed_chunks=completed_chunks, chunk_plan_metadata=chunk_plan_metadata)
+            print("★ 通用模式跳过女主最终合并检查。")
+        elif progress_flags.get("heroines_final_merged"):
             print("★ 女主最终合并已完成，跳过。")
         else:
             print("\n" + "=" * 70)
