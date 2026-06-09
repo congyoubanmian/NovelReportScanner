@@ -30,6 +30,7 @@ from shared_utils import configure_rotating_file_logger, read_float_env, read_in
 
 
 STATE_LOCK = threading.RLock()
+RUNTIME_CONFIG_LOCK = threading.RLock()
 TASK_QUEUE = queue.Queue()
 TASK_QUEUE_IDS = set()
 RUNNING_TASK_PROCS = {}
@@ -926,55 +927,62 @@ def _persist_runtime_config_to_env_file(values):
     """
     base_dir = get_base_dir()
     env_path = os.path.join(base_dir, ".env")
+    tmp_path = None
 
-    # 构建 env_name -> (field_name, value) 映射
-    env_to_field = {}
-    for field, spec in EDITABLE_RUNTIME_CONFIG.items():
-        env_name = spec["env"]
-        if field in values:
-            env_to_field[env_name] = (field, values[field])
+    with RUNTIME_CONFIG_LOCK:
+        # 构建 env_name -> (field_name, value) 映射
+        env_to_field = {}
+        for field, spec in EDITABLE_RUNTIME_CONFIG.items():
+            env_name = spec["env"]
+            if field in values:
+                env_to_field[env_name] = (field, values[field])
 
-    lines = []
-    if os.path.exists(env_path):
+        lines = []
+        if os.path.exists(env_path):
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    lines = f.read().splitlines()
+            except Exception:
+                lines = []
+
+        updated_envs = set()
+        new_lines = []
+        for line in lines:
+            stripped = line.lstrip()
+            # 保留注释、空行、无等号行原样
+            if not stripped or stripped.startswith("#") or "=" not in line:
+                new_lines.append(line)
+                continue
+            # 解析 KEY=VALUE（不拆分值中的等号）
+            eq_idx = line.index("=")
+            key = line[:eq_idx].rstrip()
+            if key in env_to_field:
+                _field, new_value = env_to_field[key]
+                new_lines.append(f"{key}={new_value}")
+                updated_envs.add(key)
+            else:
+                new_lines.append(line)
+
+        # 追加尚未存在的字段
+        for env_name, (field, value) in env_to_field.items():
+            if env_name not in updated_envs:
+                new_lines.append(f"{env_name}={value}")
+
+        # 原子写入
         try:
-            with open(env_path, "r", encoding="utf-8") as f:
-                lines = f.read().splitlines()
-        except Exception:
-            lines = []
-
-    updated_envs = set()
-    new_lines = []
-    for line in lines:
-        stripped = line.lstrip()
-        # 保留注释、空行、无等号行原样
-        if not stripped or stripped.startswith("#") or "=" not in line:
-            new_lines.append(line)
-            continue
-        # 解析 KEY=VALUE（不拆分值中的等号）
-        eq_idx = line.index("=")
-        key = line[:eq_idx].rstrip()
-        if key in env_to_field:
-            _field, new_value = env_to_field[key]
-            new_lines.append(f"{key}={new_value}")
-            updated_envs.add(key)
-        else:
-            new_lines.append(line)
-
-    # 追加尚未存在的字段
-    for env_name, (field, value) in env_to_field.items():
-        if env_name not in updated_envs:
-            new_lines.append(f"{env_name}={value}")
-
-    # 原子写入
-    try:
-        tmp_path = f"{env_path}.{os.getpid()}.tmp"
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(new_lines))
-            if new_lines and not new_lines[-1].endswith("\n"):
-                f.write("\n")
-        os.replace(tmp_path, env_path)
-    except Exception as exc:
-        return False, f"failed to persist config: {exc}"
+            tmp_path = f"{env_path}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex}.tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(new_lines))
+                if new_lines and not new_lines[-1].endswith("\n"):
+                    f.write("\n")
+            os.replace(tmp_path, env_path)
+        except Exception as exc:
+            if tmp_path:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+            return False, f"failed to persist config: {exc}"
     return True, ""
 
 

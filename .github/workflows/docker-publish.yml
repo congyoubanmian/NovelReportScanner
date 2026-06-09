@@ -73,27 +73,57 @@ jobs:
         id: build_time
         run: echo "value=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push to GHCR
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          build-args: |
-            APP_VERSION=${{ github.ref_name }}
-            APP_COMMIT=${{ github.sha }}
-            APP_BUILD_DATE=${{ steps.build_time.outputs.value }}
-          tags: ${{ steps.meta_ghcr.outputs.tags }}
-          labels: ${{ steps.meta_ghcr.outputs.labels }}
+      - name: Prepare Docker build arguments
+        env:
+          GHCR_TAGS: ${{ steps.meta_ghcr.outputs.tags }}
+          GHCR_LABELS: ${{ steps.meta_ghcr.outputs.labels }}
+          DOCKERHUB_TAGS: ${{ steps.meta_dockerhub.outputs.tags }}
+          DOCKERHUB_LABELS: ${{ steps.meta_dockerhub.outputs.labels }}
+          DOCKERHUB_ENABLED: ${{ steps.dockerhub_gate.outputs.enabled }}
+        run: |
+          : > /tmp/docker-tags.args
+          : > /tmp/docker-labels.args
 
-      - name: Build and push to Docker Hub
+          printf '%s\n' "$GHCR_TAGS" | while IFS= read -r tag; do
+            [ -n "$tag" ] && printf -- '--tag=%s\n' "$tag" >> /tmp/docker-tags.args
+          done
+          printf '%s\n' "$GHCR_LABELS" | while IFS= read -r label; do
+            [ -n "$label" ] && printf -- '--label=%s\n' "$label" >> /tmp/docker-labels.args
+          done
+
+          if [ "$DOCKERHUB_ENABLED" = "true" ]; then
+            printf '%s\n' "$DOCKERHUB_TAGS" | while IFS= read -r tag; do
+              [ -n "$tag" ] && printf -- '--tag=%s\n' "$tag" >> /tmp/docker-tags.args
+            done
+            printf '%s\n' "$DOCKERHUB_LABELS" | while IFS= read -r label; do
+              [ -n "$label" ] && printf -- '--label=%s\n' "$label" >> /tmp/docker-labels.args
+            done
+          fi
+
+      - name: Build and push Docker images with retry
+        run: |
+          for attempt in 1 2 3; do
+            mapfile -t tag_args < /tmp/docker-tags.args
+            mapfile -t label_args < /tmp/docker-labels.args
+            if docker buildx build \
+              --push \
+              --file Dockerfile \
+              --build-arg APP_VERSION="${{ github.ref_name }}" \
+              --build-arg APP_COMMIT="${{ github.sha }}" \
+              --build-arg APP_BUILD_DATE="${{ steps.build_time.outputs.value }}" \
+              "${tag_args[@]}" \
+              "${label_args[@]}" \
+              .; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep_seconds=$((attempt * 20))
+            echo "Docker build/push failed, retrying in ${sleep_seconds}s..."
+            sleep "$sleep_seconds"
+          done
+
+      - name: Report Docker Hub push
         if: ${{ steps.dockerhub_gate.outputs.enabled == 'true' }}
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          build-args: |
-            APP_VERSION=${{ github.ref_name }}
-            APP_COMMIT=${{ github.sha }}
-            APP_BUILD_DATE=${{ steps.build_time.outputs.value }}
-          tags: ${{ steps.meta_dockerhub.outputs.tags }}
-          labels: ${{ steps.meta_dockerhub.outputs.labels }}
+        run: echo "Docker Hub credentials detected; image tags were pushed together with GHCR."

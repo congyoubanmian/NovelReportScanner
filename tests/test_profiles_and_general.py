@@ -556,8 +556,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertIn(name, workflow_text)
         self.assertIn("github.sha", workflow_text)
         self.assertIn("date -u", workflow_text)
-        self.assertIn("Build and push to GHCR", workflow_text)
-        self.assertIn("Build and push to Docker Hub", workflow_text)
+        self.assertIn("Build and push Docker images with retry", workflow_text)
+        self.assertIn("docker buildx build", workflow_text)
+        self.assertIn("for attempt in 1 2 3", workflow_text)
+        self.assertIn("Docker build/push failed, retrying", workflow_text)
+        self.assertIn("Report Docker Hub push", workflow_text)
         self.assertIn("Check Docker Hub credentials", workflow_text)
         self.assertIn("DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}", workflow_text)
         self.assertIn("DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}", workflow_text)
@@ -567,6 +570,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertNotIn("if: ${{ env.DOCKERHUB_USERNAME", workflow_text)
         self.assertIn("steps.meta_ghcr.outputs.tags", workflow_text)
         self.assertIn("steps.meta_dockerhub.outputs.tags", workflow_text)
+        self.assertNotIn("docker/build-push-action", workflow_text)
 
     def test_frontend_check_script_covers_lint_format_and_build(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -5890,6 +5894,69 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                         os.environ[env] = value
                 web_manager.SCAN_STALL_TIMEOUT_SECONDS = old_stall_timeout
                 web_manager.SCAN_FUTURE_STALL_TIMEOUT_SECONDS = old_future_stall_timeout
+
+    def test_web_manager_runtime_config_persist_is_thread_safe(self):
+        old_base_dir = web_manager.get_base_dir
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                env_path = os.path.join(tmpdir, ".env")
+                with open(env_path, "w", encoding="utf-8") as f:
+                    f.write("API_KEY=secret\n")
+                web_manager.get_base_dir = lambda: tmpdir
+
+                updates = [
+                    {"max_workers": "2"},
+                    {"api_server_error_max_retries": "3"},
+                    {"harem_scan_chunk_size": "6200"},
+                    {"general_scan_context_max_chars": "900"},
+                    {"rate_limit_scope": "per_key"},
+                    {"harem_plus_general_scan": "1"},
+                ]
+                with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+                    results = list(executor.map(web_manager._persist_runtime_config_to_env_file, updates))
+
+                self.assertTrue(all(ok for ok, _error in results))
+                with open(env_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                self.assertIn("API_KEY=secret", content)
+                self.assertIn("MAX_WORKERS=2", content)
+                self.assertIn("API_SERVER_ERROR_MAX_RETRIES=3", content)
+                self.assertIn("HAREM_SCAN_CHUNK_SIZE=6200", content)
+                self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS=900", content)
+                self.assertIn("RATE_LIMIT_SCOPE=per_key", content)
+                self.assertIn("HAREM_PLUS_GENERAL_SCAN=1", content)
+                leftovers = [
+                    name for name in os.listdir(tmpdir)
+                    if name.startswith(".env.") and name.endswith(".tmp")
+                ]
+                self.assertEqual(leftovers, [])
+        finally:
+            web_manager.get_base_dir = old_base_dir
+
+    def test_web_manager_runtime_config_persist_cleans_temp_file_on_failure(self):
+        old_base_dir = web_manager.get_base_dir
+        old_replace = web_manager.os.replace
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                web_manager.get_base_dir = lambda: tmpdir
+
+                def fail_replace(_src, _dst):
+                    raise OSError("replace failed")
+
+                web_manager.os.replace = fail_replace
+
+                ok, error = web_manager._persist_runtime_config_to_env_file({"max_workers": "2"})
+
+                self.assertFalse(ok)
+                self.assertIn("replace failed", error)
+                leftovers = [
+                    name for name in os.listdir(tmpdir)
+                    if name.startswith(".env.") and name.endswith(".tmp")
+                ]
+                self.assertEqual(leftovers, [])
+        finally:
+            web_manager.get_base_dir = old_base_dir
+            web_manager.os.replace = old_replace
 
     def test_web_manager_handler_rejects_unauthorized_api_requests(self):
         class FakeHandler(web_manager.Handler):
