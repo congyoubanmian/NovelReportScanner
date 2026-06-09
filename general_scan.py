@@ -229,6 +229,83 @@ def _sample_chunk_entries_for_budget(chunk_entries: List[Dict[str, Any]], max_ch
     return _uniform_sample_chunk_entries(chunk_entries, max_chunks)
 
 
+def _record_has_high_signal(record: Dict[str, Any]) -> bool:
+    if not isinstance(record, dict):
+        return False
+    signal_keys = {
+        "forced_plot_devices",
+        "forced_elements",
+        "false_foreshadowing",
+        "frustration_points",
+        "quality_issues",
+        "continuity_issues",
+        "risks",
+        "warnings",
+        "weaknesses",
+    }
+    risk_terms = ("风险", "问题", "崩", "矛盾", "注水", "强行", "割裂", "违和", "失败", "低")
+
+    def visit(value, key_hint=""):
+        if key_hint in signal_keys and value:
+            return True
+        if isinstance(value, dict):
+            return any(visit(v, str(k)) for k, v in value.items())
+        if isinstance(value, list):
+            return any(visit(item, key_hint) for item in value)
+        if isinstance(value, str):
+            if key_hint in signal_keys and value.strip():
+                return True
+            return any(term in value for term in risk_terms)
+        return False
+
+    return visit(record)
+
+
+def _sample_records_for_summary(records: List[Dict[str, Any]], limit: int, sort_key: str = "chunk_index") -> List[Dict[str, Any]]:
+    items = [item for item in (records or []) if isinstance(item, dict)]
+    if limit <= 0 or len(items) <= limit:
+        return items
+    if limit == 1:
+        return [items[0]]
+
+    selected = {}
+
+    def key_for(position, item):
+        if sort_key and item.get(sort_key) is not None:
+            return (sort_key, item.get(sort_key), position)
+        return ("pos", position)
+
+    high_signal_quota = max(1, limit // 4)
+    high_signal = [
+        (position, item)
+        for position, item in enumerate(items)
+        if _record_has_high_signal(item)
+    ][:high_signal_quota]
+    for position, item in high_signal:
+        selected[key_for(position, item)] = (position, item)
+
+    remaining = max(0, limit - len(selected))
+    if remaining:
+        sampled_positions = _uniform_sample_chunk_entries(
+            [{"chunk_index": position, "item": item} for position, item in enumerate(items)],
+            remaining,
+        )
+        for sampled in sampled_positions:
+            position = int(sampled.get("chunk_index", 0))
+            item = sampled.get("item")
+            if isinstance(item, dict):
+                selected.setdefault(key_for(position, item), (position, item))
+
+    if len(selected) < limit:
+        for position, item in enumerate(items):
+            selected.setdefault(key_for(position, item), (position, item))
+            if len(selected) >= limit:
+                break
+
+    sampled = [item for _position, item in sorted(selected.values(), key=lambda row: row[0])]
+    return sampled[:limit]
+
+
 def _summary_field_label(field: str) -> str:
     try:
         from report import summary_field_label
@@ -1076,13 +1153,13 @@ def _compact_knowledge_base_for_summary(knowledge_base: Dict[str, Any], limit: i
     if not isinstance(knowledge_base, dict):
         return {}
     return {
-        "entities": (knowledge_base.get("entities") or [])[:limit],
-        "relationships": (knowledge_base.get("relationships") or [])[:limit],
-        "worldbuilding_facts": (knowledge_base.get("worldbuilding_facts") or [])[:limit],
-        "foreshadowing_threads": (knowledge_base.get("foreshadowing_threads") or [])[:limit],
-        "plot_timeline": (knowledge_base.get("plot_timeline") or [])[:limit],
-        "open_threads": (knowledge_base.get("open_threads") or [])[:limit],
-        "resolved_threads": (knowledge_base.get("resolved_threads") or [])[:limit],
+        "entities": _sample_records_for_summary(knowledge_base.get("entities") or [], limit),
+        "relationships": _sample_records_for_summary(knowledge_base.get("relationships") or [], limit),
+        "worldbuilding_facts": _sample_records_for_summary(knowledge_base.get("worldbuilding_facts") or [], limit),
+        "foreshadowing_threads": _sample_records_for_summary(knowledge_base.get("foreshadowing_threads") or [], limit),
+        "plot_timeline": _sample_records_for_summary(knowledge_base.get("plot_timeline") or [], limit),
+        "open_threads": _sample_records_for_summary(knowledge_base.get("open_threads") or [], limit),
+        "resolved_threads": _sample_records_for_summary(knowledge_base.get("resolved_threads") or [], limit),
     }
 
 
@@ -1372,9 +1449,7 @@ def _compact_writing_quality_for_summary(chunk_results: List[Dict[str, Any]], li
             "pacing_analysis": pacing,
             "information_density": density,
         })
-        if len(compact) >= limit:
-            break
-    return compact
+    return _sample_records_for_summary(compact, limit)
 
 
 def _compact_narrative_architecture_for_summary(chunk_results: List[Dict[str, Any]], limit: int = 120) -> List[Dict[str, Any]]:

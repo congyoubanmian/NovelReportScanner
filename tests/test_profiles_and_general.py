@@ -10778,6 +10778,53 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(active_foreshadowing.count("密信背面的旧印记"), 1)
         self.assertIn("旧钥匙用途", [x["description"] for x in knowledge_base["foreshadowing_threads"]])
 
+    def test_general_scan_compact_knowledge_base_samples_head_middle_tail(self):
+        knowledge_base = {
+            "plot_timeline": [
+                {"chunk_index": i + 1, "event": f"事件{i + 1}"}
+                for i in range(300)
+            ],
+            "entities": [],
+            "relationships": [],
+            "worldbuilding_facts": [],
+            "foreshadowing_threads": [],
+            "open_threads": [],
+            "resolved_threads": [],
+        }
+
+        compact = general_scan._compact_knowledge_base_for_summary(knowledge_base, limit=40)
+        indices = [item["chunk_index"] for item in compact["plot_timeline"]]
+
+        self.assertEqual(len(indices), 40)
+        self.assertEqual(indices[0], 1)
+        self.assertEqual(indices[-1], 300)
+        self.assertEqual(indices, sorted(indices))
+        self.assertTrue(any(130 <= idx <= 170 for idx in indices))
+
+    def test_general_scan_compact_writing_quality_keeps_late_high_signal(self):
+        chunk_results = []
+        for i in range(300):
+            chunk_results.append({
+                "chunk_index": i,
+                "original_chunk_index": i + 1,
+                "one_sentence_summary": f"第{i + 1}段",
+                "writing_quality": {"style": "平稳"},
+                "pacing_analysis": {"pacing": "正常"},
+                "information_density": {"density": "中"},
+            })
+        chunk_results[-1]["one_sentence_summary"] = "后期严重注水，节奏明显崩坏"
+        chunk_results[-1]["writing_quality"] = {"quality_issues": ["后期严重注水"]}
+
+        compact = general_scan._compact_writing_quality_for_summary(chunk_results, limit=80)
+        indices = [item["chunk_index"] for item in compact]
+        summaries = [item["summary"] for item in compact]
+
+        self.assertEqual(len(compact), 80)
+        self.assertEqual(indices[0], 1)
+        self.assertIn(300, indices)
+        self.assertTrue(any(130 <= idx <= 170 for idx in indices))
+        self.assertIn("后期严重注水，节奏明显崩坏", summaries)
+
     def test_general_scan_llm_merge_normalizes_knowledge_base(self):
         fallback = {
             "schema_version": general_scan.KNOWLEDGE_BASE_SCHEMA_VERSION,
