@@ -230,6 +230,41 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
         self.assertEqual(calls[1]["response_format"], {"type": "json_object"})
 
+    def test_shared_json_call_helper_retries_empty_choices_response(self):
+        class EmptyResponse:
+            choices = None
+
+        class FakeMessage:
+            def __init__(self, content):
+                self.content = content
+
+        class FakeChoice:
+            def __init__(self, content):
+                self.message = FakeMessage(content)
+
+        class FakeResponse:
+            def __init__(self, content):
+                self.choices = [FakeChoice(content)]
+
+        calls = []
+
+        def fake_chat_completion(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return EmptyResponse()
+            return FakeResponse('{"ok": true}')
+
+        data = shared_utils.call_json_chat_completion_with_fallback(
+            chat_completion_func=fake_chat_completion,
+            model="test-model",
+            messages=[{"role": "user", "content": "输出 JSON"}],
+            max_tokens=128,
+        )
+
+        self.assertTrue(data["ok"])
+        self.assertEqual(len(calls), 2)
+        self.assertIn("上一次回复不是可解析的 JSON 对象", calls[1]["messages"][-1]["content"])
+
     def test_shared_json_call_helper_retries_when_json_mode_is_rejected(self):
         class FakeMessage:
             def __init__(self, content):
@@ -5065,7 +5100,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         mixed = analysis_profiles.infer_profiles_for_text(
             "修仙种田聊天群",
-            "修士聊天群里讨论金丹元婴，也长期经营灵田药园和宗门产业链。",
+            "修士聊天群里讨论金丹元婴、筑基飞升和宗门功法，也长期经营灵田药园和宗门产业链。",
         )
         self.assertIn("xianxia_fantasy", mixed)
         self.assertIn("farming_management", mixed)

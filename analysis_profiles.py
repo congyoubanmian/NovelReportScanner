@@ -11,6 +11,7 @@ DEFAULT_PROFILE = "harem"
 AUTO_PROFILE = "auto"
 AUTO_PROFILE_MIN_SCORE = 6
 AUTO_PROFILE_MAX_PROFILES = 3
+AUTO_PROFILE_SECONDARY_MIN_SCORE_RATIO = 0.3
 PROFILE_INFERENCE_TEXT_LIMIT = 60000
 
 
@@ -214,6 +215,8 @@ NEGATIVE_KEYWORDS = {
         ("篮球", -3), ("足球", -3),
     ],
     "chinese_weird": [("克苏鲁", -5), ("旧日", -5), ("外神", -5), ("魔药", -4), ("序列", -4), ("扮演法", -4), ("篮球", -3)],
+    "cosmic_horror": [("大唐", -4), ("大明", -4), ("三国", -4), ("皇帝", -3), ("朝廷", -3), ("王朝", -3), ("篮球", -3)],
+    "steampunk_fantasy": [("大唐", -4), ("大明", -4), ("三国", -4), ("朝廷", -3), ("皇帝", -2), ("锦衣卫", -4)],
 }
 
 
@@ -273,6 +276,8 @@ PROFILE_GENERIC_ONLY_KEYWORDS = {
     "game_system": {"系统"},
     "urban_power": {"系统"},
     "mastermind_hidden": {"幕后", "布局", "操纵", "暗中", "操控", "伪装", "面具"},
+    "cosmic_horror": {"异常", "理智", "诡异", "仪式", "禁忌", "窥视", "呢喃", "深渊"},
+    "steampunk_fantasy": {"帝国", "骑士", "教会", "神明", "龙族"},
 }
 
 
@@ -664,11 +669,6 @@ def infer_profile_candidates_for_text(title: str, text: str, min_score: int = 1)
             raw.append((profile, score, all_matches))
 
     raw.sort(key=lambda item: (-item[1], item[0].sort_order, item[0].name))
-    selected_names = [
-        profile.name
-        for profile, score, _matches in raw
-        if score >= _min_score_for_profile(profile.name, AUTO_PROFILE_MIN_SCORE)
-    ][:AUTO_PROFILE_MAX_PROFILES]
     candidates = []
     for index, (profile, score, matches) in enumerate(raw):
         if index == 0:
@@ -695,7 +695,7 @@ def infer_profile_candidates_for_text(title: str, text: str, min_score: int = 1)
             confidence_level=confidence_level,
         ).to_dict()
         item["rank"] = index + 1
-        item["auto_selected"] = profile.name in selected_names
+        item["auto_selected"] = False
         candidates.append(item)
 
     if not candidates:
@@ -704,6 +704,25 @@ def infer_profile_candidates_for_text(title: str, text: str, min_score: int = 1)
         item["rank"] = 1
         item["auto_selected"] = True
         return [item]
+
+    selected_names = []
+    top_score = max(1, int(candidates[0].get("score") or 0))
+    for index, item in enumerate(candidates):
+        if len(selected_names) >= AUTO_PROFILE_MAX_PROFILES:
+            break
+        name = item.get("name")
+        score = int(item.get("score") or 0)
+        if score < _min_score_for_profile(name, AUTO_PROFILE_MIN_SCORE):
+            continue
+        if index > 0:
+            score_ratio = score / top_score
+            if score_ratio < AUTO_PROFILE_SECONDARY_MIN_SCORE_RATIO:
+                continue
+            if item.get("confidence_level") == "low":
+                continue
+        selected_names.append(name)
+    for item in candidates:
+        item["auto_selected"] = item.get("name") in selected_names
     return candidates
 
 
@@ -772,7 +791,7 @@ def _read_text_prefix_safely(path: str, char_limit: int = 20000) -> str:
 def infer_profile_for_text(title: str, text: str) -> str:
     candidates = infer_profile_candidates_for_text(title, text, min_score=1)
     best = candidates[0] if candidates else {"name": "general", "score": 0}
-    if best["name"] != "general" and best["score"] >= AUTO_PROFILE_MIN_SCORE:
+    if best["name"] != "general" and best["score"] >= _min_score_for_profile(best.get("name"), AUTO_PROFILE_MIN_SCORE):
         return best["name"]
     return "general"
 
@@ -797,6 +816,7 @@ def infer_profiles_for_text(title: str, text: str, min_score: int = AUTO_PROFILE
         item["name"]
         for item in infer_profile_candidates_for_text(title, text, min_score=1)
         if item.get("name") != "general"
+        and item.get("auto_selected")
         and int(item.get("score") or 0) >= _min_score_for_profile(item.get("name"), min_score)
     ]
     return names[:AUTO_PROFILE_MAX_PROFILES] or ["general"]

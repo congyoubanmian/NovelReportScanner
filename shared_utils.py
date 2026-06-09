@@ -422,6 +422,25 @@ def call_json_chat_completion_with_fallback(
 ) -> Dict[str, Any]:
     json_mode_kwargs = {"response_format": {"type": "json_object"}}
 
+    def response_content(response):
+        try:
+            choices = getattr(response, "choices", None)
+            if choices is None and isinstance(response, dict):
+                choices = response.get("choices")
+            if not choices:
+                return None, "response.choices 为空"
+            first_choice = choices[0]
+            message = getattr(first_choice, "message", None)
+            if message is None and isinstance(first_choice, dict):
+                message = first_choice.get("message")
+            if message is None:
+                return None, "response.choices[0].message 为空"
+            if isinstance(message, dict):
+                return message.get("content"), ""
+            return getattr(message, "content", None), ""
+        except Exception as exc:
+            return None, f"读取 message.content 失败: {exc}"
+
     def parse_content(content):
         if parse_json_func is not None:
             try:
@@ -449,7 +468,10 @@ def call_json_chat_completion_with_fallback(
         )
         if record_usage_func is not None:
             record_usage_func(response)
-        data, err = parse_content(response.choices[0].message.content)
+        content, content_err = response_content(response)
+        data, err = parse_content(content)
+        if data is None and content_err:
+            err = content_err
         if data is not None:
             return data
     except Exception as exc:
@@ -474,7 +496,10 @@ def call_json_chat_completion_with_fallback(
     if record_usage_func is not None:
         record_usage_func(fallback_response)
 
-    fallback_data, fallback_err = parse_content(fallback_response.choices[0].message.content)
+    fallback_content, fallback_content_err = response_content(fallback_response)
+    fallback_data, fallback_err = parse_content(fallback_content)
+    if fallback_data is None and fallback_content_err:
+        fallback_err = fallback_content_err
     if fallback_data is None:
         raise ValueError(f"{err}; fallback={fallback_err}")
     return fallback_data

@@ -409,26 +409,13 @@ def judge_pushed_by_male_lead(heroine: Dict[str, Any], male_name: str = "男主"
     last_err = None
     for attempt in range(3):
         try:
-            resp = chat_completion(
-                model=MODEL,
-                messages=[
+            data = _call_json_chat_completion(
+                [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.0,
-                response_format={"type": "json_object"},
             )
-            record_usage(resp)
-            content = None
-            try:
-                content = resp.choices[0].message.content
-            except Exception:
-                content = None
-            data, err = _safe_json_loads_maybe(content)
-            if data is None:
-                last_err = err
-                time.sleep(1 + attempt)
-                continue
             return bool(data.get("pushed", False)), str(data.get("reason", "无理由"))
         except Exception as e:
             last_err = str(e)
@@ -3664,24 +3651,14 @@ def _llm_reassign_child_owner(
 请判断这个孩子的母亲是谁。"""
 
     try:
-        response = chat_completion(
-            model=MODEL,
-            messages=[
+        data = _call_json_chat_completion(
+            [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.0,
-            response_format={"type": "json_object"},
         )
-        record_usage(response)
-        content = response.choices[0].message.content
-        data, err = _safe_json_loads_maybe(content)
-        
-        if data is None:
-            logger.warning(f"[母亲重归属] LLM 返回解析失败: {err}")
-            _CHILD_OWNER_REASSIGN_CACHE[cache_key] = default_result
-            return default_result
-        
+
         mother = str(data.get("mother", "无法确定")).strip()
         confidence = float(data.get("confidence", 0.0))
         supporting_quote = str(data.get("supporting_quote", ""))[:100]
@@ -4108,18 +4085,13 @@ def _llm_identify_vague_partner(
 }}"""
 
     try:
-        resp = chat_completion(
-            model=MODEL,
-            messages=[
+        data = _call_json_chat_completion(
+            [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.1,
-            response_format={"type": "json_object"},
         )
-        record_usage(resp)
-        content = resp.choices[0].message.content
-        data, _ = _safe_json_loads_maybe(content)
         if data:
             identified = str(data.get("identified_partner", "") or "").strip()
             is_male_lead = bool(data.get("is_male_lead", False))
@@ -5206,23 +5178,10 @@ def verify_purity_by_llm(name: str, facts: Dict[str, Any], program_result: Dict[
 请判断程序的判定是否正确，输出 JSON。"""
 
     try:
-        response = chat_completion(
-            model=MODEL,
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+        data = _call_json_chat_completion(
+            [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             temperature=0.0,
-            response_format={"type": "json_object"}
         )
-        record_usage(response)
-        content = None
-        try:
-            content = response.choices[0].message.content
-        except Exception:
-            content = None
-        data, err = _safe_json_loads_maybe(content)
-        if data is None:
-            logger.warning(f"LLM 校验失败: {err}")
-            # 保持旧行为：校验失败时不阻塞主流程（默认同意程序判定）
-            return {"agree": True, "reason": f"校验失败: {err}"}
         return data
     except Exception as e:
         logger.warning(f"LLM 校验失败: {e}")
@@ -5361,22 +5320,10 @@ def verify_purity_second_round(name: str, facts: Dict[str, Any], program_result:
 请仔细核对事实数据，做出最终判定。"""
 
     try:
-        response = chat_completion(
-            model=MODEL,
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+        data = _call_json_chat_completion(
+            [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             temperature=0.0,
-            response_format={"type": "json_object"}
         )
-        record_usage(response)
-        content = None
-        try:
-            content = response.choices[0].message.content
-        except Exception:
-            content = None
-        data, err = _safe_json_loads_maybe(content)
-        if data is None:
-            logger.warning(f"LLM 二次校验失败: {err}")
-            return {"final_reason": f"二次校验失败: {err}"}
         return data
     except Exception as e:
         logger.warning(f"LLM 二次校验失败: {e}")
@@ -5586,20 +5533,11 @@ def _llm_merge_children_records(
 请分析并输出分组 JSON。"""
 
     try:
-        response = chat_completion(
-            model=MODEL,
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+        data = _call_json_chat_completion(
+            [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             temperature=0.0,
-            response_format={"type": "json_object"}
         )
-        record_usage(response)
-        content = response.choices[0].message.content
-        data, err = _safe_json_loads_maybe(content)
-        
-        if data is None:
-            logger.warning(f"孩子合并LLM判断失败: {err}，使用简单分组")
-            return _simple_merge_children_records(children_info)
-        
+
         # 根据 LLM 返回的分组构建结果
         result: Dict[str, List[Dict[str, Any]]] = {}
         assigned_indices = set()
@@ -5805,18 +5743,10 @@ def _llm_group_partner_relations(
 请输出 JSON。"""
 
     try:
-        response = chat_completion(
-            model=MODEL,
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+        data = _call_json_chat_completion(
+            [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             temperature=0.0,
-            response_format={"type": "json_object"},
         )
-        record_usage(response)
-        content = response.choices[0].message.content
-        data, err = _safe_json_loads_maybe(content)
-        if data is None:
-            logger.warning(f"伴侣关系归一化分组失败: {err}")
-            return None
         if not isinstance(data, dict) or "groups" not in data:
             logger.warning("伴侣关系归一化分组返回格式异常，缺少 groups")
             return None
@@ -5956,27 +5886,11 @@ def _llm_judge_single_partner_forced(
 请判断这段关系是否被迫、是否有感情投入，输出 JSON。"""
 
     try:
-        response = chat_completion(
-            model=MODEL,
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+        data = _call_json_chat_completion(
+            [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             temperature=0.0,
-            response_format={"type": "json_object"}
         )
-        record_usage(response)
-        content = response.choices[0].message.content
-        data, err = _safe_json_loads_maybe(content)
-        if data is None:
-            logger.warning(f"伴侣关系forced判断失败[{partner}]: {err}")
-            return {
-                "partner": partner,
-                "relationship": relationship,
-                "is_forced": False,
-                "has_feelings": None,
-                "is_male_lead": False,
-                "reason": f"LLM解析失败: {err}",
-                "original_record": pr,
-            }
-        
+
         return {
             "partner": partner,
             "relationship": relationship,
@@ -6477,27 +6391,11 @@ def _llm_judge_single_child(
 输出 JSON。"""
 
     try:
-        response = chat_completion(
-            model=MODEL,
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+        data = _call_json_chat_completion(
+            [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             temperature=0.0,
-            response_format={"type": "json_object"}
         )
-        record_usage(response)
-        content = response.choices[0].message.content
-        data, err = _safe_json_loads_maybe(content)
-        if data is None:
-            logger.warning(f"单个孩子来源判断失败[{child_name}]: {err}")
-            return {
-                "child_name": child_name,
-                "needs_male": False,  # 保守：默认不需要
-                "father": "未知",
-                "is_father_male_lead": False,
-                "birth_method": "判断失败",
-                "reason": f"LLM解析失败: {err}",
-                "records": child_records,
-            }
-        
+
         # 解析新字段（向后兼容，提供默认值）
         child_exists = data.get("child_exists", True)  # 默认 True（旧版不输出此字段）
         evidence_is_strong = data.get("evidence_is_strong", True)  # 默认 True
@@ -6643,24 +6541,11 @@ def _llm_verify_non_male_children(
 请验证这些判定是否逻辑自洽，输出 JSON。"""
 
     try:
-        response = chat_completion(
-            model=MODEL,
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+        data = _call_json_chat_completion(
+            [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             temperature=0.0,
-            response_format={"type": "json_object"}
         )
-        record_usage(response)
-        content = response.choices[0].message.content
-        data, err = _safe_json_loads_maybe(content)
-        if data is None:
-            logger.warning(f"孩子来源验证失败: {err}")
-            # 保守：保持原判定
-            return {
-                "verified_non_male": non_male_children,
-                "reclassified_male": [],
-                "verification_reason": f"LLM验证失败，保持原判定: {err}",
-            }
-        
+
         # 根据验证结果分类
         verified_non_male = []
         reclassified_male = []
@@ -7168,24 +7053,10 @@ def _llm_judge_partner(
 请判断是否有非男主的正式男伴，输出 JSON。"""
 
     try:
-        response = chat_completion(
-            model=MODEL,
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+        data = _call_json_chat_completion(
+            [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             temperature=0.0,
-            response_format={"type": "json_object"}
         )
-        record_usage(response)
-        content = response.choices[0].message.content
-        data, err = _safe_json_loads_maybe(content)
-        if data is None:
-            logger.warning(f"男伴LLM判断失败: {err}")
-            return {
-                "no_partner": True,
-                "partner_status": "❓ 判断失败",
-                "partner_list": [],
-                "partner_reason": f"LLM解析失败: {err}",
-                "analyzed_partners": filtered_partner_relations,  # 仅保留非女性对象
-            }
         raw_partner_list = data.get("partner_list", [])
         if not isinstance(raw_partner_list, list):
             raw_partner_list = []
@@ -7362,23 +7233,10 @@ def _llm_judge_contact(
 请判断是否被非男主男性实际触碰过，输出 JSON。"""
 
     try:
-        response = chat_completion(
-            model=MODEL,
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+        data = _call_json_chat_completion(
+            [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             temperature=0.0,
-            response_format={"type": "json_object"}
         )
-        record_usage(response)
-        content = response.choices[0].message.content
-        data, err = _safe_json_loads_maybe(content)
-        if data is None:
-            logger.warning(f"接触LLM判断失败: {err}")
-            return {
-                "has_other_contact": False,
-                "contact_status": "❓ 判断失败",
-                "contact_list": [],
-                "contact_reason": f"LLM解析失败: {err}",
-            }
         return {
             "has_other_contact": data.get("has_other_contact", False),
             "contact_status": data.get("contact_status", "❓ 未知"),
@@ -7591,22 +7449,10 @@ def _llm_judge_spirit(
 请判断精神是否纯洁，输出 JSON。"""
 
     try:
-        response = chat_completion(
-            model=MODEL,
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+        data = _call_json_chat_completion(
+            [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             temperature=0.0,
-            response_format={"type": "json_object"}
         )
-        record_usage(response)
-        content = response.choices[0].message.content
-        data, err = _safe_json_loads_maybe(content)
-        if data is None:
-            logger.warning(f"精神洁LLM判断失败: {err}")
-            return {
-                "is_spirit_clean": True,
-                "spirit_status": "❓ 判断失败",
-                "spirit_reason": f"LLM解析失败: {err}",
-            }
         result = {
             "is_spirit_clean": data.get("is_spirit_clean", True),
             "spirit_status": data.get("spirit_status", "❓ 未知"),
@@ -7787,22 +7633,10 @@ def _llm_judge_virgin(
 请综合判断是否为处女，输出 JSON。"""
 
     try:
-        response = chat_completion(
-            model=MODEL,
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+        data = _call_json_chat_completion(
+            [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             temperature=0.0,
-            response_format={"type": "json_object"}
         )
-        record_usage(response)
-        content = response.choices[0].message.content
-        data, err = _safe_json_loads_maybe(content)
-        if data is None:
-            logger.warning(f"处女LLM判断失败: {err}")
-            return {
-                "is_virgin": True,
-                "virgin_status": "❓ 判断失败",
-                "virgin_reason": f"LLM解析失败: {err}",
-            }
         llm_is_virgin = _to_bool(data.get("is_virgin", True), True)
         llm_virgin_status = str(data.get("virgin_status", "❓ 未知") or "❓ 未知")
         llm_virgin_reason = str(data.get("virgin_reason", "") or "")
