@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from openai import OpenAI
 
-from Timerror import extract_status_code, is_timeout_error, make_chat_completion
+from Timerror import extract_status_code, is_retryable_connection_error, is_timeout_error, make_chat_completion
 from token_tracker import create_default_tracker
 
 
@@ -220,7 +220,7 @@ def is_retryable_transport_error(exc: Exception) -> bool:
     status_code = extract_status_code(exc)
     if status_code in (429, 500, 502, 503, 504):
         return True
-    return is_timeout_error(exc)
+    return is_timeout_error(exc) or is_retryable_connection_error(exc)
 
 
 def should_retry_without_json_mode_error(exc: Exception) -> bool:

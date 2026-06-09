@@ -287,6 +287,24 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
 
+    def test_shared_json_call_helper_does_not_fallback_on_retryable_connection_error(self):
+        calls = []
+
+        def fake_chat_completion(**kwargs):
+            calls.append(kwargs)
+            raise ConnectionError("connection reset by peer")
+
+        with self.assertRaises(ConnectionError):
+            shared_utils.call_json_chat_completion_with_fallback(
+                chat_completion_func=fake_chat_completion,
+                model="test-model",
+                messages=[{"role": "user", "content": "输出 JSON"}],
+                max_tokens=128,
+            )
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
+
     def test_reviewer_json_call_retries_without_json_mode_on_parse_failure(self):
         class FakeMessage:
             def __init__(self, content):
@@ -1136,6 +1154,17 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(global_scope.acquire_slot("key-a", 1), (0.0, "ok"))
         self.assertGreater(global_scope.acquire_slot("key-b", 1)[0], 0)
 
+    def test_connection_reset_is_retryable_but_not_timeout(self):
+        timeout_error = TimeoutError("request timed out")
+        reset_error = ConnectionError("connection reset by peer")
+        connect_timeout = RuntimeError("ConnectTimeout while dialing provider")
+
+        self.assertTrue(Timerror.is_timeout_error(timeout_error))
+        self.assertTrue(Timerror.is_timeout_error(connect_timeout))
+        self.assertFalse(Timerror.is_timeout_error(reset_error))
+        self.assertTrue(Timerror.is_retryable_connection_error(reset_error))
+        self.assertTrue(shared_utils.is_retryable_transport_error(reset_error))
+
     def test_make_chat_completion_rate_limit_scope_precedence(self):
         old_scope = os.environ.get("RATE_LIMIT_SCOPE")
         try:
@@ -1252,6 +1281,53 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         with self.assertRaises(ServerError):
             chat_completion(messages=[{"role": "user", "content": "hello"}], max_tokens=1)
         self.assertEqual(len(calls), 2)
+
+    def test_make_chat_completion_connection_reset_does_not_use_timeout_disable_path(self):
+        calls = []
+        logs = []
+
+        class FakeCompletions:
+            def create(self, **_kwargs):
+                calls.append("call")
+                raise ConnectionError("connection reset by peer")
+
+        class FakeChat:
+            completions = FakeCompletions()
+
+        class FakeClient:
+            chat = FakeChat()
+
+        class ListLogger:
+            def info(self, message):
+                logs.append(str(message))
+
+            def warning(self, message):
+                logs.append(str(message))
+
+            def error(self, message):
+                logs.append(str(message))
+
+        chat_completion = Timerror.make_chat_completion(
+            openai_client_factory=lambda _key, _base_url, _timeout: FakeClient(),
+            api_key_pool=["sk-test"],
+            base_url="https://example.test/v1",
+            request_timeout=1,
+            max_retries=2,
+            max_timeout_retries=1,
+            base_delay=0,
+            rpm_limit=0,
+            tpm_limit=0,
+            logger=ListLogger(),
+        )
+
+        with self.assertRaises(ConnectionError):
+            chat_completion(messages=[{"role": "user", "content": "hello"}], max_tokens=1)
+
+        self.assertEqual(len(calls), 2)
+        joined_logs = "\n".join(logs)
+        self.assertIn("未知错误", joined_logs)
+        self.assertNotIn("超时累计", joined_logs)
+        self.assertNotIn("软禁用", joined_logs)
 
     def test_auto_inference_keywords_are_profile_owned(self):
         for profile in analysis_profiles.list_available_profiles():

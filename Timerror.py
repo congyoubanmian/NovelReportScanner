@@ -68,11 +68,28 @@ def extract_error_message(err: BaseException) -> str:
 
 
 def is_timeout_error(err: BaseException) -> bool:
-    """判断是否为超时/连接类错误（部分 SDK 不带状态码）。"""
+    """判断是否为真正的超时/读写超时错误（部分 SDK 不带状态码）。"""
     err_str = str(err).lower()
     err_type = type(err).__name__.lower()
-    timeout_keywords = ("timeout", "timed out", "超时", "connection", "connecterror", "readtimeout", "writetimeout")
+    timeout_keywords = ("timeout", "timed out", "超时", "readtimeout", "writetimeout", "connecttimeout")
     return any(kw in err_str or kw in err_type for kw in timeout_keywords)
+
+
+def is_retryable_connection_error(err: BaseException) -> bool:
+    """判断是否为可重试连接类错误，但不把它计入 key 超时次数。"""
+    err_str = str(err).lower()
+    err_type = type(err).__name__.lower()
+    connection_keywords = (
+        "connection reset",
+        "connection refused",
+        "connection aborted",
+        "connection closed",
+        "remote end closed",
+        "server disconnected",
+        "connecterror",
+        "connectionerror",
+    )
+    return any(kw in err_str or kw in err_type for kw in connection_keywords)
 
 
 @dataclass(frozen=True)
