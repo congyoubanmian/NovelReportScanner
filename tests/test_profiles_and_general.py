@@ -564,6 +564,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("concurrency:", workflow_text)
         self.assertIn("group: docker-publish-${{ github.ref }}", workflow_text)
         self.assertIn("cancel-in-progress: true", workflow_text)
+        self.assertIn("FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true", workflow_text)
         self.assertIn("timeout-minutes: 45", workflow_text)
         self.assertIn("Build Docker image", workflow_text)
         self.assertIn("Push Docker image tags with retry", workflow_text)
@@ -605,6 +606,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("concurrency:", workflow_text)
         self.assertIn("group: ci-${{ github.ref }}", workflow_text)
         self.assertIn("cancel-in-progress: true", workflow_text)
+        self.assertIn("FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true", workflow_text)
         self.assertGreaterEqual(workflow_text.count("timeout-minutes: 20"), 2)
         self.assertIn("npm run check", workflow_text)
 
