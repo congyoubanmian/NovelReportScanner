@@ -2518,6 +2518,47 @@ def _response_json_data(response, context="chat"):
         raise ValueError(f"{exc}; {err_detail}") from exc
 
 
+def _should_compact_retry_json_call(error):
+    error_type = classify_scan_error(error)
+    return error_type in {"api_error", "timeout", "context_overflow"} or (
+        error_type == "parse_error" and _is_chronic_parse_failure_text(error)
+    )
+
+
+def _call_json_data_with_compact_retry(messages, *, max_tokens, temperature=0.1, log_prefix="chat", context="chat", fallback_max_tokens=None, fallback_instruction=None):
+    try:
+        response = _call_json_chat_completion(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            log_prefix=log_prefix,
+        )
+        return _response_json_data(response, context=context)
+    except Exception as exc:
+        if not _should_compact_retry_json_call(exc):
+            raise
+        compact_tokens = fallback_max_tokens if fallback_max_tokens is not None else max(500, min(max_tokens, 1800))
+        compact_instruction = fallback_instruction or """
+【降载重试要求】
+上一次请求出现服务器错误或 JSON 截断。请输出更短的合法 JSON：
+1. 只保留当前任务最关键、证据最明确的事实。
+2. 每个数组最多 3 条，每条 evidence/detail/reason 不超过 60 字。
+3. 不输出 Markdown，不输出代码块，不输出解释。
+"""
+        logger.warning(
+            f"{context} 触发JSON降载重试: error_type={classify_scan_error(exc)} "
+            f"max_tokens={max_tokens}->{compact_tokens}; error={exc}"
+        )
+        compact_messages = list(messages) + [{"role": "user", "content": compact_instruction}]
+        response = _call_json_chat_completion(
+            messages=compact_messages,
+            temperature=0.0,
+            max_tokens=compact_tokens,
+            log_prefix=f"{log_prefix} compact_retry",
+        )
+        return _response_json_data(response, context=f"{context} compact_retry")
+
+
 def _normalize_issue(issue, chunk_index):
     """确保 issues 输出包含 category/type/content/reason/chunk_index"""
     # 兼容：模型偶尔会返回字符串列表或其他非 dict 结构
@@ -2781,16 +2822,18 @@ def _scan_chunk_once(text_chunk, index, total, system_prompt, heroines, male_pro
                         keyword_contexts=keyword_contexts,
                     )
                     try:
-                        boost_resp = _call_json_chat_completion(
-                            messages=[
+                        boost_context = f"chunk {index} dim_boost {dimension}"
+                        boost_data = _call_json_data_with_compact_retry(
+                            [
                                 {"role": "system", "content": boost_prompt},
                                 {"role": "user", "content": f"文本：\n{text_chunk}"},
                             ],
                             temperature=0.1,
                             max_tokens=4000,
-                            log_prefix=f"chunk {index} dim_boost {dimension}",
+                            log_prefix=boost_context,
+                            context=boost_context,
+                            fallback_max_tokens=1800,
                         )
-                        boost_data = _response_json_data(boost_resp, context=f"chunk {index} dim_boost {dimension}")
                         if not isinstance(boost_data, dict):
                             continue
                         boost_data.pop("_reasoning", None)
@@ -4140,17 +4183,20 @@ def global_dimension_rescan(chunks, processed_chunks, all_heroine_facts, heroine
             n_dims = len(cluster.all_dimensions)
 
             try:
-                response = _call_json_chat_completion(
-                    messages=[
+                max_tokens = _estimate_max_tokens(cluster)
+                context = f"global_rescan_opt chunk {chunk_idx} ({n_heroines}h x {n_dims}d)"
+                data = _call_json_data_with_compact_retry(
+                    [
                         {"role": "system", "content": prompt},
                         {"role": "user", "content": f"文本：\n{window_text}"},
                     ],
                     temperature=0.1,
-                    max_tokens=_estimate_max_tokens(cluster),
-                    log_prefix=f"global_rescan_opt chunk {chunk_idx} ({n_heroines}h x {n_dims}d)",
+                    max_tokens=max_tokens,
+                    log_prefix=context,
+                    context=context,
+                    fallback_max_tokens=max(1200, min(2600, int(max_tokens * 0.45))),
                 )
                 total_calls += 1
-                data = _response_json_data(response, context=f"global_rescan_opt chunk {chunk_idx} ({n_heroines}h x {n_dims}d)")
                 if not isinstance(data, dict):
                     continue
 
