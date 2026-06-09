@@ -291,6 +291,41 @@ def _report_is_fresh(base_dir, book_name, profile_name=None):
     return True, out_file
 
 
+def _latest_general_summary_path(base_dir, book_name, profile_name):
+    results_dir = os.path.join(base_dir, "results")
+    if profile_name == "general":
+        return os.path.join(results_dir, f"{book_name}_GENERAL_SUMMARY_latest.json")
+    return os.path.join(results_dir, f"{book_name}_{profile_name}_GENERAL_SUMMARY_latest.json")
+
+
+def _load_general_scan_partial_metadata(base_dir, book_name, profile_name):
+    path = _latest_general_summary_path(base_dir, book_name, profile_name)
+    data = _read_json_safely(path)
+    if not isinstance(data, dict) or not data.get("partial_scan"):
+        return None
+    failed_count = int(data.get("failed_chunk_count") or len(data.get("failed_chunks") or []))
+    attempted_count = int(data.get("attempted_chunk_count") or data.get("chunk_count") or 0)
+    coverage = data.get("scan_coverage_ratio")
+    try:
+        coverage = round(float(coverage), 6)
+    except (TypeError, ValueError):
+        coverage = None
+    failed_ratio = data.get("failed_chunk_ratio")
+    try:
+        failed_ratio = round(float(failed_ratio), 6)
+    except (TypeError, ValueError):
+        failed_ratio = None
+    return {
+        "partial_scan": True,
+        "failed_chunk_count": failed_count,
+        "attempted_chunk_count": attempted_count,
+        "scan_coverage_ratio": coverage,
+        "failed_chunk_ratio": failed_ratio,
+        "summary_path": path,
+        "warning": f"通用扫描部分失败：{failed_count}/{attempted_count} 个片段失败",
+    }
+
+
 def print_pending_novels(novel_files):
     print("待扫描书籍：")
     for index, novel_path in enumerate(novel_files, start=1):
@@ -490,6 +525,8 @@ def process_single_novel(novel_path, profile_name=None, run_id=None, skip_fresh=
 
     status = "ok"
     error = ""
+    warnings = []
+    general_scan_partial = None
 
     try:
         ret = protagonist.main(novel_path=novel_path, book_name=book_name, run_id=run_id)
@@ -524,6 +561,9 @@ def process_single_novel(novel_path, profile_name=None, run_id=None, skip_fresh=
     if status == "ok" and active_profile.uses_general_scan:
         try:
             general_scan.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path)
+            general_scan_partial = _load_general_scan_partial_metadata(base_dir, book_name, active_profile.name)
+            if general_scan_partial:
+                warnings.append(general_scan_partial["warning"])
         except Exception as e:
             print(f"[general_scan] 异常: {e}")
             status = "fail"
@@ -549,7 +589,12 @@ def process_single_novel(novel_path, profile_name=None, run_id=None, skip_fresh=
         print(f"成功: {os.path.basename(novel_path)}")
     else:
         print(f"失败: {os.path.basename(novel_path)}")
-    return {"status": status, "book_name": book_name, "profile": active_profile.name, "error": error}
+    result = {"status": status, "book_name": book_name, "profile": active_profile.name, "error": error}
+    if warnings:
+        result["warnings"] = warnings
+    if general_scan_partial:
+        result["general_scan_partial"] = general_scan_partial
+    return result
 
 
 def _merge_profile_results(book_name, results):
@@ -562,6 +607,11 @@ def _merge_profile_results(book_name, results):
         status = "fail"
     profiles = [result.get("profile") for result in results if result.get("profile")]
     errors = [result.get("error") for result in results if result.get("error")]
+    warnings = []
+    for result in results:
+        for warning in result.get("warnings") or []:
+            if warning and warning not in warnings:
+                warnings.append(warning)
     return {
         "status": status,
         "book_name": book_name,
@@ -569,6 +619,7 @@ def _merge_profile_results(book_name, results):
         "profiles": profiles,
         "results": results,
         "error": "；".join(errors),
+        "warnings": warnings,
     }
 
 

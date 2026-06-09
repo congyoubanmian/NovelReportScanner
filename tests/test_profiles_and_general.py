@@ -12868,6 +12868,96 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(result["partial_count"], 2)
             self.assertEqual(result["original_chunk_index"], 1)
 
+    def test_general_scan_main_marks_partial_scan_when_chunks_fail(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            novels_dir = os.path.join(tmpdir, "novels")
+            results_dir = os.path.join(tmpdir, "results")
+            os.makedirs(novels_dir, exist_ok=True)
+            os.makedirs(results_dir, exist_ok=True)
+            novel_path = os.path.join(novels_dir, "partial.txt")
+            with open(novel_path, "w", encoding="utf-8") as f:
+                f.write("stub")
+
+            manifest = {
+                "text_length": 30_000,
+                "chunks": [
+                    {"chunk_index": 1, "text": "chunk-1"},
+                    {"chunk_index": 2, "text": "chunk-2"},
+                    {"chunk_index": 3, "text": "chunk-3"},
+                ],
+            }
+
+            def fake_scan(chunk, chunk_index, total_chunks, profile=None, context_snapshot=None):
+                if chunk_index == 1:
+                    raise RuntimeError("模型超时")
+                return {
+                    "chunk_index": chunk_index,
+                    "plot_events": [f"事件{chunk_index}"],
+                    "one_sentence_summary": f"摘要{chunk_index}",
+                }
+
+            with mock.patch.object(general_scan, "get_base_dir", return_value=tmpdir), \
+                    mock.patch.object(general_scan, "init_token_tracker"), \
+                    mock.patch.object(general_scan, "_read_novel", return_value="stub"), \
+                    mock.patch.object(general_scan, "build_chunk_manifest", return_value=manifest), \
+                    mock.patch.object(general_scan, "save_chunk_manifest"), \
+                    mock.patch.object(general_scan, "tqdm", side_effect=lambda items, desc=None: items), \
+                    mock.patch.object(general_scan, "_scan_chunk_with_context_overflow_fallback", side_effect=fake_scan), \
+                    mock.patch.object(general_scan, "_summarize_book", return_value={"story_overview": "ok"}):
+                self.assertEqual(general_scan.main(novel_path=novel_path, book_name="partial"), 0)
+
+            latest_path = os.path.join(results_dir, "partial_GENERAL_SUMMARY_latest.json")
+            with open(latest_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            self.assertTrue(data["partial_scan"])
+            self.assertEqual(data["failed_chunk_count"], 1)
+            self.assertEqual(data["attempted_chunk_count"], 3)
+            self.assertEqual(data["successful_chunk_count"], 2)
+            self.assertAlmostEqual(data["failed_chunk_ratio"], 1 / 3, places=5)
+            self.assertAlmostEqual(data["scan_coverage_ratio"], 2 / 3, places=5)
+            self.assertEqual(data["failed_chunks"][0]["chunk_index"], 1)
+            self.assertIn("模型超时", data["failed_chunks"][0]["error"])
+
+    def test_process_single_novel_returns_general_partial_warning(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            novels_dir = os.path.join(tmpdir, "novels")
+            results_dir = os.path.join(tmpdir, "results")
+            os.makedirs(novels_dir, exist_ok=True)
+            os.makedirs(results_dir, exist_ok=True)
+            novel_path = os.path.join(novels_dir, "web_partial.txt")
+            with open(novel_path, "w", encoding="utf-8") as f:
+                f.write("stub")
+
+            summary_path = os.path.join(results_dir, "web_partial_GENERAL_SUMMARY_latest.json")
+
+            def fake_general_main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile_override=None):
+                with open(summary_path, "w", encoding="utf-8") as f:
+                    json.dump({
+                        "partial_scan": True,
+                        "failed_chunk_count": 2,
+                        "attempted_chunk_count": 5,
+                        "failed_chunk_ratio": 0.4,
+                        "scan_coverage_ratio": 0.6,
+                        "failed_chunks": [{"chunk_index": 1, "error": "timeout"}],
+                    }, f, ensure_ascii=False)
+                return 0
+
+            with mock.patch.object(main, "get_base_dir", return_value=tmpdir), \
+                    mock.patch.object(main, "load_configs"), \
+                    mock.patch.object(main, "_report_is_fresh", return_value=(False, None)), \
+                    mock.patch.object(protagonist, "main", return_value=0), \
+                    mock.patch.object(protagonist, "get_latest_report_files", return_value={"detailed": "detail.json"}), \
+                    mock.patch.object(general_scan, "main", side_effect=fake_general_main), \
+                    mock.patch.object(report, "main", return_value=0):
+                result = main.process_single_novel(novel_path, profile_name="general", run_id="run", skip_fresh=False)
+
+            self.assertEqual(result["status"], "ok")
+            self.assertIn("通用扫描部分失败：2/5 个片段失败", result["warnings"])
+            self.assertTrue(result["general_scan_partial"]["partial_scan"])
+            self.assertEqual(result["general_scan_partial"]["failed_chunk_count"], 2)
+            self.assertEqual(result["general_scan_partial"]["summary_path"], summary_path)
+
     def test_general_scan_fresh_summary(self):
         with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
             f.write("test")

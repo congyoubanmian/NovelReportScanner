@@ -2629,6 +2629,12 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         if level not in density_counts:
             level = "medium"
         density_counts[level] += 1
+    failed_chunk_count = len(failed)
+    attempted_chunk_count = len(chunks)
+    successful_chunk_count = len(chunk_results)
+    failed_chunk_ratio = (failed_chunk_count / attempted_chunk_count) if attempted_chunk_count else 0.0
+    scan_coverage_ratio = (successful_chunk_count / attempted_chunk_count) if attempted_chunk_count else 0.0
+    partial_scan = failed_chunk_count > 0
     out = {
         "schema_version": 1,
         "analysis_profile": "general",
@@ -2683,6 +2689,12 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "incremental_reuse": INCREMENTAL_REUSE,
         "reused_chunk_count": reused_chunk_count,
         "scanned_chunk_count": scanned_chunk_count,
+        "successful_chunk_count": successful_chunk_count,
+        "attempted_chunk_count": attempted_chunk_count,
+        "partial_scan": partial_scan,
+        "failed_chunk_count": failed_chunk_count,
+        "failed_chunk_ratio": round(failed_chunk_ratio, 6),
+        "scan_coverage_ratio": round(scan_coverage_ratio, 6),
         "prompt_templates": prompt_templates_metadata("general_scan_chunk", "general_summary"),
         "failed_chunks": failed,
         "knowledge_base": knowledge_base,
