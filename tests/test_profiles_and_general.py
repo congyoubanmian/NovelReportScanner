@@ -1665,6 +1665,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn("create_chat_completion", shared_import_names)
                 self.assertIn('BASE_URL = os.environ.get("BASE_URL", "https://api.deepseek.com")', text)
 
+    def test_shared_file_reader_falls_back_to_gb18030(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "gbk.txt")
+            with open(path, "wb") as f:
+                f.write("云烨在长安处理政务。".encode("gb18030"))
+
+            self.assertEqual(shared_utils.read_file_safely(path), "云烨在长安处理政务。")
+
     def test_api_retry_defaults_are_shared_across_scan_stages(self):
         self.assertEqual(shared_utils.DEFAULT_MAX_RETRIES, 5)
         self.assertEqual(shared_utils.DEFAULT_MAX_403_RETRIES, 3)
@@ -7816,8 +7824,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         old_base_dir = web_manager.get_base_dir
         old_chunk_size = web_manager.FILE_RESPONSE_CHUNK_SIZE
-        had_open = hasattr(web_manager, "open")
-        old_open = getattr(web_manager, "open", None)
+        old_response_body = web_manager._public_file_response_body
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 results_dir = os.path.join(tmp, "results")
@@ -7825,6 +7832,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 path = os.path.join(results_dir, "report.txt")
                 with open(path, "wb") as f:
                     f.write(b"abcdefghi")
+                gbk_path = os.path.join(tmp, "novels", "gbk.txt")
+                os.makedirs(os.path.dirname(gbk_path), exist_ok=True)
+                with open(gbk_path, "wb") as f:
+                    f.write("云烨在长安处理政务。".encode("gb18030"))
 
                 web_manager.get_base_dir = lambda: tmp
                 web_manager.FILE_RESPONSE_CHUNK_SIZE = 4
@@ -7838,6 +7849,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertIn(("Content-Length", "9"), handler.headers_sent)
                 self.assertIn(("Content-Type", "text/plain; charset=utf-8"), handler.headers_sent)
 
+                gbk_handler = FakeHandler()
+                web_manager.Handler._send_public_file(gbk_handler, gbk_path)
+                self.assertEqual(gbk_handler.response, 200)
+                self.assertEqual(gbk_handler.wfile.data.decode("utf-8"), "云烨在长安处理政务。")
+                self.assertIn(("Content-Type", "text/plain; charset=utf-8"), gbk_handler.headers_sent)
+
                 forbidden_handler = FakeHandler()
                 web_manager.Handler._send_public_file(forbidden_handler, os.path.join(tmp, "secret.txt"))
                 self.assertEqual(forbidden_handler.sent[0], (403, {"error": "file is not allowed"}))
@@ -7847,10 +7864,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 web_manager.Handler._send_public_file(missing_handler, os.path.join(results_dir, "missing.txt"))
                 self.assertEqual(missing_handler.sent[0], (404, {"error": "file not found"}))
 
-                def fail_open(_path, _mode="r", *_args, **_kwargs):
+                def fail_response_body(_path):
                     raise PermissionError("permission denied")
 
-                web_manager.open = fail_open
+                web_manager._public_file_response_body = fail_response_body
                 failed_read_handler = FakeHandler()
                 web_manager.Handler._send_public_file(failed_read_handler, path)
                 self.assertEqual(failed_read_handler.sent[0][0], 500)
@@ -7859,10 +7876,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         finally:
             web_manager.get_base_dir = old_base_dir
             web_manager.FILE_RESPONSE_CHUNK_SIZE = old_chunk_size
-            if had_open:
-                web_manager.open = old_open
-            elif hasattr(web_manager, "open"):
-                delattr(web_manager, "open")
+            web_manager._public_file_response_body = old_response_body
 
     def test_web_manager_timeout_http_server_sets_request_timeout(self):
         class FakeSocket:

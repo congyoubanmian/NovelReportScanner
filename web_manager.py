@@ -27,7 +27,7 @@ from analysis_profiles import (
     profile_options,
 )
 from main import _WEB_SCAN_RESULT_PREFIX, _generate_run_id, get_base_dir, get_novels_dir, load_configs
-from shared_utils import configure_rotating_file_logger, read_float_env, read_int_env
+from shared_utils import configure_rotating_file_logger, read_file_safely, read_float_env, read_int_env
 
 
 STATE_LOCK = threading.RLock()
@@ -1462,6 +1462,22 @@ def _file_link(path):
     return {"path": path, "name": os.path.basename(path), "url": f"/files?path={quote(path)}"}
 
 
+def _public_text_file_needs_utf8_normalization(path):
+    ext = os.path.splitext(str(path or "").lower())[1]
+    return ext in {".txt", ".log", ".md", ".csv"}
+
+
+def _public_file_response_body(path):
+    if _public_text_file_needs_utf8_normalization(path):
+        content = read_file_safely(path)
+        return content.encode("utf-8"), "text/plain; charset=utf-8"
+    if str(path or "").lower().endswith(".json"):
+        with open(path, "rb") as f:
+            return f.read(), "application/json; charset=utf-8"
+    with open(path, "rb") as f:
+        return f.read(), "application/octet-stream"
+
+
 def _read_json_file(path):
     if not os.path.exists(path):
         return None
@@ -2577,8 +2593,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"error": message}, status)
             return
         try:
-            size = os.path.getsize(path)
-            f = open(path, "rb")
+            body, content_type = _public_file_response_body(path)
         except FileNotFoundError:
             self._send_json({"error": "file not found"}, 404)
             return
@@ -2586,17 +2601,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"error": "file read failed", "detail": str(exc)}, 500)
             return
         try:
-            content_type = "application/json; charset=utf-8" if path.lower().endswith(".json") else "text/plain; charset=utf-8"
             self.send_response(200)
             self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(size))
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            with f:
-                while True:
-                    chunk = f.read(FILE_RESPONSE_CHUNK_SIZE)
-                    if not chunk:
-                        break
-                    self.wfile.write(chunk)
+            for start in range(0, len(body), FILE_RESPONSE_CHUNK_SIZE):
+                self.wfile.write(body[start:start + FILE_RESPONSE_CHUNK_SIZE])
         except OSError:
             return
 
