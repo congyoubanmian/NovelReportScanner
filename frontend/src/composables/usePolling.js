@@ -5,6 +5,7 @@ export function usePolling(callback, intervalMs = 3000, options = {}) {
   let running = false
   let activeController = null
   const autoStart = options.autoStart !== false
+  let shouldResume = autoStart
 
   async function runCallback() {
     if (running) return
@@ -19,11 +20,13 @@ export function usePolling(callback, intervalMs = 3000, options = {}) {
   }
 
   function start() {
+    shouldResume = true
     if (timer || document.hidden) return
     timer = setInterval(runCallback, intervalMs)
   }
 
   function stop() {
+    shouldResume = false
     if (timer) {
       clearInterval(timer)
       timer = null
@@ -36,7 +39,7 @@ export function usePolling(callback, intervalMs = 3000, options = {}) {
       stop()
     } else {
       runCallback()
-      start()
+      if (shouldResume) start()
     }
   }
 

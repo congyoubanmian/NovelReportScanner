@@ -1369,15 +1369,18 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertIn("let running = false", text)
         self.assertIn("let activeController = null", text)
+        self.assertIn("let shouldResume = autoStart", text)
         self.assertIn("async function runCallback()", text)
         self.assertIn("if (running) return", text)
         self.assertIn("activeController = new AbortController()", text)
         self.assertIn("await callback({ signal: activeController.signal })", text)
         self.assertIn("activeController = null", text)
+        self.assertIn("shouldResume = true\n    if (timer || document.hidden) return", text)
+        self.assertIn("shouldResume = false\n    if (timer) {", text)
         self.assertIn("if (timer) {\n      clearInterval(timer)\n      timer = null\n    }\n    activeController?.abort()", text)
         self.assertIn("running = false", text)
         self.assertIn("setInterval(runCallback, intervalMs)", text)
-        self.assertIn("runCallback()\n      start()", text)
+        self.assertIn("runCallback()\n      if (shouldResume) start()", text)
 
     def test_rate_limit_scope_auto_resolves_by_key_count(self):
         self.assertEqual(Timerror.normalize_rate_limit_scope("auto", 1), "global")
