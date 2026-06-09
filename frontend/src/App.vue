@@ -112,6 +112,7 @@ function formatElapsed(seconds) {
 
 const diagnosticsStatus = computed(() => {
   const data = diagnostics.value || {}
+  const issues = Array.isArray(data.health_issues) ? data.health_issues : []
   const stale = Number(data.stale_running_count || 0)
   const failed = Number(data.failed_count || 0)
   const running = Number(data.running_count || 0)
@@ -124,9 +125,23 @@ const diagnosticsStatus = computed(() => {
   const failureTitle = (data.failure_reasons || [])
     .map((item) => `${item.reason || 'unknown failure'} x${item.count || 0}`)
     .join('\n')
+  const issueTitle = issues.map((item) => item.message || item.type || 'health issue').join('\n')
+  const issueLabelMap = {
+    config: '配置异常',
+    storage: '存储异常',
+    stale_tasks: `${stale} 个卡住`,
+    failed_tasks: `${failed} 个失败`
+  }
+  const topIssue = issues[0]
   return {
-    ok: stale === 0 && failed === 0,
-    label: stale ? `${stale} 个卡住` : failed ? `${failed} 个失败` : '正常',
+    ok: issues.length ? data.ok !== false : stale === 0 && failed === 0,
+    label: topIssue
+      ? issueLabelMap[topIssue.type] || topIssue.message || '异常'
+      : stale
+        ? `${stale} 个卡住`
+        : failed
+          ? `${failed} 个失败`
+          : '正常',
     queued,
     running,
     failed,
@@ -135,9 +150,11 @@ const diagnosticsStatus = computed(() => {
     oldestQueueWaitText,
     logUrl: firstStale?.log_file?.url || '',
     failureLogUrl: recentFailure?.log_file?.url || '',
-    title: firstStale
-      ? `${firstStale.book_name || firstStale.book_id || '运行任务'}\n无日志 ${formatElapsed(firstStale.seconds_since_last_log)}\n${firstStale.log_file?.url ? `日志: ${firstStale.log_file.url}\n` : ''}${firstStale.last_log || ''}`
-      : failureTitle
+    title:
+      issueTitle ||
+      (firstStale
+        ? `${firstStale.book_name || firstStale.book_id || '运行任务'}\n无日志 ${formatElapsed(firstStale.seconds_since_last_log)}\n${firstStale.log_file?.url ? `日志: ${firstStale.log_file.url}\n` : ''}${firstStale.last_log || ''}`
+        : failureTitle)
   }
 })
 

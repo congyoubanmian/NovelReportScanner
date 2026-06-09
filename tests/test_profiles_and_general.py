@@ -616,6 +616,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("app.commit", text)
         self.assertIn("scan_stall_watchdog_enabled", text)
         self.assertIn("SCAN_STALL_TIMEOUT_SECONDS=1200", text)
+        self.assertIn("/healthz.ready=false", text)
+        self.assertIn("health_issues", text)
         self.assertIn("sha-xxxx", text)
 
     def test_profile_aliases_and_stages(self):
@@ -1096,6 +1098,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("general_scan_content_aware_sampling: true", text)
         self.assertIn("config.general_scan_content_aware_sampling !== false", text)
         self.assertIn("configForm.general_scan_content_aware_sampling", text)
+        self.assertIn("data.health_issues", text)
+        self.assertIn("storage: '存储异常'", text)
+        self.assertIn("config: '配置异常'", text)
+        self.assertIn("item.message || item.type || 'health issue'", text)
         book_list_path = os.path.join(base_dir, "frontend", "src", "components", "BookList.vue")
         with open(book_list_path, "r", encoding="utf-8") as f:
             book_list_text = f.read()
@@ -4986,6 +4992,27 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         finally:
             web_manager.get_base_dir = old_base_dir
 
+    def test_web_manager_health_reports_readiness_without_public_paths(self):
+        old_config_ready = web_manager.CONFIG_READY
+        try:
+            web_manager.CONFIG_READY = False
+            storage = {
+                "novels": {"path": "/app/novels", "writable": False, "error": "Permission denied"},
+                "results": {"path": "/app/results", "writable": True, "error": ""},
+            }
+            with mock.patch.object(web_manager, "_storage_health_summary", return_value=storage):
+                health = web_manager._health_summary()
+
+            self.assertTrue(health["ok"])
+            self.assertFalse(health["ready"])
+            self.assertFalse(health["config_ready"])
+            self.assertFalse(health["storage_ready"])
+            self.assertEqual([item["type"] for item in health["health_issues"]], ["config", "storage"])
+            self.assertNotIn("/app/novels", json.dumps(health, ensure_ascii=False))
+            self.assertNotIn("Permission denied", json.dumps(health, ensure_ascii=False))
+        finally:
+            web_manager.CONFIG_READY = old_config_ready
+
     def test_web_manager_runtime_config_update_allows_only_safe_fields(self):
         keys = [
             "MAX_WORKERS",
@@ -5946,6 +5973,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         old_state = web_manager.STATE
         old_timeout = web_manager.SCAN_STALL_TIMEOUT_SECONDS
         old_app_commit = web_manager.APP_COMMIT
+        old_config_ready = web_manager.CONFIG_READY
         old_time = web_manager.time.time
         try:
             with tempfile.TemporaryDirectory() as tmpdir, \
@@ -5959,6 +5987,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     f.write("Permission denied")
                 web_manager.SCAN_STALL_TIMEOUT_SECONDS = 1200
                 web_manager.APP_COMMIT = "abc123"
+                web_manager.CONFIG_READY = False
                 base_time = web_manager.datetime.strptime(
                     "2026-06-09 06:50:00",
                     "%Y-%m-%d %H:%M:%S",
@@ -6066,6 +6095,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(diagnostics["running_count"], 1)
             self.assertEqual(diagnostics["stale_running_count"], 1)
             self.assertEqual(diagnostics["failed_count"], 3)
+            self.assertFalse(diagnostics["ready"])
+            self.assertTrue(diagnostics["storage_ready"])
+            self.assertEqual(
+                [item["type"] for item in diagnostics["health_issues"]],
+                ["config", "stale_tasks", "failed_tasks"],
+            )
+            self.assertEqual(diagnostics["health_issues"][1]["count"], 1)
+            self.assertEqual(diagnostics["health_issues"][2]["count"], 3)
             self.assertEqual(diagnostics["oldest_queue_wait_seconds"], 3000)
             self.assertEqual(diagnostics["longest_running_seconds"], 4200)
             self.assertEqual(diagnostics["task_counts"]["queued"], 1)
@@ -6103,6 +6140,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.STATE = old_state
             web_manager.SCAN_STALL_TIMEOUT_SECONDS = old_timeout
             web_manager.APP_COMMIT = old_app_commit
+            web_manager.CONFIG_READY = old_config_ready
             web_manager.time.time = old_time
 
     def test_web_manager_public_state_includes_profiles_and_suggestions(self):

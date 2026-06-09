@@ -520,13 +520,71 @@ def _app_version_summary():
 
 
 def _health_summary():
+    storage = _storage_health_summary()
+    issues = _health_issues(CONFIG_READY, storage, include_details=False)
     return {
         "ok": True,
+        "ready": not issues,
         "config_ready": CONFIG_READY,
         "app": _app_version_summary(),
         "scan_stall_timeout_seconds": SCAN_STALL_TIMEOUT_SECONDS,
         "scan_stall_watchdog_enabled": SCAN_STALL_TIMEOUT_SECONDS > 0,
+        "storage_ready": _storage_ready(storage),
+        "health_issues": issues,
     }
+
+
+def _storage_ready(storage):
+    if not isinstance(storage, dict):
+        return False
+    for name in ("novels", "results"):
+        status = storage.get(name)
+        if not isinstance(status, dict) or status.get("writable") is not True:
+            return False
+    return True
+
+
+def _health_issues(config_ready, storage, stale_running_count=0, failed_count=0, include_details=True):
+    issues = []
+    if config_ready is False:
+        issues.append({
+            "type": "config",
+            "message": "runtime config is not ready",
+        })
+    storage_failures = []
+    if not isinstance(storage, dict):
+        storage_failures.append({"name": "storage", "path": "", "error": "storage status unavailable"})
+    else:
+        for name in ("novels", "results"):
+            status = storage.get(name)
+            if not isinstance(status, dict) or status.get("writable") is True:
+                continue
+            storage_failures.append({
+                "name": name,
+                "path": status.get("path", ""),
+                "error": status.get("error", "") or "not writable",
+            })
+    if storage_failures:
+        issue = {
+            "type": "storage",
+            "message": "runtime storage is not writable",
+        }
+        if include_details:
+            issue["details"] = storage_failures
+        issues.append(issue)
+    if stale_running_count:
+        issues.append({
+            "type": "stale_tasks",
+            "message": f"{stale_running_count} running task(s) stalled without output",
+            "count": stale_running_count,
+        })
+    if failed_count:
+        issues.append({
+            "type": "failed_tasks",
+            "message": f"{failed_count} failed task(s)",
+            "count": failed_count,
+        })
+    return issues
 
 
 def _task_diagnostic(task, book):
@@ -703,6 +761,8 @@ def _diagnostics_summary():
     queued_count = status_counts.get("queued", 0)
     failed_count = status_counts.get("failed", 0)
     stale_running_count = sum(1 for item in running_tasks if item.get("stale_without_log"))
+    storage = _storage_health_summary()
+    health_issues = _health_issues(CONFIG_READY, storage, stale_running_count, failed_count)
     longest_running_seconds = max(
         (item.get("seconds_since_started") or 0 for item in running_tasks),
         default=0,
@@ -712,11 +772,14 @@ def _diagnostics_summary():
         default=0,
     )
     return {
-        "ok": stale_running_count == 0,
+        "ok": not health_issues,
+        "ready": not health_issues,
         "config_ready": CONFIG_READY,
         "app": _app_version_summary(),
         "scan_stall_timeout_seconds": SCAN_STALL_TIMEOUT_SECONDS,
         "scan_stall_watchdog_enabled": SCAN_STALL_TIMEOUT_SECONDS > 0,
+        "storage_ready": _storage_ready(storage),
+        "health_issues": health_issues,
         "task_counts": status_counts,
         "queue_length": queued_count,
         "queue_runtime_length": len(queued_positions),
@@ -729,7 +792,7 @@ def _diagnostics_summary():
         "queued_tasks": queued_tasks,
         "recent_failed_tasks": failed_tasks[:10],
         "failure_reasons": _failure_reason_summary(failed_tasks),
-        "storage": _storage_health_summary(),
+        "storage": storage,
     }
 
 

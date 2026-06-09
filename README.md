@@ -246,7 +246,7 @@ docker run -d \
 - 如果容器无法上传小说或写报告，优先检查宿主机 `novels/`、`results/` 的属主是否匹配 `PUID` / `PGID`。
 - 容器内 Web 服务默认绑定 `0.0.0.0:8765`，宿主机端口可通过 `-p 宿主机端口:8765` 或 Compose 里的 `WEB_PORT` 调整。
 - 容器内存限制可通过 `CONTAINER_MEMORY_LIMIT` 和 `CONTAINER_MEMORY_RESERVATION` 调整；超长小说或多分类扫描建议适当调高。
-- 镜像健康检查使用 `/healthz`，只证明 Web 管理端进程可访问；是否能真正扫描取决于 `.env` / API Key 是否配置正确。
+- 镜像健康检查使用 `/healthz`，只证明 Web 管理端进程可访问；是否能真正扫描取决于 `.env` / API Key 是否配置正确。`/healthz.ready=false` 会提示配置或存储自检异常，但不会让 Docker 因历史任务失败反复重启容器。
 - 默认启用 `SCAN_STALL_TIMEOUT_SECONDS=1200`，运行中的扫描子进程如果 20 分钟没有任何日志输出会被终止并标记失败，避免单个任务长期占住队列。可在 `.env` 或 Web 顶部“运行配置”里调整，设为 `0` 表示关闭。
 
 线上排障常用命令：
@@ -260,7 +260,7 @@ curl -sS -H "Authorization: Bearer $WEB_ACCESS_TOKEN" \
   http://服务器IP:8765/api/diagnostics
 ```
 
-如果 `/api/diagnostics` 里 `stale_running_count > 0`，说明存在超过卡死保护阈值仍未产生日志的运行任务；优先确认线上镜像 `app.commit` 是否已经包含最新代码，且 `scan_stall_watchdog_enabled` 是否为 `true`。
+如果 `/api/diagnostics` 里 `health_issues` 包含 `storage`，优先检查宿主机 `novels/`、`results/` 权限和 Compose 的 `PUID` / `PGID`；包含 `config` 则先检查 `.env` / API Key。若 `stale_running_count > 0`，说明存在超过卡死保护阈值仍未产生日志的运行任务；优先确认线上镜像 `app.commit` 是否已经包含最新代码，且 `scan_stall_watchdog_enabled` 是否为 `true`。
 
 公网反向代理 / TLS 建议：
 
