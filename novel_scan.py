@@ -63,6 +63,8 @@ RESCAN_PRE_FILTER_THRESHOLD = float(os.environ.get("RESCAN_PRE_FILTER_THRESHOLD"
 RESCAN_MAX_WINDOW = int(os.environ.get("RESCAN_MAX_WINDOW", "2000"))
 RESCAN_MAX_PROMPT_HEROINES = int(os.environ.get("RESCAN_MAX_PROMPT_HEROINES", "4"))
 RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER = int(os.environ.get("RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER", "2"))
+HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH = int(os.environ.get("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH", "1"))
+HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS = int(os.environ.get("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS", "1200"))
 
 RULES_FILE = os.environ.get("ANALYSIS_RULES_FILE") or os.path.join(
     get_base_dir(),
@@ -2406,6 +2408,12 @@ def _safe_json_loads(text):
     s = re.sub(r"```json\s*|\s*```", "", s).strip()
     s = _normalize_fullwidth_json_punct(s)
 
+    # 1) 直接解析。必须先于弱模型格式修复，避免把合法字符串里的 "半块1" 误改成非法 JSON。
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        pass
+
     # ---- 预处理修复：弱模型常见格式错误 ----
     # 修复1：布尔/null 值后的多余引号（"true",  →  true,）
     # 原因：弱模型有时在 true/false/null 后多输出一个 " 字符，如：is_biological": true",
@@ -2413,26 +2421,26 @@ def _safe_json_loads(text):
     # 修复2：数字值后的多余引号（123",  →  123,）
     s = re.sub(r'(\d)"(\s*[,\}\]])', r'\1\2', s)
 
-    # 1) 直接解析
+    # 2) 修复后再解析
     try:
         return json.loads(s)
     except json.JSONDecodeError:
         pass
 
-    # 2) 宽松解析（允许控制字符）
+    # 3) 宽松解析（允许控制字符）
     try:
         return json.JSONDecoder(strict=False).decode(s)
     except Exception:
         pass
 
-    # 3) 清理 ASCII 控制字符（保留 \t \n \r）
+    # 4) 清理 ASCII 控制字符（保留 \t \n \r）
     cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", s)
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
         pass
 
-    # 4) 兜底：截取最外层 JSON（从第一个 { 到最后一个 }）
+    # 5) 兜底：截取最外层 JSON（从第一个 { 到最后一个 }）
     l = cleaned.find("{")
     r = cleaned.rfind("}")
     if l != -1 and r != -1 and r > l:
@@ -2442,7 +2450,7 @@ def _safe_json_loads(text):
         except json.JSONDecodeError:
             pass
 
-    # 5) 更激进修复：移除所有 true/false/null/数字 后的悬挂引号（不限制后续字符），再重试
+    # 6) 更激进修复：移除所有 true/false/null/数字 后的悬挂引号（不限制后续字符），再重试
     # 针对弱模型系统性 bug：true" 后面可能跟换行/空格再接逗号
     aggressive = re.sub(r'\b(true|false|null)"', r'\1', cleaned)
     aggressive = re.sub(r'(\d)"', r'\1', aggressive)
@@ -2512,7 +2520,106 @@ def _normalize_issue(issue, chunk_index):
     }
 
 
-def scan_chunk(text_chunk, index, total, system_prompt, heroines, male_protagonist=None, fact_boost_prompt=None, context_summary=""):
+def _split_text_for_downshift(text):
+    text = text or ""
+    if len(text) < 2:
+        return [text]
+    midpoint = len(text) // 2
+    candidates = [
+        text.rfind("\n", 0, midpoint),
+        text.find("\n", midpoint),
+        text.rfind("。", 0, midpoint),
+        text.find("。", midpoint),
+    ]
+    split_at = min(
+        [pos for pos in candidates if 0 < pos < len(text) - 1],
+        key=lambda pos: abs(pos - midpoint),
+        default=midpoint,
+    )
+    return [text[:split_at].strip(), text[split_at:].strip()]
+
+
+def _merge_downshift_chunk_results(partial_results, index, error_type):
+    issues = []
+    heroine_facts = []
+    extra_relations = []
+    summaries = []
+    for part_index, result in enumerate(partial_results, 1):
+        part_issues, part_facts, part_extra, part_summary, _ok, _fatal, _err = result
+        for issue in part_issues or []:
+            if isinstance(issue, dict):
+                issue.setdefault("partial_index", part_index)
+            issues.append(issue)
+        for fact in part_facts or []:
+            if isinstance(fact, dict):
+                fact.setdefault("partial_index", part_index)
+            heroine_facts.append(fact)
+        for relation in part_extra or []:
+            if isinstance(relation, dict):
+                relation.setdefault("partial_index", part_index)
+            extra_relations.append(relation)
+        if part_summary:
+            summaries.append(str(part_summary).strip())
+    summary = "；".join([item for item in summaries if item][:3])
+    reason = "context_overflow_split" if error_type == "context_overflow" else f"{error_type}_downshift_split"
+    logger.warning(f"chunk {index} 降载切分成功：reason={reason} partial_count={len(partial_results)}")
+    return issues, heroine_facts, extra_relations, summary, True, False, ""
+
+
+def scan_chunk(text_chunk, index, total, system_prompt, heroines, male_protagonist=None, fact_boost_prompt=None, context_summary="", _downshift_depth=0):
+    result = _scan_chunk_once(
+        text_chunk,
+        index,
+        total,
+        system_prompt,
+        heroines,
+        male_protagonist=male_protagonist,
+        fact_boost_prompt=fact_boost_prompt,
+        context_summary=context_summary,
+    )
+    issues, heroine_facts, extra_relations, next_summary, ok, fatal, err_msg = result
+    error_type = _classify_chunk_failure_error(err_msg)
+    if (
+        ok
+        or fatal
+        or error_type not in {"api_error", "timeout", "context_overflow"}
+        or _downshift_depth >= max(0, HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH)
+        or len(text_chunk or "") < max(2, HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS)
+    ):
+        return result
+
+    parts = [part for part in _split_text_for_downshift(text_chunk) if part.strip()]
+    if len(parts) < 2:
+        return result
+    logger.warning(
+        f"chunk {index} 触发降载切分：error_type={error_type} depth={_downshift_depth} "
+        f"chars={len(text_chunk or '')} parts={len(parts)}"
+    )
+    partial_results = []
+    for part in parts:
+        part_result = scan_chunk(
+            part,
+            index,
+            total,
+            system_prompt,
+            heroines,
+            male_protagonist=male_protagonist,
+            fact_boost_prompt=fact_boost_prompt,
+            context_summary=context_summary,
+            _downshift_depth=_downshift_depth + 1,
+        )
+        _part_issues, _part_facts, _part_extra, _part_summary, part_ok, part_fatal, part_err = part_result
+        if part_fatal:
+            return part_result
+        if not part_ok:
+            return [], [], [], "", False, False, part_err or err_msg
+        partial_results.append(part_result)
+    if not partial_results:
+        return result
+    return _merge_downshift_chunk_results(partial_results, index, error_type)
+
+
+def _scan_chunk_once(text_chunk, index, total, system_prompt, heroines, male_protagonist=None, fact_boost_prompt=None, context_summary=""):
     """分析单个块，返回 issues、heroine_facts、extra_relations 与下一块可复用摘要。"""
     summary_block = ""
     if context_summary:

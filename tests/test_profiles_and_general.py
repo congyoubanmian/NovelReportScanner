@@ -451,6 +451,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("HAREM_SCAN_CHUNK_SIZE=7000", env_sample_text)
         self.assertIn("API_SERVER_ERROR_MAX_RETRIES: ${API_SERVER_ERROR_MAX_RETRIES:-2}", compose_text)
         self.assertIn("API_SERVER_ERROR_MAX_RETRIES=2", env_sample_text)
+        self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH: ${HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH:-1}", compose_text)
+        self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH=1", env_sample_text)
+        self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS: ${HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS:-1200}", compose_text)
+        self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS=1200", env_sample_text)
 
     def test_docker_entrypoint_requires_web_token_and_writable_volumes(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -611,6 +615,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("GENERAL_SCAN_ENTITY_PRESCAN", text)
         self.assertIn("GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE", text)
         self.assertIn("GENERAL_SCAN_CONTEXT_MAX_CHARS", text)
+        self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH", text)
+        self.assertIn("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS", text)
         self.assertIn("/api/diagnostics", text)
         self.assertIn("stale_running_count", text)
         self.assertIn("app.commit", text)
@@ -1915,6 +1921,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         )
         self.assertEqual(data["issues"], [])
 
+    def test_scan_json_parser_keeps_string_values_ending_with_digits(self):
+        data = novel_scan._safe_json_loads(
+            '{"issues":[{"type":"半块1","content":"问题1"}],"heroine_facts":[],"extra_relations":[]}'
+        )
+        self.assertEqual(data["issues"][0]["type"], "半块1")
+        self.assertEqual(data["issues"][0]["content"], "问题1")
+
     def test_scan_json_response_diagnostic_flags_truncated_fence(self):
         diagnostic = novel_scan._diagnose_json_response_text(
             '```json\n{"issues":[{"content":"未闭合"'
@@ -1970,6 +1983,73 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(calls[0][1]["max_tokens"], 6000)
         self.assertEqual(calls[1][1]["max_tokens"], 8000)
         self.assertIn("重试压缩要求", calls[1][0][1]["content"])
+
+    def test_scan_chunk_downshifts_api_504_by_splitting_text(self):
+        class Message:
+            def __init__(self, content):
+                self.content = content
+
+        class Choice:
+            def __init__(self, content):
+                self.message = Message(content)
+
+        class Response:
+            def __init__(self, content):
+                self.choices = [Choice(content)]
+
+        calls = []
+        old_call = novel_scan._call_json_chat_completion
+        old_sleep = novel_scan.time.sleep
+        old_depth = novel_scan.HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH
+        old_min_chars = novel_scan.HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS
+        try:
+            def fake_call(messages, **kwargs):
+                calls.append((messages, kwargs))
+                if len(calls) <= 3:
+                    raise RuntimeError("服务器错误(504)")
+                part_no = len(calls) - 3
+                return Response(json.dumps({
+                    "issues": [{"type": f"半块{part_no}", "content": f"问题{part_no}"}],
+                    "heroine_facts": [{
+                        "name": "甲女",
+                        "facts": {
+                            "relationship": [{"content": f"事实{part_no}", "evidence": f"证据{part_no}"}],
+                        },
+                    }],
+                    "extra_relations": [{"name": "甲女", "evidence": f"关系{part_no}"}],
+                    "_context_summary": f"摘要{part_no}",
+                }, ensure_ascii=False))
+
+            novel_scan._call_json_chat_completion = fake_call
+            novel_scan.time.sleep = lambda *_args, **_kwargs: None
+            novel_scan.HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH = 1
+            novel_scan.HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS = 20
+
+            text = "甲女与男主同行。" * 20
+            issues, facts, extra, summary, ok, fatal, err = novel_scan.scan_chunk(
+                text,
+                0,
+                1,
+                "只输出 JSON",
+                ["甲女"],
+                {"name": "男主"},
+            )
+        finally:
+            novel_scan._call_json_chat_completion = old_call
+            novel_scan.time.sleep = old_sleep
+            novel_scan.HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH = old_depth
+            novel_scan.HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS = old_min_chars
+
+        self.assertTrue(ok)
+        self.assertFalse(fatal)
+        self.assertEqual(err, "")
+        self.assertEqual(len(calls), 5)
+        self.assertEqual([item["type"] for item in issues], ["半块1", "半块2"])
+        self.assertEqual([item["partial_index"] for item in issues], [1, 2])
+        self.assertEqual([item["partial_index"] for item in facts], [1, 2])
+        self.assertEqual([item["partial_index"] for item in extra], [1, 2])
+        self.assertIn("摘要1", summary)
+        self.assertIn("摘要2", summary)
 
     def test_initial_scan_partition_uses_dynamic_small_blocks(self):
         blocks = novel_scan._partition_indices_for_thread_blocks(

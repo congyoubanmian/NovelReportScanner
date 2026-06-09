@@ -433,6 +433,8 @@ SSE_MAX_CONNECTION_SECONDS=300
 - `HAREM_SCAN_CHUNK_SIZE`：后宫/男性向角色首扫分块大小，默认 `7000`。调小会增加块数，但能降低单请求 token、网关 504 和 JSON 截断风险。
 - `HAREM_SCAN_MAX_TOKENS`：后宫/男性向角色首扫单块最大输出 tokens，默认 `3000`。如果模型经常 504 或输出 JSON 截断，可继续下调。
 - `HAREM_SCAN_RETRY_WORKERS`：后宫补漏扫描并发，默认 `1`。单 Key 或网关不稳定时保持低并发更稳，多 Key 且服务稳定时可适当调高。
+- `HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH`：后宫单块遇到 `504` / timeout / context overflow 后自动切半降载的最大深度，默认 `1`；设为 `0` 可关闭。默认只把失败块拆成两半，避免额外请求失控。
+- `HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS`：小于该字符数的后宫片段不再切半，默认 `1200`，避免把低信息片段拆得过碎。
 
 Web 管理端常用配置：
 
