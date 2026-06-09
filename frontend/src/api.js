@@ -28,8 +28,11 @@ export function withAccessToken(path) {
   const token = getAccessToken()
   if (!token || !path.startsWith('/')) return path
   if (_hasAccessTokenQuery(path)) return path
-  const joiner = path.includes('?') ? '&' : '?'
-  return `${path}${joiner}token=${encodeURIComponent(token)}`
+  const hashIndex = path.indexOf('#')
+  const basePath = hashIndex >= 0 ? path.slice(0, hashIndex) : path
+  const hash = hashIndex >= 0 ? path.slice(hashIndex) : ''
+  const joiner = basePath.includes('?') ? '&' : '?'
+  return `${basePath}${joiner}token=${encodeURIComponent(token)}${hash}`
 }
 
 function _hasAccessTokenQuery(path) {

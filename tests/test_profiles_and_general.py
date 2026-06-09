@@ -1278,6 +1278,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("'access_token'", text)
         self.assertIn("'web_access_token'", text)
         self.assertIn("if (_hasAccessTokenQuery(path)) return path", text)
+        self.assertIn("const hashIndex = path.indexOf('#')", text)
+        self.assertIn("const basePath = hashIndex >= 0 ? path.slice(0, hashIndex) : path", text)
+        self.assertIn("const hash = hashIndex >= 0 ? path.slice(hashIndex) : ''", text)
+        self.assertIn("return `${basePath}${joiner}token=${encodeURIComponent(token)}${hash}`", text)
 
     def test_frontend_sse_fallback_retries_after_parse_errors(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
