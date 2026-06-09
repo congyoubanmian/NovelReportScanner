@@ -324,6 +324,30 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(data, {"ok": True})
         self.assertIn(True, calls)
 
+    def test_shared_json_parser_rejects_truncated_json_before_repair(self):
+        original_import = builtins.__import__
+        calls = []
+
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "json_repair":
+                def repair_json(_text, return_objects=False):
+                    calls.append(return_objects)
+                    return {"ok": True} if return_objects else '{"ok": true}'
+
+                return types.SimpleNamespace(repair_json=repair_json)
+            return original_import(name, globals, locals, fromlist, level)
+
+        try:
+            builtins.__import__ = fake_import
+            with self.assertRaisesRegex(json.JSONDecodeError, "truncated_json_response"):
+                shared_utils.parse_json_object_lenient(
+                    '```json\n{"female_characters":[{"name":"辛月","summary":"未闭合"'
+                )
+        finally:
+            builtins.__import__ = original_import
+
+        self.assertEqual(calls, [])
+
     def test_shared_json_call_helper_retries_when_json_mode_is_rejected(self):
         class FakeMessage:
             def __init__(self, content):
@@ -604,6 +628,44 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("JSON解析失败", result["_error"])
         self.assertNotIn("API调用失败", result["_error"])
         self.assertEqual(len(calls), 2)
+
+    def test_protagonist_chunk_analysis_adds_compact_retry_prompt_after_parse_error(self):
+        calls = []
+        old_call = protagonist._call_json_chat_completion
+        old_sleep = protagonist.time.sleep
+        old_profile = os.environ.get("ANALYSIS_PROFILE")
+        try:
+            def fake_call(messages, **_kwargs):
+                calls.append(messages)
+                if len(calls) == 1:
+                    raise ValueError("truncated_json_response; response_flags=json_unbalanced; response_len=6200")
+                return {
+                    "primary_protagonist": {"name": "云烨", "gender": "male", "summary": "主角行动"},
+                    "characters": [],
+                }
+
+            os.environ["ANALYSIS_PROFILE"] = "general"
+            protagonist._call_json_chat_completion = fake_call
+            protagonist.time.sleep = lambda *_args, **_kwargs: None
+            result = protagonist.analyze_chunk_for_heroines(
+                "云烨在长安处理政务。",
+                chunk_index=168,
+                total_chunks=452,
+                max_retries=2,
+            )
+        finally:
+            protagonist._call_json_chat_completion = old_call
+            protagonist.time.sleep = old_sleep
+            if old_profile is None:
+                os.environ.pop("ANALYSIS_PROFILE", None)
+            else:
+                os.environ["ANALYSIS_PROFILE"] = old_profile
+
+        self.assertTrue(result["_success"])
+        self.assertEqual(len(calls), 2)
+        self.assertNotIn("JSON修复重试要求", calls[0][1]["content"])
+        self.assertIn("JSON修复重试要求", calls[1][1]["content"])
+        self.assertIn("characters 最多输出", calls[1][1]["content"])
 
     def test_compose_variables_are_documented_in_env_sample(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -2561,6 +2623,61 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(calls[1][1]["max_tokens"], 8000)
         self.assertIn("重试压缩要求", calls[1][0][1]["content"])
 
+    def test_scan_chunk_dimension_boost_reports_truncated_json_without_failing_chunk(self):
+        class Message:
+            def __init__(self, content):
+                self.content = content
+
+        class Choice:
+            def __init__(self, content):
+                self.message = Message(content)
+
+        class Response:
+            def __init__(self, content):
+                self.choices = [Choice(content)]
+
+        calls = []
+        old_call = novel_scan._call_json_chat_completion
+        old_dim_limit = novel_scan.DIM_BOOST_MAX_PER_CHUNK
+        try:
+            def fake_call(messages, **kwargs):
+                calls.append((messages, kwargs))
+                if len(calls) == 1:
+                    return Response(json.dumps({
+                        "issues": [],
+                        "heroine_facts": [{
+                            "name": "甲女",
+                            "facts": {
+                                "physical_contacts": [],
+                            },
+                        }],
+                        "extra_relations": [],
+                    }, ensure_ascii=False))
+                return Response('```json\n{"heroine_facts":[{"name":"甲女","facts":{"physical_contacts":[')
+
+            novel_scan._call_json_chat_completion = fake_call
+            novel_scan.DIM_BOOST_MAX_PER_CHUNK = 1
+            with mock.patch.object(novel_scan, "check_uncovered_keywords", return_value=(True, ["甲女被旁人抓住手腕"])):
+                issues, facts, extra, _summary, ok, fatal, err = novel_scan.scan_chunk(
+                    "甲女被旁人抓住手腕，男主随后赶到。",
+                    0,
+                    1,
+                    "只输出 JSON",
+                    ["甲女"],
+                    {"name": "男主"},
+                )
+        finally:
+            novel_scan._call_json_chat_completion = old_call
+            novel_scan.DIM_BOOST_MAX_PER_CHUNK = old_dim_limit
+
+        self.assertTrue(ok)
+        self.assertFalse(fatal)
+        self.assertEqual(err, "")
+        self.assertEqual(issues, [])
+        self.assertEqual(extra, [])
+        self.assertTrue(facts)
+        self.assertGreaterEqual(len(calls), 2)
+
     def test_scan_chunk_empty_choices_reports_json_error_not_none_subscript(self):
         class Response:
             choices = None
@@ -2659,6 +2776,68 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual([item["partial_index"] for item in extra], [1, 2])
         self.assertIn("摘要1", summary)
         self.assertIn("摘要2", summary)
+
+    def test_global_rescan_truncated_json_keeps_chunk_retryable(self):
+        class Message:
+            def __init__(self, content):
+                self.content = content
+
+        class Choice:
+            def __init__(self, content):
+                self.message = Message(content)
+
+        class Response:
+            choices = [Choice('```json\n{"heroine_facts":[{"name":"甲女","facts":{"physical_contacts":[')]
+
+        old_call = novel_scan._call_json_chat_completion
+        old_enabled = novel_scan.ENABLE_GLOBAL_RESCAN
+        checkpoint_calls = []
+        cluster = novel_scan.ProximityCluster(
+            entries=[
+                novel_scan.ChunkHeroineEntry(
+                    heroine_name="甲女",
+                    dimensions=["physical_contacts"],
+                    anchor_pos=0,
+                    rescan_context="甲女被旁人抓住手腕",
+                )
+            ],
+            window_start=0,
+            window_end=20,
+            all_dimensions={"physical_contacts"},
+        )
+        hit = novel_scan.CoOccurrenceHit(
+            heroine_name="甲女",
+            dimension="physical_contacts",
+            chunk_idx=0,
+            anchor_pos=0,
+            keyword_pos=3,
+            score=10,
+        )
+        try:
+            novel_scan._call_json_chat_completion = lambda *_args, **_kwargs: Response()
+            novel_scan.ENABLE_GLOBAL_RESCAN = True
+            with mock.patch.object(novel_scan, "_build_chunk_hit_map", return_value={0: [hit]}), \
+                    mock.patch.object(novel_scan, "_cluster_by_proximity", return_value=[cluster]), \
+                    mock.patch.object(novel_scan, "_extract_focused_window", return_value="甲女被旁人抓住手腕"), \
+                    mock.patch.object(novel_scan, "_add_free_riders", side_effect=lambda c, *_args: c):
+                result = novel_scan.global_dimension_rescan(
+                    ["甲女被旁人抓住手腕"],
+                    processed_chunks={0},
+                    all_heroine_facts=[{"name": "甲女", "facts": {}}],
+                    heroine_profiles={"甲女": {"rescan_context": "甲女被旁人抓住手腕"}},
+                    heroines=["甲女"],
+                    male_protagonist={"name": "男主"},
+                    checkpoint_callback=lambda **kwargs: checkpoint_calls.append(kwargs),
+                    rescan_done_chunks=set(),
+                    novel_name="测试书",
+                )
+        finally:
+            novel_scan._call_json_chat_completion = old_call
+            novel_scan.ENABLE_GLOBAL_RESCAN = old_enabled
+
+        self.assertEqual(result[0]["name"], "甲女")
+        self.assertEqual(len(checkpoint_calls), 1)
+        self.assertEqual(checkpoint_calls[0]["rescan_done_chunks"], set())
 
     def test_initial_scan_partition_uses_dynamic_small_blocks(self):
         blocks = novel_scan._partition_indices_for_thread_blocks(

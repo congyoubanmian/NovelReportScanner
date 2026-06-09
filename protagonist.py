@@ -27,9 +27,12 @@ from shared_utils import (
     cancel_pending_futures,
     configure_rotating_file_logger,
     create_chat_completion,
+    diagnose_json_response_text,
+    format_json_response_diagnostic,
     get_base_dir,
     iter_completed_futures,
     is_retryable_transport_error,
+    json_response_looks_truncated,
     parse_json_object_lenient,
     read_int_env,
     read_file_safely,
@@ -1116,8 +1119,45 @@ def _build_general_character_prompt(text_chunk, chunk_index, total_chunks):
 2. 最多 {max_chars} 个对剧情、冲突、设定、阵营或人物关系最有意义的角色。
 3. 每个角色的身份、阵营、关系、关键事件和本段作用，全部用短句。
 
-请以 JSON 格式输出。"""
+    请以 JSON 格式输出。"""
     return system_prompt, user_prompt
+
+
+def _build_character_parse_retry_suffix(profile_mode, retry):
+    if retry <= 0:
+        return ""
+    if profile_mode == "general":
+        max_chars = max(3, min(6, GENERAL_CHARACTER_MAX_PER_CHUNK))
+        return f"""
+
+【JSON修复重试要求】
+上一次输出不是可解析 JSON 或疑似被截断。请重新输出更短的合法 JSON：
+- characters 最多输出 {max_chars} 个，只保留主角、核心反派、关键同伴或当前片段最关键的角色。
+- relationships/key_events 每项最多 1 条。
+- identity、traits、summary 每项不超过 30 个汉字。
+- 不输出 Markdown，不输出代码块，不输出解释。
+"""
+    return """
+
+【JSON修复重试要求】
+上一次输出不是可解析 JSON 或疑似被截断。请重新输出更短的合法 JSON：
+- female_characters 最多输出 8 个，只保留与男主互动最明确的女性。
+- other_names 最多 3 个。
+- appearance、identity、interaction_with_male_lead、emotion_signals、summary 每项不超过 30 个汉字。
+- 不输出 Markdown，不输出代码块，不输出解释。
+"""
+
+
+def _parse_retry_diagnostic(error):
+    text = str(error or "")
+    diagnostic = diagnose_json_response_text(text)
+    flags, err_detail = format_json_response_diagnostic(diagnostic)
+    truncated = (
+        json_response_looks_truncated(diagnostic)
+        or "truncated_json_response" in text
+        or "response_flags=" in text
+    )
+    return flags, err_detail, truncated
 
 
 def _coerce_score(value):
@@ -1319,7 +1359,11 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
         system_prompt, user_prompt = _build_harem_character_prompt(text_chunk, chunk_index, total_chunks)
 
     def _parse_failure(error):
-        logger.warning(f"Chunk {chunk_index} JSON解析失败 (尝试 {retry+1}/{max_retries}): {error}")
+        flags, err_detail, truncated = _parse_retry_diagnostic(error)
+        logger.warning(
+            f"Chunk {chunk_index} JSON解析失败 (尝试 {retry+1}/{max_retries}): {error}; "
+            f"{err_detail}; truncated={truncated}"
+        )
         if retry < max_retries - 1:
             time.sleep(1)
             return None
@@ -1334,10 +1378,11 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
     for retry in range(max_retries):
         try:
             try:
+                retry_suffix = _build_character_parse_retry_suffix(profile_mode, retry)
                 data = _call_json_chat_completion(
                     [
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
+                        {"role": "user", "content": user_prompt + retry_suffix},
                     ],
                     temperature=0.1,
                     max_tokens=HAREM_SCAN_MAX_TOKENS,

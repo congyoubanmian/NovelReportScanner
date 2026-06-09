@@ -25,8 +25,11 @@ from shared_utils import (
     cancel_pending_futures,
     configure_rotating_file_logger,
     create_chat_completion,
+    diagnose_json_response_text,
+    format_json_response_diagnostic,
     get_base_dir,
     iter_completed_futures,
+    json_response_looks_truncated,
     read_file_safely,
     read_float_env,
     read_int_env,
@@ -151,77 +154,15 @@ def _sanitize_chunk_preview(text, max_chars=220):
 
 
 def _diagnose_json_response_text(content):
-    text = "" if content is None else str(content)
-    stripped = text.strip()
-    flags = []
-    if content is None:
-        flags.append("content_none")
-    if not stripped:
-        flags.append("content_empty")
-    if stripped.startswith("```") and not stripped.endswith("```"):
-        flags.append("code_fence_unclosed")
-    if stripped.startswith("```"):
-        flags.append("code_fence_wrapped")
-
-    in_str = False
-    escape = False
-    brace_depth = 0
-    bracket_depth = 0
-    for ch in stripped:
-        if in_str:
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == "\"":
-                in_str = False
-            continue
-        if ch == "\"":
-            in_str = True
-        elif ch == "{":
-            brace_depth += 1
-        elif ch == "}":
-            brace_depth -= 1
-        elif ch == "[":
-            bracket_depth += 1
-        elif ch == "]":
-            bracket_depth -= 1
-
-    if in_str:
-        flags.append("json_string_unclosed")
-    if brace_depth != 0 or bracket_depth != 0:
-        flags.append("json_unbalanced")
-    if stripped and stripped[-1] not in ("}", "]", "`") and (brace_depth > 0 or bracket_depth > 0 or in_str):
-        flags.append("likely_truncated")
-    if len(stripped) >= 5500 and (brace_depth > 0 or bracket_depth > 0):
-        flags.append("near_max_tokens_truncated")
-
-    return {
-        "length": len(stripped),
-        "flags": sorted(set(flags)),
-        "brace_depth": brace_depth,
-        "bracket_depth": bracket_depth,
-        "tail": _sanitize_chunk_preview(stripped[-160:], max_chars=160),
-    }
+    return diagnose_json_response_text(content)
 
 
 def _json_response_looks_truncated(diagnostic):
-    flags = set((diagnostic or {}).get("flags") or [])
-    return bool(flags & {
-        "code_fence_unclosed",
-        "json_string_unclosed",
-        "json_unbalanced",
-        "likely_truncated",
-        "near_max_tokens_truncated",
-    })
+    return json_response_looks_truncated(diagnostic)
 
 
 def _format_json_response_diagnostic(diagnostic):
-    flags = ",".join((diagnostic or {}).get("flags") or ["none"])
-    return (
-        flags,
-        f"response_flags={flags}; response_len={(diagnostic or {}).get('length', 0)}",
-    )
+    return format_json_response_diagnostic(diagnostic)
 
 
 def _build_chunk_failure_diagnostic(text_chunk, err_msg="", max_preview=220):
@@ -2434,6 +2375,10 @@ def _safe_json_loads(text):
     s = str(text).strip()
     if not s:
         raise json.JSONDecodeError("empty", "", 0)
+    response_diag = _diagnose_json_response_text(s)
+    if _json_response_looks_truncated(response_diag):
+        _flags, err_detail = _format_json_response_diagnostic(response_diag)
+        raise json.JSONDecodeError(f"truncated_json_response; {err_detail}", s[:200], 0)
     s = re.sub(r"```json\s*|\s*```", "", s).strip()
     s = _normalize_fullwidth_json_punct(s)
 
@@ -2542,8 +2487,29 @@ def _response_message_content(response):
         return None
 
 
-def _response_json_data(response):
-    return _safe_json_loads(_response_message_content(response))
+def _response_json_data(response, context="chat"):
+    content = _response_message_content(response)
+    response_diag = _diagnose_json_response_text(content)
+    if _json_response_looks_truncated(response_diag):
+        flags, err_detail = _format_json_response_diagnostic(response_diag)
+        logger.warning(
+            f"{context} 返回疑似截断JSON，响应诊断 flags={flags} "
+            f"len={response_diag['length']} brace={response_diag['brace_depth']} "
+            f"bracket={response_diag['bracket_depth']} tail={response_diag['tail']!r}"
+        )
+        raise ValueError(f"truncated_json_response; {err_detail}")
+    try:
+        return _safe_json_loads(content)
+    except Exception as exc:
+        flags, err_detail = _format_json_response_diagnostic(response_diag)
+        snippet = (str(content)[:200] if content is not None else "None")
+        logger.warning(
+            f"{context} 返回非JSON/空内容，响应诊断 flags={flags} "
+            f"len={response_diag['length']} brace={response_diag['brace_depth']} "
+            f"bracket={response_diag['bracket_depth']} tail={response_diag['tail']!r} "
+            f"前200字符: {snippet!r}"
+        )
+        raise ValueError(f"{exc}; {err_detail}") from exc
 
 
 def _normalize_issue(issue, chunk_index):
@@ -2818,7 +2784,7 @@ def _scan_chunk_once(text_chunk, index, total, system_prompt, heroines, male_pro
                             max_tokens=4000,
                             log_prefix=f"chunk {index} dim_boost {dimension}",
                         )
-                        boost_data = _response_json_data(boost_resp)
+                        boost_data = _response_json_data(boost_resp, context=f"chunk {index} dim_boost {dimension}")
                         if not isinstance(boost_data, dict):
                             continue
                         boost_data.pop("_reasoning", None)
@@ -2942,7 +2908,7 @@ def generate_context_summary(text_chunk, heroines=None, male_protagonist=None, p
             max_tokens=800,
             log_prefix="context_summary",
         )
-        data = _response_json_data(response)
+        data = _response_json_data(response, context="context_summary")
     except Exception as e:
         logger.warning(f"生成前情提要失败，退化为无上下文扫描: {e}")
         return ""
@@ -3517,7 +3483,7 @@ def generate_single_heroine_profile(heroine_name, facts, male_protagonist=None, 
         max_tokens=1200,
         log_prefix=f"profile {heroine_name}",
     )
-    data = _response_json_data(response)
+    data = _response_json_data(response, context=f"profile {heroine_name}")
     if not isinstance(data, dict):
         return {
             "report_summary": _normalize_profile_report_summary("", detail_json_data),
@@ -4178,7 +4144,7 @@ def global_dimension_rescan(chunks, processed_chunks, all_heroine_facts, heroine
                     log_prefix=f"global_rescan_opt chunk {chunk_idx} ({n_heroines}h x {n_dims}d)",
                 )
                 total_calls += 1
-                data = _response_json_data(response)
+                data = _response_json_data(response, context=f"global_rescan_opt chunk {chunk_idx} ({n_heroines}h x {n_dims}d)")
                 if not isinstance(data, dict):
                     continue
 

@@ -439,6 +439,92 @@ def _remove_ascii_control_chars(text: str) -> str:
     )
 
 
+def _sanitize_json_preview(text: Any, max_chars: int = 220) -> str:
+    raw = str(text or "")[:max_chars]
+    return (
+        raw.replace("\\", "\\\\")
+        .replace("\x00", "\\x00")
+        .replace("\x1b", "\\x1b")
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+    )
+
+
+def diagnose_json_response_text(content: Any) -> Dict[str, Any]:
+    text = "" if content is None else str(content)
+    stripped = text.strip()
+    flags = []
+    if content is None:
+        flags.append("content_none")
+    if not stripped:
+        flags.append("content_empty")
+    if stripped.startswith("```") and not stripped.endswith("```"):
+        flags.append("code_fence_unclosed")
+    if stripped.startswith("```"):
+        flags.append("code_fence_wrapped")
+
+    in_str = False
+    escape = False
+    brace_depth = 0
+    bracket_depth = 0
+    for ch in stripped:
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == "\"":
+                in_str = False
+            continue
+        if ch == "\"":
+            in_str = True
+        elif ch == "{":
+            brace_depth += 1
+        elif ch == "}":
+            brace_depth -= 1
+        elif ch == "[":
+            bracket_depth += 1
+        elif ch == "]":
+            bracket_depth -= 1
+
+    if in_str:
+        flags.append("json_string_unclosed")
+    if brace_depth != 0 or bracket_depth != 0:
+        flags.append("json_unbalanced")
+    if stripped and stripped[-1] not in ("}", "]", "`") and (brace_depth > 0 or bracket_depth > 0 or in_str):
+        flags.append("likely_truncated")
+    if len(stripped) >= 5500 and (brace_depth > 0 or bracket_depth > 0):
+        flags.append("near_max_tokens_truncated")
+
+    return {
+        "length": len(stripped),
+        "flags": sorted(set(flags)),
+        "brace_depth": brace_depth,
+        "bracket_depth": bracket_depth,
+        "tail": _sanitize_json_preview(stripped[-160:], max_chars=160),
+    }
+
+
+def json_response_looks_truncated(diagnostic: Dict[str, Any]) -> bool:
+    flags = set((diagnostic or {}).get("flags") or [])
+    return bool(flags & {
+        "code_fence_unclosed",
+        "json_string_unclosed",
+        "json_unbalanced",
+        "likely_truncated",
+        "near_max_tokens_truncated",
+    })
+
+
+def format_json_response_diagnostic(diagnostic: Dict[str, Any]) -> Tuple[str, str]:
+    flags = ",".join((diagnostic or {}).get("flags") or ["none"])
+    return (
+        flags,
+        f"response_flags={flags}; response_len={(diagnostic or {}).get('length', 0)}",
+    )
+
+
 def _escape_unescaped_quotes_in_json_strings(text: str) -> str:
     """
     Repair a common LLM JSON failure:
@@ -538,10 +624,23 @@ def parse_json_object_lenient(text: Any) -> Dict[str, Any]:
             except Exception as exc:
                 last_error = exc
 
+    repair_candidates = []
+    truncated_diagnostics = []
+    for candidate in _json_candidate_variants(text):
+        diagnostic = diagnose_json_response_text(candidate)
+        if json_response_looks_truncated(diagnostic):
+            truncated_diagnostics.append(diagnostic)
+            continue
+        repair_candidates.append(candidate)
+
+    if not repair_candidates and truncated_diagnostics:
+        _flags, err_detail = format_json_response_diagnostic(truncated_diagnostics[0])
+        raise json.JSONDecodeError(f"truncated_json_response; {err_detail}", str(text)[:200], 0)
+
     try:
         from json_repair import repair_json
 
-        for candidate in _json_candidate_variants(text):
+        for candidate in repair_candidates:
             try:
                 try:
                     repaired_obj = repair_json(candidate, return_objects=True)
