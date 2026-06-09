@@ -25,6 +25,7 @@ from shared_utils import (
     create_chat_completion,
     get_base_dir,
     read_file_safely,
+    should_retry_without_json_mode_error,
 )
 from prompt_templates import prompt_template_metadata, prompt_templates_metadata
 from text_anchor import build_chunk_manifest, save_chunk_manifest
@@ -42,8 +43,7 @@ BASE_URL = os.environ.get("BASE_URL", "https://api.deepseek.com")
 MODEL = os.environ.get("MODEL_NAME", "deepseek-chat")
 CHUNK_SIZE = 6000
 CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", "1200"))
-_base_workers = int(os.environ.get("MAX_WORKERS", "6"))
-MAX_WORKERS = _base_workers + 4
+MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "6"))
 ENABLE_FACT_BOOST = os.environ.get("ENABLE_FACT_BOOST", "1").strip() == "1"
 FACT_BOOST_MAX_CALLS_PER_CHUNK = int(os.environ.get("FACT_BOOST_MAX_CALLS_PER_CHUNK", "2"))
 DIM_BOOST_MAX_PER_CHUNK = int(os.environ.get("DIM_BOOST_MAX_PER_CHUNK", "3"))
@@ -92,6 +92,26 @@ _ACTIVE_PROGRESS_STATE = None
 _middle_summary_calls = 0
 _ACTIVE_DETAIL_PATH = None
 CHECKPOINT_FULL_MERGE_INTERVAL = 10
+
+
+def _novel_file_signature(path: str, sample_size: int = 65536):
+    try:
+        stat = os.stat(path)
+        size = int(stat.st_size)
+        digest = hashlib.sha256()
+        digest.update(str(size).encode("ascii"))
+        with open(path, "rb") as f:
+            digest.update(f.read(sample_size))
+            if size > sample_size:
+                f.seek(max(0, size - sample_size))
+                digest.update(f.read(sample_size))
+        return {
+            "size": size,
+            "mtime_ns": int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))),
+            "sample_sha256": digest.hexdigest(),
+        }
+    except OSError:
+        return None
 
 
 def _reserve_middle_summary_call(middle_summary_state=None):
@@ -2429,7 +2449,9 @@ def _call_json_chat_completion(messages, max_tokens, temperature=0.1, log_prefix
             max_tokens=max_tokens,
         )
     except Exception as e:
-        logger.warning(f"{log_prefix} response_format 不可用，降级调用: {e}")
+        if not should_retry_without_json_mode_error(e):
+            raise
+        logger.warning(f"{log_prefix} response_format 不兼容，降级调用: {e}")
         response = chat_completion(
             model=MODEL,
             messages=messages,
@@ -4647,7 +4669,18 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     _append_to_detail_file(all_heroine_facts, extra_relations_all, male_protagonist, detail_path=active_detail_path)
 
     # 7. 保存与报告
+    final_failed_chunks = (all_indices - set(processed_chunks)) | set(failed_chunks or [])
+    partial_scan = bool(final_failed_chunks)
     raw_data = {
+        "schema_version": 1,
+        "book_name": current_book_name,
+        "novel_path": NOVEL_FILE_PATH,
+        "novel_signature": _novel_file_signature(NOVEL_FILE_PATH),
+        "partial_scan": partial_scan,
+        "failed_chunk_count": len(final_failed_chunks),
+        "failed_chunks": sorted(final_failed_chunks),
+        "processed_chunk_count": len(processed_chunks),
+        "attempted_chunk_count": len(chunks),
         "issues": all_issues,
         "heroine_facts": all_heroine_facts,
         "extra_relations": extra_relations_all,
@@ -4657,7 +4690,8 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         "chunk_plan": chunk_plan_metadata,
         "prompt_templates": prompt_templates_metadata("harem_scan_chunk"),
     }
-    with open(os.path.join(output_dir, "raw_data.json"), 'w', encoding='utf-8') as f:
+    raw_data_path = os.path.join(output_dir, "raw_data.json")
+    with open(raw_data_path, 'w', encoding='utf-8') as f:
         json.dump(raw_data, f, ensure_ascii=False, indent=2)
         
     report = generate_report(all_issues, all_heroine_facts, heroines, book_name=current_book_name)
@@ -4674,6 +4708,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         token_tracker.flush(status="finished")
     print("="*60)
     print(report[:2000]) # 打印前2000字预览
+    return raw_data_path
 
 if __name__ == "__main__":
     main()

@@ -24,6 +24,7 @@ from shared_utils import (
     configure_rotating_file_logger,
     create_chat_completion,
     get_base_dir,
+    is_retryable_transport_error,
     read_file_safely,
 )
 
@@ -1238,6 +1239,8 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
                     
         except Exception as e:
             logger.error(f"Chunk {chunk_index} API调用失败 (尝试 {retry+1}/{max_retries}): {e}")
+            if is_retryable_transport_error(e):
+                return {"male_protagonist": None, "female_characters": [], "_success": False, "_error": f"API调用失败: {e}"}
             if retry < max_retries - 1:
                 time.sleep(2 ** retry)
             else:

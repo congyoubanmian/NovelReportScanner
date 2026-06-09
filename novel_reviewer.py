@@ -278,6 +278,44 @@ def _infer_novel_path_from_scan(raw_data_path: str) -> Optional[str]:
     return None
 
 
+def _novel_file_signature(path: str, sample_size: int = 65536):
+    try:
+        stat = os.stat(path)
+        size = int(stat.st_size)
+        digest = hashlib.sha256()
+        digest.update(str(size).encode("ascii"))
+        with open(path, "rb") as f:
+            digest.update(f.read(sample_size))
+            if size > sample_size:
+                f.seek(max(0, size - sample_size))
+                digest.update(f.read(sample_size))
+        return {
+            "size": size,
+            "mtime_ns": int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))),
+            "sample_sha256": digest.hexdigest(),
+        }
+    except OSError:
+        return None
+
+
+def _validate_raw_data_matches_novel(raw_data: dict, raw_data_path: str, novel_path: Optional[str], book_name: Optional[str]):
+    if not isinstance(raw_data, dict):
+        raise ValueError(f"raw_data.json 格式无效: {raw_data_path}")
+    stored_book = str(raw_data.get("book_name") or "").strip()
+    expected_book = str(book_name or "").strip()
+    if expected_book and stored_book and stored_book != expected_book:
+        raise ValueError(f"raw_data 书名不匹配: expected={expected_book}, actual={stored_book}")
+    expected_path = os.path.abspath(novel_path) if novel_path else ""
+    stored_path = str(raw_data.get("novel_path") or "").strip()
+    if expected_path and stored_path and os.path.abspath(stored_path) != expected_path:
+        raise ValueError(f"raw_data 小说路径不匹配: expected={expected_path}, actual={stored_path}")
+    stored_signature = raw_data.get("novel_signature")
+    if expected_path and isinstance(stored_signature, dict):
+        current_signature = _novel_file_signature(expected_path)
+        if current_signature != stored_signature:
+            raise ValueError(f"raw_data 小说签名不匹配: {raw_data_path}")
+
+
 def _read_tail(file_path: str, max_chars: int = 10000) -> Optional[str]:
     """
     读取小说尾部文本（复用统一编码识别逻辑，避免 errors='ignore' 吞字）。
@@ -8657,7 +8695,7 @@ def aggregate_and_judge_heroines(heroine_status_list, male_lead, detail_evidence
 
     return results
 
-def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
+def main(novel_path=None, book_name=None, run_id=None, detail_path=None, raw_data_path=None):
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--raw-data", help="指定 raw_data.json 路径")
@@ -8677,7 +8715,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     print("⚖️  小说毒点二审法官 (全AI裁决版)")
     print("="*60)
 
-    raw_data_path = args.raw_data or find_latest_scan_data(scan_dir)
+    raw_data_path = raw_data_path or args.raw_data or find_latest_scan_data(scan_dir)
     if not raw_data_path:
         print(f"❌ 未找到 raw_data.json，请确认目录: {scan_dir}")
         return
@@ -8704,12 +8742,14 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     configure_rotating_file_logger(logger, log_path)
     logger.info(f"日志文件: {log_path}")
 
+    with open(raw_data_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    _validate_raw_data_matches_novel(data, raw_data_path, novel_path, book_name)
+
     char_file_path = find_character_data(raw_data_path, detail_path=detail_path)
     male_lead, female_leads = extract_roles(char_file_path)
     print(f"👨‍🦰 男主锁定: 【{male_lead}】")
 
-    with open(raw_data_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
     issues = data.get("issues", [])
     heroine_status = data.get("heroine_status", [])
 

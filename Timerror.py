@@ -924,7 +924,14 @@ def make_chat_completion(
                                 break_to_outer = True
                                 break
 
-                            # 正常 5xx：线性退避重试
+                            # 正常 5xx：线性退避重试；最后一次直接失败，避免单 key 同一请求无限循环。
+                            if real_attempt >= cfg.max_retries:
+                                _log(
+                                    logger,
+                                    "warning",
+                                    f"API_KEY[{idx}|{key_tag}] 服务器错误({code})已达本轮上限，停止重试",
+                                )
+                                raise
                             wait_time = cfg.base_delay * attempt_no
                             _log(
                                 logger,

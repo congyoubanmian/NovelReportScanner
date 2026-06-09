@@ -544,15 +544,23 @@ def process_single_novel(novel_path, profile_name=None, run_id=None, skip_fresh=
 
     if status == "ok" and active_profile.uses_harem_reviewer:
         try:
-            novel_scan.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path)
+            raw_data_path = novel_scan.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path)
         except Exception as e:
             print(f"[novel_scan] 异常: {e}")
             status = "fail"
             error = f"novel_scan: {e}"
+    else:
+        raw_data_path = None
 
     if status == "ok" and active_profile.uses_harem_reviewer:
         try:
-            novel_reviewer.main(novel_path=novel_path, book_name=book_name, run_id=run_id, detail_path=detail_path)
+            novel_reviewer.main(
+                novel_path=novel_path,
+                book_name=book_name,
+                run_id=run_id,
+                detail_path=detail_path,
+                raw_data_path=raw_data_path,
+            )
         except Exception as e:
             print(f"[novel_reviewer] 异常: {e}")
             status = "fail"

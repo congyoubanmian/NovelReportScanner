@@ -225,6 +225,30 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertNotIn("response_format", calls[1])
         self.assertIn("不支持 JSON mode", calls[1]["messages"][-1]["content"])
 
+    def test_shared_json_call_helper_does_not_fallback_on_504(self):
+        class Response:
+            status_code = 504
+
+        class GatewayTimeout(RuntimeError):
+            response = Response()
+
+        calls = []
+
+        def fake_chat_completion(**kwargs):
+            calls.append(kwargs)
+            raise GatewayTimeout("gateway timeout")
+
+        with self.assertRaises(GatewayTimeout):
+            shared_utils.call_json_chat_completion_with_fallback(
+                chat_completion_func=fake_chat_completion,
+                model="test-model",
+                messages=[{"role": "user", "content": "输出 JSON"}],
+                max_tokens=128,
+            )
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
+
     def test_reviewer_json_call_retries_without_json_mode_on_parse_failure(self):
         class FakeMessage:
             def __init__(self, content):
@@ -336,6 +360,34 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
         self.assertNotIn("response_format", calls[1])
         self.assertIn("上一次回复不是可解析的 JSON 对象", calls[1]["messages"][-1]["content"])
+
+    def test_protagonist_chunk_analysis_does_not_outer_retry_transport_error(self):
+        class Response:
+            status_code = 504
+
+        class GatewayTimeout(RuntimeError):
+            response = Response()
+
+        calls = []
+        old_call = protagonist._call_json_chat_completion
+        try:
+            def fake_call(*_args, **_kwargs):
+                calls.append("call")
+                raise GatewayTimeout("gateway timeout")
+
+            protagonist._call_json_chat_completion = fake_call
+            result = protagonist.analyze_chunk_for_heroines(
+                "程晋阳遇见王婉柔。",
+                chunk_index=0,
+                total_chunks=1,
+                max_retries=3,
+            )
+        finally:
+            protagonist._call_json_chat_completion = old_call
+
+        self.assertFalse(result["_success"])
+        self.assertEqual(len(calls), 1)
+        self.assertIn("API调用失败", result["_error"])
 
     def test_compose_variables_are_documented_in_env_sample(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -1001,6 +1053,45 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 os.environ.pop("RATE_LIMIT_SCOPE", None)
             else:
                 os.environ["RATE_LIMIT_SCOPE"] = old_scope
+
+    def test_make_chat_completion_stops_after_5xx_retry_limit(self):
+        calls = []
+
+        class Response:
+            status_code = 504
+
+        class ServerError(RuntimeError):
+            response = Response()
+
+        class FakeCompletions:
+            def create(self, **_kwargs):
+                calls.append("call")
+                raise ServerError("gateway timeout")
+
+        class FakeChat:
+            completions = FakeCompletions()
+
+        class FakeClient:
+            chat = FakeChat()
+
+        def fake_factory(_key, _base_url, _timeout):
+            return FakeClient()
+
+        chat_completion = Timerror.make_chat_completion(
+            openai_client_factory=fake_factory,
+            api_key_pool=["sk-test"],
+            base_url="https://example.test/v1",
+            request_timeout=1,
+            max_retries=2,
+            base_delay=0,
+            rpm_limit=0,
+            tpm_limit=0,
+            logger=None,
+        )
+
+        with self.assertRaises(ServerError):
+            chat_completion(messages=[{"role": "user", "content": "hello"}], max_tokens=1)
+        self.assertEqual(len(calls), 2)
 
     def test_auto_inference_keywords_are_profile_owned(self):
         for profile in analysis_profiles.list_available_profiles():
@@ -4217,6 +4308,31 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["profile"], "harem")
         self.assertEqual(result["profiles"], ["harem", "history"])
+
+    def test_process_single_novel_passes_current_raw_data_to_reviewer(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            novel_path = os.path.join(tmpdir, "后宫书.txt")
+            raw_data_path = os.path.join(tmpdir, "results", "后宫书_scan", "raw_data.json")
+            os.makedirs(os.path.dirname(raw_data_path), exist_ok=True)
+            with open(novel_path, "w", encoding="utf-8") as f:
+                f.write("stub")
+            calls = []
+
+            def fake_reviewer_main(**kwargs):
+                calls.append(kwargs)
+
+            with mock.patch.object(main, "get_base_dir", return_value=tmpdir), \
+                    mock.patch.object(main, "_report_is_fresh", return_value=(False, None)), \
+                    mock.patch.object(protagonist, "main", return_value=0), \
+                    mock.patch.object(protagonist, "get_latest_report_files", return_value={"detailed": "detail.json"}), \
+                    mock.patch.object(novel_scan, "main", return_value=raw_data_path), \
+                    mock.patch.object(novel_reviewer, "main", side_effect=fake_reviewer_main), \
+                    mock.patch.object(report, "main", return_value=0):
+                result = main.process_single_novel(novel_path, profile_name="harem", run_id="run", skip_fresh=False)
+
+            self.assertEqual(result["status"], "ok")
+            self.assertEqual(calls[0]["raw_data_path"], raw_data_path)
+            self.assertEqual(calls[0]["novel_path"], novel_path)
 
     def test_harem_plus_general_scan_switches_profile_temporarily(self):
         harem = analysis_profiles.load_analysis_profile("harem")
@@ -12967,6 +13083,25 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("scan_coverage_ratio", text)
         self.assertIn("查看 summary", text)
 
+    def test_reviewer_rejects_raw_data_for_different_novel(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            novel_path = os.path.join(tmpdir, "当前书.txt")
+            raw_path = os.path.join(tmpdir, "raw_data.json")
+            with open(novel_path, "w", encoding="utf-8") as f:
+                f.write("current")
+            with open(raw_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "book_name": "其他书",
+                    "novel_path": novel_path,
+                    "novel_signature": novel_reviewer._novel_file_signature(novel_path),
+                }, f, ensure_ascii=False)
+
+            with open(raw_path, "r", encoding="utf-8") as f:
+                raw_data = json.load(f)
+
+            with self.assertRaisesRegex(ValueError, "书名不匹配"):
+                novel_reviewer._validate_raw_data_matches_novel(raw_data, raw_path, novel_path, "当前书")
+
     def test_general_scan_fresh_summary(self):
         with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
             f.write("test")
@@ -13005,6 +13140,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 "chunk_results": [],
             }
             self.assertTrue(general_scan._is_fresh_summary(data, novel_path, "history"))
+            data_partial = dict(data)
+            data_partial["partial_scan"] = True
+            self.assertFalse(general_scan._is_fresh_summary(data_partial, novel_path, "history"))
+            data_failed_count = dict(data)
+            data_failed_count["failed_chunk_count"] = 1
+            self.assertFalse(general_scan._is_fresh_summary(data_failed_count, novel_path, "history"))
+            data_low_coverage = dict(data)
+            data_low_coverage["scan_coverage_ratio"] = 0.8
+            self.assertFalse(general_scan._is_fresh_summary(data_low_coverage, novel_path, "history"))
             data_without_writing_meta = dict(data)
             data_without_writing_meta.pop("writing_quality_enabled", None)
             self.assertFalse(general_scan._is_fresh_summary(data_without_writing_meta, novel_path, "history"))

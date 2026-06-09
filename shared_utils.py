@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from openai import OpenAI
 
-from Timerror import make_chat_completion
+from Timerror import extract_status_code, is_timeout_error, make_chat_completion
 from token_tracker import create_default_tracker
 
 
@@ -49,9 +49,8 @@ RULES_FILE = os.environ.get("ANALYSIS_RULES_FILE") or os.path.join(
 )
 if not os.path.exists(RULES_FILE):
     RULES_FILE = os.path.join(BASE_DIR, "rules2.json")
-# 并发线程数：环境值 + 4（默认 8+4=12）
-_base_workers = int(os.environ.get("MAX_WORKERS", "8"))
-MAX_WORKERS = _base_workers + 4
+# 并发线程数：按环境值执行，避免 Web 端显示值与实际请求并发不一致。
+MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "8"))
 
 logger = logging.getLogger("reviewer")
 
@@ -208,6 +207,36 @@ def is_context_overflow_error(exc: Exception) -> bool:
     return any(hint in text for hint in CONTEXT_OVERFLOW_ERROR_HINTS)
 
 
+def is_retryable_transport_error(exc: Exception) -> bool:
+    status_code = extract_status_code(exc)
+    if status_code in (429, 500, 502, 503, 504):
+        return True
+    return is_timeout_error(exc)
+
+
+def should_retry_without_json_mode_error(exc: Exception) -> bool:
+    """Only remove response_format for JSON-mode compatibility errors.
+
+    Transport/provider failures must bubble up so Timerror's retry budget remains
+    meaningful instead of doubling the same failed request.
+    """
+    if is_retryable_transport_error(exc):
+        return False
+    text = str(exc or "").lower()
+    json_mode_hints = (
+        "response_format",
+        "json mode",
+        "json_object",
+        "unsupported",
+        "not support",
+        "不支持",
+        "无法识别",
+        "invalid parameter",
+        "invalid_request",
+    )
+    return any(hint in text for hint in json_mode_hints)
+
+
 chat_completion = create_chat_completion(logger=logger)
 
 token_tracker = None
@@ -353,6 +382,8 @@ def call_json_chat_completion_with_fallback(
             return data
     except Exception as exc:
         err = f"JSON mode调用失败: {exc}"
+        if not should_retry_without_json_mode_error(exc):
+            raise
 
     fallback_messages = list(messages) + [{
         "role": "user",
