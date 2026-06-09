@@ -476,6 +476,29 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("SCAN_FUTURE_STALL_TIMEOUT_SECONDS: ${SCAN_FUTURE_STALL_TIMEOUT_SECONDS:-0}", compose_text)
         self.assertIn("SCAN_FUTURE_STALL_TIMEOUT_SECONDS=0", env_sample_text)
 
+    def test_setting_sample_keys_are_loaded_by_main_config(self):
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        sample_path = os.path.join(base_dir, "setting.txt.sample")
+        with open(sample_path, "r", encoding="utf-8") as f:
+            sample_text = f.read()
+
+        sample_keys = set()
+        for line in sample_text.splitlines():
+            key, _value = main._parse_env_line(line)
+            if key:
+                sample_keys.add(key.upper())
+
+        accepted_keys = (
+            set(main._DEFAULT_ENV_SETTINGS)
+            | set(main._PASSTHROUGH_SETTING_KEYS)
+            | set(main._VALIDATED_NON_NEGATIVE_INT_KEYS)
+            | set(main._VALIDATED_NON_NEGATIVE_FLOAT_KEYS)
+        )
+        self.assertEqual(set(), sample_keys - accepted_keys)
+        self.assertIn("WEB_ACCESS_TOKEN", main._PASSTHROUGH_SETTING_KEYS)
+        self.assertIn("SCAN_STALL_TIMEOUT_SECONDS", main._VALIDATED_NON_NEGATIVE_FLOAT_KEYS)
+        self.assertIn("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", main._VALIDATED_NON_NEGATIVE_FLOAT_KEYS)
+
     def test_docker_entrypoint_requires_web_token_and_writable_volumes(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
         entrypoint_path = os.path.join(base_dir, "docker-entrypoint.sh")
@@ -5045,6 +5068,66 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 main.load_configs(tmp, interactive=False)
                 self.assertEqual(os.environ["HAREM_PLUS_GENERAL_SCAN"], "0")
         finally:
+            for key, value in old_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_load_configs_reads_setting_sample_runtime_fields(self):
+        keys = sorted(
+            set(main._DEFAULT_ENV_SETTINGS)
+            | set(main._PASSTHROUGH_SETTING_KEYS)
+            | set(main._VALIDATED_NON_NEGATIVE_INT_KEYS)
+            | set(main._VALIDATED_NON_NEGATIVE_FLOAT_KEYS)
+            | {"API_KEY", "API_KEY_POOL", "ANALYSIS_RULES_FILE"}
+        )
+        old_env = {key: os.environ.get(key) for key in keys}
+        old_stall_timeout = web_manager.SCAN_STALL_TIMEOUT_SECONDS
+        old_future_stall_timeout = web_manager.SCAN_FUTURE_STALL_TIMEOUT_SECONDS
+        old_base_dir = web_manager.get_base_dir
+        try:
+            for key in keys:
+                os.environ.pop(key, None)
+            with tempfile.TemporaryDirectory() as tmp:
+                with open(os.path.join(tmp, "api.txt"), "w", encoding="utf-8") as f:
+                    f.write("sk-setting\n")
+                with open(os.path.join(tmp, "setting.txt"), "w", encoding="utf-8") as f:
+                    f.write(
+                        "WEB_ACCESS_TOKEN=local-token\n"
+                        "WEB_ALLOW_NO_AUTH=0\n"
+                        "GENERAL_SCAN_MAX_CHUNKS=160\n"
+                        "GENERAL_SCAN_CONTEXT_MAX_CHARS=900\n"
+                        "HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH=2\n"
+                        "HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS=800\n"
+                        "LOG_MAX_BYTES=2048\n"
+                        "LOG_BACKUP_COUNT=2\n"
+                        "SCAN_STALL_TIMEOUT_SECONDS=321.5\n"
+                        "SCAN_FUTURE_STALL_TIMEOUT_SECONDS=123.5\n"
+                    )
+
+                main.load_configs(tmp, interactive=False)
+                self.assertEqual(os.environ["WEB_ACCESS_TOKEN"], "local-token")
+                self.assertEqual(os.environ["WEB_ALLOW_NO_AUTH"], "0")
+                self.assertEqual(os.environ["GENERAL_SCAN_MAX_CHUNKS"], "160")
+                self.assertEqual(os.environ["GENERAL_SCAN_CONTEXT_MAX_CHARS"], "900")
+                self.assertEqual(os.environ["HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH"], "2")
+                self.assertEqual(os.environ["HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS"], "800")
+                self.assertEqual(os.environ["LOG_MAX_BYTES"], "2048")
+                self.assertEqual(os.environ["LOG_BACKUP_COUNT"], "2")
+                self.assertEqual(os.environ["SCAN_STALL_TIMEOUT_SECONDS"], "321.5")
+                self.assertEqual(os.environ["SCAN_FUTURE_STALL_TIMEOUT_SECONDS"], "123.5")
+
+                web_manager.get_base_dir = lambda: tmp
+                ok, error = web_manager._try_load_runtime_config("test")
+                self.assertTrue(ok, error)
+                self.assertEqual(web_manager.SCAN_STALL_TIMEOUT_SECONDS, 321.5)
+                self.assertEqual(web_manager.SCAN_FUTURE_STALL_TIMEOUT_SECONDS, 123.5)
+                self.assertTrue(web_manager._web_auth_enabled())
+        finally:
+            web_manager.get_base_dir = old_base_dir
+            web_manager.SCAN_STALL_TIMEOUT_SECONDS = old_stall_timeout
+            web_manager.SCAN_FUTURE_STALL_TIMEOUT_SECONDS = old_future_stall_timeout
             for key, value in old_env.items():
                 if value is None:
                     os.environ.pop(key, None)

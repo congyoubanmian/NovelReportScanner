@@ -67,5 +67,11 @@ HAREM_PLUS_GENERAL_SCAN=0
 LOG_MAX_BYTES=10485760
 LOG_BACKUP_COUNT=5
 
+# Web 层扫描进程无日志输出超过该秒数后自动终止；0 表示关闭
+SCAN_STALL_TIMEOUT_SECONDS=1200
+
+# 扫描进程内部线程池超过该秒数没有任何任务完成时终止当前阶段；默认关闭，线上排查卡死时可设为 600-1800
+SCAN_FUTURE_STALL_TIMEOUT_SECONDS=0
+
 # Web 管理端可选访问令牌；留空不启用。公网部署建议设置一个长随机字符串。
 WEB_ACCESS_TOKEN=

@@ -1968,6 +1968,7 @@ def _try_load_runtime_config(interactive_context: str = "web"):
     global CONFIG_READY
     try:
         load_configs(get_base_dir(), interactive=False)
+        _refresh_runtime_constants_from_env()
         CONFIG_READY = True
         return True, ""
     except BaseException as exc:
@@ -1975,6 +1976,12 @@ def _try_load_runtime_config(interactive_context: str = "web"):
         msg = f"{interactive_context} runtime config not ready: {exc}"
         print(f"[WARN] {msg}")
         return False, msg
+
+
+def _refresh_runtime_constants_from_env():
+    global SCAN_STALL_TIMEOUT_SECONDS, SCAN_FUTURE_STALL_TIMEOUT_SECONDS
+    SCAN_STALL_TIMEOUT_SECONDS = float(os.environ.get("SCAN_STALL_TIMEOUT_SECONDS", "1200"))
+    SCAN_FUTURE_STALL_TIMEOUT_SECONDS = float(os.environ.get("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", "0"))
 
 
 class Handler(BaseHTTPRequestHandler):
