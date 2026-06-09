@@ -611,7 +611,9 @@ def _failure_reason_label(error_text):
 def _failure_retry_type(error_text):
     reason = _failure_reason_label(error_text)
     lower = str(error_text or "").lower()
-    if reason in {"api key missing", "api failure"}:
+    if reason == "api key missing":
+        return "config_failure"
+    if reason == "api failure":
         return "api_failure"
     if reason == "json parse failure":
         return "parse_failure"

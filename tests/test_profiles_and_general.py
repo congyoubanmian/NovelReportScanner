@@ -6362,12 +6362,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.STATE = {
                 "books": {
                     "api": {"id": "api", "name": "api", "path": "/tmp/api.txt", "profile": "general", "status": "failed"},
+                    "missing_key": {"id": "missing_key", "name": "missing_key", "path": "/tmp/missing_key.txt", "profile": "general", "status": "failed"},
                     "parse": {"id": "parse", "name": "parse", "path": "/tmp/parse.txt", "profile": "general", "status": "failed"},
                     "done": {"id": "done", "name": "done", "path": "/tmp/done.txt", "profile": "general", "status": "completed"},
                 },
                 "tasks": [
                     {"id": "old-api", "book_id": "api", "status": "failed", "finished_at": "2026-01-01 00:00:00", "error": "JSON解析失败"},
                     {"id": "new-api", "book_id": "api", "status": "failed", "finished_at": "2026-01-02 00:00:00", "error": "服务器错误(504)"},
+                    {"id": "missing-key-task", "book_id": "missing_key", "status": "failed", "finished_at": "2026-01-02 00:00:00", "error": "未读取到任何 API Key"},
                     {"id": "parse-task", "book_id": "parse", "status": "failed", "finished_at": "2026-01-02 00:00:00", "error": "JSON解析失败: truncated"},
                     {"id": "done-task", "book_id": "done", "status": "failed", "finished_at": "2026-01-02 00:00:00", "error": "服务器错误(504)"},
                 ],
@@ -6378,6 +6380,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual([item["book_id"] for item in result["matched"]], ["api"])
             self.assertEqual([item["book_id"] for item in result["queued"]], ["api"])
             self.assertEqual(web_manager.STATE["books"]["api"]["status"], "queued")
+            self.assertEqual(web_manager.STATE["books"]["missing_key"]["status"], "failed")
             self.assertEqual(web_manager.STATE["books"]["parse"]["status"], "failed")
             self.assertEqual(web_manager.STATE["books"]["done"]["status"], "completed")
         finally:
