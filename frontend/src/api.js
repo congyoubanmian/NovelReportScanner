@@ -39,10 +39,8 @@ export function withAccessToken(path) {
 function _hasAccessTokenQuery(path) {
   const query = path.split('#', 1)[0].split('?', 2)[1] || ''
   if (!query) return false
-  return query.split('&').some((part) => {
-    const [key, value = ''] = part.split('=', 2)
-    return ACCESS_TOKEN_QUERY_KEYS.includes(key) && value.trim()
-  })
+  const params = new URLSearchParams(query)
+  return ACCESS_TOKEN_QUERY_KEYS.some((key) => (params.get(key) || '').trim())
 }
 
 async function _api(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
