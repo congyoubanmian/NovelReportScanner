@@ -5595,6 +5595,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 os.makedirs(os.path.dirname(log_path), exist_ok=True)
                 with open(log_path, "w", encoding="utf-8") as f:
                     f.write("Chunk 367 JSON解析失败")
+                failed_log_path = os.path.join(tmpdir, "results", "web_logs", "task-failed-1.log")
+                with open(failed_log_path, "w", encoding="utf-8") as f:
+                    f.write("Permission denied")
                 web_manager.SCAN_STALL_TIMEOUT_SECONDS = 1200
                 web_manager.APP_COMMIT = "abc123"
                 base_time = web_manager.datetime.strptime(
@@ -5618,6 +5621,24 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                             "status": "queued",
                             "task_id": "task-queued",
                         },
+                        "failed-book-1": {
+                            "id": "failed-book-1",
+                            "name": "失败书1",
+                            "status": "failed",
+                            "task_id": "task-failed-1",
+                        },
+                        "failed-book-2": {
+                            "id": "failed-book-2",
+                            "name": "失败书2",
+                            "status": "failed",
+                            "task_id": "task-failed-2",
+                        },
+                        "failed-book-3": {
+                            "id": "failed-book-3",
+                            "name": "失败书3",
+                            "status": "failed",
+                            "task_id": "task-failed-3",
+                        },
                     },
                     "tasks": [
                         {
@@ -5638,6 +5659,34 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                             "status": "queued",
                             "created_at": "2026-06-09 06:30:00",
                         },
+                        {
+                            "id": "task-failed-1",
+                            "book_id": "failed-book-1",
+                            "profile": "general",
+                            "status": "failed",
+                            "created_at": "2026-06-09 05:00:00",
+                            "finished_at": "2026-06-09 05:30:00",
+                            "error": "PermissionError: [Errno 13] Permission denied",
+                            "log_path": failed_log_path,
+                        },
+                        {
+                            "id": "task-failed-2",
+                            "book_id": "failed-book-2",
+                            "profile": "harem",
+                            "status": "failed",
+                            "created_at": "2026-06-09 05:10:00",
+                            "finished_at": "2026-06-09 05:40:00",
+                            "result": {"status": "fail", "error": "storage write failed: Permission denied"},
+                        },
+                        {
+                            "id": "task-failed-3",
+                            "book_id": "failed-book-3",
+                            "profile": "history",
+                            "status": "failed",
+                            "created_at": "2026-06-09 05:20:00",
+                            "finished_at": "2026-06-09 05:50:00",
+                            "error": "invalid scan result: JSON parse failed",
+                        },
                     ],
                 }
 
@@ -5649,10 +5698,12 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(diagnostics["queue_length"], 1)
             self.assertEqual(diagnostics["running_count"], 1)
             self.assertEqual(diagnostics["stale_running_count"], 1)
+            self.assertEqual(diagnostics["failed_count"], 3)
             self.assertEqual(diagnostics["oldest_queue_wait_seconds"], 3000)
             self.assertEqual(diagnostics["longest_running_seconds"], 4200)
             self.assertEqual(diagnostics["task_counts"]["queued"], 1)
             self.assertEqual(diagnostics["task_counts"]["running"], 1)
+            self.assertEqual(diagnostics["task_counts"]["failed"], 3)
             running = diagnostics["running_tasks"][0]
             self.assertEqual(running["task_id"], "task-running")
             self.assertEqual(running["book_name"], "运行书")
@@ -5667,6 +5718,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(queued["book_name"], "排队书")
             self.assertEqual(queued["queue_position"], 1)
             self.assertEqual(queued["seconds_since_created"], 3000)
+            self.assertEqual(diagnostics["failure_reasons"][0]["reason"], "permission denied")
+            self.assertEqual(diagnostics["failure_reasons"][0]["count"], 2)
+            self.assertEqual(diagnostics["failure_reasons"][1]["reason"], "json parse failure")
+            recent_failed = diagnostics["recent_failed_tasks"]
+            self.assertEqual(len(recent_failed), 3)
+            self.assertEqual(recent_failed[0]["task_id"], "task-failed-3")
+            failed_with_log = next(item for item in recent_failed if item["task_id"] == "task-failed-1")
+            self.assertTrue(failed_with_log["log_file"]["url"].startswith("/files?path="))
             self.assertIn("storage", diagnostics)
         finally:
             web_manager.STATE = old_state

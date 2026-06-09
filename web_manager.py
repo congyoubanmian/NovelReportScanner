@@ -560,6 +560,73 @@ def _queued_task_diagnostic(task, book, position):
     }
 
 
+def _task_error_text(task):
+    result = task.get("result") if isinstance(task.get("result"), dict) else {}
+    return str(
+        task.get("error")
+        or result.get("error")
+        or task.get("message")
+        or ""
+    ).strip()
+
+
+def _failure_reason_label(error_text):
+    text = str(error_text or "").strip()
+    lower = text.lower()
+    if not text:
+        return "unknown failure"
+    if "permission denied" in lower or "errno 13" in lower or "storage write failed" in lower:
+        return "permission denied"
+    if "api key" in lower or "api_key" in lower or "未读取到任何 api key" in lower:
+        return "api key missing"
+    if "json" in lower and ("parse" in lower or "invalid" in lower or "解析" in lower or "truncated" in lower):
+        return "json parse failure"
+    if "stalled without output" in lower:
+        return "stalled without output"
+    if "exited with code" in lower or "exited without result" in lower:
+        return "scan process exited"
+    if "config" in lower or "配置" in lower:
+        return "runtime config error"
+    return text[:120]
+
+
+def _failed_task_diagnostic(task, book):
+    log_path = task.get("log_path", "")
+    error_text = _task_error_text(task)
+    return {
+        "task_id": task.get("id"),
+        "book_id": task.get("book_id"),
+        "book_name": book.get("name") or task.get("book_id"),
+        "profile": task.get("profile"),
+        "status": task.get("status"),
+        "created_at": task.get("created_at", ""),
+        "started_at": task.get("started_at", ""),
+        "finished_at": task.get("finished_at", ""),
+        "updated_at": task.get("updated_at", ""),
+        "error": error_text,
+        "failure_reason": _failure_reason_label(error_text),
+        "log_path": log_path,
+        "log_file": _file_link(log_path) if log_path else None,
+    }
+
+
+def _failure_reason_summary(failed_tasks, limit=10):
+    counts = {}
+    latest = {}
+    for task in failed_tasks:
+        label = task.get("failure_reason") or "unknown failure"
+        counts[label] = counts.get(label, 0) + 1
+        current_time = task.get("finished_at") or task.get("updated_at") or task.get("created_at") or ""
+        if label not in latest or current_time > latest[label]:
+            latest[label] = current_time
+    rows = [
+        {"reason": reason, "count": count, "latest_at": latest.get(reason, "")}
+        for reason, count in counts.items()
+    ]
+    rows.sort(key=lambda item: (-item["count"], item.get("latest_at", ""), item["reason"]))
+    return rows[:limit]
+
+
 def _diagnostics_summary():
     with STATE_LOCK:
         books_by_id = {book_id: dict(book) for book_id, book in STATE.get("books", {}).items()}
@@ -579,10 +646,17 @@ def _diagnostics_summary():
             for task in tasks
             if task.get("status") == "queued"
         ]
+        failed_tasks = [
+            _failed_task_diagnostic(task, books_by_id.get(task.get("book_id"), {}))
+            for task in tasks
+            if task.get("status") == "failed"
+        ]
 
     running_tasks.sort(key=lambda item: item.get("started_at") or item.get("created_at") or "")
     queued_tasks.sort(key=lambda item: item.get("queue_position") or float("inf"))
+    failed_tasks.sort(key=lambda item: item.get("finished_at") or item.get("updated_at") or item.get("created_at") or "", reverse=True)
     queued_count = status_counts.get("queued", 0)
+    failed_count = status_counts.get("failed", 0)
     stale_running_count = sum(1 for item in running_tasks if item.get("stale_without_log"))
     longest_running_seconds = max(
         (item.get("seconds_since_started") or 0 for item in running_tasks),
@@ -603,10 +677,13 @@ def _diagnostics_summary():
         "queue_runtime_length": len(queued_positions),
         "running_count": len(running_tasks),
         "stale_running_count": stale_running_count,
+        "failed_count": failed_count,
         "oldest_queue_wait_seconds": oldest_queue_wait_seconds,
         "longest_running_seconds": longest_running_seconds,
         "running_tasks": running_tasks,
         "queued_tasks": queued_tasks,
+        "recent_failed_tasks": failed_tasks[:10],
+        "failure_reasons": _failure_reason_summary(failed_tasks),
         "storage": _storage_health_summary(),
     }
 
