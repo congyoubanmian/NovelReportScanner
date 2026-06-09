@@ -1885,7 +1885,7 @@ def _delete_many_books(book_ids):
             deleted.append({"book_id": book_id})
         else:
             skipped.append({"book_id": book_id, "reason": result})
-    return {"deleted": deleted, "skipped": skipped}
+    return {"deleted": deleted, "skipped": skipped, "skipped_reasons": _reason_count_summary(skipped)}
 
 
 def _web_scan_command(book_path, profile_name, run_id):

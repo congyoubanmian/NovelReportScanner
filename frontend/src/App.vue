@@ -452,10 +452,19 @@ async function handleBatchDelete(bookIds) {
     const response = await deleteBooks(bookIds)
     const deleted = response.result?.deleted?.length || 0
     const skipped = response.result?.skipped?.length || 0
+    const skippedReasonText = reasonSummaryText(response.result?.skipped_reasons)
     if (deleted) {
-      toastSuccess(skipped ? `已删除 ${deleted} 本，跳过 ${skipped} 本` : `已删除 ${deleted} 本`)
+      toastSuccess(
+        skipped
+          ? `已删除 ${deleted} 本，跳过 ${skipped} 本${skippedReasonText ? `（${skippedReasonText}）` : ''}`
+          : `已删除 ${deleted} 本`
+      )
     } else {
-      toastError(skipped ? `没有可删除的书籍，跳过 ${skipped} 本` : '没有可删除的书籍')
+      toastError(
+        skipped
+          ? `没有可删除的书籍，跳过 ${skipped} 本${skippedReasonText ? `（${skippedReasonText}）` : ''}`
+          : '没有可删除的书籍'
+      )
     }
     if ((response.result?.deleted || []).some((item) => item.book_id === selectedBookId.value)) {
       selectedBookId.value = null

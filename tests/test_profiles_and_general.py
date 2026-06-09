@@ -1265,6 +1265,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertIn("function reasonSummaryText(reasons)", text)
         self.assertIn("response.result?.skipped_reasons", text)
         self.assertIn("response.result?.unmatched_reasons", text)
+        self.assertIn("已删除 ${deleted} 本，跳过 ${skipped} 本", text)
         self.assertIn("storage: '存储异常'", text)
         self.assertIn("config: '配置异常'", text)
         self.assertIn("item.message || item.type || 'health issue'", text)
@@ -8422,6 +8423,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 skipped = {item["book_id"]: item["reason"] for item in result["skipped"]}
                 self.assertEqual(skipped["busy"], "book is queued or running")
                 self.assertEqual(skipped["missing"], "book not found")
+                self.assertEqual(result["skipped_reasons"], [
+                    {"reason": "book is queued or running", "count": 1},
+                    {"reason": "book not found", "count": 1},
+                ])
                 self.assertFalse(os.path.exists(paths["one"]))
                 self.assertFalse(os.path.exists(paths["two"]))
                 self.assertTrue(os.path.exists(paths["busy"]))
