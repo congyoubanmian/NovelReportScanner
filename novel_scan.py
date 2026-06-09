@@ -205,6 +205,25 @@ def _diagnose_json_response_text(content):
     }
 
 
+def _json_response_looks_truncated(diagnostic):
+    flags = set((diagnostic or {}).get("flags") or [])
+    return bool(flags & {
+        "code_fence_unclosed",
+        "json_string_unclosed",
+        "json_unbalanced",
+        "likely_truncated",
+        "near_max_tokens_truncated",
+    })
+
+
+def _format_json_response_diagnostic(diagnostic):
+    flags = ",".join((diagnostic or {}).get("flags") or ["none"])
+    return (
+        flags,
+        f"response_flags={flags}; response_len={(diagnostic or {}).get('length', 0)}",
+    )
+
+
 def _build_chunk_failure_diagnostic(text_chunk, err_msg="", max_preview=220):
     text = str(text_chunk or "")
     length = len(text)
@@ -2693,26 +2712,32 @@ def _scan_chunk_once(text_chunk, index, total, system_prompt, heroines, male_pro
                 log_prefix=f"chunk {index}",
             )
             content = _response_message_content(response)
+            response_diag = _diagnose_json_response_text(content)
+            if _json_response_looks_truncated(response_diag):
+                flags, err_detail = _format_json_response_diagnostic(response_diag)
+                logger.warning(
+                    f"chunk {index} 返回疑似截断JSON，响应诊断 flags={flags} "
+                    f"len={response_diag['length']} brace={response_diag['brace_depth']} "
+                    f"bracket={response_diag['bracket_depth']} tail={response_diag['tail']!r}"
+                )
+                if attempt + 1 < retries:
+                    compact_retry = True
+                raise ValueError(f"truncated_json_response; {err_detail}")
 
             try:
                 data = _safe_json_loads(content)
             except Exception as je:
                 snippet = (str(content)[:200] if content is not None else "None")
-                response_diag = _diagnose_json_response_text(content)
-                flags = ",".join(response_diag.get("flags") or ["none"])
+                flags, err_detail = _format_json_response_diagnostic(response_diag)
                 logger.warning(
                     f"chunk {index} 返回非JSON/空内容，响应诊断 flags={flags} "
                     f"len={response_diag['length']} brace={response_diag['brace_depth']} "
                     f"bracket={response_diag['bracket_depth']} tail={response_diag['tail']!r} "
                     f"前200字符: {snippet!r}"
                 )
-                if attempt + 1 < retries and (
-                    "likely_truncated" in response_diag.get("flags", [])
-                    or "near_max_tokens_truncated" in response_diag.get("flags", [])
-                    or "json_unbalanced" in response_diag.get("flags", [])
-                ):
+                if attempt + 1 < retries and _json_response_looks_truncated(response_diag):
                     compact_retry = True
-                raise ValueError(f"{je}; response_flags={flags}; response_len={response_diag['length']}") from je
+                raise ValueError(f"{je}; {err_detail}") from je
 
             if not isinstance(data, dict):
                 snippet = (str(content)[:200] if content is not None else "None")
