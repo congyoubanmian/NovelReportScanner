@@ -15,6 +15,8 @@ from tqdm import tqdm
 import concurrent.futures
 import threading
 from token_tracker import create_default_tracker
+from fact_validator import classify_scan_error, validate_harem_character_result
+from name_authority import build_conservative_alias_map, is_unsafe_alias
 from shared_utils import (
     DEFAULT_MAX_403_RETRIES,
     DEFAULT_MAX_RETRIES,
@@ -70,6 +72,7 @@ NOVEL_FILE_PATH = None
 clean_filename = None
 OUTPUT_DIR = None
 logger = logging.getLogger(__name__)
+DISCARDED_FACTS = []
 
 
 def _get_active_profile():
@@ -816,6 +819,15 @@ def _checkpoint_chunk_plan_matches(stored_plan, current_plan):
     return True
 
 
+def _append_discarded_facts(items, limit=500):
+    global DISCARDED_FACTS
+    for item in items or []:
+        if isinstance(item, dict):
+            DISCARDED_FACTS.append(item)
+    if len(DISCARDED_FACTS) > limit:
+        DISCARDED_FACTS = DISCARDED_FACTS[-limit:]
+
+
 def save_checkpoint(global_stats, male_protagonist_stats, last_processed_index, progress_flags=None, merged_stats=None, heroine_result=None, male_protagonist_final=None, completed_chunks=None, chunk_plan_metadata=None):
     """
     保存分析进度和结果，用于断点续传（包含男主和女性角色信息）
@@ -859,6 +871,7 @@ def save_checkpoint(global_stats, male_protagonist_stats, last_processed_index, 
         "male_protagonist_final": male_protagonist_final,
         "completed_chunks": list(completed_chunks) if completed_chunks else [],  # 实际成功的块索引列表
         "chunk_plan_metadata": chunk_plan_metadata,
+        "discarded_facts": list(DISCARDED_FACTS),
     }
     
     checkpoint_file = f"{OUTPUT_DIR}/latest_checkpoint.json"
@@ -1248,8 +1261,8 @@ def _normalize_harem_character_response(data, chunk_index):
 
 def _normalize_character_response(data, chunk_index, profile_mode):
     if profile_mode == "general":
-        return _normalize_general_character_response(data, chunk_index)
-    return _normalize_harem_character_response(data, chunk_index)
+        return validate_harem_character_result(_normalize_general_character_response(data, chunk_index), chunk_index)
+    return validate_harem_character_result(_normalize_harem_character_response(data, chunk_index), chunk_index)
 
 
 def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retries=3):
@@ -1290,18 +1303,18 @@ def analyze_chunk_for_heroines(text_chunk, chunk_index, total_chunks, max_retrie
                     continue
                 else:
                     # JSON解析失败，标记为失败
-                    return {"male_protagonist": None, "female_characters": [], "_success": False, "_error": f"JSON解析失败: {e}"}
+                    return {"male_protagonist": None, "female_characters": [], "_success": False, "_error": f"JSON解析失败: {e}", "_error_type": "parse_error"}
                     
         except Exception as e:
             logger.error(f"Chunk {chunk_index} API调用失败 (尝试 {retry+1}/{max_retries}): {e}")
             if is_retryable_transport_error(e):
-                return {"male_protagonist": None, "female_characters": [], "_success": False, "_error": f"API调用失败: {e}"}
+                return {"male_protagonist": None, "female_characters": [], "_success": False, "_error": f"API调用失败: {e}", "_error_type": classify_scan_error(e)}
             if retry < max_retries - 1:
                 time.sleep(2 ** retry)
             else:
                 # API调用失败，标记为失败
-                return {"male_protagonist": None, "female_characters": [], "_success": False, "_error": f"API调用失败: {e}"}
-    return {"male_protagonist": None, "female_characters": [], "_success": False, "_error": "所有重试均失败"}
+                return {"male_protagonist": None, "female_characters": [], "_success": False, "_error": f"API调用失败: {e}", "_error_type": classify_scan_error(e)}
+    return {"male_protagonist": None, "female_characters": [], "_success": False, "_error": "所有重试均失败", "_error_type": "unknown"}
 
 
 def sample_summaries_by_timeline(summaries, max_count=20):
@@ -2221,6 +2234,17 @@ def merge_aliases(global_stats):
     """
     if len(global_stats) < 2:
         return global_stats
+
+    conservative_records = []
+    for name, data in global_stats.items():
+        conservative_records.append({
+            "name": name,
+            "aliases": list(data.get("other_names", set()) or []),
+            "count": data.get("count", 0),
+        })
+    conservative_alias_map = build_conservative_alias_map(conservative_records)
+    if conservative_alias_map:
+        logger.info(f"保守别名图预合并候选 {len(conservative_alias_map)} 个")
     
     # 第一步：检测辈分冲突对（用于后续二次验证）
     conflict_pairs = _get_generation_conflict_pairs(global_stats)
@@ -2257,6 +2281,18 @@ def merge_aliases(global_stats):
     # 分批处理阈值
     BATCH_SIZE = 30
     all_merge_groups = []
+    conservative_groups = {}
+    for alias, canonical in conservative_alias_map.items():
+        if alias in global_stats and canonical in global_stats and alias != canonical:
+            conservative_groups.setdefault(canonical, []).append(alias)
+    for canonical, aliases in conservative_groups.items():
+        all_merge_groups.append({
+            "main_name": canonical,
+            "aliases": aliases,
+            "reason": "保守别名图：安全别名同组",
+        })
+    if conservative_groups:
+        logger.info(f"保守别名图注入 {len(conservative_groups)} 个合并组")
     
     try:
         if len(characters_info) <= BATCH_SIZE:
@@ -2452,6 +2488,9 @@ def merge_aliases(global_stats):
             # 二次验证：过滤掉有辈分冲突的别名
             valid_aliases = []
             for alias in aliases:
+                if is_unsafe_alias(alias):
+                    logger.warning(f"安全检查拒绝合并: {main_name} <- {alias}（不安全称谓/泛称）")
+                    continue
                 if has_generation_conflict(main_name, alias):
                     logger.warning(f"安全检查拒绝合并: {main_name} 和 {alias}（辈分冲突）")
                 else:
@@ -4050,6 +4089,7 @@ def export_results(merged_stats, heroine_result, final_report, male_protagonist=
         "analysis_time": timestamp_str,
         "male_protagonist": male_protagonist,
         "heroine_result": heroine_result,
+        "discarded_facts": list(DISCARDED_FACTS),
         "characters": [],
         "all_female_characters": {}
     }
@@ -4192,12 +4232,13 @@ def export_results(merged_stats, heroine_result, final_report, male_protagonist=
 
 
 def main(novel_path=None, book_name=None, run_id=None):
-    global NOVEL_FILE_PATH, clean_filename, OUTPUT_DIR, logger
+    global NOVEL_FILE_PATH, clean_filename, OUTPUT_DIR, logger, DISCARDED_FACTS
 
     # ---- 彻底重新初始化，防止跨小说状态残留 ----
     NOVEL_FILE_PATH = None
     clean_filename = None
     OUTPUT_DIR = None
+    DISCARDED_FACTS = []
 
     base = get_base_dir()
     results_base = os.path.join(base, "results")
@@ -4323,8 +4364,10 @@ def main(novel_path=None, book_name=None, run_id=None):
                 # 检查是否成功
                 if not result or not result.get("_success", False):
                     error_msg = (result or {}).get("_error", "未知错误")
+                    _append_discarded_facts((result or {}).get("discarded_facts") or [])
                     logger.warning(f"块 {chunk_idx} 分析失败: {error_msg}，将在补漏阶段重试")
                     return False
+                _append_discarded_facts(result.get("discarded_facts") or [])
 
                 # 处理男主信息
                 male_proto = result.get("male_protagonist")

@@ -23,9 +23,42 @@ import shared_utils
 import toxic_reviewer
 import Timerror
 import web_manager
+import name_authority
+import fact_validator
 
 
 class ProfileAndGeneralReportTests(unittest.TestCase):
+    def test_name_authority_blocks_unsafe_alias_bridges(self):
+        self.assertTrue(name_authority.is_unsafe_alias("夫君"))
+        self.assertTrue(name_authority.is_unsafe_alias("那女子"))
+        self.assertFalse(name_authority.is_unsafe_alias("沈南歌"))
+
+        alias_map = name_authority.build_conservative_alias_map([
+            {"name": "沈南歌", "aliases": ["南歌", "夫君"], "count": 5},
+            {"name": "林青竹", "aliases": ["青竹", "夫君"], "count": 4},
+        ])
+
+        self.assertEqual(alias_map["南歌"], "沈南歌")
+        self.assertEqual(alias_map["青竹"], "林青竹")
+        self.assertNotIn("夫君", alias_map)
+        self.assertNotEqual(alias_map.get("林青竹"), "沈南歌")
+
+    def test_fact_validator_filters_generic_harem_characters(self):
+        result = fact_validator.validate_harem_character_result({
+            "male_protagonist": {"name": "男主", "other_names": ["夫君"], "summary": "泛称"},
+            "female_characters": [
+                {"name": "那女子", "other_names": ["姑娘"], "score": 8},
+                {"name": "沈南歌", "other_names": ["南歌", "夫君"], "score": 9},
+            ],
+        }, chunk_index=3)
+
+        self.assertIsNone(result["male_protagonist"])
+        self.assertEqual([item["name"] for item in result["female_characters"]], ["沈南歌"])
+        self.assertEqual(result["female_characters"][0]["aliases"], ["南歌"])
+        reasons = [item["reason"] for item in result["discarded_facts"]]
+        self.assertIn("generic_person_name", reasons)
+        self.assertIn("unsafe_alias", reasons)
+
     def test_scan_log_handler_uses_rotation_defaults(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             log_path = os.path.join(tmpdir, "analysis.log")
@@ -6318,6 +6351,43 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
             web_manager.STATE = old_state
 
+    def test_web_manager_retry_failed_tasks_by_type_uses_latest_failed_task(self):
+        old_state = web_manager.STATE
+        old_queue_ids = set(web_manager.TASK_QUEUE_IDS)
+        try:
+            web_manager.TASK_QUEUE_IDS.clear()
+            while not web_manager.TASK_QUEUE.empty():
+                web_manager.TASK_QUEUE.get_nowait()
+                web_manager.TASK_QUEUE.task_done()
+            web_manager.STATE = {
+                "books": {
+                    "api": {"id": "api", "name": "api", "path": "/tmp/api.txt", "profile": "general", "status": "failed"},
+                    "parse": {"id": "parse", "name": "parse", "path": "/tmp/parse.txt", "profile": "general", "status": "failed"},
+                    "done": {"id": "done", "name": "done", "path": "/tmp/done.txt", "profile": "general", "status": "completed"},
+                },
+                "tasks": [
+                    {"id": "old-api", "book_id": "api", "status": "failed", "finished_at": "2026-01-01 00:00:00", "error": "JSON解析失败"},
+                    {"id": "new-api", "book_id": "api", "status": "failed", "finished_at": "2026-01-02 00:00:00", "error": "服务器错误(504)"},
+                    {"id": "parse-task", "book_id": "parse", "status": "failed", "finished_at": "2026-01-02 00:00:00", "error": "JSON解析失败: truncated"},
+                    {"id": "done-task", "book_id": "done", "status": "failed", "finished_at": "2026-01-02 00:00:00", "error": "服务器错误(504)"},
+                ],
+            }
+
+            result = web_manager._retry_failed_tasks_by_type(["api_failure"])
+
+            self.assertEqual([item["book_id"] for item in result["matched"]], ["api"])
+            self.assertEqual([item["book_id"] for item in result["queued"]], ["api"])
+            self.assertEqual(web_manager.STATE["books"]["api"]["status"], "queued")
+            self.assertEqual(web_manager.STATE["books"]["parse"]["status"], "failed")
+            self.assertEqual(web_manager.STATE["books"]["done"]["status"], "completed")
+        finally:
+            while not web_manager.TASK_QUEUE.empty():
+                web_manager.TASK_QUEUE.get_nowait()
+                web_manager.TASK_QUEUE.task_done()
+            web_manager.TASK_QUEUE_IDS.clear()
+            web_manager.TASK_QUEUE_IDS.update(old_queue_ids)
+            web_manager.STATE = old_state
+
     def test_web_manager_prioritize_queued_book_moves_task_to_front(self):
         old_state = web_manager.STATE
         old_queue_ids = set(web_manager.TASK_QUEUE_IDS)
@@ -11275,6 +11345,30 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         self.assertEqual(active_foreshadowing.count("密信背面的旧印记"), 1)
         self.assertIn("旧钥匙用途", [x["description"] for x in knowledge_base["foreshadowing_threads"]])
 
+    def test_general_scan_knowledge_base_v2_includes_fact_and_risk_layers(self):
+        result = general_scan._build_knowledge_base([
+            fact_validator.validate_general_chunk_result({
+                "chunk_index": 0,
+                "original_chunk_index": 1,
+                "one_sentence_summary": "沈南歌登场并暴露婚约风险。",
+                "plot_events": ["沈南歌登场"],
+                "quality_notes": ["婚约线存在绿帽风险"],
+                "context_state_update": {
+                    "active_characters": ["沈南歌", "那女子"],
+                    "relationship_updates": ["沈南歌与主角存在婚约"],
+                },
+            })
+        ])
+
+        self.assertEqual(result["schema_version"], general_scan.KNOWLEDGE_BASE_SCHEMA_VERSION)
+        self.assertGreater(len(result["facts"]), 0)
+        self.assertGreater(len(result["risk_facts"]), 0)
+        self.assertEqual(result["entities"][0]["name"], "沈南歌")
+        self.assertNotIn("那女子", [item["name"] for item in result["entities"]])
+        counts = general_scan._knowledge_base_counts(result)
+        self.assertGreater(counts["facts"], 0)
+        self.assertGreater(counts["risk_facts"], 0)
+
     def test_general_scan_compact_knowledge_base_samples_head_middle_tail(self):
         knowledge_base = {
             "plot_timeline": [
@@ -13451,6 +13545,49 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertEqual(result["partial_reason"], "context_overflow_split")
             self.assertEqual(result["partial_count"], 2)
             self.assertEqual(result["original_chunk_index"], 1)
+
+    def test_general_scan_downshifts_api_504_by_splitting_chunk(self):
+        calls = []
+
+        def fake_scan(text_chunk, chunk_index, total_chunks, profile=None, density_profile=None, context_snapshot=None, entity_prescan=None):
+            calls.append({
+                "text": text_chunk,
+                "context": context_snapshot,
+                "entity_prescan_count": len(entity_prescan or []),
+            })
+            if len(calls) == 1:
+                raise RuntimeError("服务器错误(504)")
+            return {
+                "chunk_index": chunk_index,
+                "plot_events": [f"事件{len(calls)}"],
+                "context_state_update": {"active_characters": ["沈南歌", "那女子"]},
+                "one_sentence_summary": f"摘要{len(calls)}",
+            }
+
+        old_depth = general_scan.API_DOWNSHIFT_MAX_DEPTH
+        old_context = general_scan.CONTEXT_MAX_CHARS
+        try:
+            general_scan.API_DOWNSHIFT_MAX_DEPTH = 1
+            general_scan.CONTEXT_MAX_CHARS = 1000
+            with mock.patch.object(general_scan, "_scan_chunk", side_effect=fake_scan):
+                result = general_scan._scan_chunk_with_context_overflow_fallback(
+                    "甲" * 100 + "\n" + "乙" * 100,
+                    0,
+                    1,
+                    context_snapshot={"active_characters": ["沈南歌"] * 40},
+                    entity_prescan=[{"name": f"候选{i}"} for i in range(30)],
+                )
+        finally:
+            general_scan.API_DOWNSHIFT_MAX_DEPTH = old_depth
+            general_scan.CONTEXT_MAX_CHARS = old_context
+
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(result["partial_result"])
+        self.assertEqual(result["partial_reason"], "api_error_downshift_split")
+        self.assertEqual(result["partial_count"], 2)
+        self.assertIn("chunk_facts", result)
+        self.assertEqual([item["name"] for item in result["chunk_facts"]["characters"]], ["沈南歌"])
+        self.assertTrue(result["discarded_facts"])
 
     def test_general_scan_main_marks_partial_scan_when_chunks_fail(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -16,6 +16,7 @@ import {
   updateRuntimeConfig,
   enqueueBook,
   enqueueBooks,
+  retryFailedTasks,
   cancelQueuedBook,
   prioritizeQueuedBook,
   moveQueuedBook,
@@ -332,6 +333,24 @@ async function handleBatchScan(bookIds) {
   }
 }
 
+async function handleRetryFailed(failureTypes, label) {
+  try {
+    const response = await retryFailedTasks(failureTypes)
+    const queued = response.result?.queued?.length || 0
+    const skipped = response.result?.skipped?.length || 0
+    const matched = response.result?.matched?.length || 0
+    if (queued) {
+      toastSuccess(`${label}：已重新加入 ${queued} 本${skipped ? `，跳过 ${skipped} 本` : ''}`)
+    } else {
+      toastError(matched ? `${label}：匹配到 ${matched} 本但未能加入队列` : `${label}：没有匹配的失败任务`)
+    }
+    await refreshDiagnostics({ force: true })
+    await refresh()
+  } catch (e) {
+    toastError(`${label}失败: ` + e.message)
+  }
+}
+
 async function handleCancel(bookId) {
   try {
     await cancelQueuedBook(bookId)
@@ -517,6 +536,20 @@ useStateEvents(applyState, {
         target="_blank"
         ><b>失败日志</b>打开</a
       >
+      <button
+        v-if="diagnosticsStatus.failed > 0"
+        class="runtime-item runtime-link runtime-button"
+        @click="handleRetryFailed(['api_failure'], '重试API失败')"
+      >
+        <b>重试</b>API失败
+      </button>
+      <button
+        v-if="diagnosticsStatus.failed > 0"
+        class="runtime-item runtime-link runtime-button"
+        @click="handleRetryFailed(['parse_failure'], '重试解析失败')"
+      >
+        <b>重试</b>解析失败
+      </button>
     </div>
 
     <div class="access-token-row" v-if="!runtimeConfig || runtimeConfig.web?.auth_enabled">
@@ -916,6 +949,10 @@ header p {
   border-color: var(--danger);
   background: var(--danger-bg);
   color: var(--danger-text);
+}
+.runtime-button {
+  font: inherit;
+  cursor: pointer;
 }
 
 .access-token-row {

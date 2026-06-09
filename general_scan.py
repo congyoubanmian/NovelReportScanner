@@ -10,6 +10,7 @@ from typing import Any, Dict, List
 from tqdm import tqdm
 
 from analysis_profiles import load_analysis_profile
+from fact_validator import classify_scan_error, validate_general_chunk_result
 from prompt_templates import prompt_template_metadata, prompt_templates_metadata
 from shared_utils import MODEL, chat_completion, get_base_dir, init_token_tracker, is_context_overflow_error, read_file_safely, read_int_env, record_usage
 from shared_utils import call_json_chat_completion_with_fallback
@@ -37,13 +38,14 @@ READER_EXPERIENCE_ENABLED = os.environ.get("GENERAL_SCAN_READER_EXPERIENCE", "1"
 READER_EXPERIENCE_SCHEMA_VERSION = 1
 CONTINUITY_AUDIT_ENABLED = os.environ.get("GENERAL_SCAN_CONTINUITY_AUDIT", "1").strip() == "1"
 CONTINUITY_AUDIT_SCHEMA_VERSION = 1
-KNOWLEDGE_BASE_SCHEMA_VERSION = 1
+KNOWLEDGE_BASE_SCHEMA_VERSION = 2
 KNOWLEDGE_BASE_LLM_MERGE_ENABLED = os.environ.get("GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE", "0").strip() == "1"
 ENTITY_PRESCAN_ENABLED = os.environ.get("GENERAL_SCAN_ENTITY_PRESCAN", "1").strip() == "1"
 ENTITY_PRESCAN_SCHEMA_VERSION = 1
 ENTITY_PRESCAN_MAX_CHARS = read_int_env("GENERAL_SCAN_ENTITY_PRESCAN_MAX_CHARS", 500000, min_value=0)
 ENTITY_PRESCAN_MAX_ITEMS = read_int_env("GENERAL_SCAN_ENTITY_PRESCAN_MAX_ITEMS", 80, min_value=0)
 ENTITY_PRESCAN_PROMPT_ITEMS = read_int_env("GENERAL_SCAN_ENTITY_PRESCAN_PROMPT_ITEMS", 40, min_value=0)
+API_DOWNSHIFT_MAX_DEPTH = read_int_env("GENERAL_SCAN_API_DOWNSHIFT_MAX_DEPTH", 2, min_value=0, max_value=4)
 LOW_DENSITY_TERMS = (
     "睡觉", "起床", "吃饭", "喝茶", "闲聊", "聊天", "休息", "赶路", "路上", "返回",
     "日常", "家常", "客栈", "修炼打坐", "打坐", "闭关", "练功", "整理物品",
@@ -860,7 +862,7 @@ def _copy_reused_chunk_result(result: Dict[str, Any], sample_index: int, origina
     copied["chunk_hash"] = chunk_hash
     copied["density_profile"] = density_profile
     copied["reused_from_previous"] = True
-    return copied
+    return validate_general_chunk_result(copied)
 
 
 def _safe_list(value: Any, limit: int = 20) -> List[str]:
@@ -1303,11 +1305,13 @@ def _knowledge_entity_record(name: str, chunk_index: Any, summary: str = "") -> 
 def _build_knowledge_base(chunk_results: List[Dict[str, Any]], limit: int = 120) -> Dict[str, Any]:
     base = {
         "schema_version": KNOWLEDGE_BASE_SCHEMA_VERSION,
+        "facts": [],
         "entities": [],
         "relationships": [],
         "worldbuilding_facts": [],
         "foreshadowing_threads": [],
         "plot_timeline": [],
+        "risk_facts": [],
         "open_threads": [],
         "resolved_threads": [],
     }
@@ -1319,6 +1323,49 @@ def _build_knowledge_base(chunk_results: List[Dict[str, Any]], limit: int = 120)
         summary = str(item.get("one_sentence_summary") or "").strip()
         update = _normalize_context_state_update(item.get("context_state_update"))
         foreshadowing = _normalize_foreshadowing_engineering(item.get("foreshadowing_engineering"))
+        chunk_facts = item.get("chunk_facts") if isinstance(item.get("chunk_facts"), dict) else {}
+
+        for fact_key, entries in (chunk_facts or {}).items():
+            for entry in entries or []:
+                if not isinstance(entry, dict):
+                    continue
+                description = (
+                    entry.get("description")
+                    or entry.get("event")
+                    or entry.get("fact")
+                    or entry.get("name")
+                    or ""
+                )
+                if not description:
+                    continue
+                _append_unique_record(
+                    base["facts"],
+                    {
+                        "chunk_index": entry.get("chunk_index", chunk_index),
+                        "fact_type": fact_key,
+                        "description": str(description or "").strip()[:220],
+                        "evidence": str(entry.get("evidence") or entry.get("summary") or summary).strip()[:180],
+                        "confidence": entry.get("confidence") or "medium",
+                    },
+                    ("fact_type", "description"),
+                    limit=limit * 2,
+                )
+
+        for risk in chunk_facts.get("risk_facts") or []:
+            if not isinstance(risk, dict):
+                continue
+            _append_unique_record(
+                base["risk_facts"],
+                {
+                    "chunk_index": risk.get("chunk_index", chunk_index),
+                    "type": str(risk.get("type") or "").strip()[:60],
+                    "description": str(risk.get("description") or "").strip()[:220],
+                    "evidence": str(risk.get("evidence") or summary).strip()[:180],
+                    "confidence": risk.get("confidence") or "medium",
+                },
+                ("type", "description"),
+                limit=limit,
+            )
 
         for name in update.get("active_characters") or []:
             entity = _knowledge_entity_record(name, chunk_index, summary)
@@ -1420,11 +1467,13 @@ def _build_knowledge_base(chunk_results: List[Dict[str, Any]], limit: int = 120)
 
 def _knowledge_base_counts(knowledge_base: Dict[str, Any]) -> Dict[str, int]:
     return {
+        "facts": len((knowledge_base or {}).get("facts") or []),
         "entities": len((knowledge_base or {}).get("entities") or []),
         "relationships": len((knowledge_base or {}).get("relationships") or []),
         "worldbuilding_facts": len((knowledge_base or {}).get("worldbuilding_facts") or []),
         "foreshadowing_threads": len((knowledge_base or {}).get("foreshadowing_threads") or []),
         "plot_timeline": len((knowledge_base or {}).get("plot_timeline") or []),
+        "risk_facts": len((knowledge_base or {}).get("risk_facts") or []),
         "open_threads": len((knowledge_base or {}).get("open_threads") or []),
         "resolved_threads": len((knowledge_base or {}).get("resolved_threads") or []),
     }
@@ -1436,14 +1485,31 @@ def _normalize_llm_knowledge_base(value: Any, fallback: Dict[str, Any], limit: i
         return fallback
     base = {
         "schema_version": KNOWLEDGE_BASE_SCHEMA_VERSION,
+        "facts": [],
         "entities": [],
         "relationships": [],
         "worldbuilding_facts": [],
         "foreshadowing_threads": [],
         "plot_timeline": [],
+        "risk_facts": [],
         "open_threads": [],
         "resolved_threads": [],
     }
+    for item in raw.get("facts") or []:
+        record = _safe_dict(item)
+        text = record.get("description") if record else item
+        _append_unique_record(
+            base["facts"],
+            {
+                "chunk_index": record.get("chunk_index") if record else None,
+                "fact_type": str(record.get("fact_type") or record.get("type") or "").strip()[:60] if record else "",
+                "description": str(text or "").strip()[:220],
+                "evidence": str(record.get("evidence") or "").strip()[:180] if record else "",
+                "confidence": str(record.get("confidence") or "medium").strip()[:30] if record else "medium",
+            },
+            ("fact_type", "description"),
+            limit=limit * 2,
+        )
     for item in raw.get("entities") or []:
         record = _safe_dict(item)
         if not record and isinstance(item, str):
@@ -1503,6 +1569,21 @@ def _normalize_llm_knowledge_base(value: Any, fallback: Dict[str, Any], limit: i
             ("event",),
             limit=limit,
         )
+    for item in raw.get("risk_facts") or []:
+        record = _safe_dict(item)
+        text = record.get("description") if record else item
+        _append_unique_record(
+            base["risk_facts"],
+            {
+                "chunk_index": record.get("chunk_index") if record else None,
+                "type": str(record.get("type") or "").strip()[:60] if record else "",
+                "description": str(text or "").strip()[:220],
+                "evidence": str(record.get("evidence") or "").strip()[:180] if record else "",
+                "confidence": str(record.get("confidence") or "medium").strip()[:30] if record else "medium",
+            },
+            ("type", "description"),
+            limit=limit,
+        )
     for key in ("open_threads", "resolved_threads"):
         for item in raw.get(key) or []:
             record = _safe_dict(item)
@@ -1513,7 +1594,7 @@ def _normalize_llm_knowledge_base(value: Any, fallback: Dict[str, Any], limit: i
                 ("thread",),
                 limit=limit,
             )
-    if not any(base.get(key) for key in ("entities", "relationships", "worldbuilding_facts", "foreshadowing_threads", "plot_timeline", "open_threads", "resolved_threads")):
+    if not any(base.get(key) for key in ("facts", "entities", "relationships", "worldbuilding_facts", "foreshadowing_threads", "plot_timeline", "risk_facts", "open_threads", "resolved_threads")):
         return fallback
     resolved_texts = {x.get("thread") for x in base["resolved_threads"] if x.get("thread")}
     if resolved_texts:
@@ -1534,7 +1615,7 @@ def _merge_knowledge_base_with_llm(book_name: str, knowledge_base: Dict[str, Any
 3. 如果 open_threads 与 resolved_threads 语义上指向同一线索，应从 open_threads 删除已回收项。
 
 输出必须是 JSON 对象，字段固定为：
-entities, relationships, worldbuilding_facts, foreshadowing_threads, plot_timeline, open_threads, resolved_threads。
+facts, entities, relationships, worldbuilding_facts, foreshadowing_threads, plot_timeline, risk_facts, open_threads, resolved_threads。
 各字段保持数组；数组元素优先沿用输入对象字段。"""
     user_prompt = f"""书名：{book_name}
 
@@ -1556,11 +1637,13 @@ def _compact_knowledge_base_for_summary(knowledge_base: Dict[str, Any], limit: i
     if not isinstance(knowledge_base, dict):
         return {}
     return {
+        "facts": _sample_records_for_summary(knowledge_base.get("facts") or [], limit),
         "entities": _sample_records_for_summary(knowledge_base.get("entities") or [], limit),
         "relationships": _sample_records_for_summary(knowledge_base.get("relationships") or [], limit),
         "worldbuilding_facts": _sample_records_for_summary(knowledge_base.get("worldbuilding_facts") or [], limit),
         "foreshadowing_threads": _sample_records_for_summary(knowledge_base.get("foreshadowing_threads") or [], limit),
         "plot_timeline": _sample_records_for_summary(knowledge_base.get("plot_timeline") or [], limit),
+        "risk_facts": _sample_records_for_summary(knowledge_base.get("risk_facts") or [], limit),
         "open_threads": _sample_records_for_summary(knowledge_base.get("open_threads") or [], limit),
         "resolved_threads": _sample_records_for_summary(knowledge_base.get("resolved_threads") or [], limit),
     }
@@ -2782,7 +2865,7 @@ def _call_scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profi
         kwargs["context_snapshot"] = context_snapshot
     if "entity_prescan" in parameters:
         kwargs["entity_prescan"] = entity_prescan
-    return _scan_chunk(text_chunk, chunk_index, total_chunks, **kwargs)
+    return validate_general_chunk_result(_scan_chunk(text_chunk, chunk_index, total_chunks, **kwargs))
 
 
 def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int, reason: str) -> Dict[str, Any]:
@@ -2809,6 +2892,8 @@ def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int,
         "partial_count": len(results),
         "context_snapshot_used": {},
         "context_state_update": {},
+        "chunk_facts": {},
+        "discarded_facts": [],
     }
     seen_by_field = {field: set() for field in (
         "plot_events",
@@ -2834,6 +2919,7 @@ def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int,
             summaries.append(summary)
         if not merged["context_snapshot_used"] and isinstance(result.get("context_snapshot_used"), dict):
             merged["context_snapshot_used"] = result.get("context_snapshot_used") or {}
+        merged["discarded_facts"].extend(result.get("discarded_facts") or [])
         for object_field in (
             "writing_quality",
             "pacing_analysis",
@@ -2850,12 +2936,43 @@ def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int,
     merged["one_sentence_summary"] = "；".join(summaries[:3])
     if ROLLING_CONTEXT_ENABLED:
         merged["context_state_update"] = _merged_context_state_update(results)
-    return merged
+    return validate_general_chunk_result(merged)
 
 
-def _scan_chunk_with_context_overflow_fallback(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, context_snapshot=None, entity_prescan=None) -> Dict[str, Any]:
+def _split_text_for_downshift(text: str) -> List[str]:
+    text = text or ""
+    if len(text) < 2:
+        return [text]
+    midpoint = len(text) // 2
+    candidates = [
+        text.rfind("\n", 0, midpoint),
+        text.find("\n", midpoint),
+        text.rfind("。", 0, midpoint),
+        text.find("。", midpoint),
+    ]
+    split_at = min(
+        [pos for pos in candidates if 0 < pos < len(text) - 1],
+        key=lambda pos: abs(pos - midpoint),
+        default=midpoint,
+    )
+    return [text[:split_at].strip(), text[split_at:].strip()]
+
+
+def _downshift_entity_prescan(entity_prescan, depth: int):
+    items = list(entity_prescan or [])
+    if depth <= 0:
+        return items
+    keep = max(5, ENTITY_PRESCAN_PROMPT_ITEMS // (2 ** depth))
+    return items[:keep]
+
+
+def _scan_chunk_downshifted(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, context_snapshot=None, entity_prescan=None, depth: int = 0) -> Dict[str, Any]:
     density_profile = _chunk_density_profile(text_chunk)
-    context_snapshot = _trim_context_snapshot(context_snapshot or {}) if ROLLING_CONTEXT_ENABLED else {}
+    if ROLLING_CONTEXT_ENABLED:
+        context_limit = max(300, CONTEXT_MAX_CHARS // (2 ** max(0, depth)))
+        context_snapshot = _trim_context_snapshot(context_snapshot or {}, max_chars=context_limit)
+    else:
+        context_snapshot = {}
     try:
         result = _call_scan_chunk(
             text_chunk,
@@ -2864,34 +2981,49 @@ def _scan_chunk_with_context_overflow_fallback(text_chunk: str, chunk_index: int
             profile=profile,
             density_profile=density_profile,
             context_snapshot=context_snapshot,
-            entity_prescan=entity_prescan,
+            entity_prescan=_downshift_entity_prescan(entity_prescan, depth),
         )
         result.setdefault("density_profile", density_profile)
+        if depth:
+            result["downshift_depth"] = depth
         return result
     except Exception as exc:
-        if not is_context_overflow_error(exc) or len(text_chunk or "") < 2:
+        error_type = classify_scan_error(exc)
+        if error_type not in {"context_overflow", "api_error", "timeout"} or depth >= API_DOWNSHIFT_MAX_DEPTH or len(text_chunk or "") < 2:
             raise
-        midpoint = max(1, len(text_chunk) // 2)
-        parts = [text_chunk[:midpoint], text_chunk[midpoint:]]
+        parts = _split_text_for_downshift(text_chunk)
         partial_results = []
-        fallback_context = _trim_context_snapshot(context_snapshot, max(400, CONTEXT_MAX_CHARS // 2)) if ROLLING_CONTEXT_ENABLED else {}
+        fallback_context = _trim_context_snapshot(context_snapshot, max_chars=max(240, CONTEXT_MAX_CHARS // (2 ** (depth + 1)))) if ROLLING_CONTEXT_ENABLED else {}
         for part_index, part in enumerate(parts, 1):
             if not part.strip():
                 continue
-            result = _call_scan_chunk(
+            result = _scan_chunk_downshifted(
                 part,
                 chunk_index,
                 total_chunks,
                 profile=profile,
-                density_profile=_chunk_density_profile(part),
                 context_snapshot=fallback_context,
                 entity_prescan=entity_prescan,
+                depth=depth + 1,
             )
             result["partial_index"] = part_index
             partial_results.append(result)
         if not partial_results:
             raise
-        return _merge_partial_scan_results(partial_results, chunk_index, "context_overflow_split")
+        reason = "context_overflow_split" if error_type == "context_overflow" else f"{error_type}_downshift_split"
+        return _merge_partial_scan_results(partial_results, chunk_index, reason)
+
+
+def _scan_chunk_with_context_overflow_fallback(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, context_snapshot=None, entity_prescan=None) -> Dict[str, Any]:
+    return _scan_chunk_downshifted(
+        text_chunk,
+        chunk_index,
+        total_chunks,
+        profile=profile,
+        context_snapshot=context_snapshot,
+        entity_prescan=entity_prescan,
+        depth=0,
+    )
 
 
 def _merge_items(chunk_results: List[Dict[str, Any]], key: str, limit: int = 80) -> List[str]:
@@ -2911,36 +3043,43 @@ def _merge_items(chunk_results: List[Dict[str, Any]], key: str, limit: int = 80)
 def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile=None, knowledge_base: Dict[str, Any] = None) -> Dict[str, Any]:
     profile = profile or load_analysis_profile("general")
     knowledge_base = knowledge_base if isinstance(knowledge_base, dict) else _build_knowledge_base(chunk_results)
-    material = {
+    def build_material(limit_scale: float = 1.0):
+        summary_limit = max(30, int(120 * limit_scale))
+        merge_limit = max(20, int(80 * limit_scale))
+        compact_limit = max(20, int(40 * limit_scale))
+        material_data = {
         "chunk_summaries": [
             {"chunk_index": x.get("chunk_index"), "summary": x.get("one_sentence_summary")}
             for x in chunk_results
             if x.get("one_sentence_summary")
-        ][:120],
-        "plot_events": _merge_items(chunk_results, "plot_events"),
-        "conflicts": _merge_items(chunk_results, "conflicts"),
-        "worldbuilding": _merge_items(chunk_results, "worldbuilding"),
-        "themes": _merge_items(chunk_results, "themes"),
-        "foreshadowing": _merge_items(chunk_results, "foreshadowing"),
-        "quality_notes": _merge_items(chunk_results, "quality_notes"),
-        "specialty_notes": _merge_items(chunk_results, "specialty_notes"),
-        "knowledge_base": _compact_knowledge_base_for_summary(knowledge_base),
-    }
-    if WRITING_QUALITY_ENABLED:
-        material["writing_quality_chunks"] = _compact_writing_quality_for_summary(chunk_results)
-        material["zhihu_writing_insights_material"] = _compact_zhihu_writing_insights_for_summary(chunk_results)
-    if NARRATIVE_ARCHITECTURE_ENABLED:
-        material["narrative_architecture_chunks"] = _compact_narrative_architecture_for_summary(chunk_results)
-    if FORESHADOWING_ENGINEERING_ENABLED:
-        material["foreshadowing_engineering_chunks"] = _compact_foreshadowing_engineering_for_summary(chunk_results)
-    if SEMANTIC_LAYERS_ENABLED:
-        material["semantic_layers_chunks"] = _compact_semantic_layers_for_summary(chunk_results)
-    if READER_EXPERIENCE_ENABLED:
-        material["reader_experience_chunks"] = _compact_reader_experience_for_summary(chunk_results)
-    if ROLLING_CONTEXT_ENABLED:
-        material["rolling_context_timeline"] = _compact_rolling_context_timeline(chunk_results)
-    if CONTINUITY_AUDIT_ENABLED:
-        material["continuity_audit_material"] = _compact_continuity_for_summary(chunk_results)
+        ][:summary_limit],
+            "plot_events": _merge_items(chunk_results, "plot_events", limit=merge_limit),
+            "conflicts": _merge_items(chunk_results, "conflicts", limit=merge_limit),
+            "worldbuilding": _merge_items(chunk_results, "worldbuilding", limit=merge_limit),
+            "themes": _merge_items(chunk_results, "themes", limit=merge_limit),
+            "foreshadowing": _merge_items(chunk_results, "foreshadowing", limit=merge_limit),
+            "quality_notes": _merge_items(chunk_results, "quality_notes", limit=merge_limit),
+            "specialty_notes": _merge_items(chunk_results, "specialty_notes", limit=merge_limit),
+            "knowledge_base": _compact_knowledge_base_for_summary(knowledge_base, limit=compact_limit),
+        }
+        if WRITING_QUALITY_ENABLED:
+            material_data["writing_quality_chunks"] = _compact_writing_quality_for_summary(chunk_results, limit=max(30, int(80 * limit_scale)))
+            material_data["zhihu_writing_insights_material"] = _compact_zhihu_writing_insights_for_summary(chunk_results, limit=max(30, int(80 * limit_scale)))
+        if NARRATIVE_ARCHITECTURE_ENABLED:
+            material_data["narrative_architecture_chunks"] = _compact_narrative_architecture_for_summary(chunk_results, limit=max(40, int(120 * limit_scale)))
+        if FORESHADOWING_ENGINEERING_ENABLED:
+            material_data["foreshadowing_engineering_chunks"] = _compact_foreshadowing_engineering_for_summary(chunk_results, limit=max(40, int(120 * limit_scale)))
+        if SEMANTIC_LAYERS_ENABLED:
+            material_data["semantic_layers_chunks"] = _compact_semantic_layers_for_summary(chunk_results, limit=max(40, int(120 * limit_scale)))
+        if READER_EXPERIENCE_ENABLED:
+            material_data["reader_experience_chunks"] = _compact_reader_experience_for_summary(chunk_results, limit=max(40, int(120 * limit_scale)))
+        if ROLLING_CONTEXT_ENABLED:
+            material_data["rolling_context_timeline"] = _compact_rolling_context_timeline(chunk_results, limit=max(40, int(120 * limit_scale)))
+        if CONTINUITY_AUDIT_ENABLED:
+            material_data["continuity_audit_material"] = _compact_continuity_for_summary(chunk_results, limit=max(40, int(120 * limit_scale)))
+        return material_data
+
+    material = build_material()
     base_summary_fields = {
         "main_plot",
         "core_conflicts",
@@ -3018,13 +3157,30 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
     "emotion": {{"score": 0-10, "reason": "情绪调动评分依据"}}
   }}
 }}"""
-    data = _call_json(
-        [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        max_tokens=5200,
-    )
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+    try:
+        data = _call_json(messages, max_tokens=5200)
+    except Exception as exc:
+        error_type = classify_scan_error(exc)
+        if error_type not in {"context_overflow", "api_error", "timeout"}:
+            raise
+        compact_material = build_material(limit_scale=0.45)
+        compact_prompt = f"""书名：{book_name}
+
+分块材料（已降载压缩，用于规避接口 504/上下文过载）：
+{json.dumps(compact_material, ensure_ascii=False, indent=2)}
+
+请按原要求输出同结构 JSON。"""
+        data = _call_json(
+            [
+                {"role": "system", "content": system_prompt + "\n当前为降载重试，请优先保留高置信事实和主要风险。"},
+                {"role": "user", "content": compact_prompt},
+            ],
+            max_tokens=3800,
+        )
     summary = {
         "prompt_template": template_meta,
         "story_overview": _summary_field_text(data, "story_overview"),

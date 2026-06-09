@@ -90,6 +90,10 @@ BOOK_IDS_PAYLOAD_SCHEMA = {
     "required": ["book_ids"],
     "fields": {"book_ids": {"type": list, "item_type": str, "non_empty_items": True}},
 }
+RETRY_FAILED_PAYLOAD_SCHEMA = {
+    "required": [],
+    "fields": {"failure_types": {"type": list, "item_type": str, "non_empty_items": True}},
+}
 PROFILE_PAYLOAD_SCHEMA = {
     "required": ["book_id"],
     "fields": {
@@ -589,6 +593,10 @@ def _failure_reason_label(error_text):
         return "permission denied"
     if "api key" in lower or "api_key" in lower or "未读取到任何 api key" in lower:
         return "api key missing"
+    if any(token in lower for token in ("api调用失败", "api 调用失败", "服务器错误", "rate limit", "429", "403", "500", "502", "503", "504")):
+        return "api failure"
+    if "timeout" in lower or "timed out" in lower or "超时" in lower:
+        return "api failure"
     if "json" in lower and ("parse" in lower or "invalid" in lower or "解析" in lower or "truncated" in lower):
         return "json parse failure"
     if "stalled without output" in lower:
@@ -598,6 +606,24 @@ def _failure_reason_label(error_text):
     if "config" in lower or "配置" in lower:
         return "runtime config error"
     return text[:120]
+
+
+def _failure_retry_type(error_text):
+    reason = _failure_reason_label(error_text)
+    lower = str(error_text or "").lower()
+    if reason in {"api key missing", "api failure"}:
+        return "api_failure"
+    if reason == "json parse failure":
+        return "parse_failure"
+    if "context_overflow" in lower or "context length" in lower or "上下文" in lower:
+        return "context_overflow"
+    if reason == "stalled without output":
+        return "stalled"
+    if reason == "runtime config error":
+        return "config_failure"
+    if reason == "permission denied":
+        return "storage_failure"
+    return "unknown"
 
 
 def _failed_task_diagnostic(task, book):
@@ -616,6 +642,7 @@ def _failed_task_diagnostic(task, book):
         "updated_at": task.get("updated_at", ""),
         "error": error_text,
         "failure_reason": _failure_reason_label(error_text),
+        "retry_type": _failure_retry_type(error_text),
         "log_path": log_path,
         "log_file": _file_link(log_path) if log_path else None,
         "return_code": result.get("return_code"),
@@ -1402,6 +1429,59 @@ def _enqueue_many(book_ids):
     return {"queued": queued, "skipped": skipped}
 
 
+def _latest_failed_task_for_book_locked(book_id):
+    failed = [
+        task for task in STATE.get("tasks", [])
+        if task.get("book_id") == book_id and task.get("status") == "failed"
+    ]
+    if not failed:
+        return None
+    failed.sort(key=lambda item: item.get("finished_at") or item.get("updated_at") or item.get("created_at") or "", reverse=True)
+    return failed[0]
+
+
+def _retry_failed_tasks_by_type(failure_types):
+    requested_types = {
+        str(item or "").strip()
+        for item in (failure_types or [])
+        if str(item or "").strip()
+    }
+    if not requested_types:
+        requested_types = {"api_failure", "parse_failure"}
+    matched = []
+    skipped = []
+    with STATE_LOCK:
+        for book_id, book in STATE.get("books", {}).items():
+            if book.get("status") != "failed":
+                continue
+            task = _latest_failed_task_for_book_locked(book_id)
+            if not task:
+                continue
+            error_text = _task_error_text(task)
+            retry_type = _failure_retry_type(error_text)
+            diagnostic = _failed_task_diagnostic(task, book)
+            if retry_type in requested_types or diagnostic.get("failure_reason") in requested_types:
+                matched.append({
+                    "book_id": book_id,
+                    "task_id": task.get("id"),
+                    "retry_type": retry_type,
+                    "failure_reason": diagnostic.get("failure_reason"),
+                })
+            else:
+                skipped.append({
+                    "book_id": book_id,
+                    "task_id": task.get("id"),
+                    "retry_type": retry_type,
+                    "failure_reason": diagnostic.get("failure_reason"),
+                    "reason": "failure type not selected",
+                })
+    result = _enqueue_many([item["book_id"] for item in matched])
+    result["matched"] = matched
+    result["unmatched_failed"] = skipped
+    result["failure_types"] = sorted(requested_types)
+    return result
+
+
 def _prioritize_queued_book(book_id):
     with STATE_LOCK:
         book = STATE["books"].get(book_id)
@@ -2120,6 +2200,21 @@ class Handler(BaseHTTPRequestHandler):
             book_ids = payload.get("book_ids")
             try:
                 result = _enqueue_many(book_ids)
+            except (PermissionError, OSError) as exc:
+                self._send_storage_error(exc)
+                return
+            self._send_json({"ok": bool(result["queued"]), "result": result}, 200)
+            return
+        if parsed.path == "/api/retry-failed":
+            if not self._require_auth(parsed):
+                return
+            if not self._require_write_confirmation():
+                return
+            payload = self._read_json_payload_schema(RETRY_FAILED_PAYLOAD_SCHEMA)
+            if payload is None:
+                return
+            try:
+                result = _retry_failed_tasks_by_type(payload.get("failure_types") or [])
             except (PermissionError, OSError) as exc:
                 self._send_storage_error(exc)
                 return

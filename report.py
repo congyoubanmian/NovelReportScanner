@@ -3945,11 +3945,13 @@ def _append_general_radar_score_section(lines: list, general_summary: dict, deta
 
 def _knowledge_base_count_line(counts: dict) -> str:
     labels = [
+        ("facts", "事实"),
         ("entities", "实体"),
         ("relationships", "关系"),
         ("worldbuilding_facts", "设定"),
         ("foreshadowing_threads", "伏笔"),
         ("plot_timeline", "事件"),
+        ("risk_facts", "风险事实"),
         ("open_threads", "未解线索"),
         ("resolved_threads", "已回收线索"),
     ]
@@ -3968,11 +3970,13 @@ def _append_general_knowledge_base_sections(lines: list, general_summary: dict):
     if not isinstance(knowledge_base, dict):
         return
     has_material = any(knowledge_base.get(key) for key in (
+        "facts",
         "entities",
         "relationships",
         "worldbuilding_facts",
         "foreshadowing_threads",
         "plot_timeline",
+        "risk_facts",
         "open_threads",
         "resolved_threads",
     ))
@@ -4000,6 +4004,14 @@ def _append_general_knowledge_base_sections(lines: list, general_summary: dict):
             prefix = f"片段{item.get('chunk_index')}：" if item.get("chunk_index") is not None else ""
             lines.append(f"- {prefix}{_markdown_cell(item.get('description'), 120)}")
 
+    fact_items = [x for x in (knowledge_base.get("facts") or []) if isinstance(x, dict)][:10]
+    if fact_items:
+        lines.extend(["", "事实库："])
+        for item in fact_items:
+            prefix = f"片段{item.get('chunk_index')}：" if item.get("chunk_index") is not None else ""
+            fact_type = item.get("fact_type") or "fact"
+            lines.append(f"- {prefix}[{_markdown_cell(fact_type, 24)}] {_markdown_cell(item.get('description'), 120)}")
+
     facts = [x for x in (knowledge_base.get("worldbuilding_facts") or []) if isinstance(x, dict)][:8]
     if facts:
         lines.extend(["", "设定事实："])
@@ -4013,6 +4025,14 @@ def _append_general_knowledge_base_sections(lines: list, general_summary: dict):
         for item in timeline:
             prefix = f"片段{item.get('chunk_index')}：" if item.get("chunk_index") is not None else ""
             lines.append(f"- {prefix}{_markdown_cell(item.get('event'), 120)}")
+
+    risk_facts = [x for x in (knowledge_base.get("risk_facts") or []) if isinstance(x, dict)][:8]
+    if risk_facts:
+        lines.extend(["", "风险事实："])
+        for item in risk_facts:
+            prefix = f"片段{item.get('chunk_index')}：" if item.get("chunk_index") is not None else ""
+            risk_type = item.get("type") or "risk"
+            lines.append(f"- {prefix}[{_markdown_cell(risk_type, 24)}] {_markdown_cell(item.get('description'), 120)}")
 
     open_threads = [x for x in (knowledge_base.get("open_threads") or []) if isinstance(x, dict)][:8]
     if open_threads:

@@ -138,6 +138,14 @@ export function enqueueBooks(bookIds) {
   })
 }
 
+export function retryFailedTasks(failureTypes) {
+  return _api('/api/retry-failed', {
+    method: 'POST',
+    headers: _writeHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ failure_types: failureTypes })
+  })
+}
+
 export function cancelQueuedBook(bookId) {
   return _api('/api/cancel', {
     method: 'POST',
