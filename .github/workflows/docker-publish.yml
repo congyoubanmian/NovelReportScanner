@@ -81,11 +81,11 @@ jobs:
           DOCKERHUB_LABELS: ${{ steps.meta_dockerhub.outputs.labels }}
           DOCKERHUB_ENABLED: ${{ steps.dockerhub_gate.outputs.enabled }}
         run: |
-          : > /tmp/docker-tags.args
+          : > /tmp/docker-tags.list
           : > /tmp/docker-labels.args
 
           printf '%s\n' "$GHCR_TAGS" | while IFS= read -r tag; do
-            [ -n "$tag" ] && printf -- '--tag=%s\n' "$tag" >> /tmp/docker-tags.args
+            [ -n "$tag" ] && printf '%s\n' "$tag" >> /tmp/docker-tags.list
           done
           printf '%s\n' "$GHCR_LABELS" | while IFS= read -r label; do
             [ -n "$label" ] && printf -- '--label=%s\n' "$label" >> /tmp/docker-labels.args
@@ -93,36 +93,44 @@ jobs:
 
           if [ "$DOCKERHUB_ENABLED" = "true" ]; then
             printf '%s\n' "$DOCKERHUB_TAGS" | while IFS= read -r tag; do
-              [ -n "$tag" ] && printf -- '--tag=%s\n' "$tag" >> /tmp/docker-tags.args
+              [ -n "$tag" ] && printf '%s\n' "$tag" >> /tmp/docker-tags.list
             done
             printf '%s\n' "$DOCKERHUB_LABELS" | while IFS= read -r label; do
               [ -n "$label" ] && printf -- '--label=%s\n' "$label" >> /tmp/docker-labels.args
             done
           fi
 
-      - name: Build and push Docker images with retry
+      - name: Build Docker image
         run: |
-          for attempt in 1 2 3; do
-            mapfile -t tag_args < /tmp/docker-tags.args
-            mapfile -t label_args < /tmp/docker-labels.args
-            if docker buildx build \
-              --push \
-              --file Dockerfile \
-              --build-arg APP_VERSION="${{ github.ref_name }}" \
-              --build-arg APP_COMMIT="${{ github.sha }}" \
-              --build-arg APP_BUILD_DATE="${{ steps.build_time.outputs.value }}" \
-              "${tag_args[@]}" \
-              "${label_args[@]}" \
-              .; then
-              exit 0
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              exit 1
-            fi
-            sleep_seconds=$((attempt * 20))
-            echo "Docker build/push failed, retrying in ${sleep_seconds}s..."
-            sleep "$sleep_seconds"
-          done
+          mapfile -t label_args < /tmp/docker-labels.args
+          docker buildx build \
+            --load \
+            --file Dockerfile \
+            --tag "novel-report-scanner:${{ github.sha }}" \
+            --build-arg APP_VERSION="${{ github.ref_name }}" \
+            --build-arg APP_COMMIT="${{ github.sha }}" \
+            --build-arg APP_BUILD_DATE="${{ steps.build_time.outputs.value }}" \
+            "${label_args[@]}" \
+            .
+
+      - name: Push Docker image tags with retry
+        run: |
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            docker tag "novel-report-scanner:${{ github.sha }}" "$tag"
+
+            for attempt in 1 2 3 4; do
+              if docker push "$tag"; then
+                break
+              fi
+              if [ "$attempt" -eq 4 ]; then
+                exit 1
+              fi
+              sleep_seconds=$((attempt * 30))
+              echo "Docker push failed for ${tag}, retrying in ${sleep_seconds}s..."
+              sleep "$sleep_seconds"
+            done
+          done < /tmp/docker-tags.list
 
       - name: Report Docker Hub push
         if: ${{ steps.dockerhub_gate.outputs.enabled == 'true' }}
