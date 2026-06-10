@@ -3262,6 +3262,9 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
   "risks_or_issues": ["可能的问题或阅读门槛"],
   "reader_fit": "适合什么读者",
   "overall_assessment": "总体评价",
+  "highlight_quotes": ["原文中最精彩或有代表性的句子或短段落（直接引用原文，最多3条）"],
+  "pacing_feel": "一句话描述整书的节奏感受（如'前紧后松'、'节奏均匀'、'中期拖沓'等）",
+  "comparable_works": ["风格或题材相近的其他作品（最多3部），帮助读者定位"],
   "radar_scores": {{
     "plot": {{"score": 0-10, "reason": "剧情质量评分依据"}},
     "characters": {{"score": 0-10, "reason": "人物塑造评分依据"}},

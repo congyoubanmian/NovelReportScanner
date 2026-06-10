@@ -4927,6 +4927,30 @@ def _append_scan_quality_indicator(lines: list, general_summary: dict):
     if partial:
         lines.append("  ⚠️ 本次扫描为部分扫描（有片段解析失败），部分内容未被分析")
 
+
+
+def _append_highlight_quotes_section(lines: list, general_summary: dict):
+    """展示原文中最精彩或有代表性的句子。"""
+    summary = (general_summary or {}).get("summary") or {}
+    quotes = _clean_text_items(summary.get("highlight_quotes") or [], limit=3, max_len=200)
+    if not quotes:
+        return
+    lines.extend(["", "【原文金句/代表段落】"])
+    for q in quotes:
+        lines.append(f"  > {q}")
+
+
+
+def _append_comparable_works_section(lines: list, general_summary: dict):
+    """展示风格或题材相近的作品推荐。"""
+    summary = (general_summary or {}).get("summary") or {}
+    works = _clean_text_items(summary.get("comparable_works") or [], limit=3, max_len=60)
+    if not works:
+        return
+    lines.extend(["", "【相近作品】"])
+    for w in works:
+        lines.append(f"  · {w}")
+
 def _append_speed_read_card(lines: list, general_summary: dict, detailed_data: dict = None):
     """
     在报告最前面插入速读卡片：综合推荐 + 类型 + 一句话 + 评分条 + 高潮/低谷/风险。
@@ -4965,6 +4989,9 @@ def _append_speed_read_card(lines: list, general_summary: dict, detailed_data: d
     overview = summary_field_text(summary, "story_overview").strip()
     one_liner = overview[:80] + "…" if len(overview) > 80 else overview
 
+    # 节奏感受
+    pacing_feel = str(summary.get("pacing_feel") or "").strip()
+
     # 渲染
     # 阅读时间估算
     total_chars_est = (general_summary or {}).get("text_length") or 0
@@ -4977,6 +5004,8 @@ def _append_speed_read_card(lines: list, general_summary: dict, detailed_data: d
     lines.append(f"  {rec_emoji} 综合推荐：{rec.get('level', '?')} - {rec.get('label', '')}")
     if tags:
         lines.append(f"  🏷 类型：{' · '.join(tags)}")
+    if pacing_feel:
+        lines.append(f"  🎵 节奏：{pacing_feel}")
     lines.append(f"  📝 {one_liner}")
     lines.append("")
 
@@ -5079,6 +5108,8 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
     add_list("优点", summary_field_values(summary, "strengths"))
     add_list("问题与阅读门槛", summary_field_values(summary, "risks_or_issues"))
     _append_content_warnings_section(lines, general_summary)
+    _append_highlight_quotes_section(lines, general_summary)
+    _append_comparable_works_section(lines, general_summary)
     lines.extend(["", "【适合读者】", summary_field_text(summary, "reader_fit")])
     lines.extend(["", "【总体评价】", summary_field_text(summary, "overall_assessment")])
 
