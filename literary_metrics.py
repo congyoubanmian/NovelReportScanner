@@ -30,7 +30,7 @@ WORD_POVERTY_MARKERS = {
 # 省略号/感叹号等风格标记
 _EXCLAMATION_RE = re.compile(r"[！!]")
 _ELLIPSIS_RE = re.compile(r"[…]{2,}|[。]{3,}|\.{3,}")
-_DIALOGUE_RE = re.compile(r"[\"\"「「『『].*?[\"」」』』]", re.DOTALL)
+_DIALOGUE_RE = re.compile(r"“[^”]*”|‘[^’]*’|「[^」]*」", re.DOTALL)
 _SENTENCE_END_RE = re.compile(r"[。！？!?…]+")
 _CHAPTER_RE = re.compile(
     r"^\s*(?:第[\u4e00-\u9fff零〇一二三四五六七八九十百千万0-9]+[章节回卷部集]"
