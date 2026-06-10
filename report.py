@@ -4742,6 +4742,58 @@ def _append_worldbuilding_details_section(lines: list, general_summary: dict):
     if len(all_items) > 12:
         lines.append(f"  …共 {len(all_items)} 条设定细节")
 
+
+
+def _append_content_warnings_section(lines: list, general_summary: dict):
+    """
+    从 chunk_results 的 quality_notes 和 summary 的 risks_or_issues 中
+    提取具体的内容警告（暴力、虐心、后宫倾向等），让读者提前知道避雷点。
+    """
+    chunk_results = (general_summary or {}).get("chunk_results") or []
+    summary = (general_summary or {}).get("summary") or {}
+
+    # Collect risk-related quality notes from chunks
+    risk_keywords = {
+        "虐": "虐心情节", "刀": "虐心情节", "悲剧": "悲剧元素", "死亡": "角色死亡",
+        "背叛": "背叛情节", "绿": "NTR风险", "绿帽": "NTR风险",
+        "后宫": "后宫倾向", "暧昧": "暧昧关系", "多女": "多女倾向",
+        "圣母": "圣母倾向", "降智": "降智情节", "水": "水文",
+        "拖沓": "节奏拖沓", "战力崩": "战力体系崩坏", "烂尾": "烂尾风险",
+        "重复": "剧情重复", "套路": "套路化", "毒点": "毒点",
+    }
+
+    warnings = {}
+    for chunk in chunk_results:
+        if not isinstance(chunk, dict):
+            continue
+        notes = (chunk.get("quality_notes") or []) + (chunk.get("conflicts") or [])
+        for note in notes:
+            text = str(note).strip().lower()
+            for kw, label in risk_keywords.items():
+                if kw in text and label not in warnings:
+                    warnings[label] = str(note).strip()[:80]
+
+    # Also add from summary risks
+    for risk in summary_field_values(summary, "risks_or_issues"):
+        text = str(risk).strip()
+        if text:
+            matched = False
+            for kw, label in risk_keywords.items():
+                if kw in text.lower():
+                    if label not in warnings:
+                        warnings[label] = text[:80]
+                    matched = True
+                    break
+            if not matched and "风险" not in text and "门槛" not in text:
+                warnings[text[:20]] = text[:80]
+
+    if not warnings:
+        return
+
+    lines.extend(["", "【避雷提示（详细）】"])
+    for label, detail in list(warnings.items())[:8]:
+        lines.append(f"  ⚡ {label}：{detail}")
+
 def _append_speed_read_card(lines: list, general_summary: dict, detailed_data: dict = None):
     """
     在报告最前面插入速读卡片：综合推荐 + 类型 + 一句话 + 评分条 + 高潮/低谷/风险。
@@ -4781,8 +4833,14 @@ def _append_speed_read_card(lines: list, general_summary: dict, detailed_data: d
     one_liner = overview[:80] + "…" if len(overview) > 80 else overview
 
     # 渲染
+    # 阅读时间估算
+    total_chars_est = (general_summary or {}).get("text_length") or 0
+    reading_time_hours = round(total_chars_est / 30000, 1) if total_chars_est > 0 else 0  # 3万字/小时
+
     lines.append("")
     lines.append("【速读卡片】")
+    if reading_time_hours > 0:
+        lines.append(f"  📖 预估阅读：约{reading_time_hours}小时（{total_chars_est // 10000}万字）")
     lines.append(f"  {rec_emoji} 综合推荐：{rec.get('level', '?')} - {rec.get('label', '')}")
     if tags:
         lines.append(f"  🏷 类型：{' · '.join(tags)}")
@@ -4886,6 +4944,7 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
         add_list("专项命中要点", specialty_notes)
     add_list("优点", summary_field_values(summary, "strengths"))
     add_list("问题与阅读门槛", summary_field_values(summary, "risks_or_issues"))
+    _append_content_warnings_section(lines, general_summary)
     lines.extend(["", "【适合读者】", summary_field_text(summary, "reader_fit")])
     lines.extend(["", "【总体评价】", summary_field_text(summary, "overall_assessment")])
 
