@@ -4794,6 +4794,139 @@ def _append_content_warnings_section(lines: list, general_summary: dict):
     for label, detail in list(warnings.items())[:8]:
         lines.append(f"  ⚡ {label}：{detail}")
 
+
+
+def _append_plot_timeline_section(lines: list, general_summary: dict):
+    """
+    从 chunk_results 的 plot_events 和 one_sentence_summary 中
+    提取并展示详细的情节时间线，让读者看到实际发生了什么，
+    而不仅是摘要级的"主线剧情"。
+    """
+    chunk_results = (general_summary or {}).get("chunk_results") or []
+    if not chunk_results:
+        return
+
+    # Collect plot events per chunk
+    timeline = []
+    for chunk in chunk_results:
+        if not isinstance(chunk, dict):
+            continue
+        ci = chunk.get("chunk_index", 0)
+        events = chunk.get("plot_events") or []
+        summary = str(chunk.get("one_sentence_summary") or "").strip()
+        if events:
+            for event in events[:5]:
+                text = str(event).strip()
+                if text and len(text) >= 4:
+                    timeline.append((ci, text))
+        elif summary:
+            timeline.append((ci, summary))
+
+    if not timeline:
+        return
+
+    lines.extend(["", "【情节时间线（片段级）】"])
+    # Group by chunks to avoid repetition
+    prev_ci = -1
+    count = 0
+    for ci, text in timeline:
+        if count >= 40:
+            lines.append(f"  …共 {len(timeline)} 条情节记录")
+            break
+        if ci != prev_ci:
+            marker = "→" if prev_ci >= 0 else "▶"
+            lines.append(f"  {marker} 片段{ci}")
+        lines.append(f"    · {text[:100]}")
+        prev_ci = ci
+        count += 1
+
+
+
+def _append_character_moments_section(lines: list, general_summary: dict):
+    """
+    从 chunk_results 中提取与角色相关的高光/低谷时刻，
+    丰富"核心人物"段的可读性。
+    """
+    chunk_results = (general_summary or {}).get("chunk_results") or []
+    if not chunk_results:
+        return
+
+    # Collect character-relevant quality notes
+    char_keywords = ("人物", "角色", "塑造", "性格", "成长", "转变", "弧线",
+                     "立体", "扁平", "工具人", "出彩", "深入人心")
+    moments = []
+    for chunk in chunk_results:
+        if not isinstance(chunk, dict):
+            continue
+        ci = chunk.get("chunk_index", 0)
+        notes = (chunk.get("quality_notes") or []) + (chunk.get("specialty_notes") or [])
+        for note in notes:
+            text = str(note).strip()
+            if any(kw in text for kw in char_keywords) and len(text) >= 6:
+                moments.append((ci, text[:120]))
+
+    if not moments:
+        return
+
+    lines.extend(["", "【角色评价（来自片段分析）】"])
+    for ci, text in moments[:10]:
+        lines.append(f"  · 片段{ci}：{text}")
+    if len(moments) > 10:
+        lines.append(f"  …共 {len(moments)} 条角色相关评价")
+
+
+
+def _append_scan_quality_indicator(lines: list, general_summary: dict):
+    """
+    在报告末尾添加扫描数据质量指标，
+    让读者知道这份报告的覆盖度和可靠性。
+    """
+    total_text = (general_summary or {}).get("text_length") or 0
+    source_chunks = (general_summary or {}).get("source_chunk_count") or 0
+    scanned_chunks = (general_summary or {}).get("successful_chunk_count") or 0
+    attempted_chunks = (general_summary or {}).get("attempted_chunk_count") or 0
+    failed_chunks = (general_summary or {}).get("failed_chunk_count") or 0
+    coverage = (general_summary or {}).get("scan_coverage_ratio") or 0
+    partial = (general_summary or {}).get("partial_scan") or False
+    sampling = (general_summary or {}).get("chunk_sampling_strategy") or ""
+    literary_m = (general_summary or {}).get("literary_metrics") or {}
+    lm_sample = literary_m.get("sample_chars", 0)
+    lm_total = literary_m.get("total_chars", 0)
+
+    if not total_text and not source_chunks:
+        return
+
+    lines.extend(["", "【报告数据质量】"])
+
+    # Coverage
+    if coverage > 0:
+        coverage_pct = f"{coverage:.0%}"
+        if coverage >= 0.9:
+            lines.append(f"  扫描覆盖率：{coverage_pct} ✅ 充分覆盖")
+        elif coverage >= 0.6:
+            lines.append(f"  扫描覆盖率：{coverage_pct} ⚡ 基本覆盖")
+        else:
+            lines.append(f"  扫描覆盖率：{coverage_pct} ⚠️ 覆盖有限，结论可能不完整")
+
+    # Chunk stats
+    if source_chunks > 0:
+        lines.append(f"  原文分段：{source_chunks} 段，扫描：{attempted_chunks} 段，成功：{scanned_chunks} 段"
+                      + (f"，失败：{failed_chunks} 段" if failed_chunks else ""))
+        if sampling and sampling != "full":
+            lines.append(f"  采样策略：{sampling}（非全文扫描）")
+
+    # Text stats
+    if total_text > 0:
+        lines.append(f"  全文字数：约{total_text // 10000}万字")
+
+    # Literary metrics coverage
+    if lm_total > 0:
+        lm_pct = f"{lm_sample / lm_total:.0%}" if lm_total > 0 else "0%"
+        lines.append(f"  文本质感采样：{lm_sample // 10000}万字 / 全文{lm_total // 10000}万字（{lm_pct}）")
+
+    if partial:
+        lines.append("  ⚠️ 本次扫描为部分扫描（有片段解析失败），部分内容未被分析")
+
 def _append_speed_read_card(lines: list, general_summary: dict, detailed_data: dict = None):
     """
     在报告最前面插入速读卡片：综合推荐 + 类型 + 一句话 + 评分条 + 高潮/低谷/风险。
@@ -4904,6 +5037,7 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
     _append_general_knowledge_base_sections(lines, general_summary)
     add_list("主线剧情", summary_field_values(summary, "main_plot"))
     _append_key_scenes_section(lines, general_summary)
+    _append_plot_timeline_section(lines, general_summary)
     add_list("核心冲突", summary_field_values(summary, "core_conflicts"))
     _append_pacing_narrative_section(lines, general_summary)
     add_list("世界观/设定", summary_field_values(summary, "worldbuilding"))
@@ -5071,6 +5205,8 @@ def build_general_report(book_key: str, detailed_data: dict, general_summary: di
     if rel_lines:
         lines.extend(rel_lines)
 
+    _append_character_moments_section(lines, general_summary)
+    _append_scan_quality_indicator(lines, general_summary)
     _append_simulated_reader_review(lines, general_summary, detailed_data)
     lines.extend(
         [
@@ -5272,6 +5408,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
             log_report(f"using harem+ general summary: {harem_plus_summary_path or '<not found>'}")
             harem_plus_lines = ["", "【作品整体评价】"]
             _append_general_scan_section(harem_plus_lines, harem_plus_summary, detailed_data)
+            _append_scan_quality_indicator(harem_plus_lines, harem_plus_summary)
             report = f"{report}\n" + "\n".join(harem_plus_lines)
     log_report(f"report content built, chars={len(report)}")
 
