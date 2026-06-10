@@ -17,6 +17,7 @@ from shared_utils import call_json_chat_completion_with_fallback
 from text_anchor import build_chunk_manifest, build_semantic_chunk_manifest, save_chunk_manifest
 from outline_prescan import generate_outline, outline_to_compact_text, outline_signature, save_outline, load_outline
 from scan_memory import ScanMemory, SCAN_MEMORY_ENABLED as GENERAL_SCAN_MEMORY_ENABLED
+from reading_metrics import extract_chunk_scores, aggregate_metrics, render_reading_experience_report, READING_METRICS_ENABLED
 
 
 CHUNK_SIZE = read_int_env("GENERAL_SCAN_CHUNK_SIZE", 12000, min_value=1000)
@@ -3318,6 +3319,13 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         "overall_assessment": "；".join(_summary_field_value(data, "overall_assessment")),
         "radar_scores": _normalize_radar_scores(data.get("radar_scores")),
     }
+
+    # 聚合阅读体验量化指标
+    if READING_METRICS_ENABLED:
+        chunk_score_data = extract_chunk_scores(chunk_results)
+        reading_metrics = aggregate_metrics(chunk_score_data)
+        summary["reading_metrics"] = reading_metrics
+        summary["reading_metrics_report"] = render_reading_experience_report(reading_metrics, chunk_score_data)
     for field in specialty_fields:
         summary[field] = _summary_field_value(data, field)
     return summary

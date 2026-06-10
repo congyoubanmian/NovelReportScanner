@@ -26,6 +26,7 @@ from shared_utils import (
 from token_tracker import create_default_tracker
 from analysis_profiles import load_analysis_profile
 from toxic_reviewer import is_strict_harem_issue_type
+from reading_metrics import READING_METRICS_ENABLED
 
 try:
     from openai import OpenAI
@@ -4210,6 +4211,17 @@ def _append_general_knowledge_base_sections(lines: list, general_summary: dict):
             )
 
 
+def _append_reading_experience_section(lines: list, general_summary: dict):
+    """渲染阅读体验量化报告段（张力曲线、情绪分布、置信度等）。"""
+    if not READING_METRICS_ENABLED:
+        return
+    metrics_report = (general_summary or {}).get("reading_metrics_report") or ""
+    if not metrics_report:
+        return
+    lines.extend(["", "【阅读体验量化分析】"])
+    lines.append(metrics_report)
+
+
 def _append_general_scan_section(lines: list, general_summary: dict, detailed_data: dict = None):
     summary = (general_summary or {}).get("summary") or {}
     if not summary:
@@ -4228,6 +4240,7 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
     lines.extend(["", "【作品概览】"])
     lines.append(summary_field_text(summary, "story_overview"))
     _append_general_radar_score_section(lines, general_summary, detailed_data)
+    _append_reading_experience_section(lines, general_summary)
     _append_general_knowledge_base_sections(lines, general_summary)
     add_list("主线剧情", summary_field_values(summary, "main_plot"))
     add_list("核心冲突", summary_field_values(summary, "core_conflicts"))
