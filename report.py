@@ -4570,6 +4570,178 @@ def _append_simulated_reader_review(lines: list, general_summary: dict, detailed
     lines.extend(["", "【模拟读者书评】"])
     lines.append("  「" + review_text + "」")
 
+
+
+def _append_key_scenes_section(lines: list, general_summary: dict):
+    """
+    从 chunk_results 中提取关键场景：每个 chunk 的一句话概要，
+    按重要度（有冲突/伏笔/爽点的优先）筛选排序。
+    """
+    chunk_results = (general_summary or {}).get("chunk_results") or []
+    if not chunk_results:
+        return
+
+    # Score each chunk for "key-ness"
+    scored = []
+    for chunk in chunk_results:
+        if not isinstance(chunk, dict):
+            continue
+        ci = chunk.get("chunk_index", 0)
+        summary = str(chunk.get("one_sentence_summary") or "").strip()
+        if not summary or len(summary) < 4:
+            continue
+
+        score = 0
+        # Conflicts make it key
+        conflicts = chunk.get("conflicts") or []
+        score += min(3, len(conflicts))
+
+        # Foreshadowing
+        foreshadowing = chunk.get("foreshadowing") or []
+        score += min(2, len(foreshadowing))
+
+        # Quality notes (positive mentions)
+        quality = chunk.get("quality_notes") or []
+        for q in quality:
+            q_text = str(q).lower()
+            if any(kw in q_text for kw in ("爽", "燃", "高潮", "反转", "关键", "重要")):
+                score += 2
+            elif any(kw in q_text for kw in ("亮点", "精彩", "出色")):
+                score += 1
+
+        # Plot events
+        plot = chunk.get("plot_events") or []
+        score += min(2, len(plot))
+
+        scored.append((ci, summary, score))
+
+    if not scored:
+        return
+
+    # Sort by score desc, take top scenes
+    scored.sort(key=lambda x: -x[2])
+    top = scored[:15]
+
+    lines.extend(["", "【关键场景概要】"])
+    for ci, summary, score in top:
+        marker = "🔥" if score >= 5 else "⭐" if score >= 3 else "📌"
+        lines.append(f"  {marker} 片段{ci}：{summary}")
+
+    if len(scored) > 15:
+        lines.append(f"  …共 {len(scored)} 个有效场景片段")
+
+
+
+def _append_pacing_narrative_section(lines: list, general_summary: dict):
+    """
+    基于 chunk 的密度标签和一句话概要，生成节奏叙事。
+    告诉读者"这本书的节奏是怎样的"——而不是冰冷的数字。
+    """
+    chunk_results = (general_summary or {}).get("chunk_results") or []
+    if len(chunk_results) < 5:
+        return
+
+    # Collect density and summary per chunk
+    densities = []
+    for chunk in chunk_results:
+        if not isinstance(chunk, dict):
+            continue
+        ci = chunk.get("chunk_index", 0)
+        density = (chunk.get("density_profile") or {}).get("level", "medium")
+        summary = str(chunk.get("one_sentence_summary") or "").strip()[:60]
+        densities.append((ci, density, summary))
+
+    if not densities:
+        return
+
+    # Analyze patterns
+    high_runs = 0
+    low_runs = 0
+    transitions = 0
+    prev = None
+    for _, d, _ in densities:
+        if d == "high":
+            high_runs += 1
+        elif d == "low":
+            low_runs += 1
+        if prev and prev != d and d != "medium":
+            transitions += 1
+        prev = d
+
+    total = len(densities)
+    high_pct = high_runs / total if total else 0
+    low_pct = low_runs / total if total else 0
+
+    # Build narrative
+    narrative_parts = []
+    if high_pct > 0.5:
+        narrative_parts.append("全书节奏偏快，高强度段落占比过半，读者几乎没有喘息空间。")
+    elif high_pct > 0.3:
+        narrative_parts.append("全书节奏紧凑，高潮段落分布均匀，读起来较为过瘾。")
+    elif low_pct > 0.5:
+        narrative_parts.append("全书节奏偏慢，日常和过渡段落较多，需要耐心。")
+    elif low_pct > 0.3:
+        narrative_parts.append("全书节奏中等，高潮与过渡交替，偶有拖沓。")
+    else:
+        narrative_parts.append("全书节奏较为均衡，无明显拖沓或过密。")
+
+    if transitions > total * 0.4:
+        narrative_parts.append("节奏切换频繁，情绪起伏大。")
+    elif transitions < total * 0.15:
+        narrative_parts.append("节奏变化不大，整体比较平。")
+
+    # Find the densest segment
+    best_chunk = max(densities, key=lambda x: 2 if x[1] == "high" else 1 if x[1] == "medium" else 0)
+    if best_chunk[2]:
+        narrative_parts.append(f"最紧凑处：片段{best_chunk[0]}「{best_chunk[2]}」。")
+
+    # Find the slowest segment
+    worst_chunk = min(densities, key=lambda x: 0 if x[1] == "high" else 1 if x[1] == "medium" else 2)
+    if worst_chunk[2] and worst_chunk != best_chunk:
+        narrative_parts.append(f"最平淡处：片段{worst_chunk[0]}「{worst_chunk[2]}」。")
+
+    lines.extend(["", "【节奏叙事】"])
+    for part in narrative_parts:
+        lines.append(f"  {part}")
+
+
+
+def _append_worldbuilding_details_section(lines: list, general_summary: dict):
+    """
+    从 chunk_results 的 worldbuilding 字段中提取具体设定细节，
+    不仅是摘要中的一句话，而是有具体内容的设定条目。
+    """
+    chunk_results = (general_summary or {}).get("chunk_results") or []
+    if not chunk_results:
+        return
+
+    # Collect all worldbuilding items from chunks
+    all_items = []
+    seen = set()
+    for chunk in chunk_results:
+        if not isinstance(chunk, dict):
+            continue
+        items = chunk.get("worldbuilding") or []
+        for item in items:
+            text = str(item).strip()
+            if not text or len(text) < 4:
+                continue
+            # Deduplicate by normalized form
+            key = text[:20].lower()
+            if key not in seen:
+                seen.add(key)
+                all_items.append(text)
+
+    if not all_items:
+        return
+
+    # Limit to most interesting ones
+    lines.extend(["", "【设定细节（来自片段扫描）】"])
+    for item in all_items[:12]:
+        lines.append(f"  - {item[:120]}")
+    if len(all_items) > 12:
+        lines.append(f"  …共 {len(all_items)} 条设定细节")
+
 def _append_speed_read_card(lines: list, general_summary: dict, detailed_data: dict = None):
     """
     在报告最前面插入速读卡片：综合推荐 + 类型 + 一句话 + 评分条 + 高潮/低谷/风险。
@@ -4673,8 +4845,11 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
     _append_confidence_report_section(lines, general_summary, detailed_data)
     _append_general_knowledge_base_sections(lines, general_summary)
     add_list("主线剧情", summary_field_values(summary, "main_plot"))
+    _append_key_scenes_section(lines, general_summary)
     add_list("核心冲突", summary_field_values(summary, "core_conflicts"))
+    _append_pacing_narrative_section(lines, general_summary)
     add_list("世界观/设定", summary_field_values(summary, "worldbuilding"))
+    _append_worldbuilding_details_section(lines, general_summary)
     add_list("主题表达", summary_field_values(summary, "themes"))
     _append_general_semantic_layers_sections(lines, general_summary)
     _append_general_reader_experience_sections(lines, general_summary)
