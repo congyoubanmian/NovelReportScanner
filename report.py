@@ -27,6 +27,12 @@ from token_tracker import create_default_tracker
 from analysis_profiles import load_analysis_profile
 from toxic_reviewer import is_strict_harem_issue_type
 from reading_metrics import READING_METRICS_ENABLED
+from literary_metrics import (
+    LITERARY_METRICS_ENABLED,
+    fuse_scores_with_confidence,
+    render_literary_metrics_report,
+    render_fused_confidence_report,
+)
 
 try:
     from openai import OpenAI
@@ -4418,6 +4424,115 @@ def _append_reading_experience_section(lines: list, general_summary: dict):
     lines.append(metrics_report)
 
 
+
+
+
+
+def _append_literary_metrics_section(lines: list, general_summary: dict):
+    """渲染文本质感量化分析段。"""
+    if not LITERARY_METRICS_ENABLED:
+        return
+    metrics = (general_summary or {}).get("literary_metrics")
+    if not metrics or metrics.get("sample_chars", 0) == 0:
+        return
+    report_text = render_literary_metrics_report(metrics)
+    if report_text:
+        lines.extend(["", "【文本质感量化分析】"])
+        lines.append(report_text)
+
+
+
+def _append_confidence_report_section(lines: list, general_summary: dict, detailed_data: dict = None):
+    """渲染评分可信度报告段。"""
+    if not LITERARY_METRICS_ENABLED:
+        return
+    literary_m = (general_summary or {}).get("literary_metrics")
+    if not literary_m or literary_m.get("sample_chars", 0) == 0:
+        return
+    radar = _normalize_general_radar_scores(general_summary, detailed_data)
+    fused = fuse_scores_with_confidence(radar, literary_m)
+    report_text = render_fused_confidence_report(fused)
+    if report_text:
+        lines.extend(report_text.splitlines())
+
+def _append_speed_read_card(lines: list, general_summary: dict, detailed_data: dict = None):
+    """
+    在报告最前面插入速读卡片：综合推荐 + 类型 + 一句话 + 评分条 + 高潮/低谷/风险。
+    """
+    summary = (general_summary or {}).get("summary") or {}
+    if not summary:
+        return
+
+    # 综合推荐
+    rec = _compute_recommendation_level(general_summary)
+    level_emoji = {"S": "💎", "A": "⭐", "B": "👍", "C": "🤔", "D": "👎"}
+    rec_emoji = level_emoji.get(rec.get("level", ""), "📊")
+
+    # 类型标签
+    tags = _infer_genre_tags(general_summary)
+
+    # 雷达评分
+    radar = _normalize_general_radar_scores(general_summary, detailed_data)
+
+    # 量化融合（如果有 literary_metrics）
+    literary_m = (general_summary or {}).get("literary_metrics")
+    fused = None
+    if literary_m and LITERARY_METRICS_ENABLED:
+        fused = fuse_scores_with_confidence(radar, literary_m)
+
+    # 高潮/低谷
+    metrics = (general_summary or {}).get("reading_metrics") or {}
+    high_chunks = metrics.get("high_tension_chunks", [])
+    low_zones = metrics.get("low_engagement_zones", [])
+
+    # 风险提取
+    risks = _clean_text_items(summary_field_values(summary, "risks_or_issues"), limit=3, max_len=60)
+    strengths = _clean_text_items(summary_field_values(summary, "strengths"), limit=3, max_len=60)
+
+    # 一句话评价
+    overview = summary_field_text(summary, "story_overview").strip()
+    one_liner = overview[:80] + "…" if len(overview) > 80 else overview
+
+    # 渲染
+    lines.append("")
+    lines.append("【速读卡片】")
+    lines.append(f"  {rec_emoji} 综合推荐：{rec.get('level', '?')} - {rec.get('label', '')}")
+    if tags:
+        lines.append(f"  🏷 类型：{' · '.join(tags)}")
+    lines.append(f"  📝 {one_liner}")
+    lines.append("")
+
+    # 评分条（用融合后的或纯 radar）
+    dim_labels = {"plot": "剧情", "characters": "人物", "worldbuilding": "世界观",
+                  "pacing": "节奏", "writing": "文笔", "emotion": "情绪"}
+    for dim_key, label in dim_labels.items():
+        if fused and dim_key in fused:
+            score = fused[dim_key]["score"]
+            conf = fused[dim_key]["confidence"]
+        elif dim_key in radar:
+            entry = radar[dim_key]
+            score = entry["score"] if isinstance(entry, dict) else float(entry)
+            conf = "medium"
+        else:
+            continue
+        bar = "■" * int(score) + "□" * (10 - int(score))
+        conf_tag = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(conf, "")
+        lines.append(f"  {label}：{bar} {score:.1f}/10 {conf_tag}")
+
+    lines.append("")
+    if high_chunks:
+        samples = high_chunks[:6]
+        lines.append(f"  🔥 高张力片段：{', '.join(str(x) for x in samples)}{'…' if len(high_chunks) > 6 else ''}")
+    if low_zones:
+        samples = low_zones[:4]
+        lines.append(f"  😐 低投入区域：片段 {', '.join(str(x) for x in samples)}{'…' if len(low_zones) > 4 else ''}")
+    if risks:
+        lines.append(f"  ⚠️ 风险：{'；'.join(risks)}")
+    if strengths:
+        lines.append(f"  ✅ 亮点：{'；'.join(strengths)}")
+    lines.append("")
+    lines.append("─" * 50)
+
 def _append_general_scan_section(lines: list, general_summary: dict, detailed_data: dict = None):
     summary = (general_summary or {}).get("summary") or {}
     if not summary:
@@ -4439,6 +4554,8 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
     _append_recommendation_section(lines, general_summary)
     _append_genre_tags_section(lines, general_summary)
     _append_reading_experience_section(lines, general_summary)
+    _append_literary_metrics_section(lines, general_summary)
+    _append_confidence_report_section(lines, general_summary, detailed_data)
     _append_general_knowledge_base_sections(lines, general_summary)
     add_list("主线剧情", summary_field_values(summary, "main_plot"))
     add_list("核心冲突", summary_field_values(summary, "core_conflicts"))
@@ -4550,6 +4667,7 @@ def build_general_report(book_key: str, detailed_data: dict, general_summary: di
         f"分析模式：{(general_summary or {}).get('profile_display_name') or '通用小说分析'}",
         "=" * 60,
     ]
+    _append_speed_read_card(lines, general_summary, detailed_data)
     _append_general_scan_section(lines, general_summary, detailed_data)
     lines.extend([
         "",

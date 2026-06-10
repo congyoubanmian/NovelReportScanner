@@ -18,6 +18,7 @@ from text_anchor import build_chunk_manifest, build_semantic_chunk_manifest, sav
 from outline_prescan import generate_outline, outline_to_compact_text, outline_signature, save_outline, load_outline
 from scan_memory import ScanMemory, SCAN_MEMORY_ENABLED as GENERAL_SCAN_MEMORY_ENABLED
 from reading_metrics import extract_chunk_scores, aggregate_metrics, render_reading_experience_report, READING_METRICS_ENABLED
+from literary_metrics import compute_literary_metrics as _compute_literary_metrics, LITERARY_METRICS_ENABLED
 
 
 CHUNK_SIZE = read_int_env("GENERAL_SCAN_CHUNK_SIZE", 12000, min_value=1000)
@@ -3153,7 +3154,7 @@ def _merge_items(chunk_results: List[Dict[str, Any]], key: str, limit: int = 80)
     return out
 
 
-def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile=None, knowledge_base: Dict[str, Any] = None) -> Dict[str, Any]:
+def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile=None, knowledge_base: Dict[str, Any] = None, raw_text: str = None) -> Dict[str, Any]:
     profile = profile or load_analysis_profile("general")
     knowledge_base = knowledge_base if isinstance(knowledge_base, dict) else _build_knowledge_base(chunk_results)
     def build_material(limit_scale: float = 1.0):
@@ -3326,6 +3327,10 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         reading_metrics = aggregate_metrics(chunk_score_data)
         summary["reading_metrics"] = reading_metrics
         summary["reading_metrics_report"] = render_reading_experience_report(reading_metrics, chunk_score_data)
+    # 文学质感量化（纯规则统计）
+    if LITERARY_METRICS_ENABLED and raw_text:
+        literary_m = _compute_literary_metrics(raw_text)
+        summary["literary_metrics"] = literary_m
     for field in specialty_fields:
         summary[field] = _summary_field_value(data, field)
     return summary
@@ -3519,7 +3524,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         summary = json.loads(json.dumps(latest_data.get("summary") or {}, ensure_ascii=False))
         summary_reused = True
     else:
-        summary = _summarize_book(clean_name, chunk_results, profile=profile, knowledge_base=knowledge_base) if chunk_results else {}
+        summary = _summarize_book(clean_name, chunk_results, profile=profile, knowledge_base=knowledge_base, raw_text=text) if chunk_results else {}
     density_counts = {"low": 0, "medium": 0, "high": 0}
     for item in chunk_results:
         level = ((item.get("density_profile") or {}).get("level") or "medium")
@@ -3606,6 +3611,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "knowledge_base_counts": _knowledge_base_counts(knowledge_base),
         "chunk_results": chunk_results,
         "summary": summary,
+        "literary_metrics": summary.get("literary_metrics"),
     }
     out_file = os.path.join(output_dir, "GENERAL_SUMMARY.json")
     with open(out_file, "w", encoding="utf-8") as f:
