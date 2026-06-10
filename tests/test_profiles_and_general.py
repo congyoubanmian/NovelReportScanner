@@ -16875,6 +16875,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     mock.patch.object(general_scan, "init_token_tracker"), \
                     mock.patch.object(general_scan, "_read_novel", return_value="stub"), \
                     mock.patch.object(general_scan, "build_chunk_manifest", return_value=manifest), \
+                    mock.patch.object(general_scan, "build_semantic_chunk_manifest", return_value=manifest), \
                     mock.patch.object(general_scan, "save_chunk_manifest"), \
                     mock.patch.object(general_scan, "tqdm", side_effect=lambda items, desc=None: items), \
                     mock.patch.object(general_scan, "KNOWLEDGE_BASE_LLM_MERGE_ENABLED", True), \
@@ -17013,6 +17014,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     mock.patch.object(general_scan, "init_token_tracker"), \
                     mock.patch.object(general_scan, "_read_novel", return_value="same"), \
                     mock.patch.object(general_scan, "build_chunk_manifest", return_value=manifest), \
+                    mock.patch.object(general_scan, "build_semantic_chunk_manifest", return_value=manifest), \
                     mock.patch.object(general_scan, "save_chunk_manifest"), \
                     mock.patch.object(general_scan, "tqdm", side_effect=lambda items, desc=None: items), \
                     mock.patch.object(general_scan, "ROLLING_CONTEXT_ENABLED", False), \
@@ -17059,6 +17061,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     mock.patch.object(general_scan, "init_token_tracker"), \
                     mock.patch.object(general_scan, "_read_novel", return_value=text), \
                     mock.patch.object(general_scan, "build_chunk_manifest", return_value=manifest), \
+                    mock.patch.object(general_scan, "build_semantic_chunk_manifest", return_value=manifest), \
                     mock.patch.object(general_scan, "save_chunk_manifest"), \
                     mock.patch.object(general_scan, "tqdm", side_effect=lambda items, desc=None: items), \
                     mock.patch.object(general_scan, "_scan_chunk_with_context_overflow_fallback", side_effect=fake_scan), \
@@ -17167,6 +17170,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     mock.patch.object(general_scan, "init_token_tracker"), \
                     mock.patch.object(general_scan, "_read_novel", return_value="changed"), \
                     mock.patch.object(general_scan, "build_chunk_manifest", return_value=manifest), \
+                    mock.patch.object(general_scan, "build_semantic_chunk_manifest", return_value=manifest), \
                     mock.patch.object(general_scan, "save_chunk_manifest"), \
                     mock.patch.object(general_scan, "tqdm", side_effect=lambda items, desc=None: items), \
                     mock.patch.object(general_scan, "ROLLING_CONTEXT_ENABLED", False), \
@@ -17272,6 +17276,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     mock.patch.object(general_scan, "init_token_tracker"), \
                     mock.patch.object(general_scan, "_read_novel", return_value="changed"), \
                     mock.patch.object(general_scan, "build_chunk_manifest", return_value=manifest), \
+                    mock.patch.object(general_scan, "build_semantic_chunk_manifest", return_value=manifest), \
                     mock.patch.object(general_scan, "save_chunk_manifest"), \
                     mock.patch.object(general_scan, "tqdm", side_effect=lambda items, desc=None: items), \
                     mock.patch.object(general_scan, "_scan_chunk", side_effect=fake_scan), \
@@ -17340,6 +17345,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     mock.patch.object(general_scan, "init_token_tracker"), \
                     mock.patch.object(general_scan, "_read_novel", return_value="changed"), \
                     mock.patch.object(general_scan, "build_chunk_manifest", return_value=manifest), \
+                    mock.patch.object(general_scan, "build_semantic_chunk_manifest", return_value=manifest), \
                     mock.patch.object(general_scan, "save_chunk_manifest"), \
                     mock.patch.object(general_scan, "tqdm", side_effect=lambda items, desc=None: items), \
                     mock.patch.object(general_scan, "_scan_chunk", side_effect=fake_scan), \
@@ -17384,6 +17390,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     mock.patch.object(general_scan, "init_token_tracker"), \
                     mock.patch.object(general_scan, "_read_novel", return_value="stub"), \
                     mock.patch.object(general_scan, "build_chunk_manifest", return_value=manifest), \
+                    mock.patch.object(general_scan, "build_semantic_chunk_manifest", return_value=manifest), \
                     mock.patch.object(general_scan, "save_chunk_manifest"), \
                     mock.patch.object(general_scan, "tqdm", side_effect=lambda items, desc=None: items), \
                     mock.patch.object(general_scan, "_scan_chunk", side_effect=fake_scan), \
@@ -17508,6 +17515,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     mock.patch.object(general_scan, "init_token_tracker"), \
                     mock.patch.object(general_scan, "_read_novel", return_value="stub"), \
                     mock.patch.object(general_scan, "build_chunk_manifest", return_value=manifest), \
+                    mock.patch.object(general_scan, "build_semantic_chunk_manifest", return_value=manifest), \
                     mock.patch.object(general_scan, "save_chunk_manifest"), \
                     mock.patch.object(general_scan, "tqdm", side_effect=lambda items, desc=None: items), \
                     mock.patch.object(general_scan, "_scan_chunk_with_context_overflow_fallback", side_effect=fake_scan), \

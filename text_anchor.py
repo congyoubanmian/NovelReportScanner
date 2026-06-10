@@ -15,6 +15,8 @@
 import hashlib
 import json
 import re
+import os
+from bisect import bisect_left
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -57,6 +59,350 @@ GENERIC_PHRASES = [
 
 
 # ===================== 换行符规范化 =====================
+
+
+
+# ===================== 语义边界感知切分配置 =====================
+SEMANTIC_CHUNK_ENABLED = os.environ.get("SEMANTIC_CHUNK_ENABLED", "1").strip() == "1"
+
+# 章节标题正则（覆盖中文网文常见格式）
+# 策略：以"第X章"为主力检测，序章/终章/番外等作为补充
+_CHAPTER_HEADING_RE = re.compile(
+    r'(?:^|\n)[\s\u3000]*'
+    r'(?:'
+    r'第[零一二三四五六七八九十百千万〇０-９\d]+[章节卷部篇章回集][^\n]*'
+    r'|[Cc]hapter\s*\d+[^\n]*'
+    r'|卷[零一二三四五六七八九十百千万〇\d]+[^\n]*'
+    r'|[Pp]art\s*\d+[^\n]*'
+    r'|序[章言][^\n]*'
+    r'|终章[^\n]*'
+    r'|尾声[^\n]*'
+    r'|楔子[^\n]*'
+    r'|番外[^\n]*'
+    r'|引子[^\n]*'
+    r'|后记[^\n]*'
+    r'|附录[^\n]*'
+    r')',
+    re.MULTILINE,
+)
+
+# 场景切换信号词（仅在大章节内部作为备选分割点使用）
+_SCENE_SHIFT_TIME_RE = re.compile(
+    r'(?:次日|翌日|三天后|数日后|半月后|一月后|半年后|数月后|一年后|数年后'
+    r'|翌晨|翌晚|入夜|深夜|天明|清晨|傍晚|午后'
+    r'|午时|子时|丑时|寅时|卯时|辰时|巳时|未时|申时|酉时|戌时|亥时)[，。！？\s]'
+)
+_SCENE_SHIFT_PLACE_RE = re.compile(
+    r'^[\s\u3000]*(?:另一处|另一边|与此同时|却说|且说|话分两头|远处|千里之外|百里之外)[，。！？\s]',
+    re.MULTILINE,
+)
+
+# 场景断点：连续空行数阈值
+SCENE_BREAK_MIN_BLANK_LINES = 2
+
+# 大章节阈值：超过此大小的章节才做内部分割
+LARGE_CHAPTER_THRESHOLD_FACTOR = 1.5  # chunk_size 的倍数
+
+
+def _find_chapter_heading_matches(text: str) -> List[Tuple[int, str]]:
+    """
+    查找所有章节标题的 (标题行起始位置, 完整标题文本)。
+
+    返回按位置排序的列表。同一行只保留一个标题。
+    标题文本包含章节号和标题名，如 "第001章 溪上何人品玉箫"。
+    """
+    results = []
+    seen_positions = set()
+    for match in _CHAPTER_HEADING_RE.finditer(text):
+        # match.group() 包含可能的 \n 前缀，strip 后得到标题行
+        title = match.group().strip()
+        if not title:
+            continue
+        # 定位标题行的真正起始（跳过 match 中的 \n 前缀）
+        raw = match.group()
+        newline_in_match = raw.find("\n")
+        if newline_in_match >= 0:
+            line_start = match.start() + newline_in_match + 1
+        else:
+            line_start = match.start()
+        # 同一位置去重
+        if line_start in seen_positions:
+            continue
+        seen_positions.add(line_start)
+        results.append((line_start, title))
+    return results
+
+
+def _find_scene_breaks_in_range(text: str, start: int, end: int) -> List[int]:
+    """
+    在指定范围内查找场景切换断点。
+
+    仅返回行首位置，用于大章节内部分割。
+    """
+    segment = text[start:end]
+    if not segment:
+        return []
+
+    breaks = []
+
+    # 策略1：连续空行
+    lines = segment.split("\n")
+    blank_run = 0
+    offset = 0
+    for line in lines:
+        if not line.strip():
+            blank_run += 1
+        else:
+            if blank_run >= SCENE_BREAK_MIN_BLANK_LINES:
+                breaks.append(start + offset)
+            blank_run = 0
+            # 场景跳变信号词
+            stripped = line.strip()
+            if _SCENE_SHIFT_TIME_RE.search(stripped) or _SCENE_SHIFT_PLACE_RE.search(stripped):
+                breaks.append(start + offset)
+        offset += len(line) + 1
+
+    return breaks
+
+
+def _build_chunks_from_paragraphs(
+    paragraph_spans: List[Tuple[int, int]],
+    para_indices: List[int],
+    chunk_size: int,
+    overlap: int,
+    normalized_text: str,
+    chunk_no_start: int,
+    seg_start: int,
+    seg_end: int,
+    is_chapter_boundary: bool = True,
+) -> Tuple[List[Dict[str, Any]], int]:
+    """
+    在给定段落索引范围内，按 chunk_size 积累生成 chunks。
+
+    返回 (chunks列表, 下一个chunk编号)。
+    """
+    chunks = []
+    chunk_no = chunk_no_start
+    if not para_indices:
+        return chunks, chunk_no
+
+    start_idx = 0
+    while start_idx < len(para_indices):
+        end_idx = start_idx
+        core_start = paragraph_spans[para_indices[start_idx]][0]
+        core_end = paragraph_spans[para_indices[start_idx]][1]
+
+        while end_idx + 1 < len(para_indices):
+            next_pi = para_indices[end_idx + 1]
+            next_end = paragraph_spans[next_pi][1]
+            if (next_end - core_start) > chunk_size and end_idx >= start_idx:
+                break
+            end_idx += 1
+            core_end = next_end
+            if (core_end - core_start) >= chunk_size:
+                break
+
+        # window 扩展（但不跨语义段边界）
+        para_start_idx = para_indices[start_idx]
+        para_end_idx = para_indices[end_idx]
+
+        window_start_idx = para_start_idx
+        while window_start_idx > 0 and (core_start - paragraph_spans[window_start_idx - 1][0]) < overlap:
+            if paragraph_spans[window_start_idx - 1][0] < seg_start:
+                break
+            window_start_idx -= 1
+
+        window_end_idx = para_end_idx
+        while window_end_idx + 1 < len(paragraph_spans) and (paragraph_spans[window_end_idx + 1][1] - core_end) < overlap:
+            if paragraph_spans[window_end_idx + 1][1] > seg_end:
+                break
+            window_end_idx += 1
+
+        window_start = paragraph_spans[window_start_idx][0]
+        window_end = paragraph_spans[window_end_idx][1]
+
+        chunks.append({
+            "chunk_index": chunk_no,
+            "core_start": core_start,
+            "core_end": core_end,
+            "window_start": window_start,
+            "window_end": window_end,
+            "text": normalized_text[window_start:window_end],
+            "semantic_boundary_at_start": is_chapter_boundary and start_idx == 0,
+        })
+        chunk_no += 1
+        start_idx = end_idx + 1
+
+    return chunks, chunk_no
+
+
+def build_semantic_chunk_manifest(
+    text: str,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    overlap: int = DEFAULT_CHUNK_OVERLAP,
+    *,
+    semantic_aware: bool = None,
+) -> Dict[str, Any]:
+    """
+    语义边界感知的 chunk manifest 生成。
+
+    核心策略（章节优先）：
+    1. 检测章节标题，以章节为第一级分割单位
+    2. 每章尽量作为一个 chunk；超过 chunk_size 的章节内部按段落分割
+    3. 超大章节（> chunk_size * 1.5）内部检测场景切换断点作为辅助分割
+    4. chunk 的 window 扩展不跨越章节边界
+
+    若 semantic_aware=False 或检测不到章节边界，回退到原始 build_chunk_manifest。
+    """
+    if semantic_aware is None:
+        semantic_aware = SEMANTIC_CHUNK_ENABLED
+
+    if not semantic_aware:
+        return build_chunk_manifest(text, chunk_size=chunk_size, overlap=overlap)
+
+    normalized_text = normalize_newlines(text or "")
+    if not normalized_text.strip():
+        return build_chunk_manifest(text, chunk_size=chunk_size, overlap=overlap)
+
+    chunk_size = _coerce_chunk_size(chunk_size)
+    overlap = _coerce_overlap(overlap, chunk_size)
+    paragraph_spans = _iter_nonempty_line_spans(normalized_text)
+
+    # 检测章节边界
+    chapter_matches = _find_chapter_heading_matches(normalized_text)
+    chapter_starts = [pos for pos, _title in chapter_matches]
+
+    # 若章节数太少（<3），回退到原始逻辑
+    if len(chapter_starts) < 3:
+        manifest = build_chunk_manifest(text, chunk_size=chunk_size, overlap=overlap)
+        manifest["semantic_chunk_fallback"] = True
+        manifest["chapter_count"] = len(chapter_starts)
+        return manifest
+
+    # 构建段落起始位置索引（用于二分查找）
+    para_starts = [ps for ps, pe in paragraph_spans]
+
+    # 构建章节段列表: [(seg_start, seg_end, is_chapter_start)]
+    chapter_set = set(chapter_starts)
+    segments: List[Tuple[int, int, bool]] = []
+
+    # 前言部分（第一个章节标题之前的内容）
+    first_chapter = chapter_starts[0]
+    if first_chapter > 0:
+        segments.append((0, first_chapter, False))
+
+    # 每个章节
+    for i, ch_start in enumerate(chapter_starts):
+        ch_end = chapter_starts[i + 1] if i + 1 < len(chapter_starts) else len(normalized_text)
+        segments.append((ch_start, ch_end, True))
+
+    # 在每个章节段内生成 chunks
+    large_chapter_threshold = int(chunk_size * LARGE_CHAPTER_THRESHOLD_FACTOR)
+    chunks: List[Dict[str, Any]] = []
+    chunk_no = 1
+    total_scene_breaks_used = 0
+
+    for seg_start, seg_end, is_chapter in segments:
+        seg_len = seg_end - seg_start
+        is_chapter_start = is_chapter
+
+        # 用二分查找定位此段内的段落索引（O(log n) 替代 O(n) 线性扫描）
+        left = bisect_left(para_starts, seg_start)
+        right = bisect_left(para_starts, seg_end)
+        seg_para_indices = list(range(left, right))
+
+        if not seg_para_indices:
+            continue
+
+        # 小章节：整章作为一个 chunk
+        if seg_len <= chunk_size and len(seg_para_indices) > 0:
+            core_start = paragraph_spans[seg_para_indices[0]][0]
+            core_end = paragraph_spans[seg_para_indices[-1]][1]
+
+            # window 扩展
+            window_start_idx = seg_para_indices[0]
+            while window_start_idx > 0 and (core_start - paragraph_spans[window_start_idx - 1][0]) < overlap:
+                if paragraph_spans[window_start_idx - 1][0] < seg_start:
+                    break
+                window_start_idx -= 1
+
+            window_end_idx = seg_para_indices[-1]
+            while window_end_idx + 1 < len(paragraph_spans) and (paragraph_spans[window_end_idx + 1][1] - core_end) < overlap:
+                if paragraph_spans[window_end_idx + 1][1] > seg_end:
+                    break
+                window_end_idx += 1
+
+            chunks.append({
+                "chunk_index": chunk_no,
+                "core_start": core_start,
+                "core_end": core_end,
+                "window_start": paragraph_spans[window_start_idx][0],
+                "window_end": paragraph_spans[window_end_idx][1],
+                "text": normalized_text[paragraph_spans[window_start_idx][0]:paragraph_spans[window_end_idx][1]],
+                "semantic_boundary_at_start": is_chapter_start,
+            })
+            chunk_no += 1
+            continue
+
+        # 大章节：内部按 chunk_size 分割
+        # 若超过 large_chapter_threshold，先用场景断点做二级分割
+        if seg_len > large_chapter_threshold:
+            scene_breaks = _find_scene_breaks_in_range(normalized_text, seg_start, seg_end)
+            total_scene_breaks_used += len(scene_breaks)
+            if scene_breaks:
+                # 在大章节内按场景断点分子段，每个子段内再按 chunk_size 积累
+                sub_segments = []
+                prev = seg_start
+                for sb in scene_breaks:
+                    if sb > prev:
+                        sub_segments.append((prev, sb))
+                    prev = sb
+                if prev < seg_end:
+                    sub_segments.append((prev, seg_end))
+
+                for sub_start, sub_end in sub_segments:
+                    # 二分查找子段内的段落索引
+                    sub_left = bisect_left(para_starts, sub_start, lo=left, hi=right)
+                    sub_right = bisect_left(para_starts, sub_end, lo=sub_left, hi=right)
+                    sub_para_indices = list(range(sub_left, sub_right))
+                    new_chunks, chunk_no = _build_chunks_from_paragraphs(
+                        paragraph_spans, sub_para_indices, chunk_size, overlap,
+                        normalized_text, chunk_no, sub_start, sub_end,
+                        is_chapter_boundary=False,
+                    )
+                    chunks.extend(new_chunks)
+                continue
+
+        # 普通大章节：直接按段落积累
+        new_chunks, chunk_no = _build_chunks_from_paragraphs(
+            paragraph_spans, seg_para_indices, chunk_size, overlap,
+            normalized_text, chunk_no, seg_start, seg_end,
+            is_chapter_boundary=is_chapter_start,
+        )
+        chunks.extend(new_chunks)
+
+    # 构建 manifest
+    chunking_mode = "semantic_chapter_primary"
+    manifest = {
+        "full_text": normalized_text,
+        "chunk_size": chunk_size,
+        "chunk_overlap": overlap,
+        "chunk_count": len(chunks),
+        "text_length": len(normalized_text),
+        "chunking_mode": chunking_mode,
+        "version": CHUNK_MANIFEST_VERSION,
+        "chapter_count": len(chapter_starts),
+        "scene_breaks_used": total_scene_breaks_used,
+        "chunks": chunks,
+    }
+    manifest["signature"] = _compute_chunk_manifest_signature(
+        manifest["full_text"],
+        manifest["chunk_size"],
+        manifest["chunk_overlap"],
+        manifest["chunks"],
+    )
+    return manifest
+
 def normalize_newlines(text: str) -> str:
     """
     统一换行符为 \n（全链路必须调用一次，且只调用一次）。

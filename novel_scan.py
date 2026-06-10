@@ -37,7 +37,9 @@ from shared_utils import (
     should_retry_without_json_mode_error,
 )
 from prompt_templates import prompt_template_metadata, prompt_templates_metadata
-from text_anchor import build_chunk_manifest, save_chunk_manifest
+from text_anchor import build_chunk_manifest, build_semantic_chunk_manifest, save_chunk_manifest
+from outline_prescan import generate_outline, outline_to_compact_text, outline_signature, save_outline, load_outline
+from scan_memory import ScanMemory, SCAN_MEMORY_ENABLED
 from fact_validator import classify_scan_error
 
 
@@ -71,6 +73,26 @@ RESCAN_PRE_FILTER_THRESHOLD = read_float_env("RESCAN_PRE_FILTER_THRESHOLD", 1.0,
 RESCAN_MAX_WINDOW = read_int_env("RESCAN_MAX_WINDOW", 2000, min_value=0)
 RESCAN_MAX_PROMPT_HEROINES = read_int_env("RESCAN_MAX_PROMPT_HEROINES", 4, min_value=1)
 RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER = read_int_env("RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER", 2, min_value=0)
+
+# ---- 大纲注入配置 ----
+OUTLINE_INJECT_ENABLED = os.environ.get("OUTLINE_INJECT_ENABLED", "1").strip() == "1"
+OUTLINE_INJECT_CONTEXT_CHAPTERS = read_int_env("OUTLINE_INJECT_CONTEXT_CHAPTERS", 5, min_value=0, max_value=20)
+OUTLINE_INJECT_MAX_CHARS = read_int_env("OUTLINE_INJECT_MAX_CHARS", 2000, min_value=0)
+
+# ---- 分层 prompt 配置 ----
+LAYERED_PROMPT_ENABLED = os.environ.get("LAYERED_PROMPT_ENABLED", "1").strip() == "1"
+LAYERED_PROMPT_COMPACT_THRESHOLD = read_int_env("LAYERED_PROMPT_COMPACT_THRESHOLD", 3, min_value=1)
+
+# ---- 增量去重配置 ----
+INCREMENTAL_DEDUP_ENABLED = os.environ.get("INCREMENTAL_DEDUP_ENABLED", "1").strip() == "1"
+INCREMENTAL_DEDUP_INJECT_MAX_FACTS = read_int_env("INCREMENTAL_DEDUP_INJECT_MAX_FACTS", 15, min_value=0)
+INCREMENTAL_DEDUP_INJECT_MAX_CHARS = read_int_env("INCREMENTAL_DEDUP_INJECT_MAX_CHARS", 600, min_value=0)
+
+# ---- 快慢双通道配置 ----
+FAST_SLOW_CHANNEL_ENABLED = os.environ.get("FAST_SLOW_CHANNEL_ENABLED", "1").strip() == "1"
+FAST_CHANNEL_MAX_TOKENS = read_int_env("FAST_CHANNEL_MAX_TOKENS", 2000, min_value=500)
+FAST_CHANNEL_DENSITY_THRESHOLD = os.environ.get("FAST_CHANNEL_DENSITY_THRESHOLD", "low").strip()
+SLOW_CHANNEL_MAX_TOKENS = read_int_env("SLOW_CHANNEL_MAX_TOKENS", 6000, min_value=1000)
 HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH = read_int_env("HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH", 1, min_value=0, max_value=4)
 HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS = read_int_env("HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS", 1200, min_value=0)
 
@@ -99,6 +121,8 @@ OUTPUT_DIR = None
 logger = logging.getLogger(__name__)
 CURRENT_CHUNK_PLAN_METADATA = None
 CHUNK_SUMMARIES = {}
+CHUNK_OUTLINE_BLOCKS = {}  # chunk_index -> outline context text
+SCAN_MEMORY = ScanMemory()  # 结构化扫描记忆体
 CHUNK_FAILURE_DIAGNOSTICS = {}
 _ACTIVE_PROGRESS_STATE = None
 _middle_summary_calls = 0
@@ -2633,7 +2657,53 @@ def _merge_downshift_chunk_results(partial_results, index, error_type):
     return issues, heroine_facts, extra_relations, summary, True, False, ""
 
 
-def scan_chunk(text_chunk, index, total, system_prompt, heroines, male_protagonist=None, fact_boost_prompt=None, context_summary="", _downshift_depth=0):
+def _outline_context_for_chunk(outline_data, chunk_char_offset, context_chapters=None, max_chars=None):
+    """
+    从大纲中提取当前 chunk 附近的章节上下文。
+
+    只注入当前 chunk 所在章节及前后几章的摘要，比全量大纲更精准且节省 token。
+    """
+    if not outline_data or not outline_data.get("chapters"):
+        return ""
+    context_chapters = context_chapters or OUTLINE_INJECT_CONTEXT_CHAPTERS
+    max_chars = max_chars or OUTLINE_INJECT_MAX_CHARS
+    if max_chars <= 0:
+        return ""
+
+    chapters = outline_data["chapters"]
+    # 找到当前 chunk 所在章节
+    current_idx = 0
+    for i, ch in enumerate(chapters):
+        if ch.get("start", 0) <= chunk_char_offset:
+            current_idx = i
+        else:
+            break
+
+    # 取前后 N 章
+    start_idx = max(0, current_idx - context_chapters)
+    end_idx = min(len(chapters), current_idx + context_chapters + 1)
+    context_chs = chapters[start_idx:end_idx]
+
+    lines = [f"【大纲上下文（第{chapters[start_idx].get('index', '?')}-{chapters[end_idx-1].get('index', '?')}章）】"]
+    used = len(lines[0])
+    for ch in context_chs:
+        title = ch.get("title", f"第{ch.get('index', '?')}章")
+        tags = ch.get("tags", [])
+        tag_str = f" [{','.join(tags)}]" if tags else ""
+        head = ch.get("head_text", "")
+        head_summary = f"：{head[:40]}…" if head else ""
+        marker = " ◀当前" if ch.get("start", 0) <= chunk_char_offset < ch.get("end", 0) else ""
+        line = f"  {ch.get('index', '?')}.{title}{tag_str}{head_summary}{marker}"
+        if used + len(line) + 1 > max_chars:
+            break
+        lines.append(line)
+        used += len(line) + 1
+
+    lines.append("（大纲仅供参考，不能替代原文证据）")
+    return "\n".join(lines)
+
+
+def scan_chunk(text_chunk, index, total, system_prompt, heroines, male_protagonist=None, fact_boost_prompt=None, context_summary="", outline_block="", memory_block="", _downshift_depth=0):
     result = _scan_chunk_once(
         text_chunk,
         index,
@@ -2643,6 +2713,8 @@ def scan_chunk(text_chunk, index, total, system_prompt, heroines, male_protagoni
         male_protagonist=male_protagonist,
         fact_boost_prompt=fact_boost_prompt,
         context_summary=context_summary,
+        outline_block=outline_block,
+        memory_block=memory_block,
     )
     issues, heroine_facts, extra_relations, next_summary, ok, fatal, err_msg = result
     error_type = _classify_chunk_failure_error(err_msg)
@@ -2686,16 +2758,130 @@ def scan_chunk(text_chunk, index, total, system_prompt, heroines, male_protagoni
     return _merge_downshift_chunk_results(partial_results, index, error_type)
 
 
-def _scan_chunk_once(text_chunk, index, total, system_prompt, heroines, male_protagonist=None, fact_boost_prompt=None, context_summary=""):
+def _build_known_facts_block(memory: "ScanMemory") -> str:
+    """
+    从 ScanMemory 中提取已确认的关键事实，注入 prompt。
+
+    告诉 LLM "以下事实已确认，无需重复提取"，减少重复输出。
+    """
+    if not memory or not memory.character_states:
+        return ""
+    max_facts = INCREMENTAL_DEDUP_INJECT_MAX_FACTS
+    max_chars = INCREMENTAL_DEDUP_INJECT_MAX_CHARS
+    if max_facts <= 0 or max_chars <= 0:
+        return ""
+
+    lines = ["【已确认事实（无需重复提取，只关注新事实）】"]
+    used = len(lines[0])
+    count = 0
+    for name, state in memory.character_states.items():
+        if count >= max_facts:
+            break
+        for fact in state.get("key_facts", []):
+            if count >= max_facts:
+                break
+            dim = fact.get("dimension", "")
+            detail = fact.get("detail", "")
+            if not detail:
+                continue
+            # 只注入关键维度
+            if dim in ("sexual_relations", "children_info", "partner_relations"):
+                line = f"  · {name}：{detail[:40]}"
+                if used + len(line) + 1 > max_chars:
+                    break
+                lines.append(line)
+                used += len(line) + 1
+                count += 1
+
+    if count == 0:
+        return ""
+    return "\n".join(lines)
+
+
+def _chunk_density_level(text: str) -> str:
+    """
+    快速判断 chunk 的内容密度，用于快慢双通道路由。
+
+    返回 "high"、"medium" 或 "low"。
+    复用 general_scan.py 的密度检测逻辑。
+    """
+    from general_scan import HIGH_DENSITY_TERMS, LOW_DENSITY_TERMS
+    sample = (text or "")[:15000]
+    high_hits = sum(1 for t in HIGH_DENSITY_TERMS if t in sample)
+    low_hits = sum(1 for t in LOW_DENSITY_TERMS if t in sample)
+
+    if high_hits >= 3:
+        return "high"
+    elif low_hits >= 3 and high_hits == 0:
+        return "low"
+    elif high_hits >= 1:
+        return "medium"
+    else:
+        return "medium"
+
+
+def _effective_max_tokens_for_chunk(text_chunk: str, default_max_tokens: int) -> int:
+    """
+    根据 chunk 密度决定使用的 max_tokens。
+
+    高密度 chunk 使用慢通道（完整 max_tokens），
+    低密度 chunk 使用快通道（精简 max_tokens）。
+    短文本（< 1000 字）不启用快通道，避免影响测试和降载重试。
+    """
+    if not FAST_SLOW_CHANNEL_ENABLED:
+        return default_max_tokens
+    if len(text_chunk or "") < 1000:
+        return default_max_tokens
+
+    density = _chunk_density_level(text_chunk)
+    threshold = FAST_CHANNEL_DENSITY_THRESHOLD
+
+    if density in ("low",) and threshold in ("low", "medium"):
+        return min(FAST_CHANNEL_MAX_TOKENS, default_max_tokens)
+    elif density == "medium" and threshold == "low":
+        return min(FAST_CHANNEL_MAX_TOKENS, default_max_tokens)
+    else:
+        return min(SLOW_CHANNEL_MAX_TOKENS, default_max_tokens)
+
+
+def _compact_system_prompt(system_prompt: str) -> str:
+    """
+    为后续 chunk 压缩 system prompt。
+
+    保留核心规则，移除示例和详细解释。首个 chunk 使用完整 prompt。
+    """
+    if not LAYERED_PROMPT_ENABLED:
+        return system_prompt
+    # 简单策略：截断超过 3000 字的 prompt 的示例部分
+    # 保留前 1500 字（核心规则）+ 后 500 字（输出格式）
+    if len(system_prompt) <= 3000:
+        return system_prompt
+    head = system_prompt[:1500]
+    tail = system_prompt[-500:]
+    return head + "\n...（示例已省略，规则同前）...\n" + tail
+
+
+def _scan_chunk_once(text_chunk, index, total, system_prompt, heroines, male_protagonist=None, fact_boost_prompt=None, context_summary="", outline_block="", memory_block=""):
     """分析单个块，返回 issues、heroine_facts、extra_relations 与下一块可复用摘要。"""
     summary_block = ""
     if context_summary:
         summary_block = f"\n前文摘要（仅用于承接上下文，不可替代当前片段证据）：\n{context_summary}\n"
     checklist_block = f"\n{_render_prompt_checklist()}\n" if int(index or 0) == 0 else ""
+    outline_section = ""
+    if outline_block:
+        outline_section = f"\n{outline_block}\n"
+    memory_section = ""
+    if memory_block:
+        memory_section = f"\n{memory_block}\n"
+    known_facts_section = ""
+    if INCREMENTAL_DEDUP_ENABLED and SCAN_MEMORY_ENABLED and SCAN_MEMORY.character_states:
+        known_lines = _build_known_facts_block(SCAN_MEMORY)
+        if known_lines:
+            known_facts_section = f"\n{known_lines}\n"
     user_prompt = f"""
 这是小说的第 {index + 1}/{total} 部分。
 请根据 System Prompt 中的规则进行分析。先完成 heroine_facts 的结构化事实抽取，再输出 issues。
-{summary_block}
+{outline_section}{memory_section}{known_facts_section}{summary_block}
 {checklist_block}
 小说片段：
 {text_chunk[:]}
@@ -2715,13 +2901,17 @@ def _scan_chunk_once(text_chunk, index, total, system_prompt, heroines, male_pro
 2. evidence/detail/reason 字段每条不超过 80 字。
 3. 不输出 Markdown，不输出代码块，不输出解释。
 """
+            # 非首个 chunk 使用压缩 prompt
+            effective_system_prompt = system_prompt
+            if int(index or 0) >= LAYERED_PROMPT_COMPACT_THRESHOLD:
+                effective_system_prompt = _compact_system_prompt(system_prompt)
             response = _call_json_chat_completion(
                 messages=[
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": effective_system_prompt},
                     {"role": "user", "content": user_prompt + retry_compact_block},
                 ],
                 temperature=0.1,
-                max_tokens=8000 if compact_retry else 6000,
+                max_tokens=8000 if compact_retry else _effective_max_tokens_for_chunk(text_chunk, 6000),
                 log_prefix=f"chunk {index}",
             )
             content = _response_message_content(response)
@@ -3058,6 +3248,8 @@ def _process_thread_block(block_id, block_indices, chunks, system_prompt, heroin
             male_protagonist,
             fact_boost_prompt,
             context_summary=carry_summary,
+            outline_block=CHUNK_OUTLINE_BLOCKS.get(idx, ""),
+            memory_block=SCAN_MEMORY.to_prompt_text() if SCAN_MEMORY_ENABLED else "",
         )
         if fatal:
             with CHECKPOINT_LOCK:
@@ -3173,6 +3365,14 @@ def _commit_chunk_result(idx, issues, heroine_facts, extra_rel, next_summary, ok
             chunk_failure_diagnostics=diagnostics if explicit_failure_diagnostics else None,
             checkpoint_file=checkpoint_file,
         )
+        # 更新结构化扫描记忆体
+        if ok and SCAN_MEMORY_ENABLED:
+            SCAN_MEMORY.update_from_chunk_result(
+                idx,
+                heroine_facts=heroine_facts,
+                issues=issues,
+                summary_text=next_summary or "",
+            )
         _advance_chunk_progress(idx, processed_chunks, failed_chunks, progress_state or _ACTIVE_PROGRESS_STATE)
 
 
@@ -3304,6 +3504,8 @@ def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protago
                 male_protagonist,
                 fact_boost_prompt,
                 context_summary=predecessor_summary,
+                outline_block=CHUNK_OUTLINE_BLOCKS.get(boundary_idx, ""),
+                memory_block=SCAN_MEMORY.to_prompt_text() if SCAN_MEMORY_ENABLED else "",
             )
             if fatal:
                 with CHECKPOINT_LOCK:
@@ -4642,6 +4844,8 @@ def _rescan_worker_task(idx, chunks, system_prompt, heroines, male_protagonist=N
         male_protagonist,
         fact_boost_prompt,
         context_summary=context_summary,
+        outline_block=CHUNK_OUTLINE_BLOCKS.get(idx, ""),
+        memory_block=SCAN_MEMORY.to_prompt_text() if SCAN_MEMORY_ENABLED else "",
     )
     return idx, issues, heroine_facts, extra_rel, next_summary, ok, fatal, err_msg
 
@@ -4711,7 +4915,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         print(f"❌ 文件不存在: {NOVEL_FILE_PATH}")
         return
     text = read_novel(NOVEL_FILE_PATH)
-    chunk_manifest = build_chunk_manifest(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
+    chunk_manifest = build_semantic_chunk_manifest(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP) if os.environ.get("SEMANTIC_CHUNK_ENABLED", "1").strip() == "1" else build_chunk_manifest(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
     chunk_manifest_path = os.path.join(output_dir, "chunk_manifest.json")
     save_chunk_manifest(chunk_manifest, chunk_manifest_path)
     chunks = [entry.get("text", "") for entry in chunk_manifest.get("chunks", [])]
@@ -4724,6 +4928,29 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         male_protagonist=male_protagonist,
     )
     print(f"📚 文本已切分为 {len(chunks)} 个片段")
+
+    # 大纲预扫描（零 LLM 成本，规则提取章节结构和标签）
+    outline_data = None
+    if OUTLINE_INJECT_ENABLED:
+        outline_path = os.path.join(output_dir, "outline.json")
+        text_sig = outline_signature(text)
+        outline_data = load_outline(outline_path)
+        if outline_data and outline_data.get("text_signature") == text_sig:
+            print(f"📖 大纲已存在，复用（{outline_data.get("chapter_count", 0)} 章）")
+        else:
+            outline_data = generate_outline(text)
+            outline_data["text_signature"] = text_sig
+            save_outline(outline_data, outline_path)
+            print(f"📖 大纲预扫描完成（{outline_data.get("chapter_count", 0)} 章，{outline_data.get("total_chapters_in_novel", 0)} 章总计）")
+
+    # 为每个 chunk 计算大纲上下文（基于 chunk 在原文中的位置）
+    CHUNK_OUTLINE_BLOCKS = {}
+    if outline_data and outline_data.get("chapters"):
+        chunk_entries = chunk_manifest.get("chunks", [])
+        for entry in chunk_entries:
+            ci = entry.get("chunk_index", 0)
+            core_start = entry.get("core_start", 0)
+            CHUNK_OUTLINE_BLOCKS[ci] = _outline_context_for_chunk(outline_data, core_start)
     
     # 断点续传：加载历史进度
     (

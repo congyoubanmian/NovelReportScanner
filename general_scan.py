@@ -14,7 +14,9 @@ from fact_validator import classify_scan_error, validate_general_chunk_result
 from prompt_templates import prompt_template_metadata, prompt_templates_metadata
 from shared_utils import MODEL, chat_completion, get_base_dir, init_token_tracker, is_context_overflow_error, read_file_safely, read_int_env, record_usage
 from shared_utils import call_json_chat_completion_with_fallback
-from text_anchor import build_chunk_manifest, save_chunk_manifest
+from text_anchor import build_chunk_manifest, build_semantic_chunk_manifest, save_chunk_manifest
+from outline_prescan import generate_outline, outline_to_compact_text, outline_signature, save_outline, load_outline
+from scan_memory import ScanMemory, SCAN_MEMORY_ENABLED as GENERAL_SCAN_MEMORY_ENABLED
 
 
 CHUNK_SIZE = read_int_env("GENERAL_SCAN_CHUNK_SIZE", 12000, min_value=1000)
@@ -45,6 +47,16 @@ ENTITY_PRESCAN_SCHEMA_VERSION = 1
 ENTITY_PRESCAN_MAX_CHARS = read_int_env("GENERAL_SCAN_ENTITY_PRESCAN_MAX_CHARS", 500000, min_value=0)
 ENTITY_PRESCAN_MAX_ITEMS = read_int_env("GENERAL_SCAN_ENTITY_PRESCAN_MAX_ITEMS", 80, min_value=0)
 ENTITY_PRESCAN_PROMPT_ITEMS = read_int_env("GENERAL_SCAN_ENTITY_PRESCAN_PROMPT_ITEMS", 40, min_value=0)
+
+# ---- 两阶段自适应采样配置 ----
+TWO_STAGE_SAMPLING_ENABLED = os.environ.get("GENERAL_SCAN_TWO_STAGE_SAMPLING", "1").strip() == "1"
+TWO_STAGE_QUICK_MAX_TOKENS = read_int_env("GENERAL_SCAN_TWO_STAGE_QUICK_MAX_TOKENS", 300, min_value=100)
+TWO_STAGE_HIGH_VALUE_THRESHOLD = float(os.environ.get("GENERAL_SCAN_TWO_STAGE_HIGH_VALUE_THRESHOLD", "0.5"))
+
+# ---- 大纲注入配置 ----
+OUTLINE_INJECT_ENABLED = os.environ.get("OUTLINE_INJECT_ENABLED", "1").strip() == "1"
+OUTLINE_INJECT_CONTEXT_CHAPTERS = read_int_env("OUTLINE_INJECT_CONTEXT_CHAPTERS", 5, min_value=0, max_value=20)
+OUTLINE_INJECT_MAX_CHARS = read_int_env("OUTLINE_INJECT_MAX_CHARS", 2000, min_value=0)
 API_DOWNSHIFT_MAX_DEPTH = read_int_env("GENERAL_SCAN_API_DOWNSHIFT_MAX_DEPTH", 2, min_value=0, max_value=4)
 LOW_DENSITY_TERMS = (
     "睡觉", "起床", "吃饭", "喝茶", "闲聊", "聊天", "休息", "赶路", "路上", "返回",
@@ -314,6 +326,41 @@ def _entity_prescan_type_counts(entity_prescan: List[Dict[str, Any]]) -> Dict[st
             counts[entity_type] = 0
         counts[entity_type] += 1
     return counts
+
+
+def _quick_scan_for_value(chunk_text: str, chunk_index: int, total_chunks: int, profile=None) -> Dict[str, Any]:
+    """
+    两阶段采样的第一阶段：用极低 max_tokens 快速判断 chunk 是否有高价值内容。
+
+    返回: {"has_high_value": bool, "value_score": float, "tags": [...]}
+    """
+    if not TWO_STAGE_SAMPLING_ENABLED:
+        return {"has_high_value": True, "value_score": 1.0, "tags": []}
+
+    profile = profile or load_analysis_profile("general")
+    quick_prompt = f"""快速判断这个小说片段是否有值得深入分析的内容。
+
+片段 {chunk_index + 1}/{total_chunks}：
+{chunk_text[:3000]}
+
+只需输出 JSON：
+{{"has_high_value": true/false, "value_score": 0.0-1.0, "tags": ["战斗"/"转折"/"情感"/"伏笔"/"设定"/"日常"/...]}}"""
+
+    try:
+        data = _call_json(
+            [
+                {"role": "system", "content": "你是小说分析助手，快速判断片段价值。"},
+                {"role": "user", "content": quick_prompt},
+            ],
+            max_tokens=TWO_STAGE_QUICK_MAX_TOKENS,
+        )
+        has_high = bool(data.get("has_high_value", True))
+        score = float(data.get("value_score", 0.5))
+        tags = data.get("tags", [])
+        return {"has_high_value": has_high, "value_score": score, "tags": tags}
+    except Exception:
+        # 快速扫失败时默认保留
+        return {"has_high_value": True, "value_score": 0.5, "tags": []}
 
 
 def _chunk_density_profile(text: str) -> Dict[str, Any]:
@@ -2768,7 +2815,43 @@ def _continuity_audit_summary_json_hint() -> str:
   },"""
 
 
-def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None, context_snapshot=None, entity_prescan=None) -> Dict[str, Any]:
+def _outline_context_for_chunk(outline_data, chunk_char_offset, context_chapters=None, max_chars=None):
+    """从大纲中提取当前 chunk 附近的章节上下文。"""
+    if not outline_data or not outline_data.get("chapters"):
+        return ""
+    context_chapters = context_chapters or OUTLINE_INJECT_CONTEXT_CHAPTERS
+    max_chars = max_chars or OUTLINE_INJECT_MAX_CHARS
+    if max_chars <= 0:
+        return ""
+    chapters = outline_data["chapters"]
+    current_idx = 0
+    for i, ch in enumerate(chapters):
+        if ch.get("start", 0) <= chunk_char_offset:
+            current_idx = i
+        else:
+            break
+    start_idx = max(0, current_idx - context_chapters)
+    end_idx = min(len(chapters), current_idx + context_chapters + 1)
+    context_chs = chapters[start_idx:end_idx]
+    lines = [f"【大纲上下文（第{chapters[start_idx].get('index', '?')}-{chapters[end_idx-1].get('index', '?')}章）】"]
+    used = len(lines[0])
+    for ch in context_chs:
+        title = ch.get("title", f"第{ch.get('index', '?')}章")
+        tags = ch.get("tags", [])
+        tag_str = f" [{','.join(tags)}]" if tags else ""
+        head = ch.get("head_text", "")
+        head_summary = f"：{head[:40]}…" if head else ""
+        marker = " ◀当前" if ch.get("start", 0) <= chunk_char_offset < ch.get("end", 0) else ""
+        line = f"  {ch.get('index', '?')}.{title}{tag_str}{head_summary}{marker}"
+        if used + len(line) + 1 > max_chars:
+            break
+        lines.append(line)
+        used += len(line) + 1
+    lines.append("（大纲仅供参考，不能替代原文证据）")
+    return "\n".join(lines)
+
+
+def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None, context_snapshot=None, entity_prescan=None, outline_block="", memory_block="") -> Dict[str, Any]:
     profile = profile or load_analysis_profile("general")
     density_profile = density_profile or _chunk_density_profile(text_chunk)
     rules_text = _profile_rules_text(profile)
@@ -2806,8 +2889,14 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 2. 每条尽量短，保留可复核的具体信息。
 3. specialty_notes 必须围绕专项规则记录命中点、疑点或亮点；若片段没有专项内容，输出空数组。
 4. 输出 JSON 对象，不要 Markdown。"""
+    outline_section = ""
+    if outline_block:
+        outline_section = f"\n{outline_block}\n"
+    memory_section = ""
+    if memory_block:
+        memory_section = f"\n{memory_block}\n"
     user_prompt = f"""片段 {chunk_index + 1}/{total_chunks}：
-
+{outline_section}{memory_section}
 --- 开始 ---
 {text_chunk}
 --- 结束 ---
@@ -3258,12 +3347,62 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
     entity_prescan = _entity_prescan_candidates(text) if ENTITY_PRESCAN_ENABLED else []
     if ENTITY_PRESCAN_ENABLED:
         print(f"★ 实体预扫描候选 {len(entity_prescan)} 个（仅作为片段抽取提示）")
-    manifest = build_chunk_manifest(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
+    manifest = build_semantic_chunk_manifest(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP) if os.environ.get("SEMANTIC_CHUNK_ENABLED", "1").strip() == "1" else build_chunk_manifest(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
     save_chunk_manifest(manifest, os.path.join(output_dir, "chunk_manifest.json"))
+
+    # 大纲预扫描
+    outline_data = None
+    chunk_outline_blocks = {}
+    if OUTLINE_INJECT_ENABLED:
+        outline_path = os.path.join(output_dir, "outline.json")
+        text_sig = outline_signature(text)
+        outline_data = load_outline(outline_path)
+        if outline_data and outline_data.get("text_signature") == text_sig:
+            print(f"  📖 大纲已存在，复用（{outline_data.get('chapter_count', 0)} 章）")
+        else:
+            outline_data = generate_outline(text)
+            outline_data["text_signature"] = text_sig
+            save_outline(outline_data, outline_path)
+            print(f"  📖 大纲预扫描完成（{outline_data.get('chapter_count', 0)} 章）")
+        if outline_data and outline_data.get("chapters"):
+            chunk_entries = manifest.get("chunks", [])
+            for entry in chunk_entries:
+                ci = entry.get("chunk_index", 0)
+                core_start = entry.get("core_start", 0)
+                chunk_outline_blocks[ci] = _outline_context_for_chunk(outline_data, core_start)
     source_chunk_entries = list(manifest.get("chunks", []) or [])
     source_chunk_count = len(source_chunk_entries)
     effective_max_chunks = _effective_max_chunks(manifest.get("text_length") or len(text))
     selected_chunk_entries = _sample_chunk_entries_for_budget(source_chunk_entries, effective_max_chunks)
+
+    # 两阶段自适应采样：先快速扫判断价值，再筛选
+    quick_scan_results = {}
+    if TWO_STAGE_SAMPLING_ENABLED and len(selected_chunk_entries) > 30:
+        print(f"  🔍 两阶段采样：对 {len(selected_chunk_entries)} 个片段做快速价值评估...")
+        for entry in tqdm(selected_chunk_entries, desc="快速评估"):
+            ci = int(entry.get("chunk_index", 0))
+            chunk_text = entry.get("text", "")
+            quick_result = _quick_scan_for_value(chunk_text, ci, len(selected_chunk_entries), profile)
+            quick_scan_results[ci] = quick_result
+
+        # 筛选：保留高价值 + 保留时间线均匀采样（至少每 20 个 chunk 保留 1 个）
+        high_value_indices = set()
+        for ci, qr in quick_scan_results.items():
+            if qr.get("has_high_value") or qr.get("value_score", 0) >= TWO_STAGE_HIGH_VALUE_THRESHOLD:
+                high_value_indices.add(ci)
+
+        # 均匀采样保底
+        total_selected = len(selected_chunk_entries)
+        min_uniform = max(10, total_selected // 20)
+        uniform_indices = set()
+        step = max(1, total_selected // min_uniform)
+        for i in range(0, total_selected, step):
+            ci = int(selected_chunk_entries[i].get("chunk_index", 0))
+            uniform_indices.add(ci)
+
+        keep_indices = high_value_indices | uniform_indices
+        selected_chunk_entries = [e for e in selected_chunk_entries if int(e.get("chunk_index", 0)) in keep_indices]
+        print(f"  🔍 两阶段采样：保留 {len(selected_chunk_entries)} 个高价值/保底片段")
     chunks = [x.get("text", "") for x in selected_chunk_entries]
     selected_original_indices = [
         int(x.get("chunk_index", idx + 1))
@@ -3288,6 +3427,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
     reused_chunk_count = 0
     scanned_chunk_count = 0
     rolling_context_state = _empty_rolling_context_state()
+    scan_memory = ScanMemory()
     for idx, chunk in enumerate(tqdm(chunks, desc="通用扫描")):
         original_chunk_index = selected_original_indices[idx] if idx < len(selected_original_indices) else idx + 1
         chunk_hash = _chunk_text_hash(chunk)

@@ -8697,6 +8697,27 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, raw_dat
     issues = data.get("issues", [])
     heroine_status = data.get("heroine_status", [])
 
+    # 矛盾检测与置信度标注
+    contradiction_report = ""
+    if CONTRADICTION_DETECTION_ENABLED:
+        heroine_facts_raw = data.get("heroine_facts", [])
+        contradictions = detect_all_contradictions(heroine_facts_raw)
+        if contradictions:
+            contradiction_report = generate_contradiction_report(contradictions)
+            print(f"⚠️ 检测到 {len(contradictions)} 处潜在事实矛盾")
+            logger.info(f"矛盾检测: {len(contradictions)} 处矛盾\n{contradiction_report}")
+        # 置信度标注（in-place）
+        annotate_confidence(heroine_facts_raw)
+        # 保存矛盾报告
+        contradiction_path = os.path.join(os.path.dirname(raw_data_path), "contradiction_report.txt")
+        with open(contradiction_path, "w", encoding="utf-8") as f:
+            f.write(contradiction_report or "未检测到事实矛盾。")
+        # 保存标注后的数据
+        if heroine_facts_raw:
+            data["heroine_facts"] = heroine_facts_raw
+            with open(raw_data_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+
     # 断点续传文件放在扫描结果目录
     checkpoint_file = os.path.join(os.path.dirname(raw_data_path), "reviewer3_checkpoint.json")
     (
