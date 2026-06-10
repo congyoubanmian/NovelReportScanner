@@ -4455,6 +4455,121 @@ def _append_confidence_report_section(lines: list, general_summary: dict, detail
     if report_text:
         lines.extend(report_text.splitlines())
 
+
+
+def _append_simulated_reader_review(lines: list, general_summary: dict, detailed_data: dict = None):
+    """
+    基于已有报告数据（不调LLM），模拟一段读者视角的口语化书评。
+    """
+    summary = (general_summary or {}).get("summary") or {}
+    if not summary:
+        return
+
+    # 收集素材
+    rec = _compute_recommendation_level(general_summary)
+    tags = _infer_genre_tags(general_summary)
+    strengths = _clean_text_items(summary_field_values(summary, "strengths"), limit=4, max_len=60)
+    risks = _clean_text_items(summary_field_values(summary, "risks_or_issues"), limit=4, max_len=60)
+    overview = summary_field_text(summary, "story_overview").strip()
+    reader_fit = summary_field_text(summary, "reader_fit").strip()
+    overall = summary_field_text(summary, "overall_assessment").strip()
+
+    # 阅读体验数据
+    metrics = (general_summary or {}).get("reading_metrics") or {}
+    high_chunks = metrics.get("high_tension_chunks", [])
+    low_zones = metrics.get("low_engagement_zones", [])
+    payoff_rate = metrics.get("payoff_rate", 0)
+    suffering_rate = metrics.get("suffering_rate", 0)
+    emotion_dist = metrics.get("emotion_distribution", {})
+
+    # 雷达评分
+    radar = _normalize_general_radar_scores(general_summary, detailed_data)
+    radar_scores = {k: v["score"] for k, v in radar.items() if isinstance(v, dict)}
+
+    # 文本质感
+    literary_m = (general_summary or {}).get("literary_metrics") or {}
+    template_density = literary_m.get("template_word_density", 0)
+    dialogue_ratio = literary_m.get("dialogue_ratio", 0)
+
+    # 构建书评段落
+    parts = []
+
+    # 开头
+    level = rec.get("level", "")
+    if level in ("S", "A"):
+        parts.append("这本书整体质量不错，")
+    elif level in ("B",):
+        parts.append("这本书还行，")
+    elif level in ("C", "D"):
+        parts.append("这本书比较挑人，")
+
+    # 类型定位
+    if tags:
+        parts.append(f"属于{'、'.join(tags[:3])}类型。")
+
+    # 概括
+    if overview:
+        short_overview = overview[:100]
+        parts.append(f"故事大概：{short_overview}{'…' if len(overview) > 100 else ''}")
+
+    # 亮点
+    if strengths:
+        parts.append(f"优点方面，{'；'.join(strengths[:3])}。")
+
+    # 风险
+    if risks:
+        parts.append(f"需要注意的问题是，{'；'.join(risks[:3])}。")
+
+    # 节奏评价
+    if high_chunks:
+        parts.append(f"书中有{len(high_chunks)}个高潮点，")
+        if payoff_rate > 0.25:
+            parts.append("爽点密度较高，读起来比较过瘾。")
+        elif payoff_rate < 0.1:
+            parts.append("爽点偏少，需要耐心。")
+        else:
+            parts.append("节奏有张有弛。")
+
+    if low_zones:
+        parts.append(f"不过有{len(low_zones)}处低谷期，可能需要熬一熬。")
+
+    # 情绪
+    top_emotions = list(emotion_dist.items())[:2] if emotion_dist else []
+    if top_emotions:
+        emo_str = "、".join(f"{k}({v}次)" for k, v in top_emotions)
+        parts.append(f"情绪以{emo_str}为主。")
+
+    # 文本质感评价
+    if template_density > 15:
+        parts.append("文笔方面模板化痕迹较重，一些描写套路比较明显。")
+    elif template_density < 5:
+        parts.append("文笔比较清新，少有套路化描写。")
+
+    if dialogue_ratio > 0.25:
+        parts.append("对话比较多，推进节奏快。")
+    elif dialogue_ratio < 0.1:
+        parts.append("叙述为主，对话较少。")
+
+    # 适合读者
+    if reader_fit and reader_fit != "未描述":
+        parts.append(f"适合：{reader_fit[:60]}")
+
+    # 评分总结
+    if radar_scores:
+        best_dim = max(radar_scores, key=radar_scores.get)
+        worst_dim = min(radar_scores, key=radar_scores.get)
+        dim_labels = {"plot": "剧情", "characters": "人物", "worldbuilding": "世界观",
+                      "pacing": "节奏", "writing": "文笔", "emotion": "情绪"}
+        parts.append(f"最出色的是{dim_labels.get(best_dim, best_dim)}（{radar_scores[best_dim]:.1f}分），"
+                     f"相对薄弱的是{dim_labels.get(worst_dim, worst_dim)}（{radar_scores[worst_dim]:.1f}分）。")
+
+    if not parts:
+        return
+
+    review_text = "".join(parts)
+    lines.extend(["", "【模拟读者书评】"])
+    lines.append("  「" + review_text + "」")
+
 def _append_speed_read_card(lines: list, general_summary: dict, detailed_data: dict = None):
     """
     在报告最前面插入速读卡片：综合推荐 + 类型 + 一句话 + 评分条 + 高潮/低谷/风险。
@@ -4722,6 +4837,7 @@ def build_general_report(book_key: str, detailed_data: dict, general_summary: di
     if rel_lines:
         lines.extend(rel_lines)
 
+    _append_simulated_reader_review(lines, general_summary, detailed_data)
     lines.extend(
         [
             "",
