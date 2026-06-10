@@ -3339,6 +3339,54 @@ def _male_past_romance_blob_is_nonfactual_or_negated(text: str) -> bool:
     return False
 
 
+def _compute_harem_recommendation(heroines: list, reviewer: dict, purity_map: dict) -> dict:
+    """
+    后宫模式综合推荐：基于洁度、毒点密度和女主数量。
+    """
+    if not heroines:
+        return {"level": "?", "label": "数据不足", "reason": "未识别到女主"}
+
+    total_heroines = len(heroines)
+    clean_count = 0
+    for h in heroines:
+        name = h.get("name", "")
+        p = purity_map.get(name) or purity_map.get(_heroine_name_key(name)) or {}
+        virgin = p.get("is_virgin")
+        spirit = p.get("is_spirit_clean")
+        if virgin is True and spirit is True:
+            clean_count += 1
+
+    clean_ratio = clean_count / total_heroines if total_heroines else 0
+
+    lei_points = (reviewer or {}).get("lei_points") or []
+    men_points = (reviewer or {}).get("men_points") or []
+    total_issues = len(lei_points) + len(men_points)
+
+    # 简单评分模型
+    score = clean_ratio * 5.0 + min(3.0, total_heroines / 5.0) - min(2.0, total_issues / 10.0)
+
+    if score >= 7.0:
+        level, label = "S", "后宫党强烈推荐"
+    elif score >= 5.5:
+        level, label = "A", "后宫党值得一看"
+    elif score >= 4.0:
+        level, label = "B", "挑读者，注意避雷"
+    elif score >= 2.5:
+        level, label = "C", "毒点多，慎入"
+    else:
+        level, label = "D", "不推荐"
+
+    reason_parts = [f"女主{total_heroines}人"]
+    if clean_count > 0:
+        reason_parts.append(f"洁{clean_count}人({clean_ratio:.0%})")
+    if total_issues > 0:
+        reason_parts.append(f"毒/雷{total_issues}处")
+    else:
+        reason_parts.append("无明显毒点")
+
+    return {"level": level, "label": label, "reason": "；".join(reason_parts)}
+
+
 def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     header = [f"书名：{book_key or '未识别'}", f"报告生成时间：{ts}", "=" * 60]
@@ -3554,7 +3602,19 @@ def build_report_v2(book_key: str, detailed_data: dict, reviewer: dict) -> str:
     else:
         risk_lines.append("（无）")
 
-    return "\n".join([*header, "", *male_lines, *heroine_lines, *romance_lines, *relationship_graph_lines, *timeline_lines, *risk_lines])
+    # 综合推荐（后宫模式）
+    harem_rec = _compute_harem_recommendation(heroines, reviewer, purity_map)
+    rec_lines = []
+    if harem_rec:
+        level_emoji = {"S": "💎", "A": "⭐", "B": "👍", "C": "🤔", "D": "👎"}
+        emoji = level_emoji.get(harem_rec["level"], "📊")
+        rec_lines = [
+            "", "",
+            "【综合推荐】" + emoji + " " + harem_rec["level"] + " - " + harem_rec["label"],
+            "  " + harem_rec["reason"],
+        ]
+
+    return "\n".join([*header, "", *male_lines, *heroine_lines, *romance_lines, *relationship_graph_lines, *timeline_lines, *risk_lines, *rec_lines])
 
 
 def _clean_text_items(items, limit=5, max_len=120):
@@ -4211,6 +4271,142 @@ def _append_general_knowledge_base_sections(lines: list, general_summary: dict):
             )
 
 
+def _compute_recommendation_level(general_summary: dict) -> dict:
+    """
+    基于 radar_scores 和 reading_metrics 计算综合推荐等级。
+
+    返回 {"level": "S/A/B/C/D", "label": "...", "reason": "..."}
+    """
+    scores = _normalize_general_radar_scores(general_summary, {})
+    metrics = (general_summary or {}).get("reading_metrics") or {}
+
+    # 计算雷达均值
+    radar_values = [v["score"] for v in scores.values() if isinstance(v, dict)]
+    avg_radar = sum(radar_values) / len(radar_values) if radar_values else 0.0
+
+    # 量化指标加分/减分
+    payoff = metrics.get("payoff_rate", 0)
+    suffering = metrics.get("suffering_rate", 0)
+    cliffhanger = metrics.get("cliffhanger_rate", 0)
+    confidence = metrics.get("confidence", 0)
+
+    bonus = 0.0
+    if payoff >= 0.25:
+        bonus += 0.5
+    if cliffhanger >= 0.2:
+        bonus += 0.3
+    if suffering > 0.3:
+        bonus -= 0.4
+
+    composite = avg_radar + bonus
+
+    if composite >= 8.5:
+        level, label = "S", "强烈推荐"
+    elif composite >= 7.0:
+        level, label = "A", "值得一看"
+    elif composite >= 5.5:
+        level, label = "B", "书荒可读"
+    elif composite >= 4.0:
+        level, label = "C", "挑读者"
+    else:
+        level, label = "D", "不推荐"
+
+    reason_parts = [f"综合评分 {composite:.1f}/10"]
+    if payoff >= 0.25:
+        reason_parts.append(f"爽点密度 {payoff:.0%}")
+    if suffering > 0.2:
+        reason_parts.append(f"虐点密度 {suffering:.0%}")
+
+    return {
+        "level": level,
+        "label": label,
+        "composite_score": round(composite, 1),
+        "avg_radar": round(avg_radar, 1),
+        "reason": "；".join(reason_parts),
+    }
+
+
+def _infer_genre_tags(general_summary: dict) -> list:
+    """
+    从 profile 名、情绪分布和知识库推断类型标签。
+
+    返回 ["标签1", "标签2", ...] 最多 5 个。
+    """
+    tags = []
+    profile_name = (general_summary or {}).get("profile") or ""
+    metrics = (general_summary or {}).get("reading_metrics") or {}
+    emotion_dist = metrics.get("emotion_distribution", {})
+
+    # profile 直接映射
+    profile_tags = {
+        "history": "历史穿越",
+        "hard_sci_fi": "硬核科幻",
+        "xianxia_fantasy": "仙侠修真",
+        "mystery_detective": "悬疑推理",
+        "game_system": "游戏系统",
+        "urban_power": "都市异能",
+        "military_war": "军事战争",
+        "apocalypse_survival": "末日生存",
+        "entertainment_industry": "娱乐圈",
+        "steampunk_fantasy": "蒸汽朋克",
+        "cosmic_horror": "克苏鲁/诡秘",
+        "chinese_weird": "中式民俗恐怖",
+        "mastermind_hidden": "幕后流",
+        "nation_fate": "国运求生",
+        "simulator": "模拟器",
+        "campus_youth": "校园青春",
+        "farming_management": "种田经营",
+        "business_career": "商战职场",
+        "sports_competition": "体育竞技",
+        "isekai_lightnovel": "异世界轻小说",
+        "harem": "后宫/男性向",
+    }
+    if profile_name in profile_tags:
+        tags.append(profile_tags[profile_name])
+
+    # 情绪分布推断
+    top_emotions = list(emotion_dist.items())[:3] if emotion_dist else []
+    for emo, _ in top_emotions:
+        if emo == "燃" and "热血" not in tags:
+            tags.append("热血")
+        elif emo == "甜" and "甜宠" not in tags:
+            tags.append("甜宠")
+        elif emo == "虐" and "虐恋" not in tags:
+            tags.append("虐恋")
+        elif emo == "悬" and "悬疑" not in tags:
+            tags.append("悬疑")
+        elif emo == "恐" and "恐怖" not in tags:
+            tags.append("恐怖")
+
+    return tags[:5]
+
+
+def _append_recommendation_section(lines: list, general_summary: dict):
+    """渲染综合推荐等级段。"""
+    rec = _compute_recommendation_level(general_summary)
+    if not rec:
+        return
+    level_emoji = {"S": "💎", "A": "⭐", "B": "👍", "C": "🤔", "D": "👎"}
+    emoji = level_emoji.get(rec["level"], "📊")
+    lines.extend([
+        "",
+        f"【综合推荐】{emoji} {rec['level']} - {rec['label']}",
+        f"  {rec['reason']}",
+    ])
+
+
+def _append_genre_tags_section(lines: list, general_summary: dict):
+    """渲染类型标签段。"""
+    tags = _infer_genre_tags(general_summary)
+    if not tags:
+        return
+    lines.extend([
+        "",
+        "【类型定位】",
+        f"  {' · '.join(tags)}",
+    ])
+
+
 def _append_reading_experience_section(lines: list, general_summary: dict):
     """渲染阅读体验量化报告段（张力曲线、情绪分布、置信度等）。"""
     if not READING_METRICS_ENABLED:
@@ -4240,6 +4436,8 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
     lines.extend(["", "【作品概览】"])
     lines.append(summary_field_text(summary, "story_overview"))
     _append_general_radar_score_section(lines, general_summary, detailed_data)
+    _append_recommendation_section(lines, general_summary)
+    _append_genre_tags_section(lines, general_summary)
     _append_reading_experience_section(lines, general_summary)
     _append_general_knowledge_base_sections(lines, general_summary)
     add_list("主线剧情", summary_field_values(summary, "main_plot"))
