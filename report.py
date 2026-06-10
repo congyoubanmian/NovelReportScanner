@@ -4500,6 +4500,42 @@ def _general_specialty_notes(general_summary: dict, summary: dict) -> list:
     return notes[:10]
 
 
+def _build_relationship_network_lines(characters: list, limit=20) -> list:
+    if not characters or len(characters) < 2:
+        return []
+    name_set = set()
+    for char in characters:
+        name_set.add(char["name"])
+        for alias in char.get("aliases", []):
+            if alias and len(str(alias)) >= 2:
+                name_set.add(str(alias))
+    pairs = []
+    seen = set()
+    for char in characters:
+        name_a = char["name"]
+        for rel_text in char.get("relationships", []):
+            if not rel_text:
+                continue
+            for name_b in name_set:
+                if name_b == name_a or len(name_b) < 2:
+                    continue
+                if name_b in rel_text:
+                    pair_key = tuple(sorted([name_a, name_b]))
+                    if pair_key not in seen:
+                        seen.add(pair_key)
+                        short_rel = rel_text[:50].rstrip("。；，、")
+                        pairs.append(f"  {name_a} ── {short_rel} ── {name_b}")
+                        if len(pairs) >= limit:
+                            break
+            if len(pairs) >= limit:
+                break
+        if len(pairs) >= limit:
+            break
+    if not pairs:
+        return []
+    return ["", "【角色关系网】"] + pairs
+
+
 def build_general_report(book_key: str, detailed_data: dict, general_summary: dict = None) -> str:
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     male_obj = (detailed_data or {}).get("male_protagonist") or {}
@@ -4562,6 +4598,11 @@ def build_general_report(book_key: str, detailed_data: dict, general_summary: di
                     lines.append(f"- {item}")
     else:
         lines.append("未识别到足够稳定的重要角色。")
+
+    # 角色关系网络
+    rel_lines = _build_relationship_network_lines(characters)
+    if rel_lines:
+        lines.extend(rel_lines)
 
     lines.extend(
         [
