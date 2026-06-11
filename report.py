@@ -4989,6 +4989,12 @@ def _append_reading_guide_section(lines: list, general_summary: dict):
         score += min(3, len(events))
         score += min(2, len(foreshadowing))
         score += min(2, len(conflicts))
+        # Quality notes with positive keywords boost the score
+        for q in quality:
+            q_text = str(q).lower()
+            if any(kw in q_text for kw in ("精彩", "高潮", "反转", "关键", "燃", "爽", "亮点")):
+                score += 2
+                break
 
         if score >= 4:
             must_read.append((ci, summary_text[:60]))

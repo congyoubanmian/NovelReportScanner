@@ -563,6 +563,33 @@ def print_token_summary(base_dir, token_usage_path=None):
     print(f"  total:  {total['total']}")
 
 
+def _get_report_out_file(base_dir, book_name, profile_name):
+    """Read the report output file path from report_checkpoint.json."""
+    import glob
+    checkpoint_path = os.path.join(base_dir, "results", "report_checkpoint.json")
+    try:
+        with open(checkpoint_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    jobs = data.get("jobs", {})
+    # Look for matching job by profile::book_key format or book_key field
+    for job_key, job in jobs.items():
+        if not isinstance(job, dict):
+            continue
+        if job.get("book_key") == book_name and job.get("profile") == profile_name:
+            out = job.get("out_file")
+            if out and os.path.exists(out):
+                return out
+        if str(job_key) == f"{profile_name}::{book_name}":
+            out = job.get("out_file")
+            if out and os.path.exists(out):
+                return out
+    return None
+
+
 def process_single_novel(novel_path, profile_name=None, run_id=None, skip_fresh=True):
     from analysis_profiles import AUTO_PROFILE, infer_profile_for_novel, load_analysis_profile, normalize_profile_name
 
@@ -670,7 +697,12 @@ def process_single_novel(novel_path, profile_name=None, run_id=None, skip_fresh=
         print(f"成功: {os.path.basename(novel_path)}")
     else:
         print(f"失败: {os.path.basename(novel_path)}")
+    # Try to get the report output file from checkpoint
+    report_out_file = _get_report_out_file(base_dir, book_name, active_profile.name)
+
     result = {"status": status, "book_name": book_name, "profile": active_profile.name, "error": error}
+    if report_out_file:
+        result["out_file"] = report_out_file
     if warnings:
         result["warnings"] = warnings
     if general_scan_partial:
