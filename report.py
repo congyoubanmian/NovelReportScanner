@@ -4951,6 +4951,84 @@ def _append_comparable_works_section(lines: list, general_summary: dict):
     for w in works:
         lines.append(f"  · {w}")
 
+
+
+def _append_reading_guide_section(lines: list, general_summary: dict):
+    """
+    基于密度和阅读体验数据，生成实用的阅读指南：
+    - 哪些部分值得精读
+    - 哪些部分可以快扫或跳过
+    - 推荐的阅读策略
+    """
+    chunk_results = (general_summary or {}).get("chunk_results") or []
+    metrics = (general_summary or {}).get("reading_metrics") or {}
+    summary = (general_summary or {}).get("summary") or {}
+
+    if not chunk_results or len(chunk_results) < 5:
+        return
+
+    # Classify chunks
+    essential = []  # high density + high engagement
+    skippable = []  # low density + no key events
+    must_read = []  # has payoff/foreshadowing/climax
+
+    for chunk in chunk_results:
+        if not isinstance(chunk, dict):
+            continue
+        ci = chunk.get("chunk_index", 0)
+        density = (chunk.get("density_profile") or {}).get("level", "medium")
+        events = chunk.get("plot_events") or []
+        foreshadowing = chunk.get("foreshadowing") or []
+        conflicts = chunk.get("conflicts") or []
+        quality = chunk.get("quality_notes") or []
+        summary_text = str(chunk.get("one_sentence_summary") or "").strip()
+
+        score = 0
+        if density == "high": score += 2
+        elif density == "low": score -= 1
+        score += min(3, len(events))
+        score += min(2, len(foreshadowing))
+        score += min(2, len(conflicts))
+
+        if score >= 4:
+            must_read.append((ci, summary_text[:60]))
+        elif score >= 2:
+            essential.append((ci, summary_text[:60]))
+        elif score <= 0:
+            skippable.append((ci, summary_text[:60]))
+
+    if not must_read and not skippable:
+        return
+
+    lines.extend(["", "【阅读指南】"])
+
+    if must_read:
+        lines.append("  🔴 必读片段（关键剧情/伏笔/高潮）：")
+        for ci, text in must_read[:8]:
+            lines.append(f"    · 片段{ci}：{text}")
+        if len(must_read) > 8:
+            lines.append(f"    …共 {len(must_read)} 个必读片段")
+
+    if skippable:
+        lines.append("  🟢 可跳过片段（低密度日常/过渡）：")
+        for ci, text in skippable[:5]:
+            lines.append(f"    · 片段{ci}：{text}")
+        if len(skippable) > 5:
+            lines.append(f"    …共 {len(skippable)} 个可跳过片段")
+
+    # Reading strategy advice
+    total = len(chunk_results)
+    skip_pct = len(skippable) / total if total else 0
+    must_pct = len(must_read) / total if total else 0
+
+    lines.append("")
+    if skip_pct > 0.3:
+        lines.append(f"  💡 建议：约{skip_pct:.0%}的内容可跳过，推荐跳读策略")
+    elif must_pct > 0.5:
+        lines.append(f"  💡 建议：全书高密度内容占比{must_pct:.0%}，推荐精读")
+    else:
+        lines.append(f"  💡 建议：全书节奏均衡，可按兴趣选读")
+
 def _append_speed_read_card(lines: list, general_summary: dict, detailed_data: dict = None):
     """
     在报告最前面插入速读卡片：综合推荐 + 类型 + 一句话 + 评分条 + 高潮/低谷/风险。
@@ -5069,6 +5147,7 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
     _append_plot_timeline_section(lines, general_summary)
     add_list("核心冲突", summary_field_values(summary, "core_conflicts"))
     _append_pacing_narrative_section(lines, general_summary)
+    _append_reading_guide_section(lines, general_summary)
     add_list("世界观/设定", summary_field_values(summary, "worldbuilding"))
     _append_worldbuilding_details_section(lines, general_summary)
     add_list("主题表达", summary_field_values(summary, "themes"))
