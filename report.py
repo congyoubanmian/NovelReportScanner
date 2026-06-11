@@ -5152,6 +5152,19 @@ def _append_speed_read_card(lines: list, general_summary: dict, detailed_data: d
     if strengths:
         lines.append(f"  ✅ 亮点：{'；'.join(strengths)}")
     lines.append("")
+    # 可读性快速摘要
+    readability = (general_summary or {}).get("readability")
+    if readability and READABILITY_SCORER_ENABLED:
+        ri = readability.get("readability_index", 0)
+        grade = readability.get("readability_grade", "")
+        lines.append(f"  \U0001f4ca 可读性：{ri:.0f}/100 「{grade}」")
+    # 情感曲线快速摘要
+    sentiment = (general_summary or {}).get("sentiment_arcs")
+    if sentiment and SENTIMENT_ARCS_ENABLED:
+        arc_cn = sentiment.get("arc_type_cn", "")
+        overall_pol = sentiment.get("overall_polarity", 0)
+        pol_label = "偏正面" if overall_pol > 0.15 else "偏负面" if overall_pol < -0.15 else "中性"
+        lines.append(f"  \U0001f493 情感轨迹：{arc_cn}（{pol_label} {overall_pol:+.2f}）")
     lines.append("─" * 50)
 
 def _append_general_scan_section(lines: list, general_summary: dict, detailed_data: dict = None):
