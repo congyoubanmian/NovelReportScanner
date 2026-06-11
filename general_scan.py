@@ -19,6 +19,8 @@ from outline_prescan import generate_outline, outline_to_compact_text, outline_s
 from scan_memory import ScanMemory, SCAN_MEMORY_ENABLED as GENERAL_SCAN_MEMORY_ENABLED
 from reading_metrics import extract_chunk_scores, aggregate_metrics, render_reading_experience_report, READING_METRICS_ENABLED
 from literary_metrics import compute_literary_metrics as _compute_literary_metrics, LITERARY_METRICS_ENABLED
+from sentiment_arcs import compute_sentiment_arcs as _compute_sentiment_arcs, SENTIMENT_ARCS_ENABLED
+from readability_scorer import compute_readability as _compute_readability, READABILITY_SCORER_ENABLED
 
 
 CHUNK_SIZE = read_int_env("GENERAL_SCAN_CHUNK_SIZE", 12000, min_value=1000)
@@ -3334,6 +3336,14 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
     if LITERARY_METRICS_ENABLED and raw_text:
         literary_m = _compute_literary_metrics(raw_text)
         summary["literary_metrics"] = literary_m
+    # 情感曲线分析（纯规则统计）
+    if SENTIMENT_ARCS_ENABLED and raw_text:
+        sentiment = _compute_sentiment_arcs(raw_text)
+        summary["sentiment_arcs"] = sentiment
+    # 可读性评分（纯规则统计）
+    if READABILITY_SCORER_ENABLED and raw_text:
+        readability = _compute_readability(raw_text)
+        summary["readability"] = readability
     for field in specialty_fields:
         summary[field] = _summary_field_value(data, field)
     return summary
@@ -3615,6 +3625,8 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         "chunk_results": chunk_results,
         "summary": summary,
         "literary_metrics": summary.get("literary_metrics"),
+        "sentiment_arcs": summary.get("sentiment_arcs"),
+        "readability": summary.get("readability"),
     }
     out_file = os.path.join(output_dir, "GENERAL_SUMMARY.json")
     with open(out_file, "w", encoding="utf-8") as f:

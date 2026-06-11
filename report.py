@@ -33,6 +33,8 @@ from literary_metrics import (
     render_literary_metrics_report,
     render_fused_confidence_report,
 )
+from sentiment_arcs import SENTIMENT_ARCS_ENABLED, render_sentiment_arcs_report
+from readability_scorer import READABILITY_SCORER_ENABLED, render_readability_report
 
 try:
     from openai import OpenAI
@@ -4442,6 +4444,34 @@ def _append_literary_metrics_section(lines: list, general_summary: dict):
 
 
 
+
+
+def _append_sentiment_arcs_section(lines: list, general_summary: dict):
+    """渲染情感曲线分析段。"""
+    if not SENTIMENT_ARCS_ENABLED:
+        return
+    arcs = (general_summary or {}).get("sentiment_arcs")
+    if not arcs:
+        return
+    report_text = render_sentiment_arcs_report(arcs)
+    if report_text:
+        lines.extend(["", "【情感曲线分析】"])
+        lines.append(report_text)
+
+
+def _append_readability_section(lines: list, general_summary: dict):
+    """渲染可读性评分段。"""
+    if not READABILITY_SCORER_ENABLED:
+        return
+    readability = (general_summary or {}).get("readability")
+    if not readability:
+        return
+    report_text = render_readability_report(readability)
+    if report_text:
+        lines.extend(["", "【可读性评分】"])
+        lines.append(report_text)
+
+
 def _append_confidence_report_section(lines: list, general_summary: dict, detailed_data: dict = None):
     """渲染评分可信度报告段。"""
     if not LITERARY_METRICS_ENABLED:
@@ -5146,6 +5176,8 @@ def _append_general_scan_section(lines: list, general_summary: dict, detailed_da
     _append_genre_tags_section(lines, general_summary)
     _append_reading_experience_section(lines, general_summary)
     _append_literary_metrics_section(lines, general_summary)
+    _append_sentiment_arcs_section(lines, general_summary)
+    _append_readability_section(lines, general_summary)
     _append_confidence_report_section(lines, general_summary, detailed_data)
     _append_general_knowledge_base_sections(lines, general_summary)
     add_list("主线剧情", summary_field_values(summary, "main_plot"))
