@@ -609,6 +609,70 @@ def load_chunk_manifest(path: str) -> Dict[str, Any]:
     return manifest
 
 
+# ===================== 增量扫描: chunk diff =====================
+
+def compute_chunk_text_hash(text: str) -> str:
+    """计算 chunk 文本的内容 hash（sha1，取前16位即可）。"""
+    return hashlib.sha1((text or "").strip().encode("utf-8")).hexdigest()[:16]
+
+
+def build_chunk_hash_map(manifest: Dict[str, Any]) -> Dict[str, int]:
+    """从 manifest 构建 {text_hash: chunk_index} 映射，用于增量复用。
+
+    如果多个 chunk 内容相同（hash 碰撞），保留最后一个。
+    """
+    hash_map: Dict[str, int] = {}
+    for entry in manifest.get("chunks", []):
+        text = entry.get("text", "")
+        h = compute_chunk_text_hash(text)
+        hash_map[h] = int(entry.get("chunk_index", 0))
+    return hash_map
+
+
+def diff_chunk_manifests(
+    old_manifest: Dict[str, Any],
+    new_manifest: Dict[str, Any],
+) -> Dict[str, Any]:
+    """对比新旧 chunk manifest，计算增量扫描计划。
+
+    返回:
+    {
+        "reuse_chunks": [int, ...],   # 内容未变、可直接复用旧结果的 chunk index（新 manifest 中）
+        "rescan_chunks": [int, ...],  # 内容变更或新增，需要重新扫描的 chunk index
+        "removed_count": int,         # 旧 manifest 中被删除的 chunk 数
+        "reuse_rate": float,          # 复用率 = reuse / total_new
+    }
+    """
+    old_hash_map = build_chunk_hash_map(old_manifest)
+    new_chunks = new_manifest.get("chunks", [])
+
+    reuse_chunks: list = []
+    rescan_chunks: list = []
+
+    for entry in new_chunks:
+        text = entry.get("text", "")
+        h = compute_chunk_text_hash(text)
+        idx = int(entry.get("chunk_index", 0))
+        if h in old_hash_map:
+            reuse_chunks.append(idx)
+        else:
+            rescan_chunks.append(idx)
+
+    old_count = len(old_manifest.get("chunks", []))
+    new_count = len(new_chunks)
+    removed_count = max(0, old_count - len(reuse_chunks))
+
+    total_new = max(1, new_count)
+    reuse_rate = len(reuse_chunks) / total_new
+
+    return {
+        "reuse_chunks": sorted(reuse_chunks),
+        "rescan_chunks": sorted(rescan_chunks),
+        "removed_count": removed_count,
+        "reuse_rate": round(reuse_rate, 4),
+    }
+
+
 # ===================== Chunk 切分 =====================
 def split_to_chunks(
     text: str,
