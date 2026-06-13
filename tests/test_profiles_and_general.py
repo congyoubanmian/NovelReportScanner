@@ -22,6 +22,7 @@ import general_scan
 import main
 import novel_scan
 import novel_reviewer
+import rv_llm_payload
 import protagonist
 import prompt_templates
 import report
@@ -13938,7 +13939,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         lines = [f"证据{i}-" + ("长文本" * 120) for i in range(120)]
         with mock.patch.object(novel_reviewer, "REVIEW_LLM_SECTION_MAX_CHARS", 1000), \
                 mock.patch.object(novel_reviewer, "REVIEW_LLM_FIELD_MAX_CHARS", 40), \
-                mock.patch.object(novel_reviewer, "REVIEW_LLM_LIST_MAX_ITEMS", 20):
+                mock.patch.object(novel_reviewer, "REVIEW_LLM_LIST_MAX_ITEMS", 20), \
+                mock.patch.object(rv_llm_payload, "REVIEW_LLM_SECTION_MAX_CHARS", 1000), \
+                mock.patch.object(rv_llm_payload, "REVIEW_LLM_FIELD_MAX_CHARS", 40), \
+                mock.patch.object(rv_llm_payload, "REVIEW_LLM_LIST_MAX_ITEMS", 20):
             compacted = novel_reviewer._compact_llm_lines(
                 [novel_reviewer._clip_llm_text(item) for item in lines],
                 label="测试证据",
@@ -13977,7 +13981,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         with mock.patch.object(novel_reviewer, "_call_json_chat_completion", side_effect=fake_call), \
                 mock.patch.object(novel_reviewer, "REVIEW_LLM_SECTION_MAX_CHARS", 1800), \
                 mock.patch.object(novel_reviewer, "REVIEW_LLM_FIELD_MAX_CHARS", 60), \
-                mock.patch.object(novel_reviewer, "REVIEW_LLM_LIST_MAX_ITEMS", 24):
+                mock.patch.object(novel_reviewer, "REVIEW_LLM_LIST_MAX_ITEMS", 24), \
+                mock.patch.object(rv_llm_payload, "REVIEW_LLM_SECTION_MAX_CHARS", 1800), \
+                mock.patch.object(rv_llm_payload, "REVIEW_LLM_FIELD_MAX_CHARS", 60), \
+                mock.patch.object(rv_llm_payload, "REVIEW_LLM_LIST_MAX_ITEMS", 24):
             result = novel_reviewer._llm_judge_partner(
                 "甲女",
                 romantic_feelings=[],
@@ -14021,7 +14028,10 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         with mock.patch.object(novel_reviewer, "_call_json_chat_completion", side_effect=fake_call), \
                 mock.patch.object(novel_reviewer, "REVIEW_LLM_SECTION_MAX_CHARS", 1600), \
                 mock.patch.object(novel_reviewer, "REVIEW_LLM_FIELD_MAX_CHARS", 50), \
-                mock.patch.object(novel_reviewer, "REVIEW_LLM_LIST_MAX_ITEMS", 20):
+                mock.patch.object(novel_reviewer, "REVIEW_LLM_LIST_MAX_ITEMS", 20), \
+                mock.patch.object(rv_llm_payload, "REVIEW_LLM_SECTION_MAX_CHARS", 1600), \
+                mock.patch.object(rv_llm_payload, "REVIEW_LLM_FIELD_MAX_CHARS", 50), \
+                mock.patch.object(rv_llm_payload, "REVIEW_LLM_LIST_MAX_ITEMS", 20):
             result = novel_reviewer._llm_judge_virgin(
                 "甲女",
                 no_partner=True,
