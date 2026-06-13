@@ -1,42 +1,52 @@
 {
+  "extends": "_base_general",
   "name": "steampunk_fantasy",
   "sort_order": 190,
-  "version": "2.1.0",
-  "version_history": [
-    {
-      "version": "2.1.0",
-      "date": "2026-06-08",
-      "changes": [
-        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
-      ]
-    },
-    {
-      "version": "2.0.0",
-      "date": "2026-06-07",
-      "changes": [
-        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
-      ]
-    }
-  ],
-  "min_supported_scanner_version": "1.5.0",
-  "breaking_changes": false,
   "display_name": "西幻/蒸汽朋克/炼金工业专长分析",
   "description": "关注西幻秩序、蒸汽时代工业、炼金科技、教会帝国、神秘学复苏和技术跃迁是否自洽。",
-  "enabled_stages": ["character_analysis", "general_scan", "general_report"],
-  "rules_file": "rules.json",
-  "report_mode": "general",
   "cross_profile_rules": {
     "harem": {
-      "import_categories": ["雷点（严重毒点）", "郁闷点"],
-      "import_points": ["绿帽", "死女", "送女", "前世雷", "破鞋/非处/非初", "漏女", "亵女"]
+      "import_categories": [
+        "雷点（严重毒点）",
+        "郁闷点"
+      ],
+      "import_points": [
+        "绿帽",
+        "死女",
+        "送女",
+        "前世雷",
+        "破鞋/非处/非初",
+        "漏女",
+        "亵女"
+      ]
     },
     "mystery_detective": {
-      "import_categories": ["谜题与线索", "诡计与真相"],
-      "import_points": ["谜题设置", "线索公平", "诡计可行性", "动机逻辑", "案件主线连接"]
+      "import_categories": [
+        "谜题与线索",
+        "诡计与真相"
+      ],
+      "import_points": [
+        "谜题设置",
+        "线索公平",
+        "诡计可行性",
+        "动机逻辑",
+        "案件主线连接"
+      ]
     },
     "cosmic_horror": {
-      "import_categories": ["异常规则", "调查推进", "超凡体系与组织"],
-      "import_points": ["规则稳定", "未知边界", "代价明确", "线索链", "揭示节奏", "力量边界"]
+      "import_categories": [
+        "异常规则",
+        "调查推进",
+        "超凡体系与组织"
+      ],
+      "import_points": [
+        "规则稳定",
+        "未知边界",
+        "代价明确",
+        "线索链",
+        "揭示节奏",
+        "力量边界"
+      ]
     }
   },
   "scan_focus": [
@@ -66,22 +76,73 @@
     "overall_assessment"
   ],
   "inference_keywords": [
-    {"word": "蒸汽", "weight": 5},
-    {"word": "蒸汽朋克", "weight": 5},
-    {"word": "西幻", "weight": 5},
-    {"word": "炼金", "weight": 5},
-    {"word": "炼金术", "weight": 5},
-    {"word": "炼金矩阵", "weight": 5},
-    {"word": "教会", "weight": 3},
-    {"word": "帝国", "weight": 3},
-    {"word": "骑士", "weight": 3},
-    {"word": "神明", "weight": 3},
-    {"word": "龙族", "weight": 4},
-    {"word": "神秘复苏", "weight": 5},
-    {"word": "差分机", "weight": 5},
-    {"word": "打孔卡", "weight": 4},
-    {"word": "煤精", "weight": 4},
-    {"word": "工业革命", "weight": 4},
-    {"word": "维多利亚", "weight": 4}
+    {
+      "word": "蒸汽",
+      "weight": 5
+    },
+    {
+      "word": "蒸汽朋克",
+      "weight": 5
+    },
+    {
+      "word": "西幻",
+      "weight": 5
+    },
+    {
+      "word": "炼金",
+      "weight": 5
+    },
+    {
+      "word": "炼金术",
+      "weight": 5
+    },
+    {
+      "word": "炼金矩阵",
+      "weight": 5
+    },
+    {
+      "word": "教会",
+      "weight": 3
+    },
+    {
+      "word": "帝国",
+      "weight": 3
+    },
+    {
+      "word": "骑士",
+      "weight": 3
+    },
+    {
+      "word": "神明",
+      "weight": 3
+    },
+    {
+      "word": "龙族",
+      "weight": 4
+    },
+    {
+      "word": "神秘复苏",
+      "weight": 5
+    },
+    {
+      "word": "差分机",
+      "weight": 5
+    },
+    {
+      "word": "打孔卡",
+      "weight": 4
+    },
+    {
+      "word": "煤精",
+      "weight": 4
+    },
+    {
+      "word": "工业革命",
+      "weight": 4
+    },
+    {
+      "word": "维多利亚",
+      "weight": 4
+    }
   ]
 }

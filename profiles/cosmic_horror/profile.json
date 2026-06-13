@@ -1,34 +1,9 @@
 {
+  "extends": "_base_general",
   "name": "cosmic_horror",
   "sort_order": 110,
-  "version": "2.1.0",
-  "version_history": [
-    {
-      "version": "2.1.0",
-      "date": "2026-06-08",
-      "changes": [
-        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
-      ]
-    },
-    {
-      "version": "2.0.0",
-      "date": "2026-06-07",
-      "changes": [
-        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
-      ]
-    }
-  ],
-  "min_supported_scanner_version": "1.5.0",
-  "breaking_changes": false,
   "display_name": "克苏鲁/诡秘/怪谈专长分析",
   "description": "关注未知恐惧、超常规则、污染代价、调查线索和氛围递进。",
-  "enabled_stages": [
-    "character_analysis",
-    "general_scan",
-    "general_report"
-  ],
-  "rules_file": "rules.json",
-  "report_mode": "general",
   "scan_focus": [
     "异常事件、怪谈规则、污染机制和禁忌知识：知晓本身即是危险，区别于可安全探索的谜题",
     "序列途径/魔药体系、仪式晋升、能力代价和神秘学职业树",

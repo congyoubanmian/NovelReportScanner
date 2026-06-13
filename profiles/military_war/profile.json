@@ -1,34 +1,9 @@
 {
+  "extends": "_base_general",
   "name": "military_war",
   "sort_order": 90,
-  "version": "2.1.0",
-  "version_history": [
-    {
-      "version": "2.1.0",
-      "date": "2026-06-08",
-      "changes": [
-        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
-      ]
-    },
-    {
-      "version": "2.0.0",
-      "date": "2026-06-07",
-      "changes": [
-        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
-      ]
-    }
-  ],
-  "min_supported_scanner_version": "1.5.0",
-  "breaking_changes": false,
   "display_name": "军事/战争专长分析",
   "description": "在通用小说分析基础上，重点检查战争类型与规模、战略目标、战术执行、后勤补给、兵制装备、指挥链、部队建设、军工科技和战争代价。覆盖现代军事、古代战争、科幻战争和穿越架空等子类型。",
-  "enabled_stages": [
-    "character_analysis",
-    "general_scan",
-    "general_report"
-  ],
-  "rules_file": "rules.json",
-  "report_mode": "general",
   "scan_focus": [
     "战争类型与时代定位：现代军事、古代争霸、科幻星际还是穿越架空？战争规模是局部冲突还是全面战争",
     "军事战斗场面是否为叙事核心，而非仅作为历史事件、末世冲突或背景板",

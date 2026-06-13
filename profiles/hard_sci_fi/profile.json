@@ -1,38 +1,24 @@
 {
+  "extends": "_base_general",
   "name": "hard_sci_fi",
   "sort_order": 40,
-  "version": "2.1.0",
-  "version_history": [
-    {
-      "version": "2.1.0",
-      "date": "2026-06-08",
-      "changes": [
-        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
-      ]
-    },
-    {
-      "version": "2.0.0",
-      "date": "2026-06-07",
-      "changes": [
-        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
-      ]
-    }
-  ],
-  "min_supported_scanner_version": "1.5.0",
-  "breaking_changes": false,
   "display_name": "硬科幻专长分析",
   "description": "在通用小说分析基础上，重点检查科学设定、技术链、因果推演、工程约束和世界观自洽性。",
-  "enabled_stages": [
-    "character_analysis",
-    "general_scan",
-    "general_report"
-  ],
-  "rules_file": "rules.json",
-  "report_mode": "general",
   "cross_profile_rules": {
     "harem": {
-      "import_categories": ["雷点（严重毒点）", "郁闷点"],
-      "import_points": ["绿帽", "死女", "送女", "前世雷", "破鞋/非处/非初", "漏女", "亵女"]
+      "import_categories": [
+        "雷点（严重毒点）",
+        "郁闷点"
+      ],
+      "import_points": [
+        "绿帽",
+        "死女",
+        "送女",
+        "前世雷",
+        "破鞋/非处/非初",
+        "漏女",
+        "亵女"
+      ]
     }
   },
   "scan_focus": [
@@ -62,41 +48,149 @@
     "overall_assessment"
   ],
   "inference_keywords": [
-    {"word": "飞船", "weight": 4},
-    {"word": "星舰", "weight": 4},
-    {"word": "星际", "weight": 4},
-    {"word": "光速", "weight": 3},
-    {"word": "曲率", "weight": 4},
-    {"word": "量子", "weight": 3},
-    {"word": "人工智能", "weight": 3},
-    {"word": "AI", "weight": 3},
-    {"word": "机器人", "weight": 2},
-    {"word": "轨道", "weight": 2},
-    {"word": "殖民星", "weight": 4},
-    {"word": "太空", "weight": 3},
-    {"word": "宇宙", "weight": 2},
-    {"word": "引擎", "weight": 2},
-    {"word": "基因编辑", "weight": 3},
-    {"word": "纳米", "weight": 3},
-    {"word": "黑洞", "weight": 3},
-    {"word": "虫洞", "weight": 4},
-    {"word": "戴森", "weight": 4},
-    {"word": "文明等级", "weight": 3},
-    {"word": "意识上传", "weight": 4},
-    {"word": "可控核聚变", "weight": 4},
-    {"word": "核聚变", "weight": 3},
-    {"word": "费米悖论", "weight": 4},
-    {"word": "黑暗森林", "weight": 4},
-    {"word": "二向箔", "weight": 4},
-    {"word": "赛博格", "weight": 3},
-    {"word": "强人工智能", "weight": 4},
-    {"word": "脑机接口", "weight": 4},
-    {"word": "太空电梯", "weight": 4},
-    {"word": "恒星际", "weight": 4},
-    {"word": "深空", "weight": 3},
-    {"word": "熵", "weight": 3},
-    {"word": "维度", "weight": 3},
-    {"word": "外骨骼", "weight": 3},
-    {"word": "基因工程", "weight": 3}
+    {
+      "word": "飞船",
+      "weight": 4
+    },
+    {
+      "word": "星舰",
+      "weight": 4
+    },
+    {
+      "word": "星际",
+      "weight": 4
+    },
+    {
+      "word": "光速",
+      "weight": 3
+    },
+    {
+      "word": "曲率",
+      "weight": 4
+    },
+    {
+      "word": "量子",
+      "weight": 3
+    },
+    {
+      "word": "人工智能",
+      "weight": 3
+    },
+    {
+      "word": "AI",
+      "weight": 3
+    },
+    {
+      "word": "机器人",
+      "weight": 2
+    },
+    {
+      "word": "轨道",
+      "weight": 2
+    },
+    {
+      "word": "殖民星",
+      "weight": 4
+    },
+    {
+      "word": "太空",
+      "weight": 3
+    },
+    {
+      "word": "宇宙",
+      "weight": 2
+    },
+    {
+      "word": "引擎",
+      "weight": 2
+    },
+    {
+      "word": "基因编辑",
+      "weight": 3
+    },
+    {
+      "word": "纳米",
+      "weight": 3
+    },
+    {
+      "word": "黑洞",
+      "weight": 3
+    },
+    {
+      "word": "虫洞",
+      "weight": 4
+    },
+    {
+      "word": "戴森",
+      "weight": 4
+    },
+    {
+      "word": "文明等级",
+      "weight": 3
+    },
+    {
+      "word": "意识上传",
+      "weight": 4
+    },
+    {
+      "word": "可控核聚变",
+      "weight": 4
+    },
+    {
+      "word": "核聚变",
+      "weight": 3
+    },
+    {
+      "word": "费米悖论",
+      "weight": 4
+    },
+    {
+      "word": "黑暗森林",
+      "weight": 4
+    },
+    {
+      "word": "二向箔",
+      "weight": 4
+    },
+    {
+      "word": "赛博格",
+      "weight": 3
+    },
+    {
+      "word": "强人工智能",
+      "weight": 4
+    },
+    {
+      "word": "脑机接口",
+      "weight": 4
+    },
+    {
+      "word": "太空电梯",
+      "weight": 4
+    },
+    {
+      "word": "恒星际",
+      "weight": 4
+    },
+    {
+      "word": "深空",
+      "weight": 3
+    },
+    {
+      "word": "熵",
+      "weight": 3
+    },
+    {
+      "word": "维度",
+      "weight": 3
+    },
+    {
+      "word": "外骨骼",
+      "weight": 3
+    },
+    {
+      "word": "基因工程",
+      "weight": 3
+    }
   ]
 }

@@ -1,38 +1,24 @@
 {
+  "extends": "_base_general",
   "name": "mastermind_hidden",
   "sort_order": 210,
-  "version": "2.1.0",
-  "version_history": [
-    {
-      "version": "2.1.0",
-      "date": "2026-06-08",
-      "changes": [
-        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
-      ]
-    },
-    {
-      "version": "2.0.0",
-      "date": "2026-06-07",
-      "changes": [
-        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
-      ]
-    }
-  ],
-  "min_supported_scanner_version": "1.5.0",
-  "breaking_changes": false,
   "display_name": "幕后流/马甲流专长分析",
   "description": "关注隐藏身份、多马甲切换、信息差操纵、幕后排局、多方势力博弈和掉马揭秘节奏，区别于单纯都市打脸或悬疑破案。",
-  "enabled_stages": [
-    "character_analysis",
-    "general_scan",
-    "general_report"
-  ],
-  "rules_file": "rules.json",
-  "report_mode": "general",
   "cross_profile_rules": {
     "harem": {
-      "import_categories": ["雷点（严重毒点）", "郁闷点"],
-      "import_points": ["绿帽", "死女", "送女", "前世雷", "破鞋/非处/非初", "漏女", "亵女"]
+      "import_categories": [
+        "雷点（严重毒点）",
+        "郁闷点"
+      ],
+      "import_points": [
+        "绿帽",
+        "死女",
+        "送女",
+        "前世雷",
+        "破鞋/非处/非初",
+        "漏女",
+        "亵女"
+      ]
     }
   },
   "scan_focus": [
@@ -62,26 +48,89 @@
     "overall_assessment"
   ],
   "inference_keywords": [
-    {"word": "幕后流", "weight": 5},
-    {"word": "马甲流", "weight": 5},
-    {"word": "幕后黑手", "weight": 5},
-    {"word": "幕后大佬", "weight": 5},
-    {"word": "多马甲", "weight": 5},
-    {"word": "马甲", "weight": 5},
-    {"word": "隐藏身份", "weight": 5},
-    {"word": "双重身份", "weight": 4},
-    {"word": "身份伪装", "weight": 4},
-    {"word": "掉马", "weight": 5},
-    {"word": "信息差", "weight": 4},
-    {"word": "操盘手", "weight": 5},
-    {"word": "暗中操控", "weight": 4},
-    {"word": "幕后操控", "weight": 5},
-    {"word": "暗棋", "weight": 4},
-    {"word": "布局", "weight": 4},
-    {"word": "多方博弈", "weight": 4},
-    {"word": "势力平衡", "weight": 4},
-    {"word": "幕后", "weight": 3},
-    {"word": "伪装", "weight": 3},
-    {"word": "面具", "weight": 3}
+    {
+      "word": "幕后流",
+      "weight": 5
+    },
+    {
+      "word": "马甲流",
+      "weight": 5
+    },
+    {
+      "word": "幕后黑手",
+      "weight": 5
+    },
+    {
+      "word": "幕后大佬",
+      "weight": 5
+    },
+    {
+      "word": "多马甲",
+      "weight": 5
+    },
+    {
+      "word": "马甲",
+      "weight": 5
+    },
+    {
+      "word": "隐藏身份",
+      "weight": 5
+    },
+    {
+      "word": "双重身份",
+      "weight": 4
+    },
+    {
+      "word": "身份伪装",
+      "weight": 4
+    },
+    {
+      "word": "掉马",
+      "weight": 5
+    },
+    {
+      "word": "信息差",
+      "weight": 4
+    },
+    {
+      "word": "操盘手",
+      "weight": 5
+    },
+    {
+      "word": "暗中操控",
+      "weight": 4
+    },
+    {
+      "word": "幕后操控",
+      "weight": 5
+    },
+    {
+      "word": "暗棋",
+      "weight": 4
+    },
+    {
+      "word": "布局",
+      "weight": 4
+    },
+    {
+      "word": "多方博弈",
+      "weight": 4
+    },
+    {
+      "word": "势力平衡",
+      "weight": 4
+    },
+    {
+      "word": "幕后",
+      "weight": 3
+    },
+    {
+      "word": "伪装",
+      "weight": 3
+    },
+    {
+      "word": "面具",
+      "weight": 3
+    }
   ]
 }

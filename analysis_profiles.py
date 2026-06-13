@@ -511,7 +511,7 @@ def list_available_profiles() -> List[AnalysisProfile]:
     profiles = []
     for name in os.listdir(profiles_root):
         profile_name = normalize_profile_name(name)
-        if profile_name == AUTO_PROFILE or not _profile_exists(profile_name):
+        if profile_name == AUTO_PROFILE or profile_name.startswith("_") or not _profile_exists(profile_name):
             continue
         try:
             profiles.append(load_analysis_profile(profile_name))

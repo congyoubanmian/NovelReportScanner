@@ -1,38 +1,24 @@
 {
+  "extends": "_base_general",
   "name": "nation_fate",
   "sort_order": 200,
-  "version": "2.1.0",
-  "version_history": [
-    {
-      "version": "2.1.0",
-      "date": "2026-06-08",
-      "changes": [
-        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
-      ]
-    },
-    {
-      "version": "2.0.0",
-      "date": "2026-06-07",
-      "changes": [
-        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
-      ]
-    }
-  ],
-  "min_supported_scanner_version": "1.5.0",
-  "breaking_changes": false,
   "display_name": "国运/文明对抗专长分析",
   "description": "关注国运绑定、文明选拔、历史人物召唤/代战、国家兴亡与个体命运的关系，覆盖国运擂台、文明试炼、全球对抗等类型。",
-  "enabled_stages": [
-    "character_analysis",
-    "general_scan",
-    "general_report"
-  ],
-  "rules_file": "rules.json",
-  "report_mode": "general",
   "cross_profile_rules": {
     "harem": {
-      "import_categories": ["雷点（严重毒点）", "郁闷点"],
-      "import_points": ["绿帽", "死女", "送女", "前世雷", "破鞋/非处/非初", "漏女", "亵女"]
+      "import_categories": [
+        "雷点（严重毒点）",
+        "郁闷点"
+      ],
+      "import_points": [
+        "绿帽",
+        "死女",
+        "送女",
+        "前世雷",
+        "破鞋/非处/非初",
+        "漏女",
+        "亵女"
+      ]
     }
   },
   "scan_focus": [
@@ -62,25 +48,85 @@
     "overall_assessment"
   ],
   "inference_keywords": [
-    {"word": "国运", "weight": 5},
-    {"word": "文明选拔", "weight": 5},
-    {"word": "国运绑定", "weight": 5},
-    {"word": "召唤先贤", "weight": 5},
-    {"word": "历史人物代战", "weight": 5},
-    {"word": "国运擂台", "weight": 5},
-    {"word": "文明试炼", "weight": 5},
-    {"word": "国运直播", "weight": 5},
-    {"word": "神话擂台", "weight": 5},
-    {"word": "长城守望", "weight": 5},
-    {"word": "龙国", "weight": 4},
-    {"word": "华夏", "weight": 4},
-    {"word": "九州", "weight": 4},
-    {"word": "神明召唤", "weight": 4},
-    {"word": "历史武将", "weight": 4},
-    {"word": "兵马俑", "weight": 4},
-    {"word": "文明等级", "weight": 4},
-    {"word": "国运奖励", "weight": 4},
-    {"word": "国家命运", "weight": 3},
-    {"word": "全球对抗", "weight": 3}
+    {
+      "word": "国运",
+      "weight": 5
+    },
+    {
+      "word": "文明选拔",
+      "weight": 5
+    },
+    {
+      "word": "国运绑定",
+      "weight": 5
+    },
+    {
+      "word": "召唤先贤",
+      "weight": 5
+    },
+    {
+      "word": "历史人物代战",
+      "weight": 5
+    },
+    {
+      "word": "国运擂台",
+      "weight": 5
+    },
+    {
+      "word": "文明试炼",
+      "weight": 5
+    },
+    {
+      "word": "国运直播",
+      "weight": 5
+    },
+    {
+      "word": "神话擂台",
+      "weight": 5
+    },
+    {
+      "word": "长城守望",
+      "weight": 5
+    },
+    {
+      "word": "龙国",
+      "weight": 4
+    },
+    {
+      "word": "华夏",
+      "weight": 4
+    },
+    {
+      "word": "九州",
+      "weight": 4
+    },
+    {
+      "word": "神明召唤",
+      "weight": 4
+    },
+    {
+      "word": "历史武将",
+      "weight": 4
+    },
+    {
+      "word": "兵马俑",
+      "weight": 4
+    },
+    {
+      "word": "文明等级",
+      "weight": 4
+    },
+    {
+      "word": "国运奖励",
+      "weight": 4
+    },
+    {
+      "word": "国家命运",
+      "weight": 3
+    },
+    {
+      "word": "全球对抗",
+      "weight": 3
+    }
   ]
 }

@@ -1,34 +1,9 @@
 {
+  "extends": "_base_general",
   "name": "mystery_detective",
   "sort_order": 60,
-  "version": "2.1.0",
-  "version_history": [
-    {
-      "version": "2.1.0",
-      "date": "2026-06-08",
-      "changes": [
-        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
-      ]
-    },
-    {
-      "version": "2.0.0",
-      "date": "2026-06-07",
-      "changes": [
-        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
-      ]
-    }
-  ],
-  "min_supported_scanner_version": "1.5.0",
-  "breaking_changes": false,
   "display_name": "悬疑/推理专长分析",
   "description": "在通用小说分析基础上，重点检查谜题设计的理性可解性、线索公平性、诡计可行性、侦探角色魅力和叙事结构特色。关注逻辑闭环而非执法程序，区别于刑侦法医文。",
-  "enabled_stages": [
-    "character_analysis",
-    "general_scan",
-    "general_report"
-  ],
-  "rules_file": "rules.json",
-  "report_mode": "general",
   "scan_focus": [
     "谜题的理性可解性：核心谜面是否能让读者参与推理，追求逻辑闭环而非超自然解释",
     "案件、谜题、异常事件和核心悬念如何建立",

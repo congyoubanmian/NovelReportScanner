@@ -1,38 +1,24 @@
 {
+  "extends": "_base_general",
   "name": "xianxia_fantasy",
   "sort_order": 50,
-  "version": "2.1.0",
-  "version_history": [
-    {
-      "version": "2.1.0",
-      "date": "2026-06-08",
-      "changes": [
-        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
-      ]
-    },
-    {
-      "version": "2.0.0",
-      "date": "2026-06-07",
-      "changes": [
-        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
-      ]
-    }
-  ],
-  "min_supported_scanner_version": "1.5.0",
-  "breaking_changes": false,
   "display_name": "仙侠/玄幻专长分析",
   "description": "在通用小说分析基础上，重点检查修炼体系、血脉体质、宗门势力、法宝功法、东方神话元素、求道主题和升级爽点是否自洽。",
-  "enabled_stages": [
-    "character_analysis",
-    "general_scan",
-    "general_report"
-  ],
-  "rules_file": "rules.json",
-  "report_mode": "general",
   "cross_profile_rules": {
     "harem": {
-      "import_categories": ["雷点（严重毒点）", "郁闷点"],
-      "import_points": ["绿帽", "死女", "送女", "前世雷", "破鞋/非处/非初", "漏女", "亵女"]
+      "import_categories": [
+        "雷点（严重毒点）",
+        "郁闷点"
+      ],
+      "import_points": [
+        "绿帽",
+        "死女",
+        "送女",
+        "前世雷",
+        "破鞋/非处/非初",
+        "漏女",
+        "亵女"
+      ]
     }
   },
   "scan_focus": [
@@ -63,41 +49,149 @@
     "overall_assessment"
   ],
   "inference_keywords": [
-    {"word": "修仙", "weight": 5},
-    {"word": "仙侠", "weight": 5},
-    {"word": "玄幻", "weight": 5},
-    {"word": "宗门", "weight": 3},
-    {"word": "灵根", "weight": 4},
-    {"word": "练气", "weight": 4},
-    {"word": "筑基", "weight": 4},
-    {"word": "金丹", "weight": 4},
-    {"word": "元婴", "weight": 4},
-    {"word": "化神", "weight": 3},
-    {"word": "大乘", "weight": 4},
-    {"word": "飞升", "weight": 4},
-    {"word": "渡劫", "weight": 4},
-    {"word": "法宝", "weight": 3},
-    {"word": "丹药", "weight": 3},
-    {"word": "阵法", "weight": 3},
-    {"word": "秘境", "weight": 3},
-    {"word": "传承", "weight": 3},
-    {"word": "灵气", "weight": 3},
-    {"word": "剑修", "weight": 4},
-    {"word": "魔修", "weight": 3},
-    {"word": "妖族", "weight": 3},
-    {"word": "仙尊", "weight": 3},
-    {"word": "大帝", "weight": 4},
-    {"word": "神通", "weight": 3},
-    {"word": "功法", "weight": 3},
-    {"word": "圣体", "weight": 4},
-    {"word": "武魂", "weight": 4},
-    {"word": "至尊", "weight": 3},
-    {"word": "天尊", "weight": 3},
-    {"word": "洪荒", "weight": 4},
-    {"word": "封神", "weight": 4},
-    {"word": "天庭", "weight": 3},
-    {"word": "长生", "weight": 3},
-    {"word": "求道", "weight": 3},
-    {"word": "炼体", "weight": 3}
+    {
+      "word": "修仙",
+      "weight": 5
+    },
+    {
+      "word": "仙侠",
+      "weight": 5
+    },
+    {
+      "word": "玄幻",
+      "weight": 5
+    },
+    {
+      "word": "宗门",
+      "weight": 3
+    },
+    {
+      "word": "灵根",
+      "weight": 4
+    },
+    {
+      "word": "练气",
+      "weight": 4
+    },
+    {
+      "word": "筑基",
+      "weight": 4
+    },
+    {
+      "word": "金丹",
+      "weight": 4
+    },
+    {
+      "word": "元婴",
+      "weight": 4
+    },
+    {
+      "word": "化神",
+      "weight": 3
+    },
+    {
+      "word": "大乘",
+      "weight": 4
+    },
+    {
+      "word": "飞升",
+      "weight": 4
+    },
+    {
+      "word": "渡劫",
+      "weight": 4
+    },
+    {
+      "word": "法宝",
+      "weight": 3
+    },
+    {
+      "word": "丹药",
+      "weight": 3
+    },
+    {
+      "word": "阵法",
+      "weight": 3
+    },
+    {
+      "word": "秘境",
+      "weight": 3
+    },
+    {
+      "word": "传承",
+      "weight": 3
+    },
+    {
+      "word": "灵气",
+      "weight": 3
+    },
+    {
+      "word": "剑修",
+      "weight": 4
+    },
+    {
+      "word": "魔修",
+      "weight": 3
+    },
+    {
+      "word": "妖族",
+      "weight": 3
+    },
+    {
+      "word": "仙尊",
+      "weight": 3
+    },
+    {
+      "word": "大帝",
+      "weight": 4
+    },
+    {
+      "word": "神通",
+      "weight": 3
+    },
+    {
+      "word": "功法",
+      "weight": 3
+    },
+    {
+      "word": "圣体",
+      "weight": 4
+    },
+    {
+      "word": "武魂",
+      "weight": 4
+    },
+    {
+      "word": "至尊",
+      "weight": 3
+    },
+    {
+      "word": "天尊",
+      "weight": 3
+    },
+    {
+      "word": "洪荒",
+      "weight": 4
+    },
+    {
+      "word": "封神",
+      "weight": 4
+    },
+    {
+      "word": "天庭",
+      "weight": 3
+    },
+    {
+      "word": "长生",
+      "weight": 3
+    },
+    {
+      "word": "求道",
+      "weight": 3
+    },
+    {
+      "word": "炼体",
+      "weight": 3
+    }
   ]
 }

@@ -1,38 +1,24 @@
 {
+  "extends": "_base_general",
   "name": "chinese_weird",
   "sort_order": 115,
-  "version": "2.1.0",
-  "version_history": [
-    {
-      "version": "2.1.0",
-      "date": "2026-06-08",
-      "changes": [
-        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
-      ]
-    },
-    {
-      "version": "2.0.0",
-      "date": "2026-06-07",
-      "changes": [
-        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
-      ]
-    }
-  ],
-  "min_supported_scanner_version": "1.5.0",
-  "breaking_changes": false,
   "display_name": "中式诡异/规则怪谈专长分析",
   "description": "关注中式民俗禁忌、规则怪谈、怪异副本、逃生验证和现实侵蚀，区别于以旧日外神、序列魔药和宇宙恐怖为核心的克系诡秘。",
-  "enabled_stages": [
-    "character_analysis",
-    "general_scan",
-    "general_report"
-  ],
-  "rules_file": "rules.json",
-  "report_mode": "general",
   "cross_profile_rules": {
     "harem": {
-      "import_categories": ["雷点（严重毒点）", "郁闷点"],
-      "import_points": ["绿帽", "死女", "送女", "前世雷", "破鞋/非处/非初", "漏女", "亵女"]
+      "import_categories": [
+        "雷点（严重毒点）",
+        "郁闷点"
+      ],
+      "import_points": [
+        "绿帽",
+        "死女",
+        "送女",
+        "前世雷",
+        "破鞋/非处/非初",
+        "漏女",
+        "亵女"
+      ]
     }
   },
   "scan_focus": [
@@ -62,30 +48,105 @@
     "overall_assessment"
   ],
   "inference_keywords": [
-    {"word": "中式诡异", "weight": 5},
-    {"word": "规则怪谈", "weight": 5},
-    {"word": "怪谈规则", "weight": 5},
-    {"word": "怪异副本", "weight": 5},
-    {"word": "怪谈副本", "weight": 5},
-    {"word": "诡异复苏", "weight": 5},
-    {"word": "民俗怪谈", "weight": 5},
-    {"word": "禁忌规则", "weight": 5},
-    {"word": "规则污染", "weight": 4},
-    {"word": "隐藏规则", "weight": 4},
-    {"word": "错误规则", "weight": 4},
-    {"word": "村规", "weight": 4},
-    {"word": "祠堂", "weight": 4},
-    {"word": "纸人", "weight": 4},
-    {"word": "红白喜事", "weight": 4},
-    {"word": "阴婚", "weight": 4},
-    {"word": "香火", "weight": 3},
-    {"word": "祖坟", "weight": 3},
-    {"word": "禁忌", "weight": 3},
-    {"word": "诡村", "weight": 4},
-    {"word": "逃生", "weight": 3},
-    {"word": "通关规则", "weight": 4},
-    {"word": "现实侵蚀", "weight": 4},
-    {"word": "怪谈直播", "weight": 4},
-    {"word": "怪谈档案", "weight": 4}
+    {
+      "word": "中式诡异",
+      "weight": 5
+    },
+    {
+      "word": "规则怪谈",
+      "weight": 5
+    },
+    {
+      "word": "怪谈规则",
+      "weight": 5
+    },
+    {
+      "word": "怪异副本",
+      "weight": 5
+    },
+    {
+      "word": "怪谈副本",
+      "weight": 5
+    },
+    {
+      "word": "诡异复苏",
+      "weight": 5
+    },
+    {
+      "word": "民俗怪谈",
+      "weight": 5
+    },
+    {
+      "word": "禁忌规则",
+      "weight": 5
+    },
+    {
+      "word": "规则污染",
+      "weight": 4
+    },
+    {
+      "word": "隐藏规则",
+      "weight": 4
+    },
+    {
+      "word": "错误规则",
+      "weight": 4
+    },
+    {
+      "word": "村规",
+      "weight": 4
+    },
+    {
+      "word": "祠堂",
+      "weight": 4
+    },
+    {
+      "word": "纸人",
+      "weight": 4
+    },
+    {
+      "word": "红白喜事",
+      "weight": 4
+    },
+    {
+      "word": "阴婚",
+      "weight": 4
+    },
+    {
+      "word": "香火",
+      "weight": 3
+    },
+    {
+      "word": "祖坟",
+      "weight": 3
+    },
+    {
+      "word": "禁忌",
+      "weight": 3
+    },
+    {
+      "word": "诡村",
+      "weight": 4
+    },
+    {
+      "word": "逃生",
+      "weight": 3
+    },
+    {
+      "word": "通关规则",
+      "weight": 4
+    },
+    {
+      "word": "现实侵蚀",
+      "weight": 4
+    },
+    {
+      "word": "怪谈直播",
+      "weight": 4
+    },
+    {
+      "word": "怪谈档案",
+      "weight": 4
+    }
   ]
 }

@@ -1,34 +1,9 @@
 {
+  "extends": "_base_general",
   "name": "entertainment_industry",
   "sort_order": 130,
-  "version": "2.1.0",
-  "version_history": [
-    {
-      "version": "2.1.0",
-      "date": "2026-06-08",
-      "changes": [
-        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
-      ]
-    },
-    {
-      "version": "2.0.0",
-      "date": "2026-06-07",
-      "changes": [
-        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
-      ]
-    }
-  ],
-  "min_supported_scanner_version": "1.5.0",
-  "breaking_changes": false,
   "display_name": "娱乐圈/文娱专长分析",
   "description": "关注作品创作、资源博弈、舆论营销、人设经营和事业成长线。",
-  "enabled_stages": [
-    "character_analysis",
-    "general_scan",
-    "general_report"
-  ],
-  "rules_file": "rules.json",
-  "report_mode": "general",
   "scan_focus": [
     "影视、音乐、综艺、网文、直播或游戏等文娱赛道",
     "剧本、歌曲、演技、导演、制作和作品质量",

@@ -1,34 +1,24 @@
 {
+  "extends": "_base_general",
   "name": "isekai_lightnovel",
   "sort_order": 180,
-  "version": "2.1.0",
-  "version_history": [
-    {
-      "version": "2.1.0",
-      "date": "2026-06-08",
-      "changes": [
-        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
-      ]
-    },
-    {
-      "version": "2.0.0",
-      "date": "2026-06-07",
-      "changes": [
-        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
-      ]
-    }
-  ],
-  "min_supported_scanner_version": "1.5.0",
-  "breaking_changes": false,
   "display_name": "异世界/轻小说专长分析",
   "description": "关注穿越转生、异世界规则、种族文化、贵族政治、冒险队伍、恋爱喜剧、慢生活元素和轻小说节奏。",
-  "enabled_stages": ["character_analysis", "general_scan", "general_report"],
-  "rules_file": "rules.json",
-  "report_mode": "general",
   "cross_profile_rules": {
     "harem": {
-      "import_categories": ["雷点（严重毒点）", "郁闷点"],
-      "import_points": ["绿帽", "死女", "送女", "前世雷", "破鞋/非处/非初", "漏女", "亵女"]
+      "import_categories": [
+        "雷点（严重毒点）",
+        "郁闷点"
+      ],
+      "import_points": [
+        "绿帽",
+        "死女",
+        "送女",
+        "前世雷",
+        "破鞋/非处/非初",
+        "漏女",
+        "亵女"
+      ]
     }
   },
   "scan_focus": [
@@ -61,35 +51,125 @@
     "overall_assessment"
   ],
   "inference_keywords": [
-    {"word": "异世界", "weight": 5},
-    {"word": "轻小说", "weight": 5},
-    {"word": "转生", "weight": 5},
-    {"word": "穿越", "weight": 4},
-    {"word": "召唤", "weight": 3},
-    {"word": "勇者", "weight": 5},
-    {"word": "魔王", "weight": 5},
-    {"word": "冒险者公会", "weight": 4},
-    {"word": "地城", "weight": 4},
-    {"word": "地下城", "weight": 4},
-    {"word": "队伍", "weight": 2},
-    {"word": "职业等级", "weight": 4},
-    {"word": "技能", "weight": 4},
-    {"word": "魔法师", "weight": 3},
-    {"word": "精灵", "weight": 3},
-    {"word": "兽人", "weight": 3},
-    {"word": "史莱姆", "weight": 4},
-    {"word": "贵族", "weight": 4},
-    {"word": "王国", "weight": 4},
-    {"word": "帝国", "weight": 3},
-    {"word": "魔法", "weight": 4},
-    {"word": "魔物", "weight": 3},
-    {"word": "龙族", "weight": 3},
-    {"word": "亚人", "weight": 3},
-    {"word": "哥布林", "weight": 3},
-    {"word": "美食", "weight": 3},
-    {"word": "经营", "weight": 3},
-    {"word": "慢生活", "weight": 4},
-    {"word": "料理", "weight": 3},
-    {"word": "冒险", "weight": 3}
+    {
+      "word": "异世界",
+      "weight": 5
+    },
+    {
+      "word": "轻小说",
+      "weight": 5
+    },
+    {
+      "word": "转生",
+      "weight": 5
+    },
+    {
+      "word": "穿越",
+      "weight": 4
+    },
+    {
+      "word": "召唤",
+      "weight": 3
+    },
+    {
+      "word": "勇者",
+      "weight": 5
+    },
+    {
+      "word": "魔王",
+      "weight": 5
+    },
+    {
+      "word": "冒险者公会",
+      "weight": 4
+    },
+    {
+      "word": "地城",
+      "weight": 4
+    },
+    {
+      "word": "地下城",
+      "weight": 4
+    },
+    {
+      "word": "队伍",
+      "weight": 2
+    },
+    {
+      "word": "职业等级",
+      "weight": 4
+    },
+    {
+      "word": "技能",
+      "weight": 4
+    },
+    {
+      "word": "魔法师",
+      "weight": 3
+    },
+    {
+      "word": "精灵",
+      "weight": 3
+    },
+    {
+      "word": "兽人",
+      "weight": 3
+    },
+    {
+      "word": "史莱姆",
+      "weight": 4
+    },
+    {
+      "word": "贵族",
+      "weight": 4
+    },
+    {
+      "word": "王国",
+      "weight": 4
+    },
+    {
+      "word": "帝国",
+      "weight": 3
+    },
+    {
+      "word": "魔法",
+      "weight": 4
+    },
+    {
+      "word": "魔物",
+      "weight": 3
+    },
+    {
+      "word": "龙族",
+      "weight": 3
+    },
+    {
+      "word": "亚人",
+      "weight": 3
+    },
+    {
+      "word": "哥布林",
+      "weight": 3
+    },
+    {
+      "word": "美食",
+      "weight": 3
+    },
+    {
+      "word": "经营",
+      "weight": 3
+    },
+    {
+      "word": "慢生活",
+      "weight": 4
+    },
+    {
+      "word": "料理",
+      "weight": 3
+    },
+    {
+      "word": "冒险",
+      "weight": 3
+    }
   ]
 }

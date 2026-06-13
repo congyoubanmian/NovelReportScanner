@@ -1,42 +1,41 @@
 {
+  "extends": "_base_general",
   "name": "history",
   "sort_order": 30,
-  "version": "2.1.0",
-  "version_history": [
-    {
-      "version": "2.1.0",
-      "date": "2026-06-08",
-      "changes": [
-        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
-      ]
-    },
-    {
-      "version": "2.0.0",
-      "date": "2026-06-07",
-      "changes": [
-        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
-      ]
-    }
-  ],
-  "min_supported_scanner_version": "1.5.0",
-  "breaking_changes": false,
   "display_name": "历史小说专长分析",
   "description": "在通用小说分析基础上，重点检查时代背景、制度逻辑、战争/权谋结构、人物立场和历史氛围自洽性。",
-  "enabled_stages": [
-    "character_analysis",
-    "general_scan",
-    "general_report"
-  ],
-  "rules_file": "rules.json",
-  "report_mode": "general",
   "cross_profile_rules": {
     "harem": {
-      "import_categories": ["雷点（严重毒点）", "郁闷点"],
-      "import_points": ["绿帽", "死女", "送女", "前世雷", "破鞋/非处/非初", "漏女", "亵女"]
+      "import_categories": [
+        "雷点（严重毒点）",
+        "郁闷点"
+      ],
+      "import_points": [
+        "绿帽",
+        "死女",
+        "送女",
+        "前世雷",
+        "破鞋/非处/非初",
+        "漏女",
+        "亵女"
+      ]
     },
     "military_war": {
-      "import_categories": ["战争类型与规模", "战术、后勤与战斗描写", "政治与外交"],
-      "import_points": ["时代定位", "战略目标", "战役结构", "战术执行", "后勤通信", "战损代价", "政治目的", "外交博弈"]
+      "import_categories": [
+        "战争类型与规模",
+        "战术、后勤与战斗描写",
+        "政治与外交"
+      ],
+      "import_points": [
+        "时代定位",
+        "战略目标",
+        "战役结构",
+        "战术执行",
+        "后勤通信",
+        "战损代价",
+        "政治目的",
+        "外交博弈"
+      ]
     }
   },
   "scan_focus": [
@@ -66,50 +65,185 @@
     "overall_assessment"
   ],
   "inference_keywords": [
-    {"word": "皇帝", "weight": 3},
-    {"word": "朝廷", "weight": 3},
-    {"word": "宰相", "weight": 3},
-    {"word": "官职", "weight": 2},
-    {"word": "科举", "weight": 3},
-    {"word": "藩镇", "weight": 3},
-    {"word": "诸侯", "weight": 3},
-    {"word": "边军", "weight": 2},
-    {"word": "骑兵", "weight": 2},
-    {"word": "史书", "weight": 2},
-    {"word": "大明", "weight": 4},
-    {"word": "大唐", "weight": 4},
-    {"word": "大宋", "weight": 4},
-    {"word": "三国", "weight": 4},
-    {"word": "汉末", "weight": 4},
-    {"word": "王朝", "weight": 3},
-    {"word": "郡县", "weight": 2},
-    {"word": "爵位", "weight": 2},
-    {"word": "礼法", "weight": 2},
-    {"word": "庙堂", "weight": 2},
-    {"word": "穿越", "weight": 4},
-    {"word": "重生古代", "weight": 4},
-    {"word": "现代人", "weight": 3},
-    {"word": "年号", "weight": 3},
-    {"word": "宦官", "weight": 3},
-    {"word": "外戚", "weight": 3},
-    {"word": "士族", "weight": 3},
-    {"word": "门阀", "weight": 3},
-    {"word": "变法", "weight": 3},
-    {"word": "太子", "weight": 2},
-    {"word": "皇后", "weight": 2},
-    {"word": "和亲", "weight": 2},
-    {"word": "赋税", "weight": 2},
-    {"word": "徭役", "weight": 2},
-    {"word": "篡位", "weight": 3},
-    {"word": "登基", "weight": 2},
-    {"word": "统一", "weight": 2},
-    {"word": "外敌", "weight": 2},
-    {"word": "勤王", "weight": 2},
-    {"word": "清君侧", "weight": 3},
-    {"word": "锦衣卫", "weight": 3},
-    {"word": "东厂", "weight": 3},
-    {"word": "岳飞", "weight": 3},
-    {"word": "诸葛亮", "weight": 3},
-    {"word": "曹操", "weight": 3}
+    {
+      "word": "皇帝",
+      "weight": 3
+    },
+    {
+      "word": "朝廷",
+      "weight": 3
+    },
+    {
+      "word": "宰相",
+      "weight": 3
+    },
+    {
+      "word": "官职",
+      "weight": 2
+    },
+    {
+      "word": "科举",
+      "weight": 3
+    },
+    {
+      "word": "藩镇",
+      "weight": 3
+    },
+    {
+      "word": "诸侯",
+      "weight": 3
+    },
+    {
+      "word": "边军",
+      "weight": 2
+    },
+    {
+      "word": "骑兵",
+      "weight": 2
+    },
+    {
+      "word": "史书",
+      "weight": 2
+    },
+    {
+      "word": "大明",
+      "weight": 4
+    },
+    {
+      "word": "大唐",
+      "weight": 4
+    },
+    {
+      "word": "大宋",
+      "weight": 4
+    },
+    {
+      "word": "三国",
+      "weight": 4
+    },
+    {
+      "word": "汉末",
+      "weight": 4
+    },
+    {
+      "word": "王朝",
+      "weight": 3
+    },
+    {
+      "word": "郡县",
+      "weight": 2
+    },
+    {
+      "word": "爵位",
+      "weight": 2
+    },
+    {
+      "word": "礼法",
+      "weight": 2
+    },
+    {
+      "word": "庙堂",
+      "weight": 2
+    },
+    {
+      "word": "穿越",
+      "weight": 4
+    },
+    {
+      "word": "重生古代",
+      "weight": 4
+    },
+    {
+      "word": "现代人",
+      "weight": 3
+    },
+    {
+      "word": "年号",
+      "weight": 3
+    },
+    {
+      "word": "宦官",
+      "weight": 3
+    },
+    {
+      "word": "外戚",
+      "weight": 3
+    },
+    {
+      "word": "士族",
+      "weight": 3
+    },
+    {
+      "word": "门阀",
+      "weight": 3
+    },
+    {
+      "word": "变法",
+      "weight": 3
+    },
+    {
+      "word": "太子",
+      "weight": 2
+    },
+    {
+      "word": "皇后",
+      "weight": 2
+    },
+    {
+      "word": "和亲",
+      "weight": 2
+    },
+    {
+      "word": "赋税",
+      "weight": 2
+    },
+    {
+      "word": "徭役",
+      "weight": 2
+    },
+    {
+      "word": "篡位",
+      "weight": 3
+    },
+    {
+      "word": "登基",
+      "weight": 2
+    },
+    {
+      "word": "统一",
+      "weight": 2
+    },
+    {
+      "word": "外敌",
+      "weight": 2
+    },
+    {
+      "word": "勤王",
+      "weight": 2
+    },
+    {
+      "word": "清君侧",
+      "weight": 3
+    },
+    {
+      "word": "锦衣卫",
+      "weight": 3
+    },
+    {
+      "word": "东厂",
+      "weight": 3
+    },
+    {
+      "word": "岳飞",
+      "weight": 3
+    },
+    {
+      "word": "诸葛亮",
+      "weight": 3
+    },
+    {
+      "word": "曹操",
+      "weight": 3
+    }
   ]
 }

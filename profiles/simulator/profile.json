@@ -1,38 +1,24 @@
 {
+  "extends": "_base_general",
   "name": "simulator",
   "sort_order": 220,
-  "version": "2.1.0",
-  "version_history": [
-    {
-      "version": "2.1.0",
-      "date": "2026-06-08",
-      "changes": [
-        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
-      ]
-    },
-    {
-      "version": "2.0.0",
-      "date": "2026-06-07",
-      "changes": [
-        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
-      ]
-    }
-  ],
-  "min_supported_scanner_version": "1.5.0",
-  "breaking_changes": false,
   "display_name": "模拟器/人生推演专长分析",
   "description": "关注模拟器推演人生、未来或多分支选择，检查推演-验证-反哺现实循环是否成立，避免只把模拟器当普通系统面板。",
-  "enabled_stages": [
-    "character_analysis",
-    "general_scan",
-    "general_report"
-  ],
-  "rules_file": "rules.json",
-  "report_mode": "general",
   "cross_profile_rules": {
     "harem": {
-      "import_categories": ["雷点（严重毒点）", "郁闷点"],
-      "import_points": ["绿帽", "死女", "送女", "前世雷", "破鞋/非处/非初", "漏女", "亵女"]
+      "import_categories": [
+        "雷点（严重毒点）",
+        "郁闷点"
+      ],
+      "import_points": [
+        "绿帽",
+        "死女",
+        "送女",
+        "前世雷",
+        "破鞋/非处/非初",
+        "漏女",
+        "亵女"
+      ]
     }
   },
   "scan_focus": [
@@ -62,21 +48,69 @@
     "overall_assessment"
   ],
   "inference_keywords": [
-    {"word": "模拟器", "weight": 5},
-    {"word": "人生模拟", "weight": 5},
-    {"word": "未来推演", "weight": 5},
-    {"word": "模拟人生", "weight": 5},
-    {"word": "推演", "weight": 4},
-    {"word": "模拟结果", "weight": 5},
-    {"word": "模拟结算", "weight": 5},
-    {"word": "结算奖励", "weight": 4},
-    {"word": "天赋词条", "weight": 5},
-    {"word": "词条", "weight": 3},
-    {"word": "重开", "weight": 4},
-    {"word": "读档", "weight": 4},
-    {"word": "人生轨迹", "weight": 4},
-    {"word": "分支选择", "weight": 4},
-    {"word": "未来情报", "weight": 4},
-    {"word": "预知未来", "weight": 3}
+    {
+      "word": "模拟器",
+      "weight": 5
+    },
+    {
+      "word": "人生模拟",
+      "weight": 5
+    },
+    {
+      "word": "未来推演",
+      "weight": 5
+    },
+    {
+      "word": "模拟人生",
+      "weight": 5
+    },
+    {
+      "word": "推演",
+      "weight": 4
+    },
+    {
+      "word": "模拟结果",
+      "weight": 5
+    },
+    {
+      "word": "模拟结算",
+      "weight": 5
+    },
+    {
+      "word": "结算奖励",
+      "weight": 4
+    },
+    {
+      "word": "天赋词条",
+      "weight": 5
+    },
+    {
+      "word": "词条",
+      "weight": 3
+    },
+    {
+      "word": "重开",
+      "weight": 4
+    },
+    {
+      "word": "读档",
+      "weight": 4
+    },
+    {
+      "word": "人生轨迹",
+      "weight": 4
+    },
+    {
+      "word": "分支选择",
+      "weight": 4
+    },
+    {
+      "word": "未来情报",
+      "weight": 4
+    },
+    {
+      "word": "预知未来",
+      "weight": 3
+    }
   ]
 }

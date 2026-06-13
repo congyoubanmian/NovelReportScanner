@@ -1,38 +1,24 @@
 {
+  "extends": "_base_general",
   "name": "game_system",
   "sort_order": 70,
-  "version": "2.1.0",
-  "version_history": [
-    {
-      "version": "2.1.0",
-      "date": "2026-06-08",
-      "changes": [
-        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
-      ]
-    },
-    {
-      "version": "2.0.0",
-      "date": "2026-06-07",
-      "changes": [
-        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
-      ]
-    }
-  ],
-  "min_supported_scanner_version": "1.5.0",
-  "breaking_changes": false,
   "display_name": "游戏/系统/无限流专长分析",
   "description": "在通用小说分析基础上，重点检查系统规则稳定性、副本/诸天世界多样性、数值成长平衡、玩家互动和系统机制创新性。涵盖无限流、诸天流、签到、挂机、加点等系统文变体；纯人生模拟/未来推演优先使用模拟器 profile。",
-  "enabled_stages": [
-    "character_analysis",
-    "general_scan",
-    "general_report"
-  ],
-  "rules_file": "rules.json",
-  "report_mode": "general",
   "cross_profile_rules": {
     "harem": {
-      "import_categories": ["雷点（严重毒点）", "郁闷点"],
-      "import_points": ["绿帽", "死女", "送女", "前世雷", "破鞋/非处/非初", "漏女", "亵女"]
+      "import_categories": [
+        "雷点（严重毒点）",
+        "郁闷点"
+      ],
+      "import_points": [
+        "绿帽",
+        "死女",
+        "送女",
+        "前世雷",
+        "破鞋/非处/非初",
+        "漏女",
+        "亵女"
+      ]
     }
   },
   "scan_focus": [
@@ -69,36 +55,129 @@
     "overall_assessment"
   ],
   "inference_keywords": [
-    {"word": "系统", "weight": 5},
-    {"word": "面板", "weight": 5},
-    {"word": "副本", "weight": 5},
-    {"word": "无限流", "weight": 5},
-    {"word": "诸天", "weight": 5},
-    {"word": "模拟器", "weight": 2},
-    {"word": "主神空间", "weight": 5},
-    {"word": "轮回空间", "weight": 5},
-    {"word": "属性", "weight": 3},
-    {"word": "技能", "weight": 3},
-    {"word": "任务", "weight": 3},
-    {"word": "奖励", "weight": 3},
-    {"word": "轮回", "weight": 4},
-    {"word": "玩家", "weight": 4},
-    {"word": "游戏", "weight": 3},
-    {"word": "等级", "weight": 3},
-    {"word": "经验值", "weight": 4},
-    {"word": "装备", "weight": 3},
-    {"word": "主神", "weight": 4},
-    {"word": "天赋", "weight": 3},
-    {"word": "万界", "weight": 4},
-    {"word": "位面", "weight": 4},
-    {"word": "穿梭", "weight": 4},
-    {"word": "签到", "weight": 4},
-    {"word": "加点", "weight": 4},
-    {"word": "挂机", "weight": 3},
-    {"word": "攻略", "weight": 3},
-    {"word": "NPC", "weight": 3},
-    {"word": "兑换", "weight": 3},
-    {"word": "生存点", "weight": 4},
-    {"word": "第四天灾", "weight": 4}
+    {
+      "word": "系统",
+      "weight": 5
+    },
+    {
+      "word": "面板",
+      "weight": 5
+    },
+    {
+      "word": "副本",
+      "weight": 5
+    },
+    {
+      "word": "无限流",
+      "weight": 5
+    },
+    {
+      "word": "诸天",
+      "weight": 5
+    },
+    {
+      "word": "模拟器",
+      "weight": 2
+    },
+    {
+      "word": "主神空间",
+      "weight": 5
+    },
+    {
+      "word": "轮回空间",
+      "weight": 5
+    },
+    {
+      "word": "属性",
+      "weight": 3
+    },
+    {
+      "word": "技能",
+      "weight": 3
+    },
+    {
+      "word": "任务",
+      "weight": 3
+    },
+    {
+      "word": "奖励",
+      "weight": 3
+    },
+    {
+      "word": "轮回",
+      "weight": 4
+    },
+    {
+      "word": "玩家",
+      "weight": 4
+    },
+    {
+      "word": "游戏",
+      "weight": 3
+    },
+    {
+      "word": "等级",
+      "weight": 3
+    },
+    {
+      "word": "经验值",
+      "weight": 4
+    },
+    {
+      "word": "装备",
+      "weight": 3
+    },
+    {
+      "word": "主神",
+      "weight": 4
+    },
+    {
+      "word": "天赋",
+      "weight": 3
+    },
+    {
+      "word": "万界",
+      "weight": 4
+    },
+    {
+      "word": "位面",
+      "weight": 4
+    },
+    {
+      "word": "穿梭",
+      "weight": 4
+    },
+    {
+      "word": "签到",
+      "weight": 4
+    },
+    {
+      "word": "加点",
+      "weight": 4
+    },
+    {
+      "word": "挂机",
+      "weight": 3
+    },
+    {
+      "word": "攻略",
+      "weight": 3
+    },
+    {
+      "word": "NPC",
+      "weight": 3
+    },
+    {
+      "word": "兑换",
+      "weight": 3
+    },
+    {
+      "word": "生存点",
+      "weight": 4
+    },
+    {
+      "word": "第四天灾",
+      "weight": 4
+    }
   ]
 }

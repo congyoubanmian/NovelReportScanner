@@ -1,34 +1,9 @@
 {
+  "extends": "_base_general",
   "name": "campus_youth",
   "sort_order": 160,
-  "version": "2.1.0",
-  "version_history": [
-    {
-      "version": "2.1.0",
-      "date": "2026-06-08",
-      "changes": [
-        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
-      ]
-    },
-    {
-      "version": "2.0.0",
-      "date": "2026-06-07",
-      "changes": [
-        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
-      ]
-    }
-  ],
-  "min_supported_scanner_version": "1.5.0",
-  "breaking_changes": false,
   "display_name": "校园/青春成长专长分析",
   "description": "关注校园环境、学习竞赛、同伴关系、家庭压力和青春成长弧线。",
-  "enabled_stages": [
-    "character_analysis",
-    "general_scan",
-    "general_report"
-  ],
-  "rules_file": "rules.json",
-  "report_mode": "general",
   "scan_focus": [
     "学校、班级、社团、宿舍、考试和升学环境",
     "学习、竞赛、艺体活动、社交关系和师生互动",

@@ -1,0 +1,31 @@
+{
+  "name": "_base_general",
+  "display_name": "General Base Profile (内部继承用)",
+  "description": "所有 general 类 profile 的公共字段模板，请勿直接使用。",
+  "version": "2.1.0",
+  "version_history": [
+    {
+      "version": "2.1.0",
+      "date": "2026-06-08",
+      "changes": [
+        "对齐 Kimi v3 profile 配置、规则维度、报告字段和兼容性元数据"
+      ]
+    },
+    {
+      "version": "2.0.0",
+      "date": "2026-06-07",
+      "changes": [
+        "完成多标签 profile 体系、summary_fields 和 scan_focus 扩展"
+      ]
+    }
+  ],
+  "min_supported_scanner_version": "1.5.0",
+  "breaking_changes": false,
+  "enabled_stages": [
+    "character_analysis",
+    "general_scan",
+    "general_report"
+  ],
+  "rules_file": "rules.json",
+  "report_mode": "general"
+}
