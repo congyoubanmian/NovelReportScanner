@@ -20,10 +20,12 @@ from shared_utils import (
     configure_rotating_file_logger,
     create_chat_completion,
     get_base_dir,
+    get_token_tracker,
+    init_token_tracker,
+    record_usage,
     read_file_safely,
     read_int_env,
 )
-from token_tracker import create_default_tracker
 from analysis_profiles import load_analysis_profile
 from toxic_reviewer import is_strict_harem_issue_type
 from reading_metrics import READING_METRICS_ENABLED
@@ -42,9 +44,6 @@ try:
 except Exception:
     OpenAI = None  # 若未安装 openai，润色功能将不可用
     APIStatusError = Exception
-
-# token 统计
-token_tracker = None
 
 SUMMARY_FIELD_TITLES = {
     "historical_logic": "历史制度与时代逻辑",
@@ -467,25 +466,6 @@ def summary_field_text(summary: dict, field: str, default: str = "未描述") ->
     if not values:
         return default
     return "；".join(str(x).strip() for x in values if str(x).strip()) or default
-
-
-def init_token_tracker(book_name, run_id=None):
-    global token_tracker
-    token_tracker = create_default_tracker(
-        "report.py",
-        book_name=book_name,
-        out_path=os.path.join(get_base_dir(), "results", "token_usage.json"),
-        run_id=run_id,
-    )
-    return token_tracker
-
-
-def record_usage(resp):
-    try:
-        if token_tracker is not None:
-            token_tracker.record(resp)
-    except Exception:
-        pass
 
 
 def get_report_logger():
@@ -5490,7 +5470,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         if novel_path_for_book:
             resolved_book_name = os.path.splitext(os.path.basename(novel_path_for_book))[0].strip()
     if resolved_book_name:
-        init_token_tracker(resolved_book_name, run_id=run_id)
+        init_token_tracker(resolved_book_name, run_id=run_id, module_name="report.py")
 
     checkpoint_data = load_report_checkpoint()
     jobs = checkpoint_data.get("jobs", {})
@@ -5597,8 +5577,9 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     save_report_checkpoint(checkpoint_data)
     log_report(f"checkpoint updated: {REPORT_CHECKPOINT_FILE}")
     log_report(f"\n已生成：{out_file}")
-    if token_tracker is not None:
-        snap = token_tracker.snapshot()
+    _tracker = get_token_tracker()
+    if _tracker is not None:
+        snap = _tracker.snapshot()
         log_report(
             f"Token 统计：输入 {snap.get('input', 0)} ，输出 {snap.get('output', 0)} ，总计 {snap.get('total', 0)}"
         )

@@ -312,11 +312,11 @@ chat_completion = create_chat_completion(logger=logger)
 token_tracker = None
 
 
-def init_token_tracker(book_name: str, run_id: Optional[str] = None, out_path: Optional[str] = None):
+def init_token_tracker(book_name: str, run_id: Optional[str] = None, out_path: Optional[str] = None, module_name: str = "novel_reviewer.py"):
     global token_tracker
     tracker_path = out_path or os.path.join(BASE_DIR, "results", "token_usage.json")
     token_tracker = create_default_tracker(
-        "novel_reviewer.py",
+        module_name,
         book_name=book_name,
         out_path=tracker_path,
         run_id=run_id,
@@ -330,7 +330,8 @@ def get_token_tracker():
 
 def record_usage(resp):
     try:
-        token_tracker.record(resp)
+        if token_tracker is not None:
+            token_tracker.record(resp)
     except Exception:
         pass
 

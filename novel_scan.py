@@ -10,12 +10,13 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 import threading
+from typing import Any, Dict, Optional
 try:
     from openai import APIStatusError
 except Exception:
     APIStatusError = Exception
 from tqdm import tqdm
-from token_tracker import create_default_tracker
+from token_tracker import create_default_tracker  # noqa: F401 — kept for backward compat re-export
 from shared_utils import (
     DEFAULT_MAX_403_RETRIES,
     DEFAULT_MAX_RETRIES,
@@ -28,12 +29,15 @@ from shared_utils import (
     diagnose_json_response_text,
     format_json_response_diagnostic,
     get_base_dir,
+    get_token_tracker,
+    init_token_tracker,
     iter_completed_futures,
     json_response_looks_truncated,
     read_file_safely,
     read_float_env,
     read_int_env,
     parse_json_object_lenient,
+    record_usage,
     should_retry_without_json_mode_error,
 )
 from prompt_templates import prompt_template_metadata, prompt_templates_metadata
@@ -544,27 +548,6 @@ chat_completion = create_chat_completion(
     base_delay=2,
     logger=logger,
 )
-
-token_tracker = None
-
-
-def init_token_tracker(book_name, run_id=None):
-    global token_tracker
-    token_tracker = create_default_tracker(
-        "novel_scan.py",
-        book_name=book_name,
-        out_path=os.path.join(get_base_dir(), "results", "token_usage.json"),
-        run_id=run_id,
-    )
-    return token_tracker
-
-
-def record_usage(resp):
-    try:
-        if token_tracker is not None:
-            token_tracker.record(resp)
-    except Exception:
-        pass
 
 def load_rules():
     """加载 JSON 规则文件"""
@@ -4945,7 +4928,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     NOVEL_FILE_PATH = novel_path or os.environ.get("NOVEL_PATH", os.path.join(base, "novels", "default.txt"))
     clean_filename = (book_name or os.path.splitext(os.path.basename(NOVEL_FILE_PATH))[0]).strip()
     current_book_name = clean_filename
-    init_token_tracker(current_book_name, run_id=run_id)
+    init_token_tracker(current_book_name, run_id=run_id, module_name="novel_scan.py")
 
     resume_dir = find_latest_scan_checkpoint(current_book_name)
     if resume_dir:
@@ -5246,10 +5229,11 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     print("\n" + "="*60)
     print("✅ 分析完成！")
     print(f"📄 报告: {report_file}")
-    if token_tracker is not None:
-        snap = token_tracker.snapshot()
+    _tracker = get_token_tracker()
+    if _tracker is not None:
+        snap = _tracker.snapshot()
         print(f"🔢 Token 统计: 输入 {snap.get('input', 0)} ，输出 {snap.get('output', 0)} ，总计 {snap.get('total', 0)}")
-        token_tracker.flush(status="finished")
+        _tracker.flush(status="finished")
     print("="*60)
     print(report[:2000]) # 打印前2000字预览
     return raw_data_path

@@ -14,7 +14,7 @@ except Exception:
 from tqdm import tqdm
 import concurrent.futures
 import threading
-from token_tracker import create_default_tracker
+from token_tracker import create_default_tracker  # noqa: F401 — re-exported by protagonist modules
 from fact_validator import classify_scan_error, discarded_fact, validate_harem_character_result
 from name_authority import build_conservative_alias_map, is_generic_person_name, is_unsafe_alias
 from shared_utils import (
@@ -30,12 +30,15 @@ from shared_utils import (
     diagnose_json_response_text,
     format_json_response_diagnostic,
     get_base_dir,
+    get_token_tracker,
+    init_token_tracker,
     iter_completed_futures,
     is_retryable_transport_error,
     json_response_looks_truncated,
     parse_json_object_lenient,
     read_int_env,
     read_file_safely,
+    record_usage,
 )
 
 BASE_URL = os.environ.get("BASE_URL", "https://api.deepseek.com")
@@ -847,28 +850,6 @@ def _call_json_chat_completion(messages, *, temperature=0.1, max_tokens=4000, fa
         record_usage_func=record_usage,
         parse_json_func=_safe_json_loads,
     )
-
-token_tracker = None
-
-
-def init_token_tracker(book_name, run_id=None):
-    global token_tracker
-    token_tracker = create_default_tracker(
-        "protagonist.py",
-        book_name=book_name,
-        out_path=os.path.join(get_base_dir(), "results", "token_usage.json"),
-        run_id=run_id,
-    )
-    return token_tracker
-
-
-def record_usage(resp):
-    """统计大模型输入/输出 token"""
-    try:
-        if token_tracker is not None:
-            token_tracker.record(resp)
-    except Exception:
-        pass
 
 
 def validate_config():
@@ -4893,7 +4874,7 @@ def main(novel_path=None, book_name=None, run_id=None):
     NOVEL_FILE_PATH = novel_path or os.environ.get("NOVEL_PATH", os.path.join(base, "novels", "default.txt"))
     print(f"★ 正在处理: {NOVEL_FILE_PATH}")
     clean_filename = (book_name or os.path.splitext(os.path.basename(NOVEL_FILE_PATH))[0]).strip()
-    init_token_tracker(clean_filename, run_id=run_id)
+    init_token_tracker(clean_filename, run_id=run_id, module_name="protagonist.py")
 
     resume_dir = find_latest_checkpoint_dir(clean_filename)
     if resume_dir:
@@ -5422,10 +5403,11 @@ def main(novel_path=None, book_name=None, run_id=None):
         print("? 分析完成！")
         print(f"? 详细数据: {detailed_file}")
         print(f"? 分析报告: {report_file}")
-        if token_tracker is not None:
-            snap = token_tracker.snapshot()
+        _tracker = get_token_tracker()
+        if _tracker is not None:
+            snap = _tracker.snapshot()
             print(f"? Token 统计: 输入 {snap.get('input', 0)} ，输出 {snap.get('output', 0)} ，总计 {snap.get('total', 0)}")
-            token_tracker.flush(status="finished")
+            _tracker.flush(status="finished")
         print("=" * 70)
         
         # 打印识别结果摘要
@@ -5453,8 +5435,9 @@ def main(novel_path=None, book_name=None, run_id=None):
         logger.error(f"程序执行失败: {e}", exc_info=True)
         print(f"\n? 错误: {e}")
         try:
-            if token_tracker is not None:
-                token_tracker.flush(status="error", reason=str(e))
+            _tracker = get_token_tracker()
+            if _tracker is not None:
+                _tracker.flush(status="error", reason=str(e))
         except Exception:
             pass
         return 1
