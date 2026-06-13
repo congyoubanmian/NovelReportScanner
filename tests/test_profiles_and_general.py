@@ -1936,9 +1936,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         code = (
             "import general_scan, novel_scan, protagonist, report\n"
             "assert general_scan.CHUNK_SIZE == 12000\n"
-            "assert general_scan.CHUNK_OVERLAP == 1000\n"
-            "assert general_scan.MAX_CHUNKS == 80\n"
-            "assert general_scan.CONTEXT_MAX_CHARS == 1600\n"
+            "assert general_scan.CHUNK_OVERLAP == 2000\n"
+            "assert general_scan.MAX_CHUNKS == 0\n"
+            "assert general_scan.CONTEXT_MAX_CHARS == 8000\n"
             "assert novel_scan.MAX_WORKERS == 6\n"
             "assert novel_scan.RESCAN_PRE_FILTER_THRESHOLD == 1.0\n"
             "assert protagonist.ALIAS_CROSS_MERGE_MAX_LIST_ITEMS == 3\n"
@@ -14327,7 +14327,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
 
         self.assertEqual(result["density_profile"]["level"], "low")
         self.assertEqual(result["density_profile"]["strategy"], "light")
-        self.assertEqual(calls[0]["max_tokens"], 2400)
+        self.assertEqual(calls[0]["max_tokens"], 4000)
         self.assertIn("密度策略：light", calls[0]["prompt"])
 
     def test_general_scan_entity_prescan_extracts_candidates_safely(self):
@@ -16817,11 +16817,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                     self.assertEqual(protagonist.main(novel_path=novel_path, book_name="ten_million"), 0)
 
                 sorted_scanned_indices = sorted(scanned_indices)
-                self.assertEqual(len(sorted_scanned_indices), 300)
+                self.assertEqual(len(sorted_scanned_indices), 1000)
                 self.assertEqual(sorted_scanned_indices[0], 0)
                 self.assertEqual(sorted_scanned_indices[-1], 999)
-                self.assertTrue(any(450 <= idx <= 550 for idx in sorted_scanned_indices))
                 self.assertIn(49, sorted_scanned_indices)
+                self.assertIn(500, sorted_scanned_indices)
                 mock_identify_heroines.assert_not_called()
                 mock_merge_heroines_final.assert_not_called()
                 self.assertEqual(exported_results[0]["profile_mode"], "general")
@@ -16836,8 +16836,8 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 with open(checkpoint_path, "r", encoding="utf-8") as f:
                     checkpoint = json.load(f)
                 self.assertTrue(checkpoint["progress"]["scanned"])
-                self.assertEqual(len(checkpoint["completed_chunks"]), 300)
-                self.assertEqual(checkpoint["chunk_plan_metadata"]["sampling_strategy"], "content_aware_timeline")
+                self.assertEqual(len(checkpoint["completed_chunks"]), 1000)
+                self.assertEqual(checkpoint["chunk_plan_metadata"]["sampling_strategy"], "full")
         finally:
             if old_profile is None:
                 os.environ.pop("ANALYSIS_PROFILE", None)
@@ -16893,14 +16893,14 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 data = json.load(f)
 
             sampled_indices = data["sampled_chunk_indices"]
-            self.assertEqual(scan_mock.call_count, 300)
+            self.assertEqual(scan_mock.call_count, 1000)
             self.assertEqual(data["text_length"], 10_000_000)
             self.assertEqual(data["source_chunk_count"], 1000)
-            self.assertEqual(data["chunk_count"], 300)
-            self.assertEqual(data["max_chunks"], 300)
-            self.assertEqual(data["chunk_sampling_strategy"], "content_aware_timeline")
+            self.assertEqual(data["chunk_count"], 1000)
+            self.assertEqual(data["max_chunks"], 0)
+            self.assertEqual(data["chunk_sampling_strategy"], "full")
             self.assertTrue(data["smart_density"])
-            self.assertTrue(data["content_aware_sampling"])
+            self.assertEqual(data["content_aware_sampling"], general_scan.CONTENT_AWARE_SAMPLING)
             self.assertEqual(data["content_aware_sampling_schema_version"], general_scan.CONTENT_AWARE_SAMPLING_SCHEMA_VERSION)
             self.assertTrue(data["foreshadowing_engineering_enabled"])
             self.assertEqual(data["foreshadowing_engineering_schema_version"], general_scan.FORESHADOWING_ENGINEERING_SCHEMA_VERSION)
@@ -16924,13 +16924,13 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertGreater(data["knowledge_base_counts"]["plot_timeline"], 0)
             self.assertEqual(data["knowledge_base"]["schema_version"], general_scan.KNOWLEDGE_BASE_SCHEMA_VERSION)
             self.assertEqual(merge_mock.call_count, 1)
-            self.assertEqual(sum(data["density_counts"].values()), 300)
+            self.assertEqual(sum(data["density_counts"].values()), 1000)
             self.assertEqual(data["prompt_templates"]["general_scan_chunk"]["version"], "v1")
             self.assertEqual(data["prompt_templates"]["general_summary"]["version"], "v1")
+            self.assertEqual(len(sampled_indices), 1000)
             self.assertEqual(sampled_indices[0], 1)
             self.assertEqual(sampled_indices[-1], 1000)
             self.assertIn(500, sampled_indices)
-            self.assertTrue(any(450 <= idx <= 550 for idx in sampled_indices))
 
     def test_general_scan_main_reuses_overall_summary_when_all_chunks_reused(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -17692,7 +17692,11 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertFalse(general_scan._is_fresh_summary(data_wrong_knowledge_base_merge, novel_path, "history"))
             data_without_content_sampling_meta = dict(data)
             data_without_content_sampling_meta.pop("content_aware_sampling_schema_version", None)
-            self.assertFalse(general_scan._is_fresh_summary(data_without_content_sampling_meta, novel_path, "history"))
+            if general_scan.CONTENT_AWARE_SAMPLING:
+                self.assertFalse(general_scan._is_fresh_summary(data_without_content_sampling_meta, novel_path, "history"))
+            else:
+                data_without_content_sampling_meta["content_aware_sampling"] = not general_scan.CONTENT_AWARE_SAMPLING
+                self.assertFalse(general_scan._is_fresh_summary(data_without_content_sampling_meta, novel_path, "history"))
             data["summary"] = {"book_overview": "ok"}
             self.assertTrue(general_scan._is_fresh_summary(data, novel_path, "history"))
             self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "general"))
@@ -17708,8 +17712,9 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
             self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "history"))
             data["prompt_templates"]["general_scan_chunk"]["version"] = "v1"
             self.assertTrue(general_scan._is_fresh_summary(data, novel_path, "history"))
-            data["max_chunks"] = general_scan.MAX_CHUNKS
-            self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "history"))
+            if general_scan.MAX_CHUNKS > 0:
+                data["max_chunks"] = general_scan.MAX_CHUNKS
+                self.assertFalse(general_scan._is_fresh_summary(data, novel_path, "history"))
         finally:
             os.unlink(novel_path)
 

@@ -24,17 +24,17 @@ from readability_scorer import compute_readability as _compute_readability, READ
 
 
 CHUNK_SIZE = read_int_env("GENERAL_SCAN_CHUNK_SIZE", 12000, min_value=1000)
-CHUNK_OVERLAP = read_int_env("GENERAL_SCAN_CHUNK_OVERLAP", 1000, min_value=0)
-MAX_CHUNKS = read_int_env("GENERAL_SCAN_MAX_CHUNKS", 80, min_value=0)
+CHUNK_OVERLAP = read_int_env("GENERAL_SCAN_CHUNK_OVERLAP", 2000, min_value=0)
+MAX_CHUNKS = read_int_env("GENERAL_SCAN_MAX_CHUNKS", 0, min_value=0)
 SMART_DENSITY = os.environ.get("GENERAL_SCAN_SMART_DENSITY", "1").strip() == "1"
-CONTENT_AWARE_SAMPLING = os.environ.get("GENERAL_SCAN_CONTENT_AWARE_SAMPLING", "1").strip() == "1"
+CONTENT_AWARE_SAMPLING = os.environ.get("GENERAL_SCAN_CONTENT_AWARE_SAMPLING", "0").strip() == "1"
 CONTENT_AWARE_SAMPLING_SCHEMA_VERSION = 1
 INCREMENTAL_REUSE = os.environ.get("GENERAL_SCAN_INCREMENTAL_REUSE", "1").strip() == "1"
 WRITING_QUALITY_ENABLED = os.environ.get("GENERAL_SCAN_WRITING_QUALITY", "1").strip() == "1"
 ZHIHU_WRITING_INSIGHTS_SCHEMA_VERSION = 1
 NARRATIVE_ARCHITECTURE_ENABLED = os.environ.get("GENERAL_SCAN_NARRATIVE_ARCHITECTURE", "1").strip() == "1"
 ROLLING_CONTEXT_ENABLED = os.environ.get("GENERAL_SCAN_ROLLING_CONTEXT", "1").strip() == "1"
-CONTEXT_MAX_CHARS = read_int_env("GENERAL_SCAN_CONTEXT_MAX_CHARS", 1600, min_value=0)
+CONTEXT_MAX_CHARS = read_int_env("GENERAL_SCAN_CONTEXT_MAX_CHARS", 8000, min_value=0)
 ROLLING_CONTEXT_SCHEMA_VERSION = 1
 FORESHADOWING_ENGINEERING_ENABLED = os.environ.get("GENERAL_SCAN_FORESHADOWING_ENGINEERING", "1").strip() == "1"
 FORESHADOWING_ENGINEERING_SCHEMA_VERSION = 1
@@ -53,7 +53,7 @@ ENTITY_PRESCAN_MAX_ITEMS = read_int_env("GENERAL_SCAN_ENTITY_PRESCAN_MAX_ITEMS",
 ENTITY_PRESCAN_PROMPT_ITEMS = read_int_env("GENERAL_SCAN_ENTITY_PRESCAN_PROMPT_ITEMS", 40, min_value=0)
 
 # ---- 两阶段自适应采样配置 ----
-TWO_STAGE_SAMPLING_ENABLED = os.environ.get("GENERAL_SCAN_TWO_STAGE_SAMPLING", "1").strip() == "1"
+TWO_STAGE_SAMPLING_ENABLED = os.environ.get("GENERAL_SCAN_TWO_STAGE_SAMPLING", "0").strip() == "1"
 TWO_STAGE_QUICK_MAX_TOKENS = read_int_env("GENERAL_SCAN_TWO_STAGE_QUICK_MAX_TOKENS", 300, min_value=100)
 TWO_STAGE_HIGH_VALUE_THRESHOLD = float(os.environ.get("GENERAL_SCAN_TWO_STAGE_HIGH_VALUE_THRESHOLD", "0.5"))
 
@@ -2898,7 +2898,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        max_tokens=2400 if density_profile.get("strategy") == "light" else 3800,
+        max_tokens=4000 if density_profile.get("strategy") == "light" else 6000,
     )
     return {
         "chunk_index": chunk_index,
@@ -3242,7 +3242,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         {"role": "user", "content": user_prompt},
     ]
     try:
-        data = _call_json(messages, max_tokens=5200)
+        data = _call_json(messages, max_tokens=8000)
     except Exception as exc:
         error_type = classify_scan_error(exc)
         if error_type not in {"context_overflow", "api_error", "timeout"}:
@@ -3259,7 +3259,7 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
                 {"role": "system", "content": system_prompt + "\n当前为降载重试，请优先保留高置信事实和主要风险。"},
                 {"role": "user", "content": compact_prompt},
             ],
-            max_tokens=3800,
+            max_tokens=6000,
         )
     summary = {
         "prompt_template": template_meta,
@@ -3354,7 +3354,7 @@ def _build_general_scan_output(*, clean_name, novel_file, profile, detail_path,
         "sampled_chunk_indices": selected_original_indices,
         "smart_density": SMART_DENSITY,
         "content_aware_sampling": CONTENT_AWARE_SAMPLING,
-        "content_aware_sampling_schema_version": CONTENT_AWARE_SAMPLING_SCHEMA_VERSION if CONTENT_AWARE_SAMPLING else None,
+        "content_aware_sampling_schema_version": CONTENT_AWARE_SAMPLING_SCHEMA_VERSION,
         "writing_quality_enabled": WRITING_QUALITY_ENABLED,
         "zhihu_writing_insights_schema_version": ZHIHU_WRITING_INSIGHTS_SCHEMA_VERSION if WRITING_QUALITY_ENABLED else None,
         "narrative_architecture_enabled": NARRATIVE_ARCHITECTURE_ENABLED,
