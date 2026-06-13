@@ -2,6 +2,7 @@ import json
 import os
 import hashlib
 import inspect
+import logging
 import re
 from collections import Counter
 from datetime import datetime
@@ -3305,6 +3306,13 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
     if READABILITY_SCORER_ENABLED and raw_text:
         readability = _compute_readability(raw_text)
         summary["readability"] = readability
+    # 伏笔全局注册表 — 事后全量匹配（不依赖LLM上下文记忆）
+    try:
+        from foreshadowing_registry import build_foreshadowing_registry
+        foreshadow_registry = build_foreshadowing_registry(chunk_results)
+        summary["foreshadowing_registry"] = foreshadow_registry.generate_report()
+    except Exception:
+        logging.warning("foreshadowing_registry 构建失败", exc_info=True)
     for field in specialty_fields:
         summary[field] = _summary_field_value(data, field)
     return summary
