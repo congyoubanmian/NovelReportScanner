@@ -4539,7 +4539,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         old_summaries = dict(novel_scan.CHUNK_SUMMARIES)
         old_diagnostics = dict(novel_scan.CHUNK_FAILURE_DIAGNOSTICS)
         old_detail_path = getattr(novel_scan, "_ACTIVE_DETAIL_PATH", None)
-        old_token_tracker = novel_scan.token_tracker
+        old_token_tracker = getattr(novel_scan, "token_tracker", None)
         old_enable_global_rescan = novel_scan.ENABLE_GLOBAL_RESCAN
         old_logger = novel_scan.logger
         try:

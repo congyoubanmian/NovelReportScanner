@@ -5583,7 +5583,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         log_report(
             f"Token 统计：输入 {snap.get('input', 0)} ，输出 {snap.get('output', 0)} ，总计 {snap.get('total', 0)}"
         )
-        token_tracker.flush(status="finished")
+        _tracker.flush(status="finished")
     log_report("[END] report generation finished")
 
 
