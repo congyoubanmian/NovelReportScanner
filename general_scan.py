@@ -3310,6 +3310,179 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
     return summary
 
 
+def _build_general_scan_output(*, clean_name, novel_file, profile, detail_path,
+                               manifest, text, source_chunk_count, chunks,
+                               selected_original_indices, effective_max_chunks,
+                               sampling_strategy, entity_prescan, rolling_context_state,
+                               chunk_results, summary, summary_reused, reused_chunk_count,
+                               scanned_chunk_count, failed, knowledge_base, raw_knowledge_base,
+                               knowledge_base_llm_merge_applied, knowledge_base_llm_merge_error):
+    """构建通用扫描的最终输出字典。"""
+    density_counts = {"low": 0, "medium": 0, "high": 0}
+    for item in chunk_results:
+        level = ((item.get("density_profile") or {}).get("level") or "medium")
+        if level not in density_counts:
+            level = "medium"
+        density_counts[level] += 1
+    failed_chunk_count = len(failed)
+    attempted_chunk_count = len(chunks)
+    successful_chunk_count = len(chunk_results)
+    failed_chunk_ratio = (failed_chunk_count / attempted_chunk_count) if attempted_chunk_count else 0.0
+    scan_coverage_ratio = (successful_chunk_count / attempted_chunk_count) if attempted_chunk_count else 0.0
+    partial_scan = failed_chunk_count > 0
+    return {
+        "schema_version": 1,
+        "analysis_profile": "general",
+        "specialty_profile": profile.name,
+        "profile_display_name": profile.display_name,
+        "scan_focus": profile.scan_focus,
+        "summary_fields": profile.summary_fields,
+        "book_name": clean_name,
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "novel_path": novel_file,
+        "novel_mtime": _novel_mtime(novel_file),
+        "novel_signature": novel_file_signature(novel_file),
+        "detail_path": detail_path,
+        "chunk_size": CHUNK_SIZE,
+        "chunk_overlap": CHUNK_OVERLAP,
+        "max_chunks": effective_max_chunks,
+        "base_max_chunks": MAX_CHUNKS,
+        "text_length": manifest.get("text_length") or len(text),
+        "source_chunk_count": source_chunk_count,
+        "chunk_count": len(chunks),
+        "chunk_sampling_strategy": sampling_strategy,
+        "sampled_chunk_indices": selected_original_indices,
+        "smart_density": SMART_DENSITY,
+        "content_aware_sampling": CONTENT_AWARE_SAMPLING,
+        "content_aware_sampling_schema_version": CONTENT_AWARE_SAMPLING_SCHEMA_VERSION if CONTENT_AWARE_SAMPLING else None,
+        "writing_quality_enabled": WRITING_QUALITY_ENABLED,
+        "zhihu_writing_insights_schema_version": ZHIHU_WRITING_INSIGHTS_SCHEMA_VERSION if WRITING_QUALITY_ENABLED else None,
+        "narrative_architecture_enabled": NARRATIVE_ARCHITECTURE_ENABLED,
+        "rolling_context_enabled": ROLLING_CONTEXT_ENABLED,
+        "rolling_context_schema_version": ROLLING_CONTEXT_SCHEMA_VERSION if ROLLING_CONTEXT_ENABLED else None,
+        "rolling_context_max_chars": CONTEXT_MAX_CHARS if ROLLING_CONTEXT_ENABLED else 0,
+        "rolling_context_state": rolling_context_state if ROLLING_CONTEXT_ENABLED else {},
+        "rolling_context_timeline_count": len(_compact_rolling_context_timeline(chunk_results)) if ROLLING_CONTEXT_ENABLED else 0,
+        "foreshadowing_engineering_enabled": FORESHADOWING_ENGINEERING_ENABLED,
+        "foreshadowing_engineering_schema_version": FORESHADOWING_ENGINEERING_SCHEMA_VERSION if FORESHADOWING_ENGINEERING_ENABLED else None,
+        "foreshadowing_engineering_timeline_count": len(_compact_foreshadowing_engineering_for_summary(chunk_results)) if FORESHADOWING_ENGINEERING_ENABLED else 0,
+        "semantic_layers_enabled": SEMANTIC_LAYERS_ENABLED,
+        "semantic_layers_schema_version": SEMANTIC_LAYERS_SCHEMA_VERSION if SEMANTIC_LAYERS_ENABLED else None,
+        "semantic_layers_timeline_count": len(_compact_semantic_layers_for_summary(chunk_results)) if SEMANTIC_LAYERS_ENABLED else 0,
+        "reader_experience_enabled": READER_EXPERIENCE_ENABLED,
+        "reader_experience_schema_version": READER_EXPERIENCE_SCHEMA_VERSION if READER_EXPERIENCE_ENABLED else None,
+        "reader_experience_timeline_count": len(_compact_reader_experience_for_summary(chunk_results)) if READER_EXPERIENCE_ENABLED else 0,
+        "continuity_audit_enabled": CONTINUITY_AUDIT_ENABLED,
+        "continuity_audit_schema_version": CONTINUITY_AUDIT_SCHEMA_VERSION if CONTINUITY_AUDIT_ENABLED else None,
+        "continuity_audit_timeline_count": len(_compact_continuity_for_summary(chunk_results)) if CONTINUITY_AUDIT_ENABLED else 0,
+        "entity_prescan_enabled": ENTITY_PRESCAN_ENABLED,
+        "entity_prescan_schema_version": ENTITY_PRESCAN_SCHEMA_VERSION if ENTITY_PRESCAN_ENABLED else None,
+        "entity_prescan_max_chars": ENTITY_PRESCAN_MAX_CHARS if ENTITY_PRESCAN_ENABLED else 0,
+        "entity_prescan_count": len(entity_prescan),
+        "entity_prescan_type_counts": _entity_prescan_type_counts(entity_prescan),
+        "entity_prescan": entity_prescan,
+        "knowledge_base_enabled": True,
+        "knowledge_base_schema_version": KNOWLEDGE_BASE_SCHEMA_VERSION,
+        "knowledge_base_llm_merge_enabled": KNOWLEDGE_BASE_LLM_MERGE_ENABLED,
+        "knowledge_base_llm_merge_applied": knowledge_base_llm_merge_applied,
+        "knowledge_base_llm_merge_error": knowledge_base_llm_merge_error,
+        "raw_knowledge_base_counts": _knowledge_base_counts(raw_knowledge_base),
+        "density_counts": density_counts,
+        "incremental_reuse": INCREMENTAL_REUSE,
+        "summary_reused": summary_reused,
+        "reused_chunk_count": reused_chunk_count,
+        "scanned_chunk_count": scanned_chunk_count,
+        "successful_chunk_count": successful_chunk_count,
+        "attempted_chunk_count": attempted_chunk_count,
+        "partial_scan": partial_scan,
+        "failed_chunk_count": failed_chunk_count,
+        "failed_chunk_ratio": round(failed_chunk_ratio, 6),
+        "scan_coverage_ratio": round(scan_coverage_ratio, 6),
+        "prompt_templates": prompt_templates_metadata("general_scan_chunk", "general_summary"),
+        "failed_chunks": failed,
+        "knowledge_base": knowledge_base,
+        "knowledge_base_counts": _knowledge_base_counts(knowledge_base),
+        "chunk_results": chunk_results,
+        "summary": summary,
+        "literary_metrics": summary.get("literary_metrics"),
+        "sentiment_arcs": summary.get("sentiment_arcs"),
+        "readability": summary.get("readability"),
+    }
+
+
+def _run_general_chunk_scan(chunks, selected_original_indices, source_chunk_count,
+                            sampling_strategy, reusable_results, entity_prescan, profile):
+    """执行通用扫描的逐块扫描循环，返回 (chunk_results, failed, reused_count, scanned_count, rolling_context_state)。"""
+    chunk_results = []
+    failed = []
+    reused_chunk_count = 0
+    scanned_chunk_count = 0
+    rolling_context_state = _empty_rolling_context_state()
+    scan_memory = ScanMemory()
+
+    for idx, chunk in enumerate(tqdm(chunks, desc="通用扫描")):
+        original_chunk_index = selected_original_indices[idx] if idx < len(selected_original_indices) else idx + 1
+        chunk_hash = _chunk_text_hash(chunk)
+        density_profile = _chunk_density_profile(chunk)
+        context_snapshot = {}
+        if ROLLING_CONTEXT_ENABLED:
+            context_snapshot = _rolling_context_snapshot(rolling_context_state)
+            if sampling_strategy != "full":
+                context_snapshot = dict(context_snapshot)
+                context_snapshot.update({
+                    "sampled_context": True,
+                    "source_chunk_count": source_chunk_count,
+                    "current_original_chunk_index": original_chunk_index,
+                    "sampling_note": (
+                        "当前扫描为全书内容感知抽样，前序上下文来自已扫描样本，不代表原文连续章节。"
+                        if sampling_strategy == "content_aware_timeline"
+                        else "当前扫描为全书均匀抽样，前序上下文来自已扫描样本，不代表原文连续章节。"
+                    ),
+                })
+            context_snapshot = _trim_context_snapshot(context_snapshot)
+        reusable_result = reusable_results.get(chunk_hash)
+        if reusable_result:
+            result = _copy_reused_chunk_result(
+                reusable_result,
+                idx,
+                original_chunk_index,
+                chunk_hash,
+                density_profile,
+            )
+            if ROLLING_CONTEXT_ENABLED:
+                result["context_snapshot_used"] = context_snapshot
+                rolling_context_state = _update_rolling_context_state(rolling_context_state, result)
+            chunk_results.append(result)
+            reused_chunk_count += 1
+            continue
+        try:
+            result = _scan_chunk_with_context_overflow_fallback(
+                chunk,
+                original_chunk_index - 1,
+                source_chunk_count or len(chunks),
+                profile=profile,
+                context_snapshot=context_snapshot,
+                entity_prescan=entity_prescan,
+            )
+            result["sample_index"] = idx
+            result["original_chunk_index"] = original_chunk_index
+            result["chunk_hash"] = chunk_hash
+            result.setdefault("density_profile", density_profile)
+            if ROLLING_CONTEXT_ENABLED:
+                result.setdefault("context_snapshot_used", context_snapshot)
+                rolling_context_state = _update_rolling_context_state(rolling_context_state, result)
+            chunk_results.append(result)
+            scanned_chunk_count += 1
+        except Exception as exc:
+            failed.append({
+                "chunk_index": original_chunk_index - 1,
+                "error": str(exc),
+                "error_type": classify_scan_error(exc),
+            })
+
+    return chunk_results, failed, reused_chunk_count, scanned_chunk_count, rolling_context_state
+
+
 def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile_override=None):
     base = get_base_dir()
     if novel_path:
@@ -3409,71 +3582,11 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
     reusable_results = {}
     if INCREMENTAL_REUSE and _summary_can_reuse_chunk_results(latest_data, profile.name):
         reusable_results = _reusable_chunk_result_map(latest_data)
-    chunk_results = []
-    failed = []
-    reused_chunk_count = 0
-    scanned_chunk_count = 0
-    rolling_context_state = _empty_rolling_context_state()
-    scan_memory = ScanMemory()
-    for idx, chunk in enumerate(tqdm(chunks, desc="通用扫描")):
-        original_chunk_index = selected_original_indices[idx] if idx < len(selected_original_indices) else idx + 1
-        chunk_hash = _chunk_text_hash(chunk)
-        density_profile = _chunk_density_profile(chunk)
-        context_snapshot = {}
-        if ROLLING_CONTEXT_ENABLED:
-            context_snapshot = _rolling_context_snapshot(rolling_context_state)
-            if sampling_strategy != "full":
-                context_snapshot = dict(context_snapshot)
-                context_snapshot.update({
-                    "sampled_context": True,
-                    "source_chunk_count": source_chunk_count,
-                    "current_original_chunk_index": original_chunk_index,
-                    "sampling_note": (
-                        "当前扫描为全书内容感知抽样，前序上下文来自已扫描样本，不代表原文连续章节。"
-                        if sampling_strategy == "content_aware_timeline"
-                        else "当前扫描为全书均匀抽样，前序上下文来自已扫描样本，不代表原文连续章节。"
-                    ),
-                })
-            context_snapshot = _trim_context_snapshot(context_snapshot)
-        reusable_result = reusable_results.get(chunk_hash)
-        if reusable_result:
-            result = _copy_reused_chunk_result(
-                reusable_result,
-                idx,
-                original_chunk_index,
-                chunk_hash,
-                density_profile,
-            )
-            if ROLLING_CONTEXT_ENABLED:
-                result["context_snapshot_used"] = context_snapshot
-                rolling_context_state = _update_rolling_context_state(rolling_context_state, result)
-            chunk_results.append(result)
-            reused_chunk_count += 1
-            continue
-        try:
-            result = _scan_chunk_with_context_overflow_fallback(
-                chunk,
-                original_chunk_index - 1,
-                source_chunk_count or len(chunks),
-                profile=profile,
-                context_snapshot=context_snapshot,
-                entity_prescan=entity_prescan,
-            )
-            result["sample_index"] = idx
-            result["original_chunk_index"] = original_chunk_index
-            result["chunk_hash"] = chunk_hash
-            result.setdefault("density_profile", density_profile)
-            if ROLLING_CONTEXT_ENABLED:
-                result.setdefault("context_snapshot_used", context_snapshot)
-                rolling_context_state = _update_rolling_context_state(rolling_context_state, result)
-            chunk_results.append(result)
-            scanned_chunk_count += 1
-        except Exception as exc:
-            failed.append({
-                "chunk_index": original_chunk_index - 1,
-                "error": str(exc),
-                "error_type": classify_scan_error(exc),
-            })
+    chunk_results, failed, reused_chunk_count, scanned_chunk_count, rolling_context_state = \
+        _run_general_chunk_scan(
+            chunks, selected_original_indices, source_chunk_count,
+            sampling_strategy, reusable_results, entity_prescan, profile,
+        )
 
     raw_knowledge_base = _build_knowledge_base(chunk_results) if chunk_results else {}
     knowledge_base = raw_knowledge_base
@@ -3499,96 +3612,16 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         summary_reused = True
     else:
         summary = _summarize_book(clean_name, chunk_results, profile=profile, knowledge_base=knowledge_base, raw_text=text) if chunk_results else {}
-    density_counts = {"low": 0, "medium": 0, "high": 0}
-    for item in chunk_results:
-        level = ((item.get("density_profile") or {}).get("level") or "medium")
-        if level not in density_counts:
-            level = "medium"
-        density_counts[level] += 1
-    failed_chunk_count = len(failed)
-    attempted_chunk_count = len(chunks)
-    successful_chunk_count = len(chunk_results)
-    failed_chunk_ratio = (failed_chunk_count / attempted_chunk_count) if attempted_chunk_count else 0.0
-    scan_coverage_ratio = (successful_chunk_count / attempted_chunk_count) if attempted_chunk_count else 0.0
-    partial_scan = failed_chunk_count > 0
-    out = {
-        "schema_version": 1,
-        "analysis_profile": "general",
-        "specialty_profile": profile.name,
-        "profile_display_name": profile.display_name,
-        "scan_focus": profile.scan_focus,
-        "summary_fields": profile.summary_fields,
-        "book_name": clean_name,
-        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "novel_path": novel_file,
-        "novel_mtime": _novel_mtime(novel_file),
-        "novel_signature": _novel_file_signature(novel_file),
-        "detail_path": detail_path,
-        "chunk_size": CHUNK_SIZE,
-        "chunk_overlap": CHUNK_OVERLAP,
-        "max_chunks": effective_max_chunks,
-        "base_max_chunks": MAX_CHUNKS,
-        "text_length": manifest.get("text_length") or len(text),
-        "source_chunk_count": source_chunk_count,
-        "chunk_count": len(chunks),
-        "chunk_sampling_strategy": sampling_strategy,
-        "sampled_chunk_indices": selected_original_indices,
-        "smart_density": SMART_DENSITY,
-        "content_aware_sampling": CONTENT_AWARE_SAMPLING,
-        "content_aware_sampling_schema_version": CONTENT_AWARE_SAMPLING_SCHEMA_VERSION if CONTENT_AWARE_SAMPLING else None,
-        "writing_quality_enabled": WRITING_QUALITY_ENABLED,
-        "zhihu_writing_insights_schema_version": ZHIHU_WRITING_INSIGHTS_SCHEMA_VERSION if WRITING_QUALITY_ENABLED else None,
-        "narrative_architecture_enabled": NARRATIVE_ARCHITECTURE_ENABLED,
-        "rolling_context_enabled": ROLLING_CONTEXT_ENABLED,
-        "rolling_context_schema_version": ROLLING_CONTEXT_SCHEMA_VERSION if ROLLING_CONTEXT_ENABLED else None,
-        "rolling_context_max_chars": CONTEXT_MAX_CHARS if ROLLING_CONTEXT_ENABLED else 0,
-        "rolling_context_state": rolling_context_state if ROLLING_CONTEXT_ENABLED else {},
-        "rolling_context_timeline_count": len(_compact_rolling_context_timeline(chunk_results)) if ROLLING_CONTEXT_ENABLED else 0,
-        "foreshadowing_engineering_enabled": FORESHADOWING_ENGINEERING_ENABLED,
-        "foreshadowing_engineering_schema_version": FORESHADOWING_ENGINEERING_SCHEMA_VERSION if FORESHADOWING_ENGINEERING_ENABLED else None,
-        "foreshadowing_engineering_timeline_count": len(_compact_foreshadowing_engineering_for_summary(chunk_results)) if FORESHADOWING_ENGINEERING_ENABLED else 0,
-        "semantic_layers_enabled": SEMANTIC_LAYERS_ENABLED,
-        "semantic_layers_schema_version": SEMANTIC_LAYERS_SCHEMA_VERSION if SEMANTIC_LAYERS_ENABLED else None,
-        "semantic_layers_timeline_count": len(_compact_semantic_layers_for_summary(chunk_results)) if SEMANTIC_LAYERS_ENABLED else 0,
-        "reader_experience_enabled": READER_EXPERIENCE_ENABLED,
-        "reader_experience_schema_version": READER_EXPERIENCE_SCHEMA_VERSION if READER_EXPERIENCE_ENABLED else None,
-        "reader_experience_timeline_count": len(_compact_reader_experience_for_summary(chunk_results)) if READER_EXPERIENCE_ENABLED else 0,
-        "continuity_audit_enabled": CONTINUITY_AUDIT_ENABLED,
-        "continuity_audit_schema_version": CONTINUITY_AUDIT_SCHEMA_VERSION if CONTINUITY_AUDIT_ENABLED else None,
-        "continuity_audit_timeline_count": len(_compact_continuity_for_summary(chunk_results)) if CONTINUITY_AUDIT_ENABLED else 0,
-        "entity_prescan_enabled": ENTITY_PRESCAN_ENABLED,
-        "entity_prescan_schema_version": ENTITY_PRESCAN_SCHEMA_VERSION if ENTITY_PRESCAN_ENABLED else None,
-        "entity_prescan_max_chars": ENTITY_PRESCAN_MAX_CHARS if ENTITY_PRESCAN_ENABLED else 0,
-        "entity_prescan_count": len(entity_prescan),
-        "entity_prescan_type_counts": _entity_prescan_type_counts(entity_prescan),
-        "entity_prescan": entity_prescan,
-        "knowledge_base_enabled": True,
-        "knowledge_base_schema_version": KNOWLEDGE_BASE_SCHEMA_VERSION,
-        "knowledge_base_llm_merge_enabled": KNOWLEDGE_BASE_LLM_MERGE_ENABLED,
-        "knowledge_base_llm_merge_applied": knowledge_base_llm_merge_applied,
-        "knowledge_base_llm_merge_error": knowledge_base_llm_merge_error,
-        "raw_knowledge_base_counts": _knowledge_base_counts(raw_knowledge_base),
-        "density_counts": density_counts,
-        "incremental_reuse": INCREMENTAL_REUSE,
-        "summary_reused": summary_reused,
-        "reused_chunk_count": reused_chunk_count,
-        "scanned_chunk_count": scanned_chunk_count,
-        "successful_chunk_count": successful_chunk_count,
-        "attempted_chunk_count": attempted_chunk_count,
-        "partial_scan": partial_scan,
-        "failed_chunk_count": failed_chunk_count,
-        "failed_chunk_ratio": round(failed_chunk_ratio, 6),
-        "scan_coverage_ratio": round(scan_coverage_ratio, 6),
-        "prompt_templates": prompt_templates_metadata("general_scan_chunk", "general_summary"),
-        "failed_chunks": failed,
-        "knowledge_base": knowledge_base,
-        "knowledge_base_counts": _knowledge_base_counts(knowledge_base),
-        "chunk_results": chunk_results,
-        "summary": summary,
-        "literary_metrics": summary.get("literary_metrics"),
-        "sentiment_arcs": summary.get("sentiment_arcs"),
-        "readability": summary.get("readability"),
-    }
+    out = _build_general_scan_output(
+        clean_name=clean_name, novel_file=novel_file, profile=profile, detail_path=detail_path,
+        manifest=manifest, text=text, source_chunk_count=source_chunk_count, chunks=chunks,
+        selected_original_indices=selected_original_indices, effective_max_chunks=effective_max_chunks,
+        sampling_strategy=sampling_strategy, entity_prescan=entity_prescan, rolling_context_state=rolling_context_state,
+        chunk_results=chunk_results, summary=summary, summary_reused=summary_reused, reused_chunk_count=reused_chunk_count,
+        scanned_chunk_count=scanned_chunk_count, failed=failed, knowledge_base=knowledge_base, raw_knowledge_base=raw_knowledge_base,
+        knowledge_base_llm_merge_applied=knowledge_base_llm_merge_applied, knowledge_base_llm_merge_error=knowledge_base_llm_merge_error,
+    )
+
     out_file = os.path.join(output_dir, "GENERAL_SUMMARY.json")
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
