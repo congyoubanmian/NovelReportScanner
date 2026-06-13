@@ -912,25 +912,28 @@ def _try_incremental_reuse(
             return None
 
         diff = diff_chunk_manifests(old_manifest, new_manifest)
-        reuse_set = set(diff["reuse_chunks"])
-        if not reuse_set:
+        # manifest chunk_index 是 1-based; processed_chunks/failed/summaries 是 0-based
+        reuse_1based = set(diff["reuse_chunks"])
+        if not reuse_1based:
             return None
+        reuse_0based = {idx - 1 for idx in reuse_1based}
 
-        # 保留未变 chunk 的结果
+        # issues/facts/extra_relations 的 chunk_index 字段是 1-based
         def _filter_by_chunk(items, key="chunk_index"):
             kept = []
             for item in items:
                 ci = item.get(key)
-                if ci is not None and int(ci) in reuse_set:
+                if ci is not None and int(ci) in reuse_1based:
                     kept.append(item)
             return kept
 
-        new_processed = {idx for idx in processed_chunks if idx in reuse_set}
+        # processed_chunks/failed/summaries 的 key 是 0-based
+        new_processed = {idx for idx in processed_chunks if idx in reuse_0based}
         new_issues = _filter_by_chunk(issues)
         new_heroine_facts = _filter_by_chunk(heroine_facts)
         new_extra = _filter_by_chunk(extra_relations)
-        new_failed = {idx for idx in failed_chunks if idx in reuse_set}
-        new_summaries = {k: v for k, v in chunk_summaries.items() if k in reuse_set}
+        new_failed = {idx for idx in failed_chunks if idx in reuse_0based}
+        new_summaries = {k: v for k, v in chunk_summaries.items() if k in reuse_0based}
 
         return (new_processed, new_issues, new_heroine_facts, new_extra,
                 new_failed, new_summaries)
@@ -5015,12 +5018,15 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         text_sig = outline_signature(text)
         outline_data = load_outline(outline_path)
         if outline_data and outline_data.get("text_signature") == text_sig:
-            print(f"📖 大纲已存在，复用（{outline_data.get("chapter_count", 0)} 章）")
+            _ch = outline_data.get("chapter_count", 0)
+            print(f"📖 大纲已存在，复用（{_ch} 章）")
         else:
             outline_data = generate_outline(text)
             outline_data["text_signature"] = text_sig
             save_outline(outline_data, outline_path)
-            print(f"📖 大纲预扫描完成（{outline_data.get("chapter_count", 0)} 章，{outline_data.get("total_chapters_in_novel", 0)} 章总计）")
+            _ch = outline_data.get("chapter_count", 0)
+            _total_ch = outline_data.get("total_chapters_in_novel", 0)
+            print(f"📖 大纲预扫描完成（{_ch} 章，{_total_ch} 章总计）")
 
     # 为每个 chunk 计算大纲上下文（基于 chunk 在原文中的位置）
     CHUNK_OUTLINE_BLOCKS = {}
