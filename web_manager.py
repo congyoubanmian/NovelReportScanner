@@ -72,7 +72,6 @@ STORAGE_HEALTH_CACHE = {"base_dir": None, "checked_at": 0.0, "summary": None}
 ACCESS_LOGGER = None
 EDITABLE_RUNTIME_CONFIG = {
     "max_workers": {"env": "MAX_WORKERS", "type": "int", "min": 1, "max": 64},
-    "web_concurrent_workers": {"env": "WEB_CONCURRENT_WORKERS", "type": "int", "min": 1, "max": 16},
     "rpm_limit": {"env": "RPM_LIMIT", "type": "int", "min": 0, "max": 1000000, "empty": True},
     "tpm_limit": {"env": "TPM_LIMIT", "type": "int", "min": 0, "max": 1000000000, "empty": True},
     "rate_limit_scope": {"env": "RATE_LIMIT_SCOPE", "type": "choice", "choices": {"auto", "global", "per_key"}},
@@ -2402,6 +2401,9 @@ def _start_worker_once():
     if WORKER_STARTED:
         return
     WORKER_STARTED = True
+    # NOTE: WEB_CONCURRENT_WORKERS 在此读取，但 _start_worker_once 只调用一次（WORKER_STARTED guard）。
+    # 运行时修改 web_concurrent_workers 不会动态增减已启动的 worker 线程。
+    # 如需更改并发数，重启 Web 服务后生效。
     for i in range(WEB_CONCURRENT_WORKERS):
         thread = threading.Thread(target=_worker_loop, daemon=True, name=f"scan-worker-{i+1}")
         thread.start()

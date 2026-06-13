@@ -37,7 +37,7 @@ from shared_utils import (
     should_retry_without_json_mode_error,
 )
 from prompt_templates import prompt_template_metadata, prompt_templates_metadata
-from text_anchor import build_chunk_manifest, build_semantic_chunk_manifest, save_chunk_manifest
+from text_anchor import build_chunk_manifest, build_semantic_chunk_manifest, save_chunk_manifest, diff_chunk_manifests, load_chunk_manifest, compute_chunk_text_hash
 from outline_prescan import generate_outline, outline_to_compact_text, outline_signature, save_outline, load_outline
 from scan_memory import ScanMemory, SCAN_MEMORY_ENABLED
 from fact_validator import classify_scan_error
@@ -887,6 +887,58 @@ def save_checkpoint(all_issues, all_heroine_facts, processed_chunks, extra_relat
         logger.error(f"保存断点失败: {e}")
 
 
+def _try_incremental_reuse(
+    checkpoint_file: str,
+    checkpoint_data: Dict[str, Any],
+    processed_chunks: set,
+    issues: list,
+    heroine_facts: list,
+    extra_relations: list,
+    failed_chunks: set,
+    chunk_summaries: Dict[int, str],
+) -> Optional[tuple]:
+    """当文本变化时，尝试用 content hash 保留未变 chunk 的结果。
+
+    从 checkpoint 同目录加载旧 chunk_manifest.json，与新 manifest 做 diff。
+    内容未变的 chunk 的 issues/facts/summaries 保留，变化部分丢弃。
+
+    返回 (processed_chunks, issues, heroine_facts, extra_relations,
+           failed_chunks, chunk_summaries) 或 None（无法增量复用）。
+    """
+    try:
+        old_manifest = getattr(_try_incremental_reuse, "_old_manifest", None)
+        new_manifest = getattr(_try_incremental_reuse, "_new_manifest", None)
+        if old_manifest is None or new_manifest is None:
+            return None
+
+        diff = diff_chunk_manifests(old_manifest, new_manifest)
+        reuse_set = set(diff["reuse_chunks"])
+        if not reuse_set:
+            return None
+
+        # 保留未变 chunk 的结果
+        def _filter_by_chunk(items, key="chunk_index"):
+            kept = []
+            for item in items:
+                ci = item.get(key)
+                if ci is not None and int(ci) in reuse_set:
+                    kept.append(item)
+            return kept
+
+        new_processed = {idx for idx in processed_chunks if idx in reuse_set}
+        new_issues = _filter_by_chunk(issues)
+        new_heroine_facts = _filter_by_chunk(heroine_facts)
+        new_extra = _filter_by_chunk(extra_relations)
+        new_failed = {idx for idx in failed_chunks if idx in reuse_set}
+        new_summaries = {k: v for k, v in chunk_summaries.items() if k in reuse_set}
+
+        return (new_processed, new_issues, new_heroine_facts, new_extra,
+                new_failed, new_summaries)
+    except Exception as exc:
+        logger.debug(f"增量复用失败: {exc}")
+        return None
+
+
 def load_checkpoint(checkpoint_file=None, chunk_plan_metadata=None, update_globals=True, rescan_plan_metadata=None):
     """加载扫描进度，若不存在返回空"""
     global CHUNK_SUMMARIES, CHUNK_FAILURE_DIAGNOSTICS
@@ -945,11 +997,29 @@ def load_checkpoint(checkpoint_file=None, chunk_plan_metadata=None, update_globa
             else CURRENT_CHUNK_PLAN_METADATA
         )
         if saved_chunk_plan and effective_chunk_plan and saved_chunk_plan != effective_chunk_plan:
-            logger.warning("⚠️ 检测到切块配置或文本长度变化，旧断点不再复用，将从头开始扫描。")
-            if update_globals:
-                CHUNK_SUMMARIES = {}
-                CHUNK_FAILURE_DIAGNOSTICS = {}
-            return [], [], set(), [], set(), None, None, set(), False
+            # 增量扫描: 尝试用 content hash 部分复用
+            incremental_result = _try_incremental_reuse(
+                effective_checkpoint, data, processed_chunks, issues, heroine_facts,
+                extra_relations, failed_chunks, loaded_chunk_summaries,
+            )
+            if incremental_result is not None:
+                (
+                    processed_chunks,
+                    issues,
+                    heroine_facts,
+                    extra_relations,
+                    failed_chunks,
+                    loaded_chunk_summaries,
+                ) = incremental_result
+                logger.info(
+                    f"📂 增量复用: 保留了 {len(processed_chunks)} 个未变 chunk 的结果"
+                )
+            else:
+                logger.warning("⚠️ 检测到切块配置或文本长度变化，无法增量复用，将从头开始扫描。")
+                if update_globals:
+                    CHUNK_SUMMARIES = {}
+                    CHUNK_FAILURE_DIAGNOSTICS = {}
+                return [], [], set(), [], set(), None, None, set(), False
         if rescan_plan_metadata is not None and (rescan_done_chunks or rescan_completed):
             if not saved_rescan_plan:
                 logger.warning("⚠️ 旧断点缺少全局补扫计划签名，将重新执行全局补扫阶段。")
@@ -4916,7 +4986,16 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
         return
     text = read_novel(NOVEL_FILE_PATH)
     chunk_manifest = build_semantic_chunk_manifest(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP) if os.environ.get("SEMANTIC_CHUNK_ENABLED", "1").strip() == "1" else build_chunk_manifest(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
+    # 增量扫描: 在覆盖前先读取旧 manifest，供 load_checkpoint 中的增量复用使用
     chunk_manifest_path = os.path.join(output_dir, "chunk_manifest.json")
+    _old_manifest_for_incremental = None
+    if os.path.exists(chunk_manifest_path):
+        try:
+            _old_manifest_for_incremental = load_chunk_manifest(chunk_manifest_path)
+        except Exception:
+            pass
+    _try_incremental_reuse._new_manifest = chunk_manifest
+    _try_incremental_reuse._old_manifest = _old_manifest_for_incremental
     save_chunk_manifest(chunk_manifest, chunk_manifest_path)
     chunks = [entry.get("text", "") for entry in chunk_manifest.get("chunks", [])]
     CURRENT_CHUNK_PLAN_METADATA = _build_chunk_plan_metadata(chunk_manifest=chunk_manifest)

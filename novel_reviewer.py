@@ -93,12 +93,16 @@ _FACT_DIMENSIONS = _CORE_FACT_DIMENSIONS + _EXTENDED_FACT_DIMENSIONS
 
 # 后宫二审会汇总 scan/detail 的大量证据。这里限制进入单次 LLM 的文本体积，
 # 避免 5万到 17万字符的大请求触发网关 504 或返回残缺 JSON。
-REVIEW_LLM_SECTION_MAX_CHARS = read_int_env("REVIEW_LLM_SECTION_MAX_CHARS", 12000, min_value=2000)
-REVIEW_LLM_FIELD_MAX_CHARS = read_int_env("REVIEW_LLM_FIELD_MAX_CHARS", 220, min_value=40)
-REVIEW_LLM_LIST_MAX_ITEMS = read_int_env("REVIEW_LLM_LIST_MAX_ITEMS", 80, min_value=5)
-
-# --- LLM payload 工具函数已抽出到 rv_llm_payload.py，此处 re-import 保持命名空间兼容 ---
-from rv_llm_payload import _clip_llm_text, _unique_llm_lines, _head_tail_llm_lines, _compact_llm_lines
+# 常量定义在 rv_llm_payload.py 中（单一来源），此处 re-import 保持命名空间兼容。
+from rv_llm_payload import (
+    REVIEW_LLM_SECTION_MAX_CHARS,
+    REVIEW_LLM_FIELD_MAX_CHARS,
+    REVIEW_LLM_LIST_MAX_ITEMS,
+    _clip_llm_text,
+    _unique_llm_lines,
+    _head_tail_llm_lines,
+    _compact_llm_lines,
+)
 
 
 def _call_json_chat_completion(messages, *, model: str = None, temperature: float = 0.1, max_tokens: int = None) -> Dict[str, Any]:
