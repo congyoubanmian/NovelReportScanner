@@ -54,6 +54,7 @@ SSE_SYNC_INTERVAL_SECONDS = read_float_env(
 SSE_MAX_CONNECTION_SECONDS = read_float_env("SSE_MAX_CONNECTION_SECONDS", 300.0, min_value=0.0)
 SCAN_CANCEL_TIMEOUT_SECONDS = read_float_env("SCAN_CANCEL_TIMEOUT_SECONDS", 5.0, min_value=0.0)
 SCAN_HEARTBEAT_INTERVAL_SECONDS = read_float_env("SCAN_HEARTBEAT_INTERVAL_SECONDS", 10.0, min_value=0.0)
+WEB_CONCURRENT_WORKERS = read_int_env("WEB_CONCURRENT_WORKERS", 1, min_value=1, max_value=16)
 SCAN_STALL_TIMEOUT_SECONDS = read_float_env("SCAN_STALL_TIMEOUT_SECONDS", 1200.0, min_value=0.0)
 SCAN_FUTURE_STALL_TIMEOUT_SECONDS = read_float_env("SCAN_FUTURE_STALL_TIMEOUT_SECONDS", 0.0, min_value=0.0)
 SCAN_LOG_DEGRADED_MIN_SECONDS = read_float_env("SCAN_LOG_DEGRADED_MIN_SECONDS", 3600.0, min_value=0.0)
@@ -71,6 +72,7 @@ STORAGE_HEALTH_CACHE = {"base_dir": None, "checked_at": 0.0, "summary": None}
 ACCESS_LOGGER = None
 EDITABLE_RUNTIME_CONFIG = {
     "max_workers": {"env": "MAX_WORKERS", "type": "int", "min": 1, "max": 64},
+    "web_concurrent_workers": {"env": "WEB_CONCURRENT_WORKERS", "type": "int", "min": 1, "max": 16},
     "rpm_limit": {"env": "RPM_LIMIT", "type": "int", "min": 0, "max": 1000000, "empty": True},
     "tpm_limit": {"env": "TPM_LIMIT", "type": "int", "min": 0, "max": 1000000000, "empty": True},
     "rate_limit_scope": {"env": "RATE_LIMIT_SCOPE", "type": "choice", "choices": {"auto", "global", "per_key"}},
@@ -2400,8 +2402,9 @@ def _start_worker_once():
     if WORKER_STARTED:
         return
     WORKER_STARTED = True
-    thread = threading.Thread(target=_worker_loop, daemon=True)
-    thread.start()
+    for i in range(WEB_CONCURRENT_WORKERS):
+        thread = threading.Thread(target=_worker_loop, daemon=True, name=f"scan-worker-{i+1}")
+        thread.start()
 
 
 def _try_load_runtime_config(interactive_context: str = "web"):
