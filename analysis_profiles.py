@@ -413,16 +413,51 @@ def _profile_dir(profile_name: str) -> str:
     return os.path.join(get_base_dir(), "profiles", profile_name)
 
 
-def _load_profile_manifest(profile_name: str) -> Dict[str, Any]:
+def _load_profile_manifest(profile_name: str, _seen=None) -> Dict[str, Any]:
+    """加载 profile.json，支持 'extends' 继承机制。
+
+    如果 profile.json 包含 "extends": "base_profile" 字段，
+    会先加载 base_profile 的 manifest，然后用当前 profile 的值覆盖。
+    支持 JSON 布尔值、列表和字典的合并策略：
+    - 标量（str/int/bool）: 子覆盖父
+    - 列表: 子替换父（不做元素合并）
+    - 字典: 递归合并（子覆盖父的同名键）
+    """
+    if _seen is None:
+        _seen = set()
+    if profile_name in _seen:
+        print(f"[WARN] profile 继承循环检测: {' -> '.join(_seen)} -> {profile_name}")
+        return {}
+    _seen.add(profile_name)
+
     manifest_path = os.path.join(_profile_dir(profile_name), "profile.json")
     if not os.path.exists(manifest_path):
         return {}
     try:
         data = json.loads(read_file_safely(manifest_path))
-        return data if isinstance(data, dict) else {}
+        if not isinstance(data, dict):
+            return {}
     except Exception as exc:
         print(f"[WARN] profile manifest 读取失败: {manifest_path} ({exc})")
         return {}
+
+    parent_name = data.pop("extends", None)
+    if parent_name and isinstance(parent_name, str):
+        parent_data = _load_profile_manifest(parent_name, _seen)
+        data = _merge_manifest(parent_data, data)
+
+    return data
+
+
+def _merge_manifest(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """递归合并两个 manifest dict。override 的值优先。"""
+    merged = dict(base)
+    for key, val in override.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(val, dict):
+            merged[key] = _merge_manifest(merged[key], val)
+        else:
+            merged[key] = val
+    return merged
 
 
 def load_analysis_profile(profile_name: str = None) -> AnalysisProfile:
