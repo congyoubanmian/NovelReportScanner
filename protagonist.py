@@ -4690,6 +4690,276 @@ def export_results(merged_stats, heroine_result, final_report, male_protagonist=
     return detailed_file, detailed_snapshot_file, report_file
 
 
+def _apply_character_scan_result(result: dict, chunk_idx: int,
+                                 global_stats: dict, male_protagonist_stats: dict,
+                                 completed_chunks: set, target_chunk_set: set,
+                                 total_chunks: int, chunk_plan_metadata: dict,
+                                 progress_flags: dict) -> bool:
+    """
+    将单块分析结果写入 global_stats / male_protagonist_stats，并在成功时标记 completed_chunks。
+    返回：本块是否成功。
+    """
+    # 检查是否成功
+    if not result or not result.get("_success", False):
+        error_msg = (result or {}).get("_error", "未知错误")
+        _append_discarded_facts((result or {}).get("discarded_facts") or [])
+        logger.warning(f"块 {chunk_idx} 分析失败: {error_msg}，将在补漏阶段重试")
+        return False
+    _append_discarded_facts(result.get("discarded_facts") or [])
+    is_general_mode = (result or {}).get("profile_mode") == "general"
+
+    # 处理男主信息
+    male_proto = result.get("male_protagonist")
+    if male_proto:
+        raw_name = male_proto.get("name", "")
+        male_names = _split_multi_names(raw_name)
+        if raw_name and not male_names:
+            _append_discarded_facts([
+                discarded_fact(
+                    "male_protagonist.name",
+                    raw_name,
+                    "group_or_title_name",
+                    "角色名疑似群体/官职枚举，已跳过",
+                    chunk_idx,
+                )
+            ])
+        if len(male_names) >= 2:
+            logger.warning(f"男主字段疑似包含多个名字，将拆分处理: '{raw_name}' -> {male_names}")
+        for name in male_names[:2]:
+            if not name:
+                continue
+            if name not in male_protagonist_stats:
+                male_protagonist_stats[name] = {
+                    "count": 0,
+                    "other_names": set(),
+                    "identities": [],
+                    # summaries 存储 (chunk_index, summary) 便于后续按时间线导出
+                    "summaries": [],
+                }
+            male_protagonist_stats[name]["count"] += 1
+            for other_name in male_proto.get("other_names", []):
+                on = _normalize_person_name(other_name)
+                if on and on != name:
+                    male_protagonist_stats[name]["other_names"].add(on)
+            identity = (male_proto.get("identity", "") or "").strip()
+            if identity and identity not in male_protagonist_stats[name]["identities"]:
+                # 不再限制数量：收集全量 identity 线索（去重）
+                male_protagonist_stats[name]["identities"].append(identity)
+            summary = (male_proto.get("summary", "") or "").strip()
+            if summary:
+                # 不再限制数量：收集全量 summaries（带 chunk_index、去重）
+                existing = [
+                    s[1] if isinstance(s, (tuple, list)) and len(s) == 2 else str(s)
+                    for s in (male_protagonist_stats[name].get("summaries", []) or [])
+                ]
+                if summary not in existing:
+                    male_protagonist_stats[name]["summaries"].append((chunk_idx, summary))
+
+    # 处理女性角色信息
+    chars = result.get("female_characters", [])
+    for char in chars:
+        raw_name = char.get("name", "")
+        names = _split_multi_names(raw_name)
+        if raw_name and not names:
+            _append_discarded_facts([
+                discarded_fact(
+                    "general_characters.name" if is_general_mode else "female_characters.name",
+                    raw_name,
+                    "group_or_title_name",
+                    "角色名疑似群体/官职枚举，已跳过",
+                    chunk_idx,
+                )
+            ])
+        if not names:
+            continue
+        if len(names) >= 2:
+            field_label = "角色字段" if is_general_mode else "女性角色字段"
+            logger.warning(f"{field_label}疑似包含多个名字，将拆分处理: '{raw_name}' -> {names}")
+
+        score = char.get("score", 0)
+        for name in names[:3]:
+            if not name:
+                continue
+            if name not in global_stats:
+                global_stats[name] = {
+                    "total_score": 0,
+                    "count": 0,
+                    "chunk_scores": [],  # 存储 (chunk_index, score) 用于评分分布和趋势分析
+                    "summaries": [],  # 存储 (chunk_index, summary)
+                    "types": set(),
+                    "gender": set(),
+                    "role_types": set(),
+                    "factions": set(),
+                    "other_names": set(),
+                    "appearances": [],
+                    "features": [],
+                    "relationships": [],
+                    "key_events": [],
+                    "interactions": [],  # 与男主互动记录
+                    "emotion_signals": [],  # 感情信号记录
+                }
+
+            global_stats[name]["total_score"] += score
+            global_stats[name]["count"] += 1
+            global_stats[name]["chunk_scores"].append((chunk_idx, score))
+
+            # 收集其他名字
+            for other_name in char.get("other_names", []):
+                on = _normalize_person_name(other_name)
+                if on and on != name:
+                    global_stats[name]["other_names"].add(on)
+
+            # 收集摘要（带 chunk_index，全部保留）
+            summary = (char.get("summary", "") or "").strip()
+            char_chunk_idx = char.get("chunk_index", chunk_idx)
+            if summary:
+                existing_summaries = [s[1] if isinstance(s, tuple) else s for s in global_stats[name]["summaries"]]
+                if summary not in existing_summaries:
+                    global_stats[name]["summaries"].append((char_chunk_idx, summary))
+
+            # 收集外貌特征
+            appearance = (char.get("appearance", "") or "").strip()
+            if appearance and appearance not in global_stats[name]["features"]:
+                if len(global_stats[name]["features"]) < 10:
+                    global_stats[name]["features"].append(appearance)
+
+            # 收集身份信息
+            identity = (char.get("identity", "") or "").strip()
+            if identity and identity not in global_stats[name]["appearances"]:
+                if len(global_stats[name]["appearances"]) < 10:
+                    global_stats[name]["appearances"].append(identity)
+
+            # 收集关系类型
+            relationship_type = (char.get("relationship_type", "") or "").strip()
+            if relationship_type and relationship_type not in global_stats[name]["relationships"]:
+                if len(global_stats[name]["relationships"]) < 10:
+                    global_stats[name]["relationships"].append(relationship_type)
+
+            gender = (char.get("gender", "") or "").strip()
+            if gender:
+                global_stats[name].setdefault("gender", set()).add(gender)
+
+            role_type = (char.get("role_type", "") or "").strip()
+            if role_type:
+                global_stats[name].setdefault("role_types", set()).add(role_type)
+
+            faction = (char.get("faction", "") or "").strip()
+            if faction:
+                global_stats[name].setdefault("factions", set()).add(faction)
+
+            for event in char.get("key_events", []) or []:
+                event_text = str(event).strip()
+                if event_text and event_text not in global_stats[name].setdefault("key_events", []):
+                    if len(global_stats[name]["key_events"]) < 20:
+                        global_stats[name]["key_events"].append(event_text)
+
+            # 收集与男主的互动记录（带 chunk_index，全部保留）
+            interaction = (char.get("interaction_with_male_lead", "") or "").strip()
+            if interaction:
+                existing_interactions = [s[1] if isinstance(s, (tuple, list)) else s for s in global_stats[name]["interactions"]]
+                if interaction not in existing_interactions:
+                    global_stats[name]["interactions"].append((char_chunk_idx, interaction))
+
+            # 收集感情信号（带 chunk_index，全部保留）
+            emotion = (char.get("emotion_signals", "") or "").strip()
+            if emotion:
+                existing_emotions = [s[1] if isinstance(s, (tuple, list)) else s for s in global_stats[name]["emotion_signals"]]
+                if emotion not in existing_emotions:
+                    global_stats[name]["emotion_signals"].append((char_chunk_idx, emotion))
+
+    completed_chunks.add(chunk_idx)
+    completed_target_count = len(completed_chunks & target_chunk_set)
+    if completed_target_count % 5 == 0 or completed_target_count == total_chunks:
+        save_checkpoint(
+            global_stats,
+            male_protagonist_stats,
+            max(completed_chunks) if completed_chunks else -1,
+            progress_flags,
+            completed_chunks=completed_chunks,
+            chunk_plan_metadata=chunk_plan_metadata,
+        )
+    return True
+
+
+def _run_character_gap_fill_scan(chunks, target_chunk_indices, completed_chunks,
+                                 global_stats, male_protagonist_stats,
+                                 progress_flags, chunk_plan_metadata,
+                                 target_chunk_set, total_chunks,
+                                 source_total_chunks):
+    """补漏扫描：多轮重试直到收敛或达到最大轮次。"""
+    MAX_PATCH_ROUNDS = 3
+    for round_no in range(1, MAX_PATCH_ROUNDS + 1):
+        missing = [i for i in target_chunk_indices if i not in completed_chunks]
+        if not missing:
+            break
+
+        print(f"\n🔁 补漏扫描：发现 {len(missing)} 个遗漏块，开始第 {round_no}/{MAX_PATCH_ROUNDS} 轮补扫（降低并发避免限速）...")
+        logger.warning(f"补漏扫描第{round_no}轮：遗漏块={missing[:20]}{'...' if len(missing) > 20 else ''}")
+
+        retry_workers = max(1, min(HAREM_SCAN_RETRY_WORKERS, MAX_WORKERS))
+        retry_failed = []
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=retry_workers)
+        executor_cancelled = False
+        try:
+            future_to_idx = {
+                executor.submit(analyze_chunk_for_heroines, chunks[i], i, source_total_chunks): i
+                for i in missing
+            }
+            for future in tqdm(
+                iter_completed_futures(future_to_idx, phase_name=f"补漏扫描第{round_no}轮", executor=executor),
+                total=len(missing),
+                desc=f"补漏中(第{round_no}轮)",
+                unit="块",
+            ):
+                idx = future_to_idx[future]
+                try:
+                    res = future.result()
+                    ok = _apply_character_scan_result(
+                        res, idx, global_stats, male_protagonist_stats,
+                        completed_chunks, target_chunk_set, total_chunks,
+                        chunk_plan_metadata, progress_flags,
+                    )
+                    if not ok:
+                        retry_failed.append(idx)
+                except Exception as exc:
+                    logger.error(f"补漏块 {idx} 处理异常: {exc}")
+                    retry_failed.append(idx)
+        except TimeoutError as exc:
+            logger.error(f"补漏扫描第{round_no}轮等待超时: {exc}")
+            cancel_pending_futures(future_to_idx, executor=executor)
+            executor_cancelled = True
+            save_checkpoint(
+                global_stats,
+                male_protagonist_stats,
+                max(completed_chunks) if completed_chunks else -1,
+                progress_flags,
+                completed_chunks=completed_chunks,
+                chunk_plan_metadata=chunk_plan_metadata,
+            )
+            raise
+        finally:
+            if not executor_cancelled:
+                executor.shutdown(wait=True)
+
+        # 轮次结束后保存断点
+        save_checkpoint(
+            global_stats,
+            male_protagonist_stats,
+            max(completed_chunks) if completed_chunks else -1,
+            progress_flags,
+            completed_chunks=completed_chunks,
+            chunk_plan_metadata=chunk_plan_metadata,
+        )
+
+        if retry_failed:
+            logger.warning(f"补漏第{round_no}轮仍失败 {len(retry_failed)} 块：{sorted(retry_failed)}")
+            time.sleep(2)  # 给 API 一点缓冲时间再进入下一轮
+
+    # 输出失败块信息
+    remaining_missing = [i for i in target_chunk_indices if i not in completed_chunks]
+    return remaining_missing
+
+
 def main(novel_path=None, book_name=None, run_id=None):
     global NOVEL_FILE_PATH, clean_filename, OUTPUT_DIR, logger, DISCARDED_FACTS
 
@@ -4829,192 +5099,6 @@ def main(novel_path=None, book_name=None, run_id=None):
         print("=" * 70)
 
         if not progress_flags.get("scanned") and chunks_to_process:
-            def _apply_scan_result(result: dict, chunk_idx: int) -> bool:
-                """
-                将单块分析结果写入 global_stats / male_protagonist_stats，并在成功时标记 completed_chunks。
-                返回：本块是否成功。
-                """
-                # 检查是否成功
-                if not result or not result.get("_success", False):
-                    error_msg = (result or {}).get("_error", "未知错误")
-                    _append_discarded_facts((result or {}).get("discarded_facts") or [])
-                    logger.warning(f"块 {chunk_idx} 分析失败: {error_msg}，将在补漏阶段重试")
-                    return False
-                _append_discarded_facts(result.get("discarded_facts") or [])
-                is_general_mode = (result or {}).get("profile_mode") == "general"
-
-                # 处理男主信息
-                male_proto = result.get("male_protagonist")
-                if male_proto:
-                    raw_name = male_proto.get("name", "")
-                    male_names = _split_multi_names(raw_name)
-                    if raw_name and not male_names:
-                        _append_discarded_facts([
-                            discarded_fact(
-                                "male_protagonist.name",
-                                raw_name,
-                                "group_or_title_name",
-                                "角色名疑似群体/官职枚举，已跳过",
-                                chunk_idx,
-                            )
-                        ])
-                    if len(male_names) >= 2:
-                        logger.warning(f"男主字段疑似包含多个名字，将拆分处理: '{raw_name}' -> {male_names}")
-                    for name in male_names[:2]:
-                        if not name:
-                            continue
-                        if name not in male_protagonist_stats:
-                            male_protagonist_stats[name] = {
-                                "count": 0,
-                                "other_names": set(),
-                                "identities": [],
-                                # summaries 存储 (chunk_index, summary) 便于后续按时间线导出
-                                "summaries": [],
-                            }
-                        male_protagonist_stats[name]["count"] += 1
-                        for other_name in male_proto.get("other_names", []):
-                            on = _normalize_person_name(other_name)
-                            if on and on != name:
-                                male_protagonist_stats[name]["other_names"].add(on)
-                        identity = (male_proto.get("identity", "") or "").strip()
-                        if identity and identity not in male_protagonist_stats[name]["identities"]:
-                            # 不再限制数量：收集全量 identity 线索（去重）
-                            male_protagonist_stats[name]["identities"].append(identity)
-                        summary = (male_proto.get("summary", "") or "").strip()
-                        if summary:
-                            # 不再限制数量：收集全量 summaries（带 chunk_index、去重）
-                            existing = [
-                                s[1] if isinstance(s, (tuple, list)) and len(s) == 2 else str(s)
-                                for s in (male_protagonist_stats[name].get("summaries", []) or [])
-                            ]
-                            if summary not in existing:
-                                male_protagonist_stats[name]["summaries"].append((chunk_idx, summary))
-
-                # 处理女性角色信息
-                chars = result.get("female_characters", [])
-                for char in chars:
-                    raw_name = char.get("name", "")
-                    names = _split_multi_names(raw_name)
-                    if raw_name and not names:
-                        _append_discarded_facts([
-                            discarded_fact(
-                                "general_characters.name" if is_general_mode else "female_characters.name",
-                                raw_name,
-                                "group_or_title_name",
-                                "角色名疑似群体/官职枚举，已跳过",
-                                chunk_idx,
-                            )
-                        ])
-                    if not names:
-                        continue
-                    if len(names) >= 2:
-                        field_label = "角色字段" if is_general_mode else "女性角色字段"
-                        logger.warning(f"{field_label}疑似包含多个名字，将拆分处理: '{raw_name}' -> {names}")
-
-                    score = char.get("score", 0)
-                    for name in names[:3]:
-                        if not name:
-                            continue
-                        if name not in global_stats:
-                            global_stats[name] = {
-                                "total_score": 0,
-                                "count": 0,
-                                "chunk_scores": [],  # 存储 (chunk_index, score) 用于评分分布和趋势分析
-                                "summaries": [],  # 存储 (chunk_index, summary)
-                                "types": set(),
-                                "gender": set(),
-                                "role_types": set(),
-                                "factions": set(),
-                                "other_names": set(),
-                                "appearances": [],
-                                "features": [],
-                                "relationships": [],
-                                "key_events": [],
-                                "interactions": [],  # 与男主互动记录
-                                "emotion_signals": [],  # 感情信号记录
-                            }
-
-                        global_stats[name]["total_score"] += score
-                        global_stats[name]["count"] += 1
-                        global_stats[name]["chunk_scores"].append((chunk_idx, score))
-
-                        # 收集其他名字
-                        for other_name in char.get("other_names", []):
-                            on = _normalize_person_name(other_name)
-                            if on and on != name:
-                                global_stats[name]["other_names"].add(on)
-
-                        # 收集摘要（带 chunk_index，全部保留）
-                        summary = (char.get("summary", "") or "").strip()
-                        char_chunk_idx = char.get("chunk_index", chunk_idx)
-                        if summary:
-                            existing_summaries = [s[1] if isinstance(s, tuple) else s for s in global_stats[name]["summaries"]]
-                            if summary not in existing_summaries:
-                                global_stats[name]["summaries"].append((char_chunk_idx, summary))
-
-                        # 收集外貌特征
-                        appearance = (char.get("appearance", "") or "").strip()
-                        if appearance and appearance not in global_stats[name]["features"]:
-                            if len(global_stats[name]["features"]) < 10:
-                                global_stats[name]["features"].append(appearance)
-
-                        # 收集身份信息
-                        identity = (char.get("identity", "") or "").strip()
-                        if identity and identity not in global_stats[name]["appearances"]:
-                            if len(global_stats[name]["appearances"]) < 10:
-                                global_stats[name]["appearances"].append(identity)
-
-                        # 收集关系类型
-                        relationship_type = (char.get("relationship_type", "") or "").strip()
-                        if relationship_type and relationship_type not in global_stats[name]["relationships"]:
-                            if len(global_stats[name]["relationships"]) < 10:
-                                global_stats[name]["relationships"].append(relationship_type)
-
-                        gender = (char.get("gender", "") or "").strip()
-                        if gender:
-                            global_stats[name].setdefault("gender", set()).add(gender)
-
-                        role_type = (char.get("role_type", "") or "").strip()
-                        if role_type:
-                            global_stats[name].setdefault("role_types", set()).add(role_type)
-
-                        faction = (char.get("faction", "") or "").strip()
-                        if faction:
-                            global_stats[name].setdefault("factions", set()).add(faction)
-
-                        for event in char.get("key_events", []) or []:
-                            event_text = str(event).strip()
-                            if event_text and event_text not in global_stats[name].setdefault("key_events", []):
-                                if len(global_stats[name]["key_events"]) < 20:
-                                    global_stats[name]["key_events"].append(event_text)
-
-                        # 收集与男主的互动记录（带 chunk_index，全部保留）
-                        interaction = (char.get("interaction_with_male_lead", "") or "").strip()
-                        if interaction:
-                            existing_interactions = [s[1] if isinstance(s, (tuple, list)) else s for s in global_stats[name]["interactions"]]
-                            if interaction not in existing_interactions:
-                                global_stats[name]["interactions"].append((char_chunk_idx, interaction))
-
-                        # 收集感情信号（带 chunk_index，全部保留）
-                        emotion = (char.get("emotion_signals", "") or "").strip()
-                        if emotion:
-                            existing_emotions = [s[1] if isinstance(s, (tuple, list)) else s for s in global_stats[name]["emotion_signals"]]
-                            if emotion not in existing_emotions:
-                                global_stats[name]["emotion_signals"].append((char_chunk_idx, emotion))
-
-                completed_chunks.add(chunk_idx)
-                completed_target_count = len(completed_chunks & target_chunk_set)
-                if completed_target_count % 5 == 0 or completed_target_count == total_chunks:
-                    save_checkpoint(
-                        global_stats,
-                        male_protagonist_stats,
-                        max(completed_chunks) if completed_chunks else -1,
-                        progress_flags,
-                        completed_chunks=completed_chunks,
-                        chunk_plan_metadata=chunk_plan_metadata,
-                    )
-                return True
-
             failed_chunks = []  # 记录失败的块
 
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS)
@@ -5030,10 +5114,13 @@ def main(novel_path=None, book_name=None, run_id=None):
                     chunk_idx = future_to_chunk[future]
                     try:
                         result = future.result()
-                        ok = _apply_scan_result(result, chunk_idx)
+                        ok = _apply_character_scan_result(
+                            result, chunk_idx, global_stats, male_protagonist_stats,
+                            completed_chunks, target_chunk_set, total_chunks,
+                            chunk_plan_metadata, progress_flags,
+                        )
                         if not ok:
                             failed_chunks.append(chunk_idx)
-                            
                     except Exception as exc:
                         logger.error(f"块 {chunk_idx} 处理异常: {exc}")
                         failed_chunks.append(chunk_idx)
@@ -5055,87 +5142,28 @@ def main(novel_path=None, book_name=None, run_id=None):
                     executor.shutdown(wait=True)
 
             # ========== 补漏：扫描结束后立即检查遗漏块并补扫 ==========
-            # 说明：某些情况下 API 会慢/超时导致单块失败。以前需要下次运行才重试，这里改为当次补齐。
-            MAX_PATCH_ROUNDS = 3
-            for round_no in range(1, MAX_PATCH_ROUNDS + 1):
-                missing = [i for i in target_chunk_indices if i not in completed_chunks]
-                if not missing:
-                    break
-
-                print(f"\n🔁 补漏扫描：发现 {len(missing)} 个遗漏块，开始第 {round_no}/{MAX_PATCH_ROUNDS} 轮补扫（降低并发避免限速）...")
-                logger.warning(f"补漏扫描第{round_no}轮：遗漏块={missing[:20]}{'...' if len(missing) > 20 else ''}")
-
-                retry_workers = max(1, min(HAREM_SCAN_RETRY_WORKERS, MAX_WORKERS))
-                retry_failed = []
-                executor = concurrent.futures.ThreadPoolExecutor(max_workers=retry_workers)
-                executor_cancelled = False
-                try:
-                    future_to_idx = {
-                        executor.submit(analyze_chunk_for_heroines, chunks[i], i, source_total_chunks): i
-                        for i in missing
-                    }
-                    for future in tqdm(
-                        iter_completed_futures(future_to_idx, phase_name=f"补漏扫描第{round_no}轮", executor=executor),
-                        total=len(missing),
-                        desc=f"补漏中(第{round_no}轮)",
-                        unit="块",
-                    ):
-                        idx = future_to_idx[future]
-                        try:
-                            res = future.result()
-                            ok = _apply_scan_result(res, idx)
-                            if not ok:
-                                retry_failed.append(idx)
-                        except Exception as exc:
-                            logger.error(f"补漏块 {idx} 处理异常: {exc}")
-                            retry_failed.append(idx)
-                except TimeoutError as exc:
-                    logger.error(f"补漏扫描第{round_no}轮等待超时: {exc}")
-                    cancel_pending_futures(future_to_idx, executor=executor)
-                    executor_cancelled = True
-                    save_checkpoint(
-                        global_stats,
-                        male_protagonist_stats,
-                        max(completed_chunks) if completed_chunks else -1,
-                        progress_flags,
-                        completed_chunks=completed_chunks,
-                        chunk_plan_metadata=chunk_plan_metadata,
-                    )
-                    raise
-                finally:
-                    if not executor_cancelled:
-                        executor.shutdown(wait=True)
-
-                # 轮次结束后保存断点
-                save_checkpoint(
-                    global_stats,
-                    male_protagonist_stats,
-                    max(completed_chunks) if completed_chunks else -1,
-                    progress_flags,
-                    completed_chunks=completed_chunks,
-                    chunk_plan_metadata=chunk_plan_metadata,
-                )
-
-                if retry_failed:
-                    logger.warning(f"补漏第{round_no}轮仍失败 {len(retry_failed)} 块：{sorted(retry_failed)}")
-                    time.sleep(2)  # 给 API 一点缓冲时间再进入下一轮
+            remaining_missing = _run_character_gap_fill_scan(
+                chunks, target_chunk_indices, completed_chunks,
+                global_stats, male_protagonist_stats,
+                progress_flags, chunk_plan_metadata,
+                target_chunk_set, total_chunks, source_total_chunks,
+            )
 
             # 输出失败块信息
             if failed_chunks:
                 logger.warning(f"本次扫描有 {len(failed_chunks)} 个块失败: {sorted(failed_chunks)}")
-                # 注意：已经做过补漏扫描，但仍可能有极少数块因网络/限速/内容异常失败
-                remaining_missing = [i for i in target_chunk_indices if i not in completed_chunks]
                 if remaining_missing:
                     print(f"\n⚠ 仍有 {len(remaining_missing)} 个块分析失败，将在下次运行时继续重试：{remaining_missing[:20]}{'...' if len(remaining_missing) > 20 else ''}")
-            
+
             # 只有所有块都成功完成时才标记阶段一完成
             if len(completed_chunks & target_chunk_set) >= total_chunks:
                 progress_flags["scanned"] = True
                 logger.info("所有块扫描完成，标记阶段一完成")
             else:
                 logger.info(f"扫描进度: {len(completed_chunks & target_chunk_set)}/{total_chunks} 块完成")
-            
+
             save_checkpoint(global_stats, male_protagonist_stats, max(completed_chunks) if completed_chunks else -1, progress_flags, completed_chunks=completed_chunks, chunk_plan_metadata=chunk_plan_metadata)
+
 
         # 识别男主（简单逻辑：出现次数最多的）
         print("\n" + "=" * 70)

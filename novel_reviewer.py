@@ -8524,6 +8524,106 @@ def aggregate_and_judge_heroines(heroine_status_list, male_lead, detail_evidence
 
     return results
 
+
+def _build_heroine_json_entry(name: str, info: dict, pushed_map: dict, leak_status_map: dict) -> dict:
+    """从单个女主分析结果构建 JSON 报告条目。"""
+    pushed, pushed_reason = pushed_map.get(name, (None, "未判定"))
+    leak_info = leak_status_map.get(name, {})
+    verification = info.get("verification", {})
+
+    heroine_entry = {
+        "name": name,
+        # 五维洁度判定
+        "is_virgin": info.get("is_virgin", True),
+        "virgin_status": info.get("virgin_status", info.get("body_status", "❓ 未知")),
+        "virgin_judgement_conflict": _to_bool(info.get("virgin_judgement_conflict", False), False),
+        "llm_is_virgin": info.get("llm_is_virgin", info.get("is_virgin", True)),
+        "llm_virgin_status": info.get("llm_virgin_status", info.get("virgin_status", info.get("body_status", "❓ 未知"))),
+        "llm_virgin_reason": info.get("llm_virgin_reason"),
+        "rule_is_virgin": info.get("rule_is_virgin"),
+        "rule_virgin_status": info.get("rule_virgin_status"),
+        "rule_virgin_reason": info.get("rule_virgin_reason"),
+        "llm_has_other_contact": info.get("llm_has_other_contact", info.get("has_other_contact", False)),
+        "llm_contact_status": info.get("llm_contact_status", info.get("contact_status", "❓ 未知")),
+        "llm_contact_reason": info.get("llm_contact_reason"),
+        "rule_has_other_contact": info.get("rule_has_other_contact"),
+        "rule_contact_status": info.get("rule_contact_status"),
+        "rule_contact_reason": info.get("rule_contact_reason"),
+        "contact_judgement_conflict": _to_bool(info.get("contact_judgement_conflict", False), False),
+        "has_other_contact": info.get("has_other_contact", False),
+        "contact_status": info.get("contact_status", "❓ 未知"),
+        "llm_no_partner": info.get("llm_no_partner", info.get("no_partner", True)),
+        "llm_partner_status": info.get("llm_partner_status", info.get("partner_status", "❓ 未知")),
+        "llm_partner_reason": info.get("llm_partner_reason"),
+        "rule_no_partner": info.get("rule_no_partner"),
+        "rule_partner_status": info.get("rule_partner_status"),
+        "rule_partner_reason": info.get("rule_partner_reason"),
+        "partner_judgement_conflict": _to_bool(info.get("partner_judgement_conflict", False), False),
+        "no_partner": info.get("no_partner", True),
+        "partner_status": info.get("partner_status", "❓ 未知"),
+        # 精神洁度
+        "llm_is_spirit_clean": info.get("llm_is_spirit_clean", info.get("is_spirit_clean", True)),
+        "llm_spirit_status": info.get("llm_spirit_status", info.get("spirit_status")),
+        "llm_spirit_reason": info.get("llm_spirit_reason"),
+        "rule_is_spirit_clean": info.get("rule_is_spirit_clean"),
+        "rule_spirit_status": info.get("rule_spirit_status"),
+        "rule_spirit_reason": info.get("rule_spirit_reason"),
+        "spirit_judgement_conflict": _to_bool(info.get("spirit_judgement_conflict", False), False),
+        "is_spirit_clean": info.get("is_spirit_clean", True),
+        "spirit_status": info.get("spirit_status"),
+        "partner_exempted_for_clean": _to_bool(info.get("partner_exempted_for_clean", False), False),
+        "partner_exemption_notes": info.get("partner_exemption_notes", []),
+        "partner_exemption_reason": info.get("partner_exemption_reason", ""),
+        "past_life_clean": info.get("past_life_clean"),
+        "past_life_severity": info.get("past_life_severity"),
+        "past_life_severity_label": info.get("past_life_severity_label"),
+        "past_life_status": info.get("past_life_status", "未见前世/原故事线洁度线索"),
+        "past_life_reason": info.get("past_life_reason", ""),
+        "contact_level": info.get("contact_level", "L0"),
+        "contact_level_label": info.get("contact_level_label", "无非男主接触事实"),
+        "contact_level_reason": info.get("contact_level_reason", ""),
+        # 综合判定
+        "is_clean": info.get("is_clean"),
+        "summary": info.get("summary"),
+        # 推倒状态
+        "pushed_by_male_lead": pushed,
+        "pushed_reason": pushed_reason,
+        "is_leak_heroine": leak_info.get("is_leak_heroine"),
+        "leak_reason": leak_info.get("leak_reason"),
+        "leak_emotional_depth": leak_info.get("leak_emotional_depth"),
+        "leak_emotional_depth_reason": leak_info.get("leak_emotional_depth_reason"),
+        "leak_relationship_confirmed": leak_info.get("leak_relationship_confirmed"),
+        "leak_relationship_reason": leak_info.get("leak_relationship_reason"),
+        "leak_ending_accounted": leak_info.get("leak_ending_accounted"),
+        "leak_ending_reason": leak_info.get("leak_ending_reason"),
+        # 兼容旧字段
+        "body_status": info.get("body_status"),
+        # 验证信息
+        "verification": {
+            "method": verification.get("method", "unknown"),
+            "llm_agreed": verification.get("llm_agreed", True),
+            "rounds": verification.get("rounds", 0),
+        },
+    }
+
+    # 如果存在分歧，添加详细信息
+    if verification.get("method") == "llm_override_after_disagreement":
+        heroine_entry["verification"]["first_disagreement"] = verification.get("first_disagreement", "")
+        heroine_entry["verification"]["second_reason"] = verification.get("second_reason", "")
+        heroine_entry["verification"]["program_result"] = verification.get("program_result", {})
+        heroine_entry["verification"]["llm_first_result"] = verification.get("llm_first_result", {})
+    elif verification.get("method") == "program_final_hard_rules":
+        heroine_entry["verification"]["first_disagreement"] = verification.get("first_disagreement", "")
+        heroine_entry["verification"]["second_reason"] = verification.get("second_reason", "")
+        heroine_entry["verification"]["llm_first_result"] = verification.get("llm_first_result", {})
+        heroine_entry["verification"]["llm_second_result"] = verification.get("llm_second_result", {})
+    elif verification.get("method") == "program_confirmed_after_second_round":
+        heroine_entry["verification"]["first_disagreement"] = verification.get("first_disagreement", "")
+        heroine_entry["verification"]["second_reason"] = verification.get("second_reason", "")
+
+    return heroine_entry
+
+
 def main(novel_path=None, book_name=None, run_id=None, detail_path=None, raw_data_path=None):
     import argparse
     parser = argparse.ArgumentParser()
@@ -8972,101 +9072,9 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, raw_dat
         }
 
     for name, info in final_heroine_report.items():
-        pushed, pushed_reason = pushed_map.get(name, (None, "未判定"))
-        leak_info = leak_status_map.get(name, {})
-        verification = info.get("verification", {})
-        
-        heroine_entry = {
-            "name": name,
-            # 五维洁度判定
-            "is_virgin": info.get("is_virgin", True),
-            "virgin_status": info.get("virgin_status", info.get("body_status", "❓ 未知")),
-            "virgin_judgement_conflict": _to_bool(info.get("virgin_judgement_conflict", False), False),
-            "llm_is_virgin": info.get("llm_is_virgin", info.get("is_virgin", True)),
-            "llm_virgin_status": info.get("llm_virgin_status", info.get("virgin_status", info.get("body_status", "❓ 未知"))),
-            "llm_virgin_reason": info.get("llm_virgin_reason"),
-            "rule_is_virgin": info.get("rule_is_virgin"),
-            "rule_virgin_status": info.get("rule_virgin_status"),
-            "rule_virgin_reason": info.get("rule_virgin_reason"),
-            "llm_has_other_contact": info.get("llm_has_other_contact", info.get("has_other_contact", False)),
-            "llm_contact_status": info.get("llm_contact_status", info.get("contact_status", "❓ 未知")),
-            "llm_contact_reason": info.get("llm_contact_reason"),
-            "rule_has_other_contact": info.get("rule_has_other_contact"),
-            "rule_contact_status": info.get("rule_contact_status"),
-            "rule_contact_reason": info.get("rule_contact_reason"),
-            "contact_judgement_conflict": _to_bool(info.get("contact_judgement_conflict", False), False),
-            "has_other_contact": info.get("has_other_contact", False),
-            "contact_status": info.get("contact_status", "❓ 未知"),
-            "llm_no_partner": info.get("llm_no_partner", info.get("no_partner", True)),
-            "llm_partner_status": info.get("llm_partner_status", info.get("partner_status", "❓ 未知")),
-            "llm_partner_reason": info.get("llm_partner_reason"),
-            "rule_no_partner": info.get("rule_no_partner"),
-            "rule_partner_status": info.get("rule_partner_status"),
-            "rule_partner_reason": info.get("rule_partner_reason"),
-            "partner_judgement_conflict": _to_bool(info.get("partner_judgement_conflict", False), False),
-            "no_partner": info.get("no_partner", True),
-            "partner_status": info.get("partner_status", "❓ 未知"),
-            # 精神洁度
-            "llm_is_spirit_clean": info.get("llm_is_spirit_clean", info.get("is_spirit_clean", True)),
-            "llm_spirit_status": info.get("llm_spirit_status", info.get("spirit_status")),
-            "llm_spirit_reason": info.get("llm_spirit_reason"),
-            "rule_is_spirit_clean": info.get("rule_is_spirit_clean"),
-            "rule_spirit_status": info.get("rule_spirit_status"),
-            "rule_spirit_reason": info.get("rule_spirit_reason"),
-            "spirit_judgement_conflict": _to_bool(info.get("spirit_judgement_conflict", False), False),
-            "is_spirit_clean": info.get("is_spirit_clean", True),
-            "spirit_status": info.get("spirit_status"),
-            "partner_exempted_for_clean": _to_bool(info.get("partner_exempted_for_clean", False), False),
-            "partner_exemption_notes": info.get("partner_exemption_notes", []),
-            "partner_exemption_reason": info.get("partner_exemption_reason", ""),
-            "past_life_clean": info.get("past_life_clean"),
-            "past_life_severity": info.get("past_life_severity"),
-            "past_life_severity_label": info.get("past_life_severity_label"),
-            "past_life_status": info.get("past_life_status", "未见前世/原故事线洁度线索"),
-            "past_life_reason": info.get("past_life_reason", ""),
-            "contact_level": info.get("contact_level", "L0"),
-            "contact_level_label": info.get("contact_level_label", "无非男主接触事实"),
-            "contact_level_reason": info.get("contact_level_reason", ""),
-            # 综合判定
-            "is_clean": info.get("is_clean"),
-            "summary": info.get("summary"),
-            # 推倒状态
-            "pushed_by_male_lead": pushed,
-            "pushed_reason": pushed_reason,
-            "is_leak_heroine": leak_info.get("is_leak_heroine"),
-            "leak_reason": leak_info.get("leak_reason"),
-            "leak_emotional_depth": leak_info.get("leak_emotional_depth"),
-            "leak_emotional_depth_reason": leak_info.get("leak_emotional_depth_reason"),
-            "leak_relationship_confirmed": leak_info.get("leak_relationship_confirmed"),
-            "leak_relationship_reason": leak_info.get("leak_relationship_reason"),
-            "leak_ending_accounted": leak_info.get("leak_ending_accounted"),
-            "leak_ending_reason": leak_info.get("leak_ending_reason"),
-            # 兼容旧字段
-            "body_status": info.get("body_status"),
-            # 验证信息
-            "verification": {
-                "method": verification.get("method", "unknown"),
-                "llm_agreed": verification.get("llm_agreed", True),
-                "rounds": verification.get("rounds", 0),
-            },
-        }
-        
-        # 如果存在分歧，添加详细信息
-        if verification.get("method") == "llm_override_after_disagreement":
-            heroine_entry["verification"]["first_disagreement"] = verification.get("first_disagreement", "")
-            heroine_entry["verification"]["second_reason"] = verification.get("second_reason", "")
-            heroine_entry["verification"]["program_result"] = verification.get("program_result", {})
-            heroine_entry["verification"]["llm_first_result"] = verification.get("llm_first_result", {})
-        elif verification.get("method") == "program_final_hard_rules":
-            heroine_entry["verification"]["first_disagreement"] = verification.get("first_disagreement", "")
-            heroine_entry["verification"]["second_reason"] = verification.get("second_reason", "")
-            heroine_entry["verification"]["llm_first_result"] = verification.get("llm_first_result", {})
-            heroine_entry["verification"]["llm_second_result"] = verification.get("llm_second_result", {})
-        elif verification.get("method") == "program_confirmed_after_second_round":
-            heroine_entry["verification"]["first_disagreement"] = verification.get("first_disagreement", "")
-            heroine_entry["verification"]["second_reason"] = verification.get("second_reason", "")
-        
+        heroine_entry = _build_heroine_json_entry(name, info, pushed_map, leak_status_map)
         summary_json["heroines_purity"].append(heroine_entry)
+
 
     for item in lei_points:
         summary_json["lei_points"].append({
