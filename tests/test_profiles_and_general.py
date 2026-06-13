@@ -1737,21 +1737,15 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
                 self.assertEqual(manifest.get("sort_order"), profile.sort_order)
 
     def test_profile_manifests_include_version_metadata(self):
-        profiles_root = os.path.join(os.path.dirname(os.path.dirname(__file__)), "profiles")
+        """version 等元数据可以来自 extends 继承，因此通过 AnalysisProfile 对象验证而非直接读文件。"""
         for profile in analysis_profiles.list_available_profiles():
-            manifest_path = os.path.join(profiles_root, profile.name, "profile.json")
             with self.subTest(profile=profile.name):
-                with open(manifest_path, "r", encoding="utf-8") as f:
-                    manifest = json.load(f)
-                self.assertRegex(manifest.get("version", ""), r"^\d+\.\d+\.\d+$")
-                self.assertEqual(profile.version, manifest["version"])
-                self.assertIsInstance(manifest.get("version_history"), list)
-                self.assertGreaterEqual(len(manifest["version_history"]), 1)
-                self.assertEqual(profile.version_history, manifest["version_history"])
-                self.assertRegex(manifest.get("min_supported_scanner_version", ""), r"^\d+\.\d+\.\d+$")
-                self.assertEqual(profile.min_supported_scanner_version, manifest["min_supported_scanner_version"])
-                self.assertIsInstance(manifest.get("breaking_changes"), bool)
-                self.assertEqual(profile.breaking_changes, manifest["breaking_changes"])
+                # version 来自 profile 对象（可能通过 extends 继承自 _base_general）
+                self.assertRegex(profile.version, r"^\d+\.\d+\.\d+$")
+                self.assertIsInstance(profile.version_history, list)
+                self.assertGreaterEqual(len(profile.version_history), 1)
+                self.assertRegex(profile.min_supported_scanner_version, r"^\d+\.\d+\.\d+$")
+                self.assertIsInstance(profile.breaking_changes, bool)
 
     def test_profile_order_is_manifest_owned(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
