@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 from logging.handlers import RotatingFileHandler
@@ -798,3 +799,86 @@ def call_json_chat_completion_with_fallback(
     if fallback_data is None:
         raise ValueError(f"{err}; fallback={fallback_err}")
     return fallback_data
+
+
+# ---------------------------------------------------------------------------
+# 共享工具函数 — 从各业务模块提取的零依赖纯函数（消除重复代码）
+# ---------------------------------------------------------------------------
+
+def novel_file_signature(path: str, sample_size: int = 65536):
+    """计算文件签名（大小 + 头尾采样 SHA256），用于判断文件是否变化。"""
+    try:
+        stat = os.stat(path)
+        size = int(stat.st_size)
+        digest = hashlib.sha256()
+        digest.update(str(size).encode("ascii"))
+        with open(path, "rb") as f:
+            digest.update(f.read(sample_size))
+            if size > sample_size:
+                f.seek(max(0, size - sample_size))
+                digest.update(f.read(sample_size))
+        return {
+            "size": size,
+            "mtime_ns": int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))),
+            "sample_sha256": digest.hexdigest(),
+        }
+    except OSError:
+        return None
+
+
+def fsync_parent_dir(path):
+    """对父目录执行 fsync，确保 checkpoint 等文件持久化到磁盘。"""
+    parent_dir = os.path.dirname(path) or "."
+    if not hasattr(os, "O_DIRECTORY"):
+        return
+    try:
+        dir_fd = os.open(parent_dir, os.O_RDONLY | os.O_DIRECTORY)
+    except OSError:
+        return
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
+
+
+def checkpoint_backup_file(checkpoint_file):
+    """返回 checkpoint 文件的备份路径。"""
+    return f"{checkpoint_file}.bak" if checkpoint_file else None
+
+
+def split_text_for_downshift(text: str) -> list:
+    """将文本从中间附近（优先换行/句号）切分为两段，用于上下文溢出降载。"""
+    text = text or ""
+    if len(text) < 2:
+        return [text]
+    midpoint = len(text) // 2
+    candidates = [
+        text.rfind("\n", 0, midpoint),
+        text.find("\n", midpoint),
+        text.rfind("。", 0, midpoint),
+        text.find("。", midpoint),
+    ]
+    split_at = min(
+        [pos for pos in candidates if 0 < pos < len(text) - 1],
+        key=lambda pos: abs(pos - midpoint),
+        default=midpoint,
+    )
+    return [text[:split_at].strip(), text[split_at:].strip()]
+
+
+def clamp_score(value, default: float = 6.0) -> float:
+    """将分数钳制到 [0, 10] 并保留一位小数。"""
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        score = default
+    return round(max(0.0, min(10.0, score)), 1)
+
+
+def bool_mark(value) -> str:
+    """把 True/False/None 映射成 ✅/❌/❓。"""
+    if value is True:
+        return "✅"
+    if value is False:
+        return "❌"
+    return "❓"

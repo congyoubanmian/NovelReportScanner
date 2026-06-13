@@ -43,12 +43,16 @@ from shared_utils import (
     MODEL,
     SCAN_RESULTS_DIR,
     _safe_json_loads_maybe,
+    bool_mark,
     call_json_chat_completion_with_fallback,
     chat_completion,
+    checkpoint_backup_file,
     configure_rotating_file_logger,
+    fsync_parent_dir,
     get_token_tracker,
     init_token_tracker,
     logger,
+    novel_file_signature,
     read_int_env,
     record_usage,
 )
@@ -294,24 +298,7 @@ def _infer_novel_path_from_scan(raw_data_path: str) -> Optional[str]:
     return None
 
 
-def _novel_file_signature(path: str, sample_size: int = 65536):
-    try:
-        stat = os.stat(path)
-        size = int(stat.st_size)
-        digest = hashlib.sha256()
-        digest.update(str(size).encode("ascii"))
-        with open(path, "rb") as f:
-            digest.update(f.read(sample_size))
-            if size > sample_size:
-                f.seek(max(0, size - sample_size))
-                digest.update(f.read(sample_size))
-        return {
-            "size": size,
-            "mtime_ns": int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))),
-            "sample_sha256": digest.hexdigest(),
-        }
-    except OSError:
-        return None
+_novel_file_signature = novel_file_signature
 
 
 def _validate_raw_data_matches_novel(raw_data: dict, raw_data_path: str, novel_path: Optional[str], book_name: Optional[str]):
@@ -880,12 +867,7 @@ def _to_bool(value: Any, default: bool = False) -> bool:
             return False
     return default
 
-def _bool_mark(value: Optional[bool]) -> str:
-    if value is True:
-        return "✅"
-    if value is False:
-        return "❌"
-    return "❓"
+_bool_mark = bool_mark
 
 
 def _format_heroine_purity_supplement(info: Dict[str, Any]) -> List[str]:
@@ -1352,8 +1334,7 @@ def save_checkpoint(
         logger.error(f"保存断点失败: {e}")
 
 
-def _checkpoint_backup_file(checkpoint_file):
-    return f"{checkpoint_file}.bak" if checkpoint_file else None
+_checkpoint_backup_file = checkpoint_backup_file
 
 
 def _json_checkpoint_is_readable(checkpoint_file):
@@ -1365,18 +1346,7 @@ def _json_checkpoint_is_readable(checkpoint_file):
         return False
 
 
-def _fsync_parent_dir(path):
-    parent_dir = os.path.dirname(path) or "."
-    if not hasattr(os, "O_DIRECTORY"):
-        return
-    try:
-        dir_fd = os.open(parent_dir, os.O_RDONLY | os.O_DIRECTORY)
-    except OSError:
-        return
-    try:
-        os.fsync(dir_fd)
-    finally:
-        os.close(dir_fd)
+_fsync_parent_dir = fsync_parent_dir
 
 
 def _copy_json_checkpoint(src_path, dst_path):

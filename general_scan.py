@@ -12,7 +12,7 @@ from tqdm import tqdm
 from analysis_profiles import load_analysis_profile
 from fact_validator import classify_scan_error, validate_general_chunk_result
 from prompt_templates import prompt_template_metadata, prompt_templates_metadata
-from shared_utils import MODEL, chat_completion, get_base_dir, init_token_tracker, is_context_overflow_error, read_file_safely, read_int_env, record_usage
+from shared_utils import MODEL, chat_completion, clamp_score, get_base_dir, init_token_tracker, is_context_overflow_error, novel_file_signature, read_file_safely, read_int_env, record_usage, split_text_for_downshift
 from shared_utils import call_json_chat_completion_with_fallback
 from text_anchor import build_chunk_manifest, build_semantic_chunk_manifest, save_chunk_manifest
 from outline_prescan import generate_outline, outline_to_compact_text, outline_signature, save_outline, load_outline
@@ -666,25 +666,7 @@ def _novel_mtime(path: str):
         return None
 
 
-def _novel_file_signature(path: str, sample_size: int = 65536):
-    try:
-        stat = os.stat(path)
-        size = int(stat.st_size)
-        digest = hashlib.sha256()
-        digest.update(str(size).encode("ascii"))
-        with open(path, "rb") as f:
-            head = f.read(sample_size)
-            digest.update(head)
-            if size > sample_size:
-                f.seek(max(0, size - sample_size))
-                digest.update(f.read(sample_size))
-        return {
-            "size": size,
-            "mtime_ns": int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))),
-            "sample_sha256": digest.hexdigest(),
-        }
-    except OSError:
-        return None
+_novel_file_signature = novel_file_signature
 
 
 def _is_fresh_summary(data: Dict[str, Any], novel_file: str, profile_name: str = "general") -> bool:
@@ -964,12 +946,7 @@ def _safe_dict(value: Any) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _clamp_score(value: Any, default: float = 0.0) -> float:
-    try:
-        score = float(value)
-    except (TypeError, ValueError):
-        score = default
-    return round(max(0.0, min(10.0, score)), 1)
+_clamp_score = lambda value, default=0.0: clamp_score(value, default=default)
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
@@ -3032,23 +3009,7 @@ def _merge_partial_scan_results(results: List[Dict[str, Any]], chunk_index: int,
     return validate_general_chunk_result(merged)
 
 
-def _split_text_for_downshift(text: str) -> List[str]:
-    text = text or ""
-    if len(text) < 2:
-        return [text]
-    midpoint = len(text) // 2
-    candidates = [
-        text.rfind("\n", 0, midpoint),
-        text.find("\n", midpoint),
-        text.rfind("。", 0, midpoint),
-        text.find("。", midpoint),
-    ]
-    split_at = min(
-        [pos for pos in candidates if 0 < pos < len(text) - 1],
-        key=lambda pos: abs(pos - midpoint),
-        default=midpoint,
-    )
-    return [text[:split_at].strip(), text[split_at:].strip()]
+_split_text_for_downshift = split_text_for_downshift
 
 
 def _downshift_entity_prescan(entity_prescan, depth: int):

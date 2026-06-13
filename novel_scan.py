@@ -24,21 +24,25 @@ from shared_utils import (
     DEFAULT_MAX_TIMEOUT_RETRIES,
     DEFAULT_REQUEST_TIMEOUT,
     cancel_pending_futures,
+    checkpoint_backup_file,
     configure_rotating_file_logger,
     create_chat_completion,
     diagnose_json_response_text,
     format_json_response_diagnostic,
+    fsync_parent_dir,
     get_base_dir,
     get_token_tracker,
     init_token_tracker,
     iter_completed_futures,
     json_response_looks_truncated,
+    novel_file_signature,
     read_file_safely,
     read_float_env,
     read_int_env,
     parse_json_object_lenient,
     record_usage,
     should_retry_without_json_mode_error,
+    split_text_for_downshift,
 )
 from prompt_templates import prompt_template_metadata, prompt_templates_metadata
 from text_anchor import build_chunk_manifest, build_semantic_chunk_manifest, save_chunk_manifest, diff_chunk_manifests, load_chunk_manifest, compute_chunk_text_hash
@@ -133,25 +137,7 @@ _middle_summary_calls = 0
 _ACTIVE_DETAIL_PATH = None
 CHECKPOINT_FULL_MERGE_INTERVAL = 10
 
-
-def _novel_file_signature(path: str, sample_size: int = 65536):
-    try:
-        stat = os.stat(path)
-        size = int(stat.st_size)
-        digest = hashlib.sha256()
-        digest.update(str(size).encode("ascii"))
-        with open(path, "rb") as f:
-            digest.update(f.read(sample_size))
-            if size > sample_size:
-                f.seek(max(0, size - sample_size))
-                digest.update(f.read(sample_size))
-        return {
-            "size": size,
-            "mtime_ns": int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))),
-            "sample_sha256": digest.hexdigest(),
-        }
-    except OSError:
-        return None
+_novel_file_signature = novel_file_signature
 
 
 def _reserve_middle_summary_call(middle_summary_state=None):
@@ -573,9 +559,7 @@ def _checkpoint_delta_file(checkpoint_file=None):
 
 def _checkpoint_backup_file(checkpoint_file=None):
     effective_checkpoint = checkpoint_file if checkpoint_file is not None else CHECKPOINT_FILE
-    if not effective_checkpoint:
-        return None
-    return f"{effective_checkpoint}.bak"
+    return checkpoint_backup_file(effective_checkpoint)
 
 
 def _json_file_is_readable(path):
@@ -587,18 +571,7 @@ def _json_file_is_readable(path):
         return False
 
 
-def _fsync_parent_dir(path):
-    parent_dir = os.path.dirname(path) or "."
-    if not hasattr(os, "O_DIRECTORY"):
-        return
-    try:
-        dir_fd = os.open(parent_dir, os.O_RDONLY | os.O_DIRECTORY)
-    except OSError:
-        return
-    try:
-        os.fsync(dir_fd)
-    finally:
-        os.close(dir_fd)
+_fsync_parent_dir = fsync_parent_dir
 
 
 def _copy_json_file(src_path, dst_path):
@@ -2667,23 +2640,7 @@ def _normalize_issue(issue, chunk_index):
     }
 
 
-def _split_text_for_downshift(text):
-    text = text or ""
-    if len(text) < 2:
-        return [text]
-    midpoint = len(text) // 2
-    candidates = [
-        text.rfind("\n", 0, midpoint),
-        text.find("\n", midpoint),
-        text.rfind("。", 0, midpoint),
-        text.find("。", midpoint),
-    ]
-    split_at = min(
-        [pos for pos in candidates if 0 < pos < len(text) - 1],
-        key=lambda pos: abs(pos - midpoint),
-        default=midpoint,
-    )
-    return [text[:split_at].strip(), text[split_at:].strip()]
+_split_text_for_downshift = split_text_for_downshift
 
 
 def _merge_downshift_chunk_results(partial_results, index, error_type):
@@ -3432,19 +3389,6 @@ def _commit_chunk_result(idx, issues, heroine_facts, extra_rel, next_summary, ok
         _advance_chunk_progress(idx, processed_chunks, failed_chunks, progress_state or _ACTIVE_PROGRESS_STATE)
 
 
-def _cancel_pending_futures(futures, current_future=None, executor=None):
-    cancel_pending_futures(futures, current_future=current_future, executor=executor)
-
-
-def _iter_completed_futures(futures, phase_name="", timeout_seconds=None, executor=None):
-    yield from iter_completed_futures(
-        futures,
-        phase_name=phase_name,
-        timeout_seconds=timeout_seconds,
-        executor=executor,
-    )
-
-
 def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protagonist, fact_boost_prompt,
                                    all_issues, all_heroine_facts, extra_relations_all, processed_chunks, failed_chunks,
                                    chunk_summaries=None, chunk_failure_diagnostics=None, middle_summary_state=None,
@@ -3502,7 +3446,7 @@ def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protago
                 if block_indices
             }
             try:
-                for future in _iter_completed_futures(futures, phase_name="首扫线程块", executor=executor):
+                for future in iter_completed_futures(futures, phase_name="首扫线程块", executor=executor):
                     block_id = futures[future]
                     try:
                         result = future.result()
@@ -3510,19 +3454,19 @@ def _run_initial_thread_block_scan(chunks, system_prompt, heroines, male_protago
                         logger.error(f"线程块 {block_id} 崩溃: {exc}", exc_info=True)
                         if not fatal_error_msg:
                             fatal_error_msg = str(exc)
-                            _cancel_pending_futures(futures, current_future=future, executor=executor)
+                            cancel_pending_futures(futures, current_future=future, executor=executor)
                             executor_cancelled = True
                             break
                         continue
                     block_results[block_id] = result
                     if result.get("fatal_error"):
-                        _cancel_pending_futures(futures, current_future=future, executor=executor)
+                        cancel_pending_futures(futures, current_future=future, executor=executor)
                         executor_cancelled = True
                         return result.get("fatal_error")
             except TimeoutError as exc:
                 fatal_error_msg = str(exc)
                 logger.error(f"首扫线程块等待超时: {fatal_error_msg}")
-                _cancel_pending_futures(futures, executor=executor)
+                cancel_pending_futures(futures, executor=executor)
                 executor_cancelled = True
         finally:
             if not executor_cancelled:
@@ -3833,7 +3777,7 @@ def generate_heroine_profiles(all_heroine_facts, heroines, male_protagonist=None
             for name, facts in merged.items()
         }
         try:
-            completed_iter = _iter_completed_futures(futures, phase_name="女主展示画像", executor=executor)
+            completed_iter = iter_completed_futures(futures, phase_name="女主展示画像", executor=executor)
             for future in completed_iter:
                 name = futures[future]
                 try:
@@ -3848,7 +3792,7 @@ def generate_heroine_profiles(all_heroine_facts, heroines, male_protagonist=None
                     checkpoint_callback(heroine_name=name, heroine_profiles=profiles)
         except TimeoutError as exc:
             logger.error(f"女主展示画像等待超时: {exc}")
-            _cancel_pending_futures(futures, executor=executor)
+            cancel_pending_futures(futures, executor=executor)
             executor_cancelled = True
     finally:
         if not executor_cancelled:
@@ -4805,7 +4749,7 @@ def _run_scan_for_indices(chunks, indices, system_prompt, heroines, male_protago
             }
             fatal_error = None
             try:
-                for future in _iter_completed_futures(futures, phase_name=phase_name, executor=executor):
+                for future in iter_completed_futures(futures, phase_name=phase_name, executor=executor):
                     idx = futures[future]
                     try:
                         idx, issues, heroine_facts, extra_rel, next_summary, ok, fatal, err_msg = future.result()
@@ -4831,7 +4775,7 @@ def _run_scan_for_indices(chunks, indices, system_prompt, heroines, male_protago
                             )
                             _advance_chunk_progress(idx, processed_chunks, failed_chunks, progress_state)
                         logger.error(f"❌ 致命错误，终止{phase_name}：chunk={idx} err={fatal_error}")
-                        _cancel_pending_futures(futures, current_future=future, executor=executor)
+                        cancel_pending_futures(futures, current_future=future, executor=executor)
                         executor_cancelled = True
                         break
 
@@ -4857,7 +4801,7 @@ def _run_scan_for_indices(chunks, indices, system_prompt, heroines, male_protago
             except TimeoutError as exc:
                 fatal_error = str(exc)
                 logger.error(f"{phase_name}阶段等待超时: {fatal_error}")
-                _cancel_pending_futures(futures, executor=executor)
+                cancel_pending_futures(futures, executor=executor)
                 executor_cancelled = True
 
             return fatal_error

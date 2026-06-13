@@ -3649,7 +3649,7 @@ class ProfileAndGeneralReportTests(unittest.TestCase):
         already_done = FakeFuture(done=True)
         executor = FakeExecutor()
 
-        novel_scan._cancel_pending_futures([current, pending, already_done], current_future=current, executor=executor)
+        novel_scan.cancel_pending_futures([current, pending, already_done], current_future=current, executor=executor)
 
         self.assertFalse(current.cancelled)
         self.assertTrue(pending.cancelled)

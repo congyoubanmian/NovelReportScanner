@@ -39,6 +39,7 @@ from shared_utils import (
     read_int_env,
     read_file_safely,
     record_usage,
+    split_text_for_downshift,
 )
 
 BASE_URL = os.environ.get("BASE_URL", "https://api.deepseek.com")
@@ -251,19 +252,6 @@ def get_latest_report_files(prefix: str = None):
     progress = data.get("progress", {}) if isinstance(data, dict) else {}
     report_files = progress.get("report_files", {}) if isinstance(progress, dict) else {}
     return dict(report_files or {})
-
-
-def _cancel_pending_futures(futures, current_future=None, executor=None):
-    cancel_pending_futures(futures, current_future=current_future, executor=executor)
-
-
-def _iter_completed_futures(futures, phase_name="", timeout_seconds=None, executor=None):
-    yield from iter_completed_futures(
-        futures,
-        phase_name=phase_name,
-        timeout_seconds=timeout_seconds,
-        executor=executor,
-    )
 
 
 # ---- API 调用封装：统一收敛到 Timerror.py（只需修改 Timerror.py 即可全局生效）----
@@ -1356,23 +1344,7 @@ def _cap_general_character_response(result, chunk_index):
     return result
 
 
-def _split_text_for_downshift(text):
-    text = text or ""
-    if len(text) < 2:
-        return [text]
-    midpoint = len(text) // 2
-    candidates = [
-        text.rfind("\n", 0, midpoint),
-        text.find("\n", midpoint),
-        text.rfind("。", 0, midpoint),
-        text.find("。", midpoint),
-    ]
-    split_at = min(
-        [pos for pos in candidates if 0 < pos < len(text) - 1],
-        key=lambda pos: abs(pos - midpoint),
-        default=midpoint,
-    )
-    return [text[:split_at].strip(), text[split_at:].strip()]
+_split_text_for_downshift = split_text_for_downshift
 
 
 def _merge_downshift_character_results(partial_results, chunk_index, error_type, profile_mode="general"):
@@ -2599,7 +2571,7 @@ def merge_aliases(global_stats):
                     for batch_data in batches
                 }
 
-                for future in tqdm(_iter_completed_futures(future_to_batch, phase_name="别称合并分批", executor=executor),
+                for future in tqdm(iter_completed_futures(future_to_batch, phase_name="别称合并分批", executor=executor),
                                    total=len(batches), desc="别称合并分批", unit="批"):
                     batch_num = future_to_batch[future]
                     try:
@@ -2616,7 +2588,7 @@ def merge_aliases(global_stats):
                         logger.warning(f"第 {batch_num} 批处理异常: {e}")
             except TimeoutError as exc:
                 logger.error(f"别称合并分批等待超时: {exc}")
-                _cancel_pending_futures(future_to_batch, executor=executor)
+                cancel_pending_futures(future_to_batch, executor=executor)
                 executor_cancelled = True
                 raise
             finally:
@@ -2923,7 +2895,7 @@ def merge_aliases(global_stats):
                     for pair in final_mutual_pairs
                 }
 
-                for future in tqdm(_iter_completed_futures(futures, phase_name="单对判断", executor=executor),
+                for future in tqdm(iter_completed_futures(futures, phase_name="单对判断", executor=executor),
                                    total=len(futures), desc="单对判断", unit="对"):
                     try:
                         result = future.result()
@@ -2934,7 +2906,7 @@ def merge_aliases(global_stats):
                         logger.warning(f"判断失败 ({pair[0]} vs {pair[1]}): {e}")
             except TimeoutError as exc:
                 logger.error(f"单对判断等待超时: {exc}")
-                _cancel_pending_futures(futures, executor=executor)
+                cancel_pending_futures(futures, executor=executor)
                 executor_cancelled = True
                 raise
             finally:
@@ -3285,7 +3257,7 @@ def identify_heroines(merged_stats):
             for char in potential_heroines
         }
 
-        for future in tqdm(_iter_completed_futures(future_to_char, phase_name="逐个判断女主", executor=executor),
+        for future in tqdm(iter_completed_futures(future_to_char, phase_name="逐个判断女主", executor=executor),
                           total=len(potential_heroines), desc="逐个判断女主", unit="人"):
             char = future_to_char[future]
             try:
@@ -3296,7 +3268,7 @@ def identify_heroines(merged_stats):
                 logger.warning(f"判断角色 {char['name']} 时出错: {e}")
     except TimeoutError as exc:
         logger.error(f"逐个判断女主等待超时: {exc}")
-        _cancel_pending_futures(future_to_char, executor=executor)
+        cancel_pending_futures(future_to_char, executor=executor)
         executor_cancelled = True
         raise
     finally:
@@ -5053,7 +5025,7 @@ def main(novel_path=None, book_name=None, run_id=None):
                     for chunk_data in chunks_to_process
                 }
 
-                for future in tqdm(_iter_completed_futures(future_to_chunk, phase_name="角色扫描", executor=executor),
+                for future in tqdm(iter_completed_futures(future_to_chunk, phase_name="角色扫描", executor=executor),
                                  total=len(chunks_to_process), desc="扫描中", unit="块"):
                     chunk_idx = future_to_chunk[future]
                     try:
@@ -5067,7 +5039,7 @@ def main(novel_path=None, book_name=None, run_id=None):
                         failed_chunks.append(chunk_idx)
             except TimeoutError as exc:
                 logger.error(f"角色扫描等待超时: {exc}")
-                _cancel_pending_futures(future_to_chunk, executor=executor)
+                cancel_pending_futures(future_to_chunk, executor=executor)
                 executor_cancelled = True
                 save_checkpoint(
                     global_stats,
@@ -5103,7 +5075,7 @@ def main(novel_path=None, book_name=None, run_id=None):
                         for i in missing
                     }
                     for future in tqdm(
-                        _iter_completed_futures(future_to_idx, phase_name=f"补漏扫描第{round_no}轮", executor=executor),
+                        iter_completed_futures(future_to_idx, phase_name=f"补漏扫描第{round_no}轮", executor=executor),
                         total=len(missing),
                         desc=f"补漏中(第{round_no}轮)",
                         unit="块",
@@ -5119,7 +5091,7 @@ def main(novel_path=None, book_name=None, run_id=None):
                             retry_failed.append(idx)
                 except TimeoutError as exc:
                     logger.error(f"补漏扫描第{round_no}轮等待超时: {exc}")
-                    _cancel_pending_futures(future_to_idx, executor=executor)
+                    cancel_pending_futures(future_to_idx, executor=executor)
                     executor_cancelled = True
                     save_checkpoint(
                         global_stats,

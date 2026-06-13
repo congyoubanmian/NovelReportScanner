@@ -16,12 +16,15 @@ from shared_utils import (
     DEFAULT_MAX_SERVER_ERROR_RETRIES,
     DEFAULT_MAX_TIMEOUT_RETRIES,
     DEFAULT_REQUEST_TIMEOUT,
+    bool_mark,
     call_json_chat_completion_with_fallback,
+    clamp_score,
     configure_rotating_file_logger,
     create_chat_completion,
     get_base_dir,
     get_token_tracker,
     init_token_tracker,
+    novel_file_signature,
     record_usage,
     read_file_safely,
     read_int_env,
@@ -718,24 +721,7 @@ def _safe_mtime(path: str):
     return None
 
 
-def _novel_file_signature(path: str, sample_size: int = 65536):
-    try:
-        stat = os.stat(path)
-        size = int(stat.st_size)
-        digest = hashlib.sha256()
-        digest.update(str(size).encode("ascii"))
-        with open(path, "rb") as f:
-            digest.update(f.read(sample_size))
-            if size > sample_size:
-                f.seek(max(0, size - sample_size))
-                digest.update(f.read(sample_size))
-        return {
-            "size": size,
-            "mtime_ns": int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))),
-            "sample_sha256": digest.hexdigest(),
-        }
-    except OSError:
-        return None
+_novel_file_signature = novel_file_signature
 
 
 def _general_summary_matches_novel(summary: dict, novel_path: str, profile_name: str = "general") -> bool:
@@ -1160,13 +1146,7 @@ def build_report_sections(detailed_data, reviewer, features_map=None):
 
 
 # =========================== 新版报告（男主→女主→毒/雷点） ===========================
-def _bool_mark(v):
-    """把 True/False/None 映射成 ✅/❌/❓"""
-    if v is True:
-        return "✅"
-    if v is False:
-        return "❌"
-    return "❓"
+_bool_mark = bool_mark
 
 
 def build_purity_map(reviewer: dict) -> dict:
@@ -3671,12 +3651,7 @@ def _general_character_rows(detailed_data: dict, limit=20):
     return chars[:limit]
 
 
-def _clamp_score(value, default: float = 6.0) -> float:
-    try:
-        score = float(value)
-    except (TypeError, ValueError):
-        score = default
-    return round(max(0.0, min(10.0, score)), 1)
+_clamp_score = clamp_score
 
 
 WRITING_QUALITY_DIMENSION_LABELS = {
