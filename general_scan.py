@@ -3124,9 +3124,115 @@ def _merge_items(chunk_results: List[Dict[str, Any]], key: str, limit: int = 80)
     return out
 
 
+# ── 分段汇总：chunk→segment→arc→book 层级聚合 ──
+
+SEGMENT_SIZE = read_int_env("GENERAL_SCAN_SEGMENT_SIZE", 50, min_value=10)
+SEGMENT_SUMMARY_ENABLED = os.environ.get("GENERAL_SCAN_SEGMENT_SUMMARY", "1").strip() == "1"
+
+
+def _build_segment_summaries(chunk_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    将 chunk_results 按 SEGMENT_SIZE 分组，每组用 LLM 生成段落级摘要。
+    返回 [{"segment_index": 0, "chunk_range": [1, 50], "summary": "...", "key_events": [...], ...}, ...]
+
+    这样最终 _summarize_book 的 LLM 能看到全书的宏观信息，
+    而非仅前120条 chunk_summaries（导致 "lost in the middle"）。
+    """
+    if not chunk_results:
+        return []
+
+    segments = []
+    for start in range(0, len(chunk_results), SEGMENT_SIZE):
+        batch = chunk_results[start:start + SEGMENT_SIZE]
+        if not batch:
+            continue
+        segment_index = start // SEGMENT_SIZE
+        chunk_range = [
+            int(batch[0].get("chunk_index", start + 1) or start + 1),
+            int(batch[-1].get("chunk_index", start + len(batch)) or start + len(batch)),
+        ]
+        # 收集该段的关键信息
+        chunk_summaries = [
+            x.get("one_sentence_summary", "")
+            for x in batch
+            if x.get("one_sentence_summary")
+        ]
+        plot_events = _merge_items(batch, "plot_events", limit=15)
+        conflicts = _merge_items(batch, "conflicts", limit=8)
+        foreshadowing = _merge_items(batch, "foreshadowing", limit=8)
+        worldbuilding = _merge_items(batch, "worldbuilding", limit=8)
+
+        # 如果该段chunk数少（全书分段不触发），直接用规则聚合，不调LLM
+        if len(batch) <= 5:
+            segments.append({
+                "segment_index": segment_index,
+                "chunk_range": chunk_range,
+                "summary": "；".join(chunk_summaries[:5])[:400],
+                "key_events": plot_events[:5],
+                "conflicts": conflicts[:3],
+                "foreshadowing": foreshadowing[:3],
+                "worldbuilding": worldbuilding[:3],
+            })
+            continue
+
+        # LLM 段落汇总
+        try:
+            material = {
+                "chunk_range": chunk_range,
+                "chunk_summaries": chunk_summaries[:30],
+                "plot_events": plot_events,
+                "conflicts": conflicts,
+                "foreshadowing": foreshadowing,
+                "worldbuilding": worldbuilding,
+            }
+            system_prompt = """你是小说段落级分析助手。请将以下分块扫描结果归纳为一个段落级摘要。
+要求：
+1. summary: 用2-3句话概括该段的主要内容和发展
+2. key_events: 列出该段最重要的3-5个事件
+3. conflicts: 列出该段涉及的冲突
+4. foreshadowing: 列出该段设置的伏笔或回收
+5. worldbuilding: 列出该段新增的世界观设定
+输出JSON格式。"""
+            user_prompt = f"分段材料：\n{json.dumps(material, ensure_ascii=False, indent=2)}"
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+            seg_data = _call_json(messages, max_tokens=2000)
+            segments.append({
+                "segment_index": segment_index,
+                "chunk_range": chunk_range,
+                "summary": str(seg_data.get("summary") or "").strip()[:500],
+                "key_events": _safe_list(seg_data.get("key_events"), limit=5),
+                "conflicts": _safe_list(seg_data.get("conflicts"), limit=3),
+                "foreshadowing": _safe_list(seg_data.get("foreshadowing"), limit=3),
+                "worldbuilding": _safe_list(seg_data.get("worldbuilding"), limit=3),
+            })
+        except Exception:
+            logging.warning("segment_summary %d 失败，降级规则聚合", segment_index, exc_info=True)
+            segments.append({
+                "segment_index": segment_index,
+                "chunk_range": chunk_range,
+                "summary": "；".join(chunk_summaries[:5])[:400],
+                "key_events": plot_events[:5],
+                "conflicts": conflicts[:3],
+                "foreshadowing": foreshadowing[:3],
+                "worldbuilding": worldbuilding[:3],
+            })
+
+    return segments
+
+
 def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile=None, knowledge_base: Dict[str, Any] = None, raw_text: str = None) -> Dict[str, Any]:
     profile = profile or load_analysis_profile("general")
     knowledge_base = knowledge_base if isinstance(knowledge_base, dict) else _build_knowledge_base(chunk_results)
+
+    # 分段汇总：先对每 SEGMENT_SIZE 个 chunk 生成段落级摘要
+    segment_summaries = []
+    if SEGMENT_SUMMARY_ENABLED and len(chunk_results) > SEGMENT_SIZE:
+        print(f"  📊 分段汇总：{len(chunk_results)} 个片段 → {(len(chunk_results) + SEGMENT_SIZE - 1) // SEGMENT_SIZE} 个段落摘要")
+        segment_summaries = _build_segment_summaries(chunk_results)
+
     def build_material(limit_scale: float = 1.0):
         summary_limit = max(30, int(120 * limit_scale))
         merge_limit = max(20, int(80 * limit_scale))
@@ -3146,6 +3252,8 @@ def _summarize_book(book_name: str, chunk_results: List[Dict[str, Any]], profile
             "specialty_notes": _merge_items(chunk_results, "specialty_notes", limit=merge_limit),
             "knowledge_base": _compact_knowledge_base_for_summary(knowledge_base, limit=compact_limit),
         }
+        if segment_summaries:
+            material_data["segment_summaries"] = segment_summaries
         if WRITING_QUALITY_ENABLED:
             material_data["writing_quality_chunks"] = _compact_writing_quality_for_summary(chunk_results, limit=max(30, int(80 * limit_scale)))
             material_data["zhihu_writing_insights_material"] = _compact_zhihu_writing_insights_for_summary(chunk_results, limit=max(30, int(80 * limit_scale)))
@@ -3211,7 +3319,8 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
 开启深层语义分析时，请基于 semantic_layers_chunks 归纳事实层、意图层、效果层和技法层的稳定模式；潜台词/反讽必须来自分块证据，不要强行拔高主题。
 开启读者体验分析时，请基于 reader_experience_chunks 判断投入度曲线、爽点/燃点/甜点/解谜满足、期待管理和体验风险；不要把单个片段的挫败点扩大成整书结论。
 开启连续性审计时，请基于 continuity_audit_material 和 rolling_context_timeline 检查人物关系、世界观设定、伏笔回收、因果链、战力/规则是否前后自洽；只能标记有分块证据支持的风险，不要把“尚未完结”本身判为错误。
-开启滚动上下文时，请基于 rolling_context_timeline 理解全书阶段推进、人物关系延续、未解问题和回收情况；不要要求或引用 context_snapshot_used 这类逐块内部快照。"""
+开启滚动上下文时，请基于 rolling_context_timeline 理解全书阶段推进、人物关系延续、未解问题和回收情况；不要要求或引用 context_snapshot_used 这类逐块内部快照。
+如果提供了 segment_summaries（分段汇总），请优先基于这些段落级摘要理解全书宏观发展和阶段转折，它们覆盖了全部chunk的关键信息，弥补 chunk_summaries 截断后的信息丢失。"""
     if WRITING_QUALITY_ENABLED:
         system_prompt += "\n开启知乎文笔洞察时，请结合 zhihu_writing_insights_material 中的确定性模板词统计和分块AI判断，归纳词穷症状、读者推导空间、信息传播效率、风格辨识度与情感真实度；模板词次数必须优先服从材料里的程序统计。"
     user_prompt = f"""书名：{book_name}
@@ -3319,6 +3428,9 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
         summary["foreshadowing_registry"] = foreshadow_registry.generate_report()
     except Exception:
         logging.warning("foreshadowing_registry 构建失败", exc_info=True)
+    # 分段汇总信息
+    if segment_summaries:
+        summary["segment_summaries"] = segment_summaries
     for field in specialty_fields:
         summary[field] = _summary_field_value(data, field)
     return summary
