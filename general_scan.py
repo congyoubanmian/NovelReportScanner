@@ -1815,18 +1815,24 @@ def _context_state_json_hint() -> str:
   }"""
 
 
-def _update_rolling_context_state(state: Dict[str, Any], chunk_result: Dict[str, Any]) -> Dict[str, Any]:
+def _update_rolling_context_state(state: Dict[str, Any], chunk_result: Dict[str, Any], total_text_length: int = 0) -> Dict[str, Any]:
     state = json.loads(json.dumps(state or _empty_rolling_context_state(), ensure_ascii=False))
     update = _normalize_context_state_update((chunk_result or {}).get("context_state_update"))
     foreshadowing = _normalize_foreshadowing_engineering((chunk_result or {}).get("foreshadowing_engineering"))
     progress = update.get("progress_summary") or str((chunk_result or {}).get("one_sentence_summary") or "").strip()[:220]
+    # 动态上限：根据文本规模扩大列表容量
+    _scale = max(1, (total_text_length or 0) // 1_000_000)  # 每100万字 ×1
+    _limit_progress = 10 * _scale
+    _limit_chars = 40 * _scale
+    _limit_threads = 40 * _scale
+    _limit_foreshadow = 50 * _scale
     if progress:
-        state["progress_summaries"] = _dedupe_extend(state.get("progress_summaries") or [], [progress], limit=10)
-    state["active_characters"] = _dedupe_extend(state.get("active_characters") or [], update.get("active_characters") or [], limit=40)
-    state["relationship_updates"] = _dedupe_extend(state.get("relationship_updates") or [], update.get("relationship_updates") or [], limit=30)
-    state["open_threads"] = _dedupe_extend(state.get("open_threads") or [], update.get("open_threads") or [], limit=40)
-    state["resolved_threads"] = _dedupe_extend(state.get("resolved_threads") or [], update.get("resolved_threads") or [], limit=30)
-    state["worldbuilding_updates"] = _dedupe_extend(state.get("worldbuilding_updates") or [], update.get("worldbuilding_updates") or [], limit=30)
+        state["progress_summaries"] = _dedupe_extend(state.get("progress_summaries") or [], [progress], limit=_limit_progress)
+    state["active_characters"] = _dedupe_extend(state.get("active_characters") or [], update.get("active_characters") or [], limit=_limit_chars)
+    state["relationship_updates"] = _dedupe_extend(state.get("relationship_updates") or [], update.get("relationship_updates") or [], limit=30 * _scale)
+    state["open_threads"] = _dedupe_extend(state.get("open_threads") or [], update.get("open_threads") or [], limit=_limit_threads)
+    state["resolved_threads"] = _dedupe_extend(state.get("resolved_threads") or [], update.get("resolved_threads") or [], limit=30 * _scale)
+    state["worldbuilding_updates"] = _dedupe_extend(state.get("worldbuilding_updates") or [], update.get("worldbuilding_updates") or [], limit=30 * _scale)
     resolved = set(update.get("resolved_threads") or [])
     if resolved:
         state["open_threads"] = [item for item in state.get("open_threads") or [] if item not in resolved]
@@ -1837,9 +1843,9 @@ def _update_rolling_context_state(state: Dict[str, Any], chunk_result: Dict[str,
         if item.get("resolved_item") or item.get("resolution_description")
     ]
     false_foreshadowing = foreshadowing.get("false_foreshadowing") or []
-    state["active_foreshadowing"] = _dedupe_extend(state.get("active_foreshadowing") or [], new_foreshadowing, limit=50)
-    state["resolved_foreshadowing"] = _dedupe_extend(state.get("resolved_foreshadowing") or [], resolved_foreshadowing, limit=40)
-    state["false_foreshadowing"] = _dedupe_extend(state.get("false_foreshadowing") or [], false_foreshadowing, limit=30)
+    state["active_foreshadowing"] = _dedupe_extend(state.get("active_foreshadowing") or [], new_foreshadowing, limit=_limit_foreshadow)
+    state["resolved_foreshadowing"] = _dedupe_extend(state.get("resolved_foreshadowing") or [], resolved_foreshadowing, limit=40 * _scale)
+    state["false_foreshadowing"] = _dedupe_extend(state.get("false_foreshadowing") or [], false_foreshadowing, limit=30 * _scale)
     if resolved_foreshadowing:
         resolved_text = set(resolved_foreshadowing)
         state["active_foreshadowing"] = [
@@ -1884,12 +1890,12 @@ def _compact_rolling_context_timeline(chunk_results: List[Dict[str, Any]], limit
     return timeline
 
 
-def _merged_context_state_update(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _merged_context_state_update(results: List[Dict[str, Any]], total_text_length: int = 0) -> Dict[str, Any]:
     state = _empty_rolling_context_state()
     for result in results or []:
         if not isinstance(result, dict):
             continue
-        state = _update_rolling_context_state(state, result)
+        state = _update_rolling_context_state(state, result, total_text_length)
     return {
         "progress_summary": "；".join(_safe_list(state.get("progress_summaries"), limit=4)[-4:])[:220],
         "active_characters": _safe_list(state.get("active_characters"), limit=8),
@@ -3419,7 +3425,8 @@ def _build_general_scan_output(*, clean_name, novel_file, profile, detail_path,
 
 
 def _run_general_chunk_scan(chunks, selected_original_indices, source_chunk_count,
-                            sampling_strategy, reusable_results, entity_prescan, profile):
+                            sampling_strategy, reusable_results, entity_prescan, profile,
+                            total_text_length=0):
     """执行通用扫描的逐块扫描循环，返回 (chunk_results, failed, reused_count, scanned_count, rolling_context_state)。"""
     chunk_results = []
     failed = []
@@ -3459,7 +3466,7 @@ def _run_general_chunk_scan(chunks, selected_original_indices, source_chunk_coun
             )
             if ROLLING_CONTEXT_ENABLED:
                 result["context_snapshot_used"] = context_snapshot
-                rolling_context_state = _update_rolling_context_state(rolling_context_state, result)
+                rolling_context_state = _update_rolling_context_state(rolling_context_state, result, total_text_length)
             chunk_results.append(result)
             reused_chunk_count += 1
             continue
@@ -3478,7 +3485,7 @@ def _run_general_chunk_scan(chunks, selected_original_indices, source_chunk_coun
             result.setdefault("density_profile", density_profile)
             if ROLLING_CONTEXT_ENABLED:
                 result.setdefault("context_snapshot_used", context_snapshot)
-                rolling_context_state = _update_rolling_context_state(rolling_context_state, result)
+                rolling_context_state = _update_rolling_context_state(rolling_context_state, result, total_text_length)
             chunk_results.append(result)
             scanned_chunk_count += 1
         except Exception as exc:
@@ -3594,6 +3601,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, profile
         _run_general_chunk_scan(
             chunks, selected_original_indices, source_chunk_count,
             sampling_strategy, reusable_results, entity_prescan, profile,
+            total_text_length=len(text),
         )
 
     raw_knowledge_base = _build_knowledge_base(chunk_results) if chunk_results else {}
