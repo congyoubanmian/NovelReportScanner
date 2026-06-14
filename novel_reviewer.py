@@ -5319,19 +5319,51 @@ def verify_purity_second_round(name: str, facts: Dict[str, Any], program_result:
         return {"final_reason": f"二次校验失败: {e}"}
 
 
+def _assess_purity_fact_confidence(facts: Dict[str, Any]) -> str:
+    """
+    评估纯洁度事实数据的完整度，返回置信度标注。
+
+    high:   关键维度都有明确数据（sexual_relations/physical_contacts 非空）
+    medium: 部分维度有数据但存在模糊/待定条目
+    low:    关键维度数据缺失（无法做有效交叉验证）
+    """
+    if not isinstance(facts, dict):
+        return "low"
+
+    sexual = facts.get("sexual_relations") or []
+    children = facts.get("children_info") or []
+    contacts = facts.get("physical_contacts") or []
+    romantic = facts.get("romantic_feelings") or []
+    partners = facts.get("partner_relations") or []
+
+    # 统计有实质内容的关键维度
+    populated = sum(1 for lst in [sexual, children, contacts, partners] if lst)
+
+    if populated >= 3:
+        return "high"
+    elif populated >= 1:
+        return "medium"
+    else:
+        return "low"
+
+
 def judge_with_verification(name: str, facts: Dict[str, Any], male_lead: str) -> Dict[str, Any]:
     """
     完整的判定流程：程序判定 → LLM校验 → 若不一致再次校验 → 输出最终结果
+    每个结果附带 purity_confidence 置信度标注（high/medium/low）。
     """
-    # 统一清洗：避免“身世句”影响程序/LLM
+    # 统一清洗：避免"身世句"影响程序/LLM
     facts = _sanitize_purity_facts_for_heroine(name, facts)
 
     # 第一步：程序规则判定
     program_result = judge_purity_by_facts(name, facts, male_lead)
-    
+
+    # 评估事实完整度 → 初始置信度
+    fact_confidence = _assess_purity_fact_confidence(facts)
+
     # 第二步：LLM 校验
     llm_verify = verify_purity_by_llm(name, facts, program_result, male_lead)
-    
+
     if llm_verify.get("agree", True):
         # LLM 同意程序判定，直接返回
         program_result["verification"] = {
@@ -5339,6 +5371,7 @@ def judge_with_verification(name: str, facts: Dict[str, Any], male_lead: str) ->
             "llm_agreed": True,
             "rounds": 1,
         }
+        program_result["purity_confidence"] = fact_confidence
         return _normalize_purity_result_consistency(program_result)
     
     # LLM 不同意，记录第一轮分歧
@@ -5362,9 +5395,11 @@ def judge_with_verification(name: str, facts: Dict[str, Any], male_lead: str) ->
             "llm_agreed": True,
             "rounds": 2,
             "first_disagreement": first_disagreement,
-            # 解释：第一轮可能“不同意”，第二轮复核后又“同意”，这里记录二轮理由避免观感矛盾
+            # 解释：第一轮可能"不同意"，第二轮复核后又"同意"，这里记录二轮理由避免观感矛盾
             "second_reason": second_verify.get("final_reason", ""),
         }
+        # 一致但经历分歧 → 降为 medium
+        program_result["purity_confidence"] = "medium" if fact_confidence == "high" else fact_confidence
         return _normalize_purity_result_consistency(program_result)
     
     # 仍然不一致：采用 LLM 的二次校验结果作为最终裁决（同时保留程序结果供回溯）
@@ -5414,6 +5449,7 @@ def judge_with_verification(name: str, facts: Dict[str, Any], male_lead: str) ->
                 "spirit_status": llm_verify.get("spirit_status"),
             },
         },
+        "purity_confidence": "low",
     }
     return _normalize_purity_result_consistency(final_result)
 
