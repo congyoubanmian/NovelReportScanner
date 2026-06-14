@@ -517,7 +517,7 @@ def make_chat_completion(
     - 定义自己的 API_KEY_POOL/BASE_URL/REQUEST_TIMEOUT/重试阈值
     - `chat_completion = make_chat_completion(...)`
     后续统一修改本文件即可影响所有脚本的错误处理与重试策略。
-    
+
     新增功能：
     1. 本地 RPM/TPM 预限流（避免打到厂商阈值被挂起）
     2. 动态 timeout（根据请求规模放宽 timeout，防止大输出被误判）
@@ -587,6 +587,8 @@ def make_chat_completion(
     key_last_success_ts: dict[str, float] = {}
     key_last_rate_limit_ts: dict[str, float] = {}
 
+    # ==================== 内部工具函数 ====================
+
     def _get_available_keys() -> Tuple[List[str], Optional[float]]:
         """
         获取当前可用的 key 列表。
@@ -597,7 +599,7 @@ def make_chat_completion(
         now = time.time()
         available = []
         earliest_unblock = None
-        
+
         with disabled_keys_lock:
             for k in api_key_pool:
                 if not k:
@@ -611,7 +613,7 @@ def make_chat_completion(
                         earliest_unblock = until
                     continue
                 available.append(k)
-        
+
         return (available, earliest_unblock)
 
     def _soft_disable_key(key: str, cooldown: float) -> None:
@@ -641,6 +643,212 @@ def make_chat_completion(
                                 total += len(part.get("text", ""))
         return total
 
+    def _read_key_status(key: str) -> tuple:
+        """读取 key 的最近状态，返回 (recently_rate_limited, recently_succeeded, success_cnt)。"""
+        with counts_lock:
+            last_rl = key_last_rate_limit_ts.get(key, 0.0)
+            last_ok = key_last_success_ts.get(key, 0.0)
+            success_cnt = key_success_counts.get(key, 0)
+        now = time.time()
+        recently_rate_limited = (now - last_rl) <= float(rate_limit_grace_seconds) if last_rl else False
+        recently_succeeded = (now - last_ok) <= float(recent_success_protect_seconds) if last_ok else False
+        return recently_rate_limited, recently_succeeded, success_cnt
+
+    def _handle_error(e, key, idx, key_tag, attempt_no, real_attempt, elapsed, dyn_timeout, input_chars) -> str:
+        """
+        处理请求异常，返回动作指令：
+        - ("retry", wait_time) — 等待后重试同一个 key
+        - ("next_key",)        — 切换下一个 key
+        - ("break_outer",)     — 跳出 key 循环回到外层 while
+        - ("raise",)           — 抛出异常
+        """
+        code = extract_status_code(e)
+        err_msg = extract_error_message(e)
+        recently_rate_limited, recently_succeeded, success_cnt = _read_key_status(key)
+
+        # ========== 超时处理 ==========
+        if code is None and is_timeout_error(e):
+            return _handle_timeout(
+                key, idx, key_tag, attempt_no, real_attempt, elapsed, dyn_timeout,
+                recently_rate_limited, recently_succeeded, success_cnt, logger, cfg,
+                counts_lock, key_timeout_counts, ip_cooldown,
+                timeout_soft_disable_base_seconds, timeout_permanent_disable_after,
+                _soft_disable_key, _permanent_disable_key,
+            )
+
+        # ========== 401：key 无效 ==========
+        if code == 401:
+            _permanent_disable_key(key)
+            ip_cooldown.trigger_micro_cooldown(1.5)
+            _log(logger, "warning", f"API_KEY[{idx}|{key_tag}] 调用失败(401: API key 无效)，永久禁用")
+            return ("break_outer",)
+
+        # ========== 429：速率限制 ==========
+        if code == 429:
+            with counts_lock:
+                key_last_rate_limit_ts[key] = time.time()
+            cooldown_secs = ip_cooldown.trigger(reason=f"429 on key[{key_tag}]")
+            _log(logger, "warning", f"API_KEY[{idx}|{key_tag}] 触发速率限制(429)，IP全局冷却 {cooldown_secs:.1f}s")
+            return ("break_outer",)
+
+        # ========== 403：可能是频率限制/余额不足 ==========
+        if code == 403:
+            return _handle_403(
+                key, idx, key_tag, attempt_no, err_msg, logger, cfg,
+                ip_cooldown, counts_lock, disabled_keys_lock,
+                key_403_counts, key_last_rate_limit_ts,
+                _permanent_disable_key,
+            )
+
+        # ========== 5xx：服务端错误 ==========
+        if code in (500, 502, 503, 504):
+            return _handle_5xx(
+                code, idx, key_tag, real_attempt, attempt_no, input_chars, logger, cfg, ip_cooldown,
+            )
+
+        # ========== 其他未知错误 ==========
+        if real_attempt < cfg.max_retries:
+            wait_time = cfg.base_delay * attempt_no
+            _log(logger, "warning", f"API_KEY[{idx}|{key_tag}] 未知错误({code}: {err_msg[:100]})，等待 {wait_time:.1f}s 后重试 ({attempt_no}/{cfg.max_retries})")
+            return ("retry", wait_time)
+
+        # 最后一次重试也失败，抛出异常
+        return ("raise",)
+
+    def _handle_timeout(
+        key, idx, key_tag, attempt_no, real_attempt, elapsed, dyn_timeout,
+        recently_rate_limited, recently_succeeded, success_cnt, logger, cfg,
+        counts_lock, key_timeout_counts, ip_cooldown,
+        timeout_soft_disable_base_seconds, timeout_permanent_disable_after,
+        _soft_disable_key, _permanent_disable_key,
+    ) -> str:
+        """超时错误处理。"""
+        with counts_lock:
+            key_timeout_counts[key] = key_timeout_counts.get(key, 0) + 1
+            consecutive_timeout = key_timeout_counts[key]
+
+        is_long_hang = elapsed >= dyn_timeout * 0.8
+
+        _log(logger, "warning",
+             f"API_KEY[{idx}|{key_tag}] 超时：attempt={attempt_no}/{cfg.max_retries}, "
+             f"elapsed={elapsed:.1f}s, dyn_timeout={dyn_timeout}s, "
+             f"consecutive={consecutive_timeout}, "
+             f"recently_rate_limited={recently_rate_limited}, recently_succeeded={recently_succeeded}, "
+             f"is_long_hang={is_long_hang}")
+
+        # 长挂起：立即软禁用并切换 key
+        if is_long_hang:
+            cooldown = float(timeout_soft_disable_base_seconds) * max(1, consecutive_timeout)
+            _soft_disable_key(key, cooldown)
+            _log(logger, "warning", f"API_KEY[{idx}|{key_tag}] 长时间挂起({elapsed:.1f}s)，软禁用 {cooldown:.0f}s，切换下一个 key")
+            return ("next_key",)
+
+        # 达到超时阈值：软禁用
+        if consecutive_timeout >= cfg.max_timeout_retries:
+            cooldown = float(timeout_soft_disable_base_seconds) * max(1, consecutive_timeout)
+            _soft_disable_key(key, cooldown)
+
+            can_permanent = (
+                not recently_rate_limited
+                and not recently_succeeded
+                and success_cnt == 0
+                and consecutive_timeout >= int(timeout_permanent_disable_after)
+            )
+
+            if can_permanent:
+                _permanent_disable_key(key)
+                ip_cooldown.trigger_micro_cooldown(1.5)
+                _log(logger, "warning", f"API_KEY[{idx}|{key_tag}] 长期超时(累计{consecutive_timeout}次)，从未成功过，疑似余额不足/挂起，永久禁用")
+            else:
+                hint = ""
+                if recently_rate_limited:
+                    hint = "（近期限速，疑似慢响应）"
+                elif recently_succeeded:
+                    hint = "（近期成功过，防误杀）"
+                _log(logger, "warning", f"API_KEY[{idx}|{key_tag}] 超时累计{consecutive_timeout}次，软禁用 {cooldown:.0f}s{hint}")
+            return ("next_key",)
+
+        # 短超时：线性退避后重试
+        wait_time = cfg.base_delay * attempt_no
+        if recently_rate_limited:
+            wait_time = max(wait_time, cfg.base_delay * 4 + (attempt_no - 1) * 2)
+        _log(logger, "warning", f"API_KEY[{idx}|{key_tag}] 短超时({elapsed:.1f}s)，等待 {wait_time:.1f}s 后重试 ({attempt_no}/{cfg.max_retries})")
+        return ("retry", wait_time)
+
+    def _handle_403(
+        key, idx, key_tag, attempt_no, err_msg, logger, cfg,
+        ip_cooldown, counts_lock, disabled_keys_lock,
+        key_403_counts, key_last_rate_limit_ts,
+        _permanent_disable_key,
+    ) -> str:
+        """403 错误处理。"""
+        err_msg_lower = err_msg.lower()
+
+        is_rate_limit = any(
+            kw in err_msg_lower
+            for kw in ("rpm limit", "tpm limit", "rate limit", "limit exceeded",
+                       "too many requests", "请求过于频繁", "频率限制")
+        )
+        if is_rate_limit:
+            with counts_lock:
+                key_last_rate_limit_ts[key] = time.time()
+            cooldown_secs = ip_cooldown.trigger(reason=f"403 RPM/TPM on key[{key_tag}]")
+            _log(logger, "warning", f"API_KEY[{idx}|{key_tag}] 触发速率限制(403: RPM/TPM limit)，IP全局冷却 {cooldown_secs:.1f}s")
+            return ("break_outer",)
+
+        is_balance_issue = any(
+            kw in err_msg_lower
+            for kw in ("balance", "insufficient", "quota", "余额", "不足", "欠费", "充值")
+        )
+        if is_balance_issue:
+            _permanent_disable_key(key)
+            ip_cooldown.trigger_micro_cooldown(1.5)
+            _log(logger, "warning", f"API_KEY[{idx}|{key_tag}] 调用失败(403: 余额不足)，永久禁用")
+            return ("break_outer",)
+
+        # 其他 403
+        with counts_lock:
+            key_403_counts[key] = key_403_counts.get(key, 0) + 1
+            consecutive_403 = key_403_counts[key]
+
+        if consecutive_403 >= cfg.max_403_retries:
+            _permanent_disable_key(key)
+            ip_cooldown.trigger_micro_cooldown(1.5)
+            _log(logger, "warning", f"API_KEY[{idx}|{key_tag}] 调用失败(403: 连续{consecutive_403}次错误)，永久禁用")
+            return ("break_outer",)
+
+        wait_time = cfg.base_delay * attempt_no
+        _log(logger, "warning", f"API_KEY[{idx}|{key_tag}] 收到403({err_msg[:80]})，等待 {wait_time:.1f}s 后重试 ({attempt_no}/{cfg.max_retries})")
+        return ("retry", wait_time)
+
+    def _handle_5xx(code, idx, key_tag, real_attempt, attempt_no, input_chars, logger, cfg, ip_cooldown) -> str:
+        """5xx 服务端错误处理。"""
+        # 503/504 + 近期有限速信号 → 视为 IP 限流/网关排队
+        if code in (503, 504) and ip_cooldown.has_recent_rate_limit(within_seconds=60.0):
+            cooldown_secs = ip_cooldown.trigger(reason=f"503 during rate-limit storm on key[{key_tag}]")
+            _log(logger, "warning", f"API_KEY[{idx}|{key_tag}] {code}+近期限速信号，视为IP限流，IP全局冷却 {cooldown_secs:.1f}s")
+            return ("break_outer",)
+
+        # 正常 5xx：短重试后失败，交给上层断点/补扫，避免同一大请求反复撞网关。
+        server_error_limit = cfg.max_server_error_retries
+        fast_fail_threshold = cfg.max_server_error_fast_fail_input_chars
+        if fast_fail_threshold > 0 and input_chars >= fast_fail_threshold:
+            server_error_limit = min(server_error_limit, 1)
+        server_error_limit = min(cfg.max_retries, max(1, server_error_limit))
+        if real_attempt >= server_error_limit:
+            fast_fail_note = (
+                f"，大请求快速失败阈值={fast_fail_threshold}"
+                if fast_fail_threshold > 0 and input_chars >= fast_fail_threshold
+                else ""
+            )
+            _log(logger, "warning", f"API_KEY[{idx}|{key_tag}] 服务器错误({code})已达本轮上限({server_error_limit}){fast_fail_note}，停止重试")
+            return ("raise",)
+        wait_time = cfg.base_delay * attempt_no
+        _log(logger, "warning", f"API_KEY[{idx}|{key_tag}] 服务器错误({code})，等待 {wait_time:.1f}s 后重试 ({attempt_no}/{server_error_limit})")
+        return ("retry", wait_time)
+
+    # ==================== 主请求函数 ====================
+
     def chat_completion(*, messages: Any, **kwargs: Any) -> Any:
         if not api_key_pool:
             raise ValueError("请设置 API_KEY 或 API_KEY_POOL")
@@ -655,7 +863,7 @@ def make_chat_completion(
             alpha=dynamic_timeout_alpha,
             cap=dynamic_timeout_cap,
         )
-        
+
         # 估算 tokens（用于限流）
         est_tokens = estimate_tokens(messages, max_tokens)
 
@@ -673,7 +881,7 @@ def make_chat_completion(
             break_to_outer = False
 
             available_keys, earliest_unblock = _get_available_keys()
-            
+
             # 【关键改进】如果没有可用 key，检查是否有软禁用的 key 即将解禁
             if not available_keys:
                 # 检查是否所有 key 都永久禁用
@@ -682,10 +890,10 @@ def make_chat_completion(
                         k in permanently_disabled
                         for k in api_key_pool if k
                     )
-                
+
                 if all_permanent or not api_key_pool:
                     raise RuntimeError("所有 API_KEY 均永久不可用（余额不足/无效）")
-                
+
                 # 有软禁用的 key，等待最早解禁
                 if earliest_unblock is not None:
                     wait_time = max(0, earliest_unblock - now) + 0.5  # 加 0.5s 缓冲
@@ -731,17 +939,17 @@ def make_chat_completion(
                     try:
                         # 使用动态 timeout 创建客户端
                         cli = openai_client_factory(key, base_url, dyn_timeout)
-                        
+
                         _log(
                             logger,
                             "info",
                             f"API_KEY[{idx}|{key_tag}] 发起请求：attempt={attempt_no}/{cfg.max_retries}, dyn_timeout={dyn_timeout}s, max_tokens={max_tokens}, input_chars={input_chars}, est_tokens={est_tokens}",
                         )
-                        
+
                         resp = cli.chat.completions.create(messages=messages, **kwargs)
-                        
+
                         elapsed = time.time() - start_ts
-                        
+
                         # 成功：重置计数，记录成功时间
                         with counts_lock:
                             key_403_counts[key] = 0
@@ -751,269 +959,37 @@ def make_chat_completion(
 
                         # 重置 IP 冷却递增计数（下次限速从 base_cooldown 重新开始）
                         ip_cooldown.on_success()
-                        
+
                         # 成功意味着 key 可用，清理软禁用
                         with disabled_keys_lock:
                             if key in disabled_until:
                                 disabled_until.pop(key, None)
-                        
+
                         _log(
                             logger,
                             "info",
                             f"API_KEY[{idx}|{key_tag}] 请求成功，耗时 {elapsed:.1f}s",
                         )
-                        
+
                         return resp
-                        
+
                     except Exception as e:  # noqa: BLE001 - 需要兼容多种 SDK/异常类型
-                        code = extract_status_code(e)
-                        err_msg = extract_error_message(e)
                         elapsed = time.time() - start_ts
-
-                        # 获取 key 状态信息（用于判断）
-                        with counts_lock:
-                            last_rl = key_last_rate_limit_ts.get(key, 0.0)
-                            last_ok = key_last_success_ts.get(key, 0.0)
-                            success_cnt = key_success_counts.get(key, 0)
-                        
-                        now2 = time.time()
-                        recently_rate_limited = (now2 - last_rl) <= float(rate_limit_grace_seconds) if last_rl else False
-                        recently_succeeded = (now2 - last_ok) <= float(recent_success_protect_seconds) if last_ok else False
-
-                        # ========== 超时处理 ==========
-                        if code is None and is_timeout_error(e):
-                            with counts_lock:
-                                key_timeout_counts[key] = key_timeout_counts.get(key, 0) + 1
-                                consecutive_timeout = key_timeout_counts[key]
-
-                            # 【改进】区分短超时（轻微抖动）和长挂起
-                            is_long_hang = elapsed >= dyn_timeout * 0.8  # 接近 dyn_timeout 视为长挂起
-                            
-                            # 记录详细日志
-                            _log(
-                                logger,
-                                "warning",
-                                f"API_KEY[{idx}|{key_tag}] 超时：attempt={attempt_no}/{cfg.max_retries}, "
-                                f"elapsed={elapsed:.1f}s, dyn_timeout={dyn_timeout}s, "
-                                f"consecutive={consecutive_timeout}, "
-                                f"recently_rate_limited={recently_rate_limited}, recently_succeeded={recently_succeeded}, "
-                                f"is_long_hang={is_long_hang}",
-                            )
-
-                            # 长挂起：立即软禁用并切换 key
-                            if is_long_hang:
-                                cooldown = float(timeout_soft_disable_base_seconds) * max(1, consecutive_timeout)
-                                _soft_disable_key(key, cooldown)
-                                _log(
-                                    logger,
-                                    "warning",
-                                    f"API_KEY[{idx}|{key_tag}] 长时间挂起({elapsed:.1f}s)，软禁用 {cooldown:.0f}s，切换下一个 key",
-                                )
-                                break  # 换下一个 key
-
-                            # 达到超时阈值：软禁用
-                            if consecutive_timeout >= cfg.max_timeout_retries:
-                                cooldown = float(timeout_soft_disable_base_seconds) * max(1, consecutive_timeout)
-                                _soft_disable_key(key, cooldown)
-
-                                # 【改进】永久禁用判定更保守
-                                # 只有：从未成功过 + 长时间持续超时 + 最近无 rate-limit 迹象
-                                can_permanent = (
-                                    not recently_rate_limited
-                                    and not recently_succeeded
-                                    and success_cnt == 0
-                                    and consecutive_timeout >= int(timeout_permanent_disable_after)
-                                )
-                                
-                                if can_permanent:
-                                    _permanent_disable_key(key)
-                                    ip_cooldown.trigger_micro_cooldown(1.5)
-                                    _log(
-                                        logger,
-                                        "warning",
-                                        f"API_KEY[{idx}|{key_tag}] 长期超时(累计{consecutive_timeout}次)，"
-                                        f"从未成功过，疑似余额不足/挂起，永久禁用",
-                                    )
-                                else:
-                                    hint = ""
-                                    if recently_rate_limited:
-                                        hint = "（近期限速，疑似慢响应）"
-                                    elif recently_succeeded:
-                                        hint = "（近期成功过，防误杀）"
-                                    _log(
-                                        logger,
-                                        "warning",
-                                        f"API_KEY[{idx}|{key_tag}] 超时累计{consecutive_timeout}次，"
-                                        f"软禁用 {cooldown:.0f}s{hint}",
-                                    )
-                                break  # 换下一个 key
-
-                            # 短超时：线性退避后重试
-                            wait_time = cfg.base_delay * attempt_no
-                            if recently_rate_limited:
-                                wait_time = max(wait_time, cfg.base_delay * 4 + (attempt_no - 1) * 2)
-                            _log(
-                                logger,
-                                "warning",
-                                f"API_KEY[{idx}|{key_tag}] 短超时({elapsed:.1f}s)，"
-                                f"等待 {wait_time:.1f}s 后重试 ({attempt_no}/{cfg.max_retries})",
-                            )
-                            time.sleep(wait_time)
+                        action = _handle_error(
+                            e, key, idx, key_tag, attempt_no, real_attempt,
+                            elapsed, dyn_timeout, input_chars,
+                        )
+                        kind = action[0]
+                        if kind == "retry":
+                            time.sleep(action[1])
                             continue
-
-                        # ========== 401：key 无效 ==========
-                        if code == 401:
-                            _permanent_disable_key(key)
-                            ip_cooldown.trigger_micro_cooldown(1.5)
-                            _log(
-                                logger,
-                                "warning",
-                                f"API_KEY[{idx}|{key_tag}] 调用失败(401: API key 无效)，永久禁用",
-                            )
+                        elif kind == "next_key":
+                            break
+                        elif kind == "break_outer":
                             break_to_outer = True
                             break
-
-                        # ========== 429：速率限制 ==========
-                        if code == 429:
-                            with counts_lock:
-                                key_last_rate_limit_ts[key] = time.time()
-                            cooldown_secs = ip_cooldown.trigger(reason=f"429 on key[{key_tag}]")
-                            _log(
-                                logger,
-                                "warning",
-                                f"API_KEY[{idx}|{key_tag}] 触发速率限制(429)，"
-                                f"IP全局冷却 {cooldown_secs:.1f}s",
-                            )
-                            break_to_outer = True
-                            break
-
-                        # ========== 403：可能是频率限制/余额不足 ==========
-                        if code == 403:
-                            err_msg_lower = err_msg.lower()
-                            
-                            is_rate_limit = any(
-                                kw in err_msg_lower
-                                for kw in (
-                                    "rpm limit",
-                                    "tpm limit",
-                                    "rate limit",
-                                    "limit exceeded",
-                                    "too many requests",
-                                    "请求过于频繁",
-                                    "频率限制",
-                                )
-                            )
-                            if is_rate_limit:
-                                with counts_lock:
-                                    key_last_rate_limit_ts[key] = time.time()
-                                cooldown_secs = ip_cooldown.trigger(reason=f"403 RPM/TPM on key[{key_tag}]")
-                                _log(
-                                    logger,
-                                    "warning",
-                                    f"API_KEY[{idx}|{key_tag}] 触发速率限制(403: RPM/TPM limit)，"
-                                    f"IP全局冷却 {cooldown_secs:.1f}s",
-                                )
-                                break_to_outer = True
-                                break
-
-                            is_balance_issue = any(
-                                kw in err_msg_lower
-                                for kw in ("balance", "insufficient", "quota", "余额", "不足", "欠费", "充值")
-                            )
-                            if is_balance_issue:
-                                _permanent_disable_key(key)
-                                ip_cooldown.trigger_micro_cooldown(1.5)
-                                _log(
-                                    logger,
-                                    "warning",
-                                    f"API_KEY[{idx}|{key_tag}] 调用失败(403: 余额不足)，永久禁用",
-                                )
-                                break_to_outer = True
-                                break
-
-                            # 其他 403
-                            with counts_lock:
-                                key_403_counts[key] = key_403_counts.get(key, 0) + 1
-                                consecutive_403 = key_403_counts[key]
-
-                            if consecutive_403 >= cfg.max_403_retries:
-                                _permanent_disable_key(key)
-                                ip_cooldown.trigger_micro_cooldown(1.5)
-                                _log(
-                                    logger,
-                                    "warning",
-                                    f"API_KEY[{idx}|{key_tag}] 调用失败(403: 连续{consecutive_403}次错误)，永久禁用",
-                                )
-                                break_to_outer = True
-                                break
-
-                            wait_time = cfg.base_delay * attempt_no
-                            _log(
-                                logger,
-                                "warning",
-                                f"API_KEY[{idx}|{key_tag}] 收到403({err_msg[:80]})，"
-                                f"等待 {wait_time:.1f}s 后重试 ({attempt_no}/{cfg.max_retries})",
-                            )
-                            time.sleep(wait_time)
-                            continue
-
-                        # ========== 5xx：服务端错误 ==========
-                        if code in (500, 502, 503, 504):
-                            # 503/504 + 近期有限速信号 → 视为 IP 限流/网关排队
-                            if code in (503, 504) and ip_cooldown.has_recent_rate_limit(within_seconds=60.0):
-                                cooldown_secs = ip_cooldown.trigger(reason=f"503 during rate-limit storm on key[{key_tag}]")
-                                _log(
-                                    logger,
-                                    "warning",
-                                    f"API_KEY[{idx}|{key_tag}] {code}+近期限速信号，视为IP限流，"
-                                    f"IP全局冷却 {cooldown_secs:.1f}s",
-                                )
-                                break_to_outer = True
-                                break
-
-                            # 正常 5xx：短重试后失败，交给上层断点/补扫，避免同一大请求反复撞网关。
-                            server_error_limit = cfg.max_server_error_retries
-                            fast_fail_threshold = cfg.max_server_error_fast_fail_input_chars
-                            if fast_fail_threshold > 0 and input_chars >= fast_fail_threshold:
-                                server_error_limit = min(server_error_limit, 1)
-                            server_error_limit = min(cfg.max_retries, max(1, server_error_limit))
-                            if real_attempt >= server_error_limit:
-                                fast_fail_note = (
-                                    f"，大请求快速失败阈值={fast_fail_threshold}"
-                                    if fast_fail_threshold > 0 and input_chars >= fast_fail_threshold
-                                    else ""
-                                )
-                                _log(
-                                    logger,
-                                    "warning",
-                                    f"API_KEY[{idx}|{key_tag}] 服务器错误({code})已达本轮上限({server_error_limit})"
-                                    f"{fast_fail_note}，停止重试",
-                                )
-                                raise
-                            wait_time = cfg.base_delay * attempt_no
-                            _log(
-                                logger,
-                                "warning",
-                                f"API_KEY[{idx}|{key_tag}] 服务器错误({code})，"
-                                f"等待 {wait_time:.1f}s 后重试 ({attempt_no}/{server_error_limit})",
-                            )
-                            time.sleep(wait_time)
-                            continue
-
-                        # ========== 其他未知错误 ==========
-                        if real_attempt < cfg.max_retries:
-                            wait_time = cfg.base_delay * attempt_no
-                            _log(
-                                logger,
-                                "warning",
-                                f"API_KEY[{idx}|{key_tag}] 未知错误({code}: {err_msg[:100]})，"
-                                f"等待 {wait_time:.1f}s 后重试 ({attempt_no}/{cfg.max_retries})",
-                            )
-                            time.sleep(wait_time)
-                            continue
-                        
-                        # 最后一次重试也失败，抛出异常
-                        raise
+                        elif kind == "raise":
+                            raise
 
                 # 仍在 key 循环内 — break 跳出 for 循环
                 if break_to_outer:
