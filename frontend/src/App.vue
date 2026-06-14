@@ -753,7 +753,9 @@ useStateEvents(applyState, {
       <button class="token-save" @click="saveAccessToken">保存</button>
     </div>
 
-    <div class="runtime-config-panel" v-if="runtimeConfig">
+    <details class="config-details" v-if="runtimeConfig" open>
+      <summary class="config-summary">⚙️ 运行配置（点击展开/收起）</summary>
+      <div class="runtime-config-panel">
       <label>
         <span>并发</span>
         <input
@@ -1146,7 +1148,8 @@ useStateEvents(applyState, {
       <button class="runtime-save" :disabled="savingRuntimeConfig" @click="saveRuntimeConfig">
         {{ savingRuntimeConfig ? '保存中...' : '保存运行配置' }}
       </button>
-    </div>
+      </div>
+    </details>
 
     <BookUpload :profiles="profiles" @uploaded="handleUploaded" @error="toastError" />
 
@@ -1202,7 +1205,7 @@ body {
 header {
   background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
   color: white;
-  padding: 36px 24px 48px;
+  padding: 28px 24px 44px;
   margin-bottom: -32px;
   position: relative;
   overflow: hidden;
@@ -1411,19 +1414,104 @@ header p {
   cursor: not-allowed;
 }
 
+/* Config details (collapsible) */
+.config-details {
+  margin: 0 0 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+  overflow: hidden;
+}
+.config-summary {
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  user-select: none;
+  list-style: none;
+}
+.config-summary::-webkit-details-marker {
+  display: none;
+}
+.config-summary::before {
+  content: '▸ ';
+  display: inline;
+  color: var(--text-muted);
+}
+.config-details[open] .config-summary::before {
+  content: '▾ ';
+}
+.config-details[open] > .config-summary {
+  border-bottom: 1px solid var(--border-color);
+}
+.config-details > .runtime-config-panel {
+  border: none;
+  border-radius: 0;
+  margin: 0;
+}
+
 @media (max-width: 768px) {
   header {
-    padding: 28px 16px 40px;
+    padding: 20px 16px 36px;
   }
   header h1 {
-    font-size: 1.35rem;
+    font-size: 1.2rem;
+  }
+  header p {
+    font-size: 0.8rem;
+  }
+  .runtime-strip {
+    gap: 6px;
+  }
+  .runtime-item {
+    font-size: 0.72rem;
+    padding: 4px 8px;
   }
   .access-token-row {
-    align-items: stretch;
+    max-width: 100%;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .access-token-row input {
+    width: 100%;
+  }
+  .token-save {
+    width: 100%;
+  }
+  .runtime-config-panel {
+    gap: 8px;
+    padding: 10px;
   }
   .runtime-config-panel label,
   .runtime-save {
-    flex: 1 1 140px;
+    flex: 1 1 calc(50% - 8px);
+    min-width: 0;
+  }
+  .runtime-toggle {
+    flex: 0 0 calc(50% - 8px);
+    min-width: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  header .container {
+    flex-direction: column;
+    gap: 10px;
+  }
+  header h1 {
+    font-size: 1.1rem;
+  }
+  .runtime-item {
+    font-size: 0.7rem;
+    padding: 3px 6px;
+  }
+  .runtime-config-panel label,
+  .runtime-save {
+    flex: 1 1 100%;
+  }
+  .runtime-toggle {
+    flex: 1 1 calc(50% - 8px);
   }
 }
 </style>

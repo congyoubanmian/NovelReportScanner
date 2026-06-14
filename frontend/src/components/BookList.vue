@@ -329,4 +329,90 @@ function confirmDelete(book) {
 .select-col input:disabled {
   cursor: not-allowed;
 }
+
+/* ====== Mobile: table → card layout ====== */
+@media (max-width: 768px) {
+  .book-list-title {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .batch-actions {
+    width: 100%;
+  }
+  .batch-actions .btn {
+    flex: 1;
+  }
+  /* Convert table to block */
+  .table-wrap {
+    border: none;
+    overflow: visible;
+  }
+  table,
+  thead,
+  tbody,
+  tr,
+  th,
+  td {
+    display: block;
+    width: 100%;
+  }
+  thead {
+    display: none;
+  }
+  tbody tr {
+    background: var(--bg-card);
+    border: 1px solid var(--border-table);
+    border-radius: var(--radius-sm);
+    margin-bottom: 12px;
+    padding: 12px;
+    overflow: visible;
+  }
+  tbody tr:hover {
+    background: var(--bg-card);
+  }
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+  td {
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-table);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  td:last-child {
+    border-bottom: none;
+  }
+  /* Hide select column on mobile — show inline instead */
+  .select-col {
+    width: auto;
+    text-align: left;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-table);
+  }
+  .col-name {
+    font-size: 1rem;
+  }
+  .col-msg {
+    max-width: 100%;
+    font-size: 0.76rem;
+  }
+  .actions {
+    justify-content: flex-start;
+    gap: 6px;
+  }
+  .actions .btn {
+    padding: 5px 10px;
+    font-size: 0.76rem;
+  }
+  .profile-picker {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .profile-options {
+    max-height: none;
+  }
+}
 </style>

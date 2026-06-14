@@ -427,6 +427,64 @@ watch(
   .usage-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  /* Detail meta: stack vertically */
+  .detail-meta {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .detail-header {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .detail-header h3 {
+    font-size: 1.1rem;
+  }
+  /* Task history table → card */
+  .table-wrap {
+    border: none;
+    overflow: visible;
+  }
+  .table-wrap table,
+  .table-wrap thead,
+  .table-wrap tbody,
+  .table-wrap tr,
+  .table-wrap th,
+  .table-wrap td {
+    display: block;
+    width: 100%;
+  }
+  .table-wrap thead {
+    display: none;
+  }
+  .table-wrap tbody tr {
+    background: var(--bg-card);
+    border: 1px solid var(--border-table);
+    border-radius: var(--radius-sm);
+    margin-bottom: 12px;
+    padding: 10px 12px;
+  }
+  .table-wrap tbody tr:hover {
+    background: var(--bg-card);
+  }
+  .table-wrap tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .table-wrap td {
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border-table);
+  }
+  .table-wrap td:last-child {
+    border-bottom: none;
+  }
+  .task-log-cell {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .task-warning {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
 }
 
 /* Preview panel */
