@@ -2691,267 +2691,288 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send_not_found(parsed.path)
 
+    # ===== POST route handlers =====
+
+    def _post_profile(self, parsed):
+        if not self._require_auth(parsed):
+            return
+        if not self._require_write_confirmation():
+            return
+        payload = self._read_json_payload_schema(PROFILE_PAYLOAD_SCHEMA)
+        if payload is None:
+            return
+        with STATE_LOCK:
+            book = STATE["books"].get(payload.get("book_id"))
+            if not book:
+                self._send_json({"error": "book not found"}, 404)
+                return
+            if book.get("status") in {"queued", "running"}:
+                self._send_json({"error": "book is queued or running"}, 409)
+                return
+            profile_name = _normalize_web_profile(payload.get("profile", "auto"))
+            if not profile_name:
+                self._send_json({"error": "invalid profile"}, 400)
+                return
+            book["profile"] = profile_name
+            book["message"] = "分类已更新"
+            try:
+                _save_state()
+            except (PermissionError, OSError) as exc:
+                self._send_storage_error(exc)
+                return
+        self._send_json({"ok": True})
+
+    def _post_config(self, parsed):
+        if not self._require_auth(parsed):
+            return
+        if not self._require_write_confirmation():
+            return
+        payload = self._read_json_payload_schema(CONFIG_PAYLOAD_SCHEMA)
+        if payload is None:
+            return
+        ok, result = _update_runtime_config(payload.get("config"))
+        if not ok:
+            self._send_json({"error": result}, 400)
+            return
+        self._send_json({"ok": True, "config": result})
+
+    def _post_enqueue(self, parsed):
+        if not self._require_auth(parsed):
+            return
+        if not self._require_write_confirmation():
+            return
+        payload = self._read_json_payload_schema(BOOK_ID_PAYLOAD_SCHEMA)
+        if payload is None:
+            return
+        try:
+            ok, result = _enqueue(payload.get("book_id"))
+        except (PermissionError, OSError) as exc:
+            self._send_storage_error(exc)
+            return
+        self._send_json(_operation_response(ok, result), 200 if ok else 409)
+
+    def _post_enqueue_batch(self, parsed):
+        if not self._require_auth(parsed):
+            return
+        if not self._require_write_confirmation():
+            return
+        payload = self._read_json_payload_schema(BOOK_IDS_PAYLOAD_SCHEMA)
+        if payload is None:
+            return
+        book_ids = payload.get("book_ids")
+        try:
+            result = _enqueue_many(book_ids)
+        except (PermissionError, OSError) as exc:
+            self._send_storage_error(exc)
+            return
+        self._send_json({"ok": bool(result["queued"]), "result": result}, 200)
+
+    def _post_retry_failed(self, parsed):
+        if not self._require_auth(parsed):
+            return
+        if not self._require_write_confirmation():
+            return
+        payload = self._read_json_payload_schema(RETRY_FAILED_PAYLOAD_SCHEMA)
+        if payload is None:
+            return
+        try:
+            result = _retry_failed_tasks_by_type(payload.get("failure_types") or [])
+        except (PermissionError, OSError) as exc:
+            self._send_storage_error(exc)
+            return
+        self._send_json({"ok": bool(result["queued"]), "result": result}, 200)
+
+    def _post_cancel(self, parsed):
+        if not self._require_auth(parsed):
+            return
+        if not self._require_write_confirmation():
+            return
+        payload = self._read_json_payload_schema(BOOK_ID_PAYLOAD_SCHEMA)
+        if payload is None:
+            return
+        try:
+            ok, result = _cancel_queued_book(payload.get("book_id"))
+        except (PermissionError, OSError) as exc:
+            self._send_storage_error(exc)
+            return
+        self._send_json(_operation_response(ok, result), 200 if ok else 409)
+
+    def _post_prioritize(self, parsed):
+        if not self._require_auth(parsed):
+            return
+        if not self._require_write_confirmation():
+            return
+        payload = self._read_json_payload_schema(BOOK_ID_PAYLOAD_SCHEMA)
+        if payload is None:
+            return
+        try:
+            ok, result = _prioritize_queued_book(payload.get("book_id"))
+        except (PermissionError, OSError) as exc:
+            self._send_storage_error(exc)
+            return
+        self._send_json(_operation_response(ok, result), 200 if ok else 409)
+
+    def _post_move_queue(self, parsed):
+        if not self._require_auth(parsed):
+            return
+        if not self._require_write_confirmation():
+            return
+        payload = self._read_json_payload_schema(MOVE_QUEUE_PAYLOAD_SCHEMA)
+        if payload is None:
+            return
+        try:
+            ok, result = _move_queued_book(payload.get("book_id"), payload.get("direction"))
+        except (PermissionError, OSError) as exc:
+            self._send_storage_error(exc)
+            return
+        self._send_json(_operation_response(ok, result), 200 if ok else 409)
+
+    def _post_delete(self, parsed):
+        if not self._require_auth(parsed):
+            return
+        if not self._require_write_confirmation():
+            return
+        payload = self._read_json_payload_schema(BOOK_ID_PAYLOAD_SCHEMA)
+        if payload is None:
+            return
+        try:
+            ok, result = _delete_book(payload.get("book_id"))
+        except (PermissionError, OSError) as exc:
+            self._send_storage_error(exc)
+            return
+        self._send_json(_operation_response(ok, result), 200 if ok else 409)
+
+    def _post_delete_batch(self, parsed):
+        if not self._require_auth(parsed):
+            return
+        if not self._require_write_confirmation():
+            return
+        payload = self._read_json_payload_schema(BOOK_IDS_PAYLOAD_SCHEMA)
+        if payload is None:
+            return
+        book_ids = payload.get("book_ids")
+        try:
+            result = _delete_many_books(book_ids)
+        except (PermissionError, OSError) as exc:
+            self._send_storage_error(exc)
+            return
+        self._send_json({"ok": bool(result["deleted"]), "result": result}, 200)
+
+    def _post_upload(self, parsed):
+        if not self._require_auth(parsed):
+            return
+        if not self._require_write_confirmation():
+            return
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self._send_json({"error": "invalid content length"}, 400)
+            return
+        if content_length > MAX_UPLOAD_SIZE + 1024 * 1024:
+            self._send_json({"error": f"file too large, max {MAX_UPLOAD_SIZE} bytes"}, 413)
+            return
+        try:
+            form = cgi.FieldStorage(
+                fp=self.rfile,
+                headers=self.headers,
+                environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": self.headers.get("Content-Type")},
+            )
+        except Exception as exc:
+            self._send_json({"error": "invalid multipart form", "detail": str(exc)}, 400)
+            return
+        file_item = form["file"] if "file" in form else None
+        if file_item is None or not getattr(file_item, "filename", ""):
+            self._send_json({"error": "missing file"}, 400)
+            return
+        filename = _safe_filename(file_item.filename)
+        try:
+            path = os.path.join(_novels_dir(), filename)
+        except (PermissionError, OSError) as exc:
+            self._send_storage_error(exc)
+            return
+        book_id = _book_id_from_path(path)
+        overwrite = str(form.getfirst("overwrite", "")).lower() in {"1", "true", "yes", "on"}
+        ok, reason = _validate_upload_target(book_id, path, overwrite=overwrite)
+        if not ok and reason == "file already exists":
+            self._send_json({"error": "file already exists", "book_id": book_id}, 409)
+            return
+        if not ok:
+            self._send_json({"error": reason}, 409)
+            return
+        try:
+            uploaded_size = _save_upload_file(file_item, path)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, 413)
+            return
+        except (PermissionError, OSError) as exc:
+            self._send_storage_error(exc)
+            return
+        profile_values = form.getlist("profile")
+        if not profile_values:
+            profile_values = [form.getfirst("profile", "auto")]
+        profile = _normalize_web_profile(profile_values if len(profile_values) > 1 else profile_values[0]) or "auto"
+        _invalidate_book_outputs(book_id)
+        suggestions = _profile_suggestions(path, book_id)
+        try:
+            suggestion_signature = _book_suggestion_signature(path)
+        except (PermissionError, OSError) as exc:
+            self._send_json({"error": "uploaded file metadata unavailable", "detail": str(exc)}, 500)
+            return
+        uploaded_at = time.strftime("%Y-%m-%d %H:%M:%S")
+        outputs_reset_after = None
+        if overwrite:
+            try:
+                outputs_reset_after = float(suggestion_signature.split(":", 1)[0])
+            except (IndexError, TypeError, ValueError):
+                outputs_reset_after = time.time()
+        with STATE_LOCK:
+            if overwrite and book_id in STATE["books"]:
+                for task in STATE.get("tasks", []):
+                    if task.get("book_id") == book_id:
+                        task["book_replaced"] = True
+            STATE["books"][book_id] = {
+                "id": book_id,
+                "name": book_id,
+                "path": path,
+                "profile": profile,
+                "profile_suggestions": suggestions,
+                "suggestion_signature": suggestion_signature,
+                "status": "idle",
+                "message": f"已上传（{uploaded_size} 字节）",
+                "created_at": uploaded_at,
+            }
+            if overwrite:
+                STATE["books"][book_id]["history_reset_at"] = uploaded_at
+                STATE["books"][book_id]["outputs_reset_after"] = outputs_reset_after
+            try:
+                _save_state()
+            except (PermissionError, OSError) as exc:
+                self._send_storage_error(exc)
+                return
+        self._send_json({"ok": True, "book_id": book_id})
+
+    _POST_ROUTES = {
+        "/api/profile": "_post_profile",
+        "/api/config": "_post_config",
+        "/api/enqueue": "_post_enqueue",
+        "/api/enqueue-batch": "_post_enqueue_batch",
+        "/api/retry-failed": "_post_retry_failed",
+        "/api/cancel": "_post_cancel",
+        "/api/prioritize": "_post_prioritize",
+        "/api/move-queue": "_post_move_queue",
+        "/api/delete": "_post_delete",
+        "/api/delete-batch": "_post_delete_batch",
+        "/upload": "_post_upload",
+    }
+
     def do_POST(self):
         parsed = urlparse(self.path)
-        if parsed.path == "/api/profile":
-            if not self._require_auth(parsed):
-                return
-            if not self._require_write_confirmation():
-                return
-            payload = self._read_json_payload_schema(PROFILE_PAYLOAD_SCHEMA)
-            if payload is None:
-                return
-            with STATE_LOCK:
-                book = STATE["books"].get(payload.get("book_id"))
-                if not book:
-                    self._send_json({"error": "book not found"}, 404)
-                    return
-                if book.get("status") in {"queued", "running"}:
-                    self._send_json({"error": "book is queued or running"}, 409)
-                    return
-                profile_name = _normalize_web_profile(payload.get("profile", "auto"))
-                if not profile_name:
-                    self._send_json({"error": "invalid profile"}, 400)
-                    return
-                book["profile"] = profile_name
-                book["message"] = "分类已更新"
-                try:
-                    _save_state()
-                except (PermissionError, OSError) as exc:
-                    self._send_storage_error(exc)
-                    return
-            self._send_json({"ok": True})
-            return
-        if parsed.path == "/api/config":
-            if not self._require_auth(parsed):
-                return
-            if not self._require_write_confirmation():
-                return
-            payload = self._read_json_payload_schema(CONFIG_PAYLOAD_SCHEMA)
-            if payload is None:
-                return
-            ok, result = _update_runtime_config(payload.get("config"))
-            if not ok:
-                self._send_json({"error": result}, 400)
-                return
-            self._send_json({"ok": True, "config": result})
-            return
-        if parsed.path == "/api/enqueue":
-            if not self._require_auth(parsed):
-                return
-            if not self._require_write_confirmation():
-                return
-            payload = self._read_json_payload_schema(BOOK_ID_PAYLOAD_SCHEMA)
-            if payload is None:
-                return
-            try:
-                ok, result = _enqueue(payload.get("book_id"))
-            except (PermissionError, OSError) as exc:
-                self._send_storage_error(exc)
-                return
-            self._send_json(_operation_response(ok, result), 200 if ok else 409)
-            return
-        if parsed.path == "/api/enqueue-batch":
-            if not self._require_auth(parsed):
-                return
-            if not self._require_write_confirmation():
-                return
-            payload = self._read_json_payload_schema(BOOK_IDS_PAYLOAD_SCHEMA)
-            if payload is None:
-                return
-            book_ids = payload.get("book_ids")
-            try:
-                result = _enqueue_many(book_ids)
-            except (PermissionError, OSError) as exc:
-                self._send_storage_error(exc)
-                return
-            self._send_json({"ok": bool(result["queued"]), "result": result}, 200)
-            return
-        if parsed.path == "/api/retry-failed":
-            if not self._require_auth(parsed):
-                return
-            if not self._require_write_confirmation():
-                return
-            payload = self._read_json_payload_schema(RETRY_FAILED_PAYLOAD_SCHEMA)
-            if payload is None:
-                return
-            try:
-                result = _retry_failed_tasks_by_type(payload.get("failure_types") or [])
-            except (PermissionError, OSError) as exc:
-                self._send_storage_error(exc)
-                return
-            self._send_json({"ok": bool(result["queued"]), "result": result}, 200)
-            return
-        if parsed.path == "/api/cancel":
-            if not self._require_auth(parsed):
-                return
-            if not self._require_write_confirmation():
-                return
-            payload = self._read_json_payload_schema(BOOK_ID_PAYLOAD_SCHEMA)
-            if payload is None:
-                return
-            try:
-                ok, result = _cancel_queued_book(payload.get("book_id"))
-            except (PermissionError, OSError) as exc:
-                self._send_storage_error(exc)
-                return
-            self._send_json(_operation_response(ok, result), 200 if ok else 409)
-            return
-        if parsed.path == "/api/prioritize":
-            if not self._require_auth(parsed):
-                return
-            if not self._require_write_confirmation():
-                return
-            payload = self._read_json_payload_schema(BOOK_ID_PAYLOAD_SCHEMA)
-            if payload is None:
-                return
-            try:
-                ok, result = _prioritize_queued_book(payload.get("book_id"))
-            except (PermissionError, OSError) as exc:
-                self._send_storage_error(exc)
-                return
-            self._send_json(_operation_response(ok, result), 200 if ok else 409)
-            return
-        if parsed.path == "/api/move-queue":
-            if not self._require_auth(parsed):
-                return
-            if not self._require_write_confirmation():
-                return
-            payload = self._read_json_payload_schema(MOVE_QUEUE_PAYLOAD_SCHEMA)
-            if payload is None:
-                return
-            try:
-                ok, result = _move_queued_book(payload.get("book_id"), payload.get("direction"))
-            except (PermissionError, OSError) as exc:
-                self._send_storage_error(exc)
-                return
-            self._send_json(_operation_response(ok, result), 200 if ok else 409)
-            return
-        if parsed.path == "/api/delete":
-            if not self._require_auth(parsed):
-                return
-            if not self._require_write_confirmation():
-                return
-            payload = self._read_json_payload_schema(BOOK_ID_PAYLOAD_SCHEMA)
-            if payload is None:
-                return
-            try:
-                ok, result = _delete_book(payload.get("book_id"))
-            except (PermissionError, OSError) as exc:
-                self._send_storage_error(exc)
-                return
-            self._send_json(_operation_response(ok, result), 200 if ok else 409)
-            return
-        if parsed.path == "/api/delete-batch":
-            if not self._require_auth(parsed):
-                return
-            if not self._require_write_confirmation():
-                return
-            payload = self._read_json_payload_schema(BOOK_IDS_PAYLOAD_SCHEMA)
-            if payload is None:
-                return
-            book_ids = payload.get("book_ids")
-            try:
-                result = _delete_many_books(book_ids)
-            except (PermissionError, OSError) as exc:
-                self._send_storage_error(exc)
-                return
-            self._send_json({"ok": bool(result["deleted"]), "result": result}, 200)
-            return
-        if parsed.path == "/upload":
-            if not self._require_auth(parsed):
-                return
-            if not self._require_write_confirmation():
-                return
-            try:
-                content_length = int(self.headers.get("Content-Length", "0"))
-            except ValueError:
-                self._send_json({"error": "invalid content length"}, 400)
-                return
-            if content_length > MAX_UPLOAD_SIZE + 1024 * 1024:
-                self._send_json({"error": f"file too large, max {MAX_UPLOAD_SIZE} bytes"}, 413)
-                return
-            try:
-                form = cgi.FieldStorage(
-                    fp=self.rfile,
-                    headers=self.headers,
-                    environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": self.headers.get("Content-Type")},
-                )
-            except Exception as exc:
-                self._send_json({"error": "invalid multipart form", "detail": str(exc)}, 400)
-                return
-            file_item = form["file"] if "file" in form else None
-            if file_item is None or not getattr(file_item, "filename", ""):
-                self._send_json({"error": "missing file"}, 400)
-                return
-            filename = _safe_filename(file_item.filename)
-            try:
-                path = os.path.join(_novels_dir(), filename)
-            except (PermissionError, OSError) as exc:
-                self._send_storage_error(exc)
-                return
-            book_id = _book_id_from_path(path)
-            overwrite = str(form.getfirst("overwrite", "")).lower() in {"1", "true", "yes", "on"}
-            ok, reason = _validate_upload_target(book_id, path, overwrite=overwrite)
-            if not ok and reason == "file already exists":
-                self._send_json({"error": "file already exists", "book_id": book_id}, 409)
-                return
-            if not ok:
-                self._send_json({"error": reason}, 409)
-                return
-            try:
-                uploaded_size = _save_upload_file(file_item, path)
-            except ValueError as exc:
-                self._send_json({"error": str(exc)}, 413)
-                return
-            except (PermissionError, OSError) as exc:
-                self._send_storage_error(exc)
-                return
-            profile_values = form.getlist("profile")
-            if not profile_values:
-                profile_values = [form.getfirst("profile", "auto")]
-            profile = _normalize_web_profile(profile_values if len(profile_values) > 1 else profile_values[0]) or "auto"
-            _invalidate_book_outputs(book_id)
-            suggestions = _profile_suggestions(path, book_id)
-            try:
-                suggestion_signature = _book_suggestion_signature(path)
-            except (PermissionError, OSError) as exc:
-                self._send_json({"error": "uploaded file metadata unavailable", "detail": str(exc)}, 500)
-                return
-            uploaded_at = time.strftime("%Y-%m-%d %H:%M:%S")
-            outputs_reset_after = None
-            if overwrite:
-                try:
-                    outputs_reset_after = float(suggestion_signature.split(":", 1)[0])
-                except (IndexError, TypeError, ValueError):
-                    outputs_reset_after = time.time()
-            with STATE_LOCK:
-                if overwrite and book_id in STATE["books"]:
-                    for task in STATE.get("tasks", []):
-                        if task.get("book_id") == book_id:
-                            task["book_replaced"] = True
-                STATE["books"][book_id] = {
-                    "id": book_id,
-                    "name": book_id,
-                    "path": path,
-                    "profile": profile,
-                    "profile_suggestions": suggestions,
-                    "suggestion_signature": suggestion_signature,
-                    "status": "idle",
-                    "message": f"已上传（{uploaded_size} 字节）",
-                    "created_at": uploaded_at,
-                }
-                if overwrite:
-                    STATE["books"][book_id]["history_reset_at"] = uploaded_at
-                    STATE["books"][book_id]["outputs_reset_after"] = outputs_reset_after
-                try:
-                    _save_state()
-                except (PermissionError, OSError) as exc:
-                    self._send_storage_error(exc)
-                    return
-            self._send_json({"ok": True, "book_id": book_id})
+        handler_name = self._POST_ROUTES.get(parsed.path)
+        if handler_name:
+            getattr(self, handler_name)(parsed)
             return
         self._send_not_found(parsed.path)
+
 
 
 def run_server(host=None, port=None):
