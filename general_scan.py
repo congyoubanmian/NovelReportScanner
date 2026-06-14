@@ -15,6 +15,7 @@ from fact_validator import classify_scan_error, validate_general_chunk_result
 from prompt_templates import prompt_template_metadata, prompt_templates_metadata
 from shared_utils import MODEL, chat_completion, clamp_score, get_base_dir, init_token_tracker, is_context_overflow_error, novel_file_signature, read_file_safely, read_int_env, record_usage, split_text_for_downshift
 from shared_utils import call_json_chat_completion_with_fallback
+from shared_utils import _outline_context_for_chunk
 from text_anchor import build_chunk_manifest, build_semantic_chunk_manifest, save_chunk_manifest
 from outline_prescan import generate_outline, outline_to_compact_text, outline_signature, save_outline, load_outline
 from scan_memory import ScanMemory, SCAN_MEMORY_ENABLED as GENERAL_SCAN_MEMORY_ENABLED
@@ -2803,40 +2804,7 @@ def _continuity_audit_summary_json_hint() -> str:
   },"""
 
 
-def _outline_context_for_chunk(outline_data, chunk_char_offset, context_chapters=None, max_chars=None):
-    """从大纲中提取当前 chunk 附近的章节上下文。"""
-    if not outline_data or not outline_data.get("chapters"):
-        return ""
-    context_chapters = context_chapters or OUTLINE_INJECT_CONTEXT_CHAPTERS
-    max_chars = max_chars or OUTLINE_INJECT_MAX_CHARS
-    if max_chars <= 0:
-        return ""
-    chapters = outline_data["chapters"]
-    current_idx = 0
-    for i, ch in enumerate(chapters):
-        if ch.get("start", 0) <= chunk_char_offset:
-            current_idx = i
-        else:
-            break
-    start_idx = max(0, current_idx - context_chapters)
-    end_idx = min(len(chapters), current_idx + context_chapters + 1)
-    context_chs = chapters[start_idx:end_idx]
-    lines = [f"【大纲上下文（第{chapters[start_idx].get('index', '?')}-{chapters[end_idx-1].get('index', '?')}章）】"]
-    used = len(lines[0])
-    for ch in context_chs:
-        title = ch.get("title", f"第{ch.get('index', '?')}章")
-        tags = ch.get("tags", [])
-        tag_str = f" [{','.join(tags)}]" if tags else ""
-        head = ch.get("head_text", "")
-        head_summary = f"：{head[:40]}…" if head else ""
-        marker = " ◀当前" if ch.get("start", 0) <= chunk_char_offset < ch.get("end", 0) else ""
-        line = f"  {ch.get('index', '?')}.{title}{tag_str}{head_summary}{marker}"
-        if used + len(line) + 1 > max_chars:
-            break
-        lines.append(line)
-        used += len(line) + 1
-    lines.append("（大纲仅供参考，不能替代原文证据）")
-    return "\n".join(lines)
+# _outline_context_for_chunk 已合并到 shared_utils.py
 
 
 def _scan_chunk(text_chunk: str, chunk_index: int, total_chunks: int, profile=None, density_profile=None, context_snapshot=None, entity_prescan=None, outline_block="", memory_block="") -> Dict[str, Any]:

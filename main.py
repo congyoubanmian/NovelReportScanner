@@ -13,6 +13,8 @@ import uuid
 import argparse
 from dataclasses import replace
 
+from shared_utils import get_base_dir
+
 
 _DEFAULT_ENV_SETTINGS = {
     "BASE_URL": "https://api.deepseek.com",
@@ -116,13 +118,6 @@ _VALIDATED_NON_NEGATIVE_FLOAT_KEYS = {
     "STORAGE_HEALTH_TTL_SECONDS": _DEFAULT_ENV_SETTINGS["STORAGE_HEALTH_TTL_SECONDS"],
 }
 _WEB_SCAN_RESULT_PREFIX = "__NOVEL_REPORT_SCANNER_RESULT__="
-
-
-def get_base_dir():
-    """返回程序根目录：打包后为 exe 所在目录，开发时为脚本所在目录。"""
-    if getattr(sys, "frozen", False):
-        return os.path.dirname(sys.executable)
-    return os.path.dirname(os.path.abspath(__file__))
 
 
 def get_novels_dir(base_dir=None):

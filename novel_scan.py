@@ -43,6 +43,7 @@ from shared_utils import (
     record_usage,
     should_retry_without_json_mode_error,
     split_text_for_downshift,
+    _outline_context_for_chunk,
 )
 from prompt_templates import prompt_template_metadata, prompt_templates_metadata
 from text_anchor import build_chunk_manifest, build_semantic_chunk_manifest, save_chunk_manifest, diff_chunk_manifests, load_chunk_manifest, compute_chunk_text_hash
@@ -2670,50 +2671,7 @@ def _merge_downshift_chunk_results(partial_results, index, error_type):
     return issues, heroine_facts, extra_relations, summary, True, False, ""
 
 
-def _outline_context_for_chunk(outline_data, chunk_char_offset, context_chapters=None, max_chars=None):
-    """
-    从大纲中提取当前 chunk 附近的章节上下文。
-
-    只注入当前 chunk 所在章节及前后几章的摘要，比全量大纲更精准且节省 token。
-    """
-    if not outline_data or not outline_data.get("chapters"):
-        return ""
-    context_chapters = context_chapters or OUTLINE_INJECT_CONTEXT_CHAPTERS
-    max_chars = max_chars or OUTLINE_INJECT_MAX_CHARS
-    if max_chars <= 0:
-        return ""
-
-    chapters = outline_data["chapters"]
-    # 找到当前 chunk 所在章节
-    current_idx = 0
-    for i, ch in enumerate(chapters):
-        if ch.get("start", 0) <= chunk_char_offset:
-            current_idx = i
-        else:
-            break
-
-    # 取前后 N 章
-    start_idx = max(0, current_idx - context_chapters)
-    end_idx = min(len(chapters), current_idx + context_chapters + 1)
-    context_chs = chapters[start_idx:end_idx]
-
-    lines = [f"【大纲上下文（第{chapters[start_idx].get('index', '?')}-{chapters[end_idx-1].get('index', '?')}章）】"]
-    used = len(lines[0])
-    for ch in context_chs:
-        title = ch.get("title", f"第{ch.get('index', '?')}章")
-        tags = ch.get("tags", [])
-        tag_str = f" [{','.join(tags)}]" if tags else ""
-        head = ch.get("head_text", "")
-        head_summary = f"：{head[:40]}…" if head else ""
-        marker = " ◀当前" if ch.get("start", 0) <= chunk_char_offset < ch.get("end", 0) else ""
-        line = f"  {ch.get('index', '?')}.{title}{tag_str}{head_summary}{marker}"
-        if used + len(line) + 1 > max_chars:
-            break
-        lines.append(line)
-        used += len(line) + 1
-
-    lines.append("（大纲仅供参考，不能替代原文证据）")
-    return "\n".join(lines)
+# _outline_context_for_chunk 已合并到 shared_utils.py
 
 
 def scan_chunk(text_chunk, index, total, system_prompt, heroines, male_protagonist=None, fact_boost_prompt=None, context_summary="", outline_block="", memory_block="", _downshift_depth=0):

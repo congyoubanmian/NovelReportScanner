@@ -13,6 +13,7 @@ reading_metrics.py — 阅读体验量化聚合与可视化
 import math
 import os
 from typing import Any, Dict, List, Optional, Tuple
+from shared_utils import _mean, _std
 
 READING_METRICS_ENABLED = os.environ.get("READING_METRICS_ENABLED", "1").strip() == "1"
 READING_METRICS_MIN_CHUNKS = int(os.environ.get("READING_METRICS_MIN_CHUNKS", "5") or "5")
@@ -183,17 +184,7 @@ def _low_confidence_result(n: int) -> Dict[str, Any]:
 
 
 # ===================== 数学工具 =====================
-
-def _mean(values: List[float]) -> float:
-    return sum(values) / len(values) if values else 0.0
-
-
-def _std(values: List[float]) -> float:
-    if len(values) < 2:
-        return 0.0
-    m = _mean(values)
-    return math.sqrt(sum((x - m) ** 2 for x in values) / (len(values) - 1))
-
+# _mean / _std 已合并到 shared_utils.py
 
 def _compute_trend(values: List[float]) -> str:
     """比较前半/后半均值判断趋势。"""

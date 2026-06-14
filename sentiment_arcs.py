@@ -14,6 +14,7 @@ import math
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
+from shared_utils import _mean, _std
 
 SENTIMENT_ARCS_ENABLED = os.environ.get("SENTIMENT_ARCS_ENABLED", "1").strip() == "1"
 SENTIMENT_ARCS_MIN_CHAPTERS = int(os.environ.get("SENTIMENT_ARCS_MIN_CHAPTERS", "5") or "5")
@@ -214,15 +215,7 @@ def _classify_arc(polarities: List[float]) -> Tuple[str, str]:
     return "flat", "平稳型"
 
 
-def _mean(values: List[float]) -> float:
-    return sum(values) / len(values) if values else 0.0
-
-
-def _std(values: List[float]) -> float:
-    if len(values) < 2:
-        return 0.0
-    m = _mean(values)
-    return math.sqrt(sum((v - m) ** 2 for v in values) / (len(values) - 1))
+# _mean / _std 已合并到 shared_utils.py
 
 
 def _empty_arcs(chapter_count: int = 0) -> Dict[str, Any]:

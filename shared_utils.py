@@ -882,3 +882,57 @@ def bool_mark(value) -> str:
     if value is False:
         return "❌"
     return "❓"
+
+
+# ================= 统计工具 =================
+def _mean(values):
+    """算术平均值，空列表返回 0.0。"""
+    return sum(values) / len(values) if values else 0.0
+
+
+def _std(values):
+    """样本标准差（n-1 分母），少于 2 个值返回 0.0。"""
+    if len(values) < 2:
+        return 0.0
+    m = _mean(values)
+    import math
+    return math.sqrt(sum((x - m) ** 2 for x in values) / (len(values) - 1))
+
+
+# ================= 大纲上下文工具 =================
+def _outline_context_for_chunk(outline_data, chunk_char_offset, context_chapters=None, max_chars=None):
+    """从大纲中提取当前 chunk 附近的章节上下文。"""
+    if not outline_data or not outline_data.get("chapters"):
+        return ""
+    if context_chapters is None:
+        context_chapters = int(os.environ.get("OUTLINE_INJECT_CONTEXT_CHAPTERS", "5"))
+    if max_chars is None:
+        max_chars = int(os.environ.get("OUTLINE_INJECT_MAX_CHARS", "2000"))
+    if max_chars <= 0:
+        return ""
+    chapters = outline_data["chapters"]
+    current_idx = 0
+    for i, ch in enumerate(chapters):
+        if ch.get("start", 0) <= chunk_char_offset:
+            current_idx = i
+        else:
+            break
+    start_idx = max(0, current_idx - context_chapters)
+    end_idx = min(len(chapters), current_idx + context_chapters + 1)
+    context_chs = chapters[start_idx:end_idx]
+    lines = [f"【大纲上下文（第{chapters[start_idx].get('index', '?')}-{chapters[end_idx-1].get('index', '?')}章）】"]
+    used = len(lines[0])
+    for ch in context_chs:
+        title = ch.get("title", f"第{ch.get('index', '?')}章")
+        tags = ch.get("tags", [])
+        tag_str = f" [{','.join(tags)}]" if tags else ""
+        head = ch.get("head_text", "")
+        head_summary = f"：{head[:40]}…" if head else ""
+        marker = " ◀当前" if ch.get("start", 0) <= chunk_char_offset < ch.get("end", 0) else ""
+        line = f"  {ch.get('index', '?')}.{title}{tag_str}{head_summary}{marker}"
+        if used + len(line) + 1 > max_chars:
+            break
+        lines.append(line)
+        used += len(line) + 1
+    lines.append("（大纲仅供参考，不能替代原文证据）")
+    return "\n".join(lines)

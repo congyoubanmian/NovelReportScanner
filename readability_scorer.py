@@ -11,6 +11,7 @@ import math
 import os
 import re
 from typing import Any, Dict, List, Tuple
+from shared_utils import _mean, _std
 
 READABILITY_SCORER_ENABLED = os.environ.get("READABILITY_SCORER_ENABLED", "1").strip() == "1"
 READABILITY_SAMPLE_CHARS = int(os.environ.get("READABILITY_SAMPLE_CHARS", "300000") or "300000")
@@ -162,16 +163,7 @@ def compute_readability(text: str) -> Dict[str, Any]:
 def _clamp_score(value: float, min_v: float, max_v: float) -> float:
     return round(max(min_v, min(max_v, value)), 1)
 
-
-def _mean(values: List[float]) -> float:
-    return sum(values) / len(values) if values else 0.0
-
-
-def _std(values: List[float]) -> float:
-    if len(values) < 2:
-        return 0.0
-    m = _mean(values)
-    return math.sqrt(sum((v - m) ** 2 for v in values) / (len(values) - 1))
+# _mean / _std 已合并到 shared_utils.py
 
 
 def _empty_readability() -> Dict[str, Any]:
