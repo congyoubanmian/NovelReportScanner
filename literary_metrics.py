@@ -266,13 +266,98 @@ def _compute_emotion_score(excl_density: float, template_density: float) -> floa
 
 # ===================== 融合与可信度 =====================
 
+def _compute_rule_plot_score(reading_metrics: Dict[str, Any], chunk_results: List[Dict[str, Any]] = None) -> Optional[float]:
+    """基于 reading_metrics 的 tension/engagement 分布计算剧情规则评分。"""
+    if not reading_metrics:
+        return None
+    avg_tension = reading_metrics.get("avg_tension", 0) or 0
+    engagement_dist = reading_metrics.get("engagement_distribution") or {}
+    high_eng = engagement_dist.get("high", 0)
+    total_eng = sum(engagement_dist.values()) if engagement_dist else 1
+    engagement_rate = high_eng / max(1, total_eng)
+    payoff_rate = reading_metrics.get("payoff_rate", 0) or 0
+    cliffhanger_rate = reading_metrics.get("cliffhanger_rate", 0) or 0
+
+    score = 5.0
+    score += min(2.0, avg_tension * 0.3)
+    score += min(1.5, engagement_rate * 2.0)
+    score += min(1.0, payoff_rate * 1.5)
+    score += min(0.5, cliffhanger_rate * 1.0)
+    return round(max(1.0, min(10.0, score)), 1)
+
+
+def _compute_rule_characters_score(chunk_results: List[Dict[str, Any]] = None) -> Optional[float]:
+    """基于 chunk_results 中的角色提及数和冲突数计算人物规则评分。"""
+    if not chunk_results:
+        return None
+    # 统计唯一角色名
+    char_names = set()
+    conflict_count = 0
+    for chunk in chunk_results:
+        if not isinstance(chunk, dict):
+            continue
+        for event in (chunk.get("plot_events") or [])[:5]:
+            if isinstance(event, str):
+                # 粗略提取引号内的角色名
+                import re as _re
+                for name in _re.findall(r"[\u4e00-\u9fff]{2,4}", event):
+                    char_names.add(name)
+        conflict_count += len(chunk.get("conflicts") or [])
+    char_diversity = len(char_names)
+    score = 5.0
+    if char_diversity > 20:
+        score += 2.0
+    elif char_diversity > 10:
+        score += 1.0
+    elif char_diversity > 5:
+        score += 0.5
+    if conflict_count > 10:
+        score += 1.5
+    elif conflict_count > 5:
+        score += 1.0
+    elif conflict_count > 0:
+        score += 0.5
+    return round(max(1.0, min(10.0, score)), 1)
+
+
+def _compute_rule_worldbuilding_score(chunk_results: List[Dict[str, Any]] = None) -> Optional[float]:
+    """基于 chunk_results 中的世界观/设定条目数计算世界观规则评分。"""
+    if not chunk_results:
+        return None
+    wb_items = set()
+    foreshadowing_count = 0
+    for chunk in chunk_results:
+        if not isinstance(chunk, dict):
+            continue
+        for item in (chunk.get("worldbuilding") or [])[:5]:
+            wb_items.add(str(item)[:60])
+        foreshadowing_count += len(chunk.get("foreshadowing") or [])
+    wb_diversity = len(wb_items)
+    score = 5.0
+    if wb_diversity > 30:
+        score += 2.5
+    elif wb_diversity > 15:
+        score += 1.5
+    elif wb_diversity > 5:
+        score += 0.5
+    if foreshadowing_count > 10:
+        score += 1.0
+    return round(max(1.0, min(10.0, score)), 1)
+
+
 def fuse_scores_with_confidence(
     radar_scores: Dict[str, Any],
     literary_metrics: Dict[str, Any],
+    reading_metrics: Dict[str, Any] = None,
+    chunk_results: List[Dict[str, Any]] = None,
 ) -> Dict[str, Dict[str, Any]]:
     """
-    将 LLM radar_scores 与 rule-based literary_metrics 交叉验证，
-    返回每个维度的融合评分 + 可信度。
+    将 LLM radar_scores 与规则指标交叉验证，返回每个维度的融合评分 + 可信度。
+
+    数据来源：
+    - literary_metrics: writing/pacing/emotion 规则评分（文本统计）
+    - reading_metrics: plot/emotion 节奏指标（tension/engagement分布）
+    - chunk_results: plot/worldbuilding 事件数量统计
 
     返回：
     {
@@ -284,13 +369,22 @@ def fuse_scores_with_confidence(
         "emotion":   {"score": float, "confidence": "high"/"medium"/"low", "note": "..."},
     }
     """
+    reading_metrics = reading_metrics or {}
     metrics_conf = literary_metrics.get("confidence", "low")
     result = {}
 
+    # 从 reading_metrics 计算规则评分
+    rule_plot = _compute_rule_plot_score(reading_metrics, chunk_results)
+    rule_characters = _compute_rule_characters_score(chunk_results)
+    rule_worldbuilding = _compute_rule_worldbuilding_score(chunk_results)
+
     dim_rules = {
-        "writing": ("rule_writing_score", "文笔"),
-        "pacing": ("rule_pacing_score", "节奏"),
-        "emotion": ("rule_emotion_score", "情绪"),
+        "plot": (rule_plot, "剧情"),
+        "characters": (rule_characters, "人物"),
+        "worldbuilding": (rule_worldbuilding, "世界观"),
+        "writing": (literary_metrics.get("rule_writing_score"), "文笔"),
+        "pacing": (literary_metrics.get("rule_pacing_score"), "节奏"),
+        "emotion": (literary_metrics.get("rule_emotion_score"), "情绪"),
     }
 
     for dim_key in ("plot", "characters", "worldbuilding", "pacing", "writing", "emotion"):
@@ -298,8 +392,7 @@ def fuse_scores_with_confidence(
         llm_score = llm_entry.get("score") if isinstance(llm_entry, dict) else None
         llm_reason = llm_entry.get("reason", "") if isinstance(llm_entry, dict) else ""
 
-        rule_key, rule_label = dim_rules.get(dim_key, (None, ""))
-        rule_score = literary_metrics.get(rule_key) if rule_key else None
+        rule_score, rule_label = dim_rules.get(dim_key, (None, ""))
 
         fused, conf, note = _fuse_single_dimension(
             dim_key, llm_score, llm_reason, rule_score, metrics_conf

@@ -3413,6 +3413,19 @@ Prompt模板：{template_meta["name"]}@{template_meta["version"]}
     if LITERARY_METRICS_ENABLED and raw_text:
         literary_m = _compute_literary_metrics(raw_text)
         summary["literary_metrics"] = literary_m
+        # radar_scores 多源交叉验证（LLM × 规则指标）
+        try:
+            from literary_metrics import fuse_scores_with_confidence
+            reading_m = summary.get("reading_metrics") or {}
+            fused = fuse_scores_with_confidence(
+                summary.get("radar_scores") or {},
+                literary_m,
+                reading_metrics=reading_m,
+                chunk_results=chunk_results,
+            )
+            summary["radar_scores_fused"] = fused
+        except Exception:
+            logging.warning("radar_scores 交叉验证失败", exc_info=True)
     # 情感曲线分析（纯规则统计）
     if SENTIMENT_ARCS_ENABLED and raw_text:
         sentiment = _compute_sentiment_arcs(raw_text)
