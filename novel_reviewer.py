@@ -8731,34 +8731,40 @@ def _build_heroine_json_entry(name: str, info: dict, pushed_map: dict, leak_stat
     return heroine_entry
 
 
-def main(novel_path=None, book_name=None, run_id=None, detail_path=None, raw_data_path=None):
+def _reviewer_parse_args(novel_path=None, book_name=None, run_id=None):
+    """解析命令行参数。当 novel_path/book_name/run_id 由调用方传入时跳过实际 CLI 解析。"""
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--raw-data", help="指定 raw_data.json 路径")
     parser.add_argument("--results-dir", help="自定义扫描结果根目录（默认 ./results）")
     parse_cli_args = novel_path is None and book_name is None and run_id is None
     args = parser.parse_args() if parse_cli_args else parser.parse_args([])
+    return args
 
-    if novel_path:
-        os.environ["NOVEL_PATH"] = novel_path
 
+def _reviewer_resolve_scan_dir(args):
+    """根据 CLI 参数解析扫描结果根目录。"""
     if args.results_dir:
         scan_dir = args.results_dir
     else:
         scan_dir = SCAN_RESULTS_DIR
+    return scan_dir
 
-    print("="*60)
-    print("⚖️  小说毒点二审法官 (全AI裁决版)")
-    print("="*60)
 
+def _reviewer_resolve_raw_data_path(raw_data_path, args, scan_dir):
+    """解析 raw_data.json 路径；找不到时返回 None。"""
     raw_data_path = raw_data_path or args.raw_data or find_latest_scan_data(scan_dir)
     if not raw_data_path:
         print(f"❌ 未找到 raw_data.json，请确认目录: {scan_dir}")
-        return
+        return None
     if not os.path.exists(raw_data_path):
         print(f"❌ 指定的 raw_data 不存在: {raw_data_path}")
-        return
+        return None
+    return raw_data_path
 
+
+def _reviewer_resolve_book_name(book_name, novel_path, raw_data_path):
+    """解析书名：优先显式传入，其次 NOVEL_PATH，最后从扫描目录名推断。"""
     resolved_book_name = (book_name or "").strip()
     if not resolved_book_name:
         novel_path_for_book = novel_path or os.environ.get("NOVEL_PATH", "")
@@ -8767,29 +8773,16 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, raw_dat
     if not resolved_book_name:
         results_dir_name = os.path.basename(os.path.dirname(raw_data_path))
         resolved_book_name = results_dir_name.split("_scan_")[0].strip() or "unknown_book"
-    init_token_tracker(
-        resolved_book_name,
-        run_id=run_id,
-        out_path=os.path.join(BASE_DIR, "results", "token_usage.json"),
-    )
+    return resolved_book_name
 
-    # 初始化日志到当前扫描目录
-    log_path = os.path.join(os.path.dirname(raw_data_path), "reviewer.log")
-    configure_rotating_file_logger(logger, log_path)
-    logger.info(f"日志文件: {log_path}")
 
-    with open(raw_data_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    _validate_raw_data_matches_novel(data, raw_data_path, novel_path, book_name)
+def _reviewer_resolve_novel_path(novel_path, raw_data_path):
+    """从扫描数据推断小说路径（仅在 novel_path 为空时推断）。"""
+    return novel_path or _infer_novel_path_from_scan(raw_data_path)
 
-    char_file_path = find_character_data(raw_data_path, detail_path=detail_path)
-    male_lead, female_leads = extract_roles(char_file_path)
-    print(f"👨‍🦰 男主锁定: 【{male_lead}】")
 
-    issues = data.get("issues", [])
-    heroine_status = data.get("heroine_status", [])
-
-    # 矛盾检测与置信度标注
+def _reviewer_run_contradiction_detection(data, raw_data_path):
+    """运行矛盾检测与置信度标注，原地更新 data 并回写原始文件。返回矛盾报告文本。"""
     contradiction_report = ""
     if CONTRADICTION_DETECTION_ENABLED:
         heroine_facts_raw = data.get("heroine_facts", [])
@@ -8809,108 +8802,37 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, raw_dat
             data["heroine_facts"] = heroine_facts_raw
             with open(raw_data_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+    return contradiction_report
 
-    # 断点续传文件放在扫描结果目录
-    checkpoint_file = os.path.join(os.path.dirname(raw_data_path), "reviewer3_checkpoint.json")
-    (
-        verified_issues,
-        rejected_count,
-        rejected_issues,
-        processed_issue_indices,
-        cached_heroine_report,
-        cached_pushed_map,
-        cached_finished,
-        cached_finished_reason,
-        purity_done,
-        finish_done,
-    ) = load_checkpoint(raw_data_path, checkpoint_file)
-    finished = cached_finished
-    finished_reason = cached_finished_reason
-    completed_checkpoint_has_gap = False
-    # `finished` 是小说是否完结的判定结果，不是审查流程是否已经跑完。
-    has_complete_checkpoint = purity_done and finish_done and cached_pushed_map is not None
-    if has_complete_checkpoint:
-        novel_path = _infer_novel_path_from_scan(raw_data_path)
-        novel_tail = _read_tail(novel_path) if novel_path else None
-        expected_leak_issues, _ = _rebuild_leak_state_from_pushed_map(
-            female_leads=female_leads,
-            char_file_path=char_file_path,
-            novel_tail=novel_tail,
-            finished=finished,
-            pushed_map=cached_pushed_map,
-        )
-        _, missing_leak_count = _merge_unique_review_issues(verified_issues, expected_leak_issues)
-        completed_checkpoint_has_gap = missing_leak_count > 0
-        if completed_checkpoint_has_gap:
-            logger.info(f"? ???????? {missing_leak_count} ????????????")
-    if has_complete_checkpoint and not completed_checkpoint_has_gap:
-        logger.info("==================================================")
-        logger.info(f"★ 发现完整断点，跳过重新审查：{checkpoint_file}")
-        logger.info(f"结束原因：{finished_reason}")
-        logger.info("如需重新生成，请删除该 checkpoint 文件或将 finished/purity_done/finish_done 设为 false。")
-        logger.info("==================================================")
-        return
 
-    if processed_issue_indices:
-        print(f"⏸️ 检测到断点，将跳过已完成的 {len(processed_issue_indices)} 条指控")
+def _reviewer_review_toxic_points(
+    executor,
+    issues,
+    processed_issue_indices,
+    verified_issues,
+    rejected_issues,
+    rejected_count,
+    male_lead,
+    female_leads,
+    raw_data_path,
+    checkpoint_file,
+    cached_heroine_report,
+    cached_pushed_map,
+    cached_finished,
+    cached_finished_reason,
+    purity_done,
+    finish_done,
+):
+    """第一阶段：并发二审毒点指控。返回更新后的 (verified_issues, rejected_issues, rejected_count, pending_by_idx, processed_issue_indices)。"""
+    print(f"⚡ 审查 {len(issues)} 条毒点指控...")
+    rules_map = load_rules_dict()
+    # 若无断点则初始化
+    if not processed_issue_indices:
+        verified_issues = []
+        rejected_issues = []
+        rejected_count = 0
 
-    # 共用一个线程池
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        
-        # --- 1. 毒点二审 (并发) ---
-        print(f"⚡ 审查 {len(issues)} 条毒点指控...")
-        rules_map = load_rules_dict()
-        # 若无断点则初始化
-        if not processed_issue_indices:
-            verified_issues = []
-            rejected_issues = []
-            rejected_count = 0
-
-        def current_checkpoint_saver(*, verified_issues, rejected_count, rejected_issues, processed_issue_indices):
-            save_checkpoint(
-                raw_data_path,
-                verified_issues,
-                rejected_count,
-                rejected_issues,
-                processed_issue_indices,
-                checkpoint_file,
-                heroine_report=cached_heroine_report,
-                pushed_map=cached_pushed_map,
-                finished=cached_finished,
-                finished_reason=cached_finished_reason,
-                purity_done=purity_done,
-                finish_done=finish_done,
-            )
-
-        toxic_result = batch_review_toxic_points(
-            executor=executor,
-            issues=issues,
-            rules_map=rules_map,
-            male_lead=male_lead,
-            female_leads=female_leads,
-            processed_issue_indices=processed_issue_indices,
-            verified_issues=verified_issues,
-            rejected_issues=rejected_issues,
-            rejected_count=rejected_count,
-            save_checkpoint_fn=current_checkpoint_saver,
-        )
-        verified_issues = toxic_result.verified_issues
-        rejected_issues = toxic_result.rejected_issues
-        rejected_count = toxic_result.rejected_count
-        pending_by_idx = toxic_result.pending_by_idx
-        processed_issue_indices = toxic_result.processed_issue_indices
-
-        # --- 2. 女主身心洁度鉴定 (规则版 + LLM，使用 scan 与 detail 证据) ---
-        if purity_done and cached_heroine_report is not None:
-            print("★ 检测到断点：已完成女主身心鉴定，跳过此步骤。")
-            final_heroine_report = cached_heroine_report
-        else:
-            detail_evidences = _load_detail_evidence(char_file_path)
-            final_heroine_report = aggregate_and_judge_heroines(heroine_status, male_lead, detail_evidences, raw_data_path, executor, female_leads)
-            purity_done = True
-        final_heroine_report = _normalize_heroine_report_consistency(final_heroine_report)
-        if not purity_done:
-            purity_done = True
+    def current_checkpoint_saver(*, verified_issues, rejected_count, rejected_issues, processed_issue_indices):
         save_checkpoint(
             raw_data_path,
             verified_issues,
@@ -8918,7 +8840,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, raw_dat
             rejected_issues,
             processed_issue_indices,
             checkpoint_file,
-            heroine_report=final_heroine_report,
+            heroine_report=cached_heroine_report,
             pushed_map=cached_pushed_map,
             finished=cached_finished,
             finished_reason=cached_finished_reason,
@@ -8926,7 +8848,92 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, raw_dat
             finish_done=finish_done,
         )
 
-    # --- 2.5 漏女判定 ---
+    toxic_result = batch_review_toxic_points(
+        executor=executor,
+        issues=issues,
+        rules_map=rules_map,
+        male_lead=male_lead,
+        female_leads=female_leads,
+        processed_issue_indices=processed_issue_indices,
+        verified_issues=verified_issues,
+        rejected_issues=rejected_issues,
+        rejected_count=rejected_count,
+        save_checkpoint_fn=current_checkpoint_saver,
+    )
+    verified_issues = toxic_result.verified_issues
+    rejected_issues = toxic_result.rejected_issues
+    rejected_count = toxic_result.rejected_count
+    pending_by_idx = toxic_result.pending_by_idx
+    processed_issue_indices = toxic_result.processed_issue_indices
+    return verified_issues, rejected_issues, rejected_count, pending_by_idx, processed_issue_indices
+
+
+def _reviewer_judge_heroines(
+    executor,
+    heroine_status,
+    male_lead,
+    female_leads,
+    char_file_path,
+    raw_data_path,
+    purity_done,
+    cached_heroine_report,
+    verified_issues,
+    rejected_count,
+    rejected_issues,
+    processed_issue_indices,
+    checkpoint_file,
+    cached_pushed_map,
+    cached_finished,
+    cached_finished_reason,
+    finish_done,
+):
+    """第二阶段：女主身心洁度鉴定。返回 (final_heroine_report, purity_done)。"""
+    if purity_done and cached_heroine_report is not None:
+        print("★ 检测到断点：已完成女主身心鉴定，跳过此步骤。")
+        final_heroine_report = cached_heroine_report
+    else:
+        detail_evidences = _load_detail_evidence(char_file_path)
+        final_heroine_report = aggregate_and_judge_heroines(heroine_status, male_lead, detail_evidences, raw_data_path, executor, female_leads)
+        purity_done = True
+    final_heroine_report = _normalize_heroine_report_consistency(final_heroine_report)
+    if not purity_done:
+        purity_done = True
+    save_checkpoint(
+        raw_data_path,
+        verified_issues,
+        rejected_count,
+        rejected_issues,
+        processed_issue_indices,
+        checkpoint_file,
+        heroine_report=final_heroine_report,
+        pushed_map=cached_pushed_map,
+        finished=cached_finished,
+        finished_reason=cached_finished_reason,
+        purity_done=purity_done,
+        finish_done=finish_done,
+    )
+    return final_heroine_report, purity_done
+
+
+def _reviewer_detect_leaks_and_finished(
+    raw_data_path,
+    finish_done,
+    cached_finished,
+    cached_finished_reason,
+    cached_pushed_map,
+    female_leads,
+    char_file_path,
+    novel_path,
+    male_lead,
+    verified_issues,
+    rejected_count,
+    rejected_issues,
+    processed_issue_indices,
+    checkpoint_file,
+    final_heroine_report,
+    purity_done,
+):
+    """第 2.5 阶段：漏女判定与完结判定。返回 (finished, finished_reason, pushed_map, leak_status_map, verified_issues, finish_done)。"""
     novel_path = _infer_novel_path_from_scan(raw_data_path)
     novel_tail = _read_tail(novel_path) if novel_path else None
     leak_status_map: Dict[str, Dict[str, Any]] = {}
@@ -8993,18 +9000,27 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, raw_dat
             purity_done=purity_done,
             finish_done=finish_done,
         )
+    return finished, finished_reason, pushed_map, leak_status_map, verified_issues, finish_done
 
-    # --- 3. 生成报告 ---
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    output_dir = os.path.dirname(raw_data_path)
-    report_file = os.path.join(output_dir, f"VERIFIED_REPORT_{timestamp}.txt")
-    summary_file = os.path.join(output_dir, f"VERIFIED_SUMMARY_{timestamp}.json")
 
+def _reviewer_write_text_report(
+    report_file,
+    timestamp,
+    male_lead,
+    final_heroine_report,
+    female_leads,
+    pushed_map,
+    leak_status_map,
+    verified_issues,
+    rejected_count,
+    pending_by_idx,
+):
+    """第三阶段（文本报告）：写入 VERIFIED_REPORT_{timestamp}.txt。"""
     # 预先分类雷点/郁闷点，便于文本和 JSON 复用
     lei_points = [x for x in verified_issues if '雷' in x.get('category', '')]
     yumen_points = [x for x in verified_issues if '郁闷' in x.get('category', '')]
     pending_issues = list(pending_by_idx.values())
-    
+
     with open(report_file, 'w', encoding='utf-8') as f:
         f.write(f"⚖️ 最终排毒报告\n审核时间: {timestamp} | 男主: {male_lead}\n")
         f.write("="*60 + "\n\n")
@@ -9013,17 +9029,17 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, raw_dat
         f.write("❤️ 【女主身心全初鉴别 (程序判定 + LLM校验)】\n")
         f.write("标准：[全初] = 处女 + 无非男主接触 + 无非男主男伴 + 精神洁\n")
         f.write("验证：程序先判定 → LLM校验 → 不一致则二次校验\n\n")
-        
+
         # 排序：优先显示不洁的，然后是女主名单里的，最后是全初的
         sorted_names = sorted(final_heroine_report.keys(), key=lambda x: (final_heroine_report[x]['is_clean'], x not in female_leads))
-        
+
         for name in sorted_names:
             info = final_heroine_report[name]
             is_lead = any(lead in name for lead in female_leads)
             pushed, pushed_reason = pushed_map.get(name, (None, "???"))
             leak_info = leak_status_map.get(name, {})
             is_clean = info['is_clean']
-            
+
             # 过滤逻辑：只显示重要的（是女主，或者不洁的）
             if is_lead or not is_clean:
                 clean_tag = "[🌟 全初]" if is_clean else "[💔 有瑕]"
@@ -9097,13 +9113,13 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, raw_dat
                     if rule_spirit_reason:
                         f.write(f"    规则理由: {rule_spirit_reason[:120]}\n")
                 f.write(f"  - 鉴定结论: {info.get('summary')}\n")
-                
+
                 # 显示验证信息
                 verification = info.get('verification', {})
                 method = verification.get('method', 'unknown')
                 rounds = verification.get('rounds', 0)
                 llm_agreed = verification.get('llm_agreed', True)
-                
+
                 if method == 'program_with_llm_agree':
                     f.write(f"  - 验证: ✅ LLM 同意程序判定\n")
                 elif method == 'program_confirmed_after_second_round':
@@ -9124,11 +9140,11 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, raw_dat
                     f.write(f"    · 二次理由: {verification.get('second_reason', '')[:50]}\n")
                 elif method == 'no_facts_default_clean':
                     f.write(f"  - 验证: ℹ️ 无事实记录，默认全初\n")
-                
+
                 f.write("\n")
 
         f.write("="*60 + "\n\n")
-        
+
         f.write(f"💀 【毒点二审结果】 (驳回误判: {rejected_count}条)\n\n")
         if lei_points:
             f.write(">>> 严重雷点 <<<\n")
@@ -9151,7 +9167,22 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, raw_dat
         if not lei_points and not yumen_points and not pending_issues:
             f.write("✅ 全书无明显雷点。")
 
-    # 生成 JSON 摘要：女主最终初/处 + 雷点/郁闷点
+    return lei_points, yumen_points, pending_issues
+
+
+def _reviewer_build_summary_json(
+    timestamp,
+    male_lead,
+    female_leads,
+    final_heroine_report,
+    pushed_map,
+    leak_status_map,
+    lei_points,
+    yumen_points,
+    pending_issues,
+    rejected_issues,
+):
+    """第三阶段（JSON 摘要）：构建 summary_json 字典。"""
     summary_json = {
         "generated_at": timestamp,
         "male_lead": male_lead,
@@ -9228,6 +9259,207 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, raw_dat
             "evidence_card": _issue_evidence_card(item, "rejected"),
         })
 
+    return summary_json
+
+
+def main(novel_path=None, book_name=None, run_id=None, detail_path=None, raw_data_path=None):
+    args = _reviewer_parse_args(novel_path, book_name, run_id)
+
+    if novel_path:
+        os.environ["NOVEL_PATH"] = novel_path
+
+    scan_dir = _reviewer_resolve_scan_dir(args)
+
+    print("="*60)
+    print("⚖️  小说毒点二审法官 (全AI裁决版)")
+    print("="*60)
+
+    raw_data_path = _reviewer_resolve_raw_data_path(raw_data_path, args, scan_dir)
+    if not raw_data_path:
+        return
+
+    resolved_book_name = _reviewer_resolve_book_name(book_name, novel_path, raw_data_path)
+    init_token_tracker(
+        resolved_book_name,
+        run_id=run_id,
+        out_path=os.path.join(BASE_DIR, "results", "token_usage.json"),
+    )
+
+    # 初始化日志到当前扫描目录
+    log_path = os.path.join(os.path.dirname(raw_data_path), "reviewer.log")
+    configure_rotating_file_logger(logger, log_path)
+    logger.info(f"日志文件: {log_path}")
+
+    with open(raw_data_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    _validate_raw_data_matches_novel(data, raw_data_path, novel_path, book_name)
+
+    char_file_path = find_character_data(raw_data_path, detail_path=detail_path)
+    male_lead, female_leads = extract_roles(char_file_path)
+    print(f"👨‍🦰 男主锁定: 【{male_lead}】")
+
+    issues = data.get("issues", [])
+    heroine_status = data.get("heroine_status", [])
+
+    # 矛盾检测与置信度标注
+    _reviewer_run_contradiction_detection(data, raw_data_path)
+
+    # 断点续传文件放在扫描结果目录
+    checkpoint_file = os.path.join(os.path.dirname(raw_data_path), "reviewer3_checkpoint.json")
+    (
+        verified_issues,
+        rejected_count,
+        rejected_issues,
+        processed_issue_indices,
+        cached_heroine_report,
+        cached_pushed_map,
+        cached_finished,
+        cached_finished_reason,
+        purity_done,
+        finish_done,
+    ) = load_checkpoint(raw_data_path, checkpoint_file)
+    finished = cached_finished
+    finished_reason = cached_finished_reason
+    completed_checkpoint_has_gap = False
+    # `finished` 是小说是否完结的判定结果，不是审查流程是否已经跑完。
+    has_complete_checkpoint = purity_done and finish_done and cached_pushed_map is not None
+    if has_complete_checkpoint:
+        novel_path = _infer_novel_path_from_scan(raw_data_path)
+        novel_tail = _read_tail(novel_path) if novel_path else None
+        expected_leak_issues, _ = _rebuild_leak_state_from_pushed_map(
+            female_leads=female_leads,
+            char_file_path=char_file_path,
+            novel_tail=novel_tail,
+            finished=finished,
+            pushed_map=cached_pushed_map,
+        )
+        _, missing_leak_count = _merge_unique_review_issues(verified_issues, expected_leak_issues)
+        completed_checkpoint_has_gap = missing_leak_count > 0
+        if completed_checkpoint_has_gap:
+            logger.info(f"? ???????? {missing_leak_count} ????????????")
+    if has_complete_checkpoint and not completed_checkpoint_has_gap:
+        logger.info("==================================================")
+        logger.info(f"★ 发现完整断点，跳过重新审查：{checkpoint_file}")
+        logger.info(f"结束原因：{finished_reason}")
+        logger.info("如需重新生成，请删除该 checkpoint 文件或将 finished/purity_done/finish_done 设为 false。")
+        logger.info("==================================================")
+        return
+
+    if processed_issue_indices:
+        print(f"⏸️ 检测到断点，将跳过已完成的 {len(processed_issue_indices)} 条指控")
+
+    # 共用一个线程池
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        # --- 1. 毒点二审 (并发) ---
+        (
+            verified_issues,
+            rejected_issues,
+            rejected_count,
+            pending_by_idx,
+            processed_issue_indices,
+        ) = _reviewer_review_toxic_points(
+            executor,
+            issues,
+            processed_issue_indices,
+            verified_issues,
+            rejected_issues,
+            rejected_count,
+            male_lead,
+            female_leads,
+            raw_data_path,
+            checkpoint_file,
+            cached_heroine_report,
+            cached_pushed_map,
+            cached_finished,
+            cached_finished_reason,
+            purity_done,
+            finish_done,
+        )
+
+        # --- 2. 女主身心洁度鉴定 (规则版 + LLM，使用 scan 与 detail 证据) ---
+        (
+            final_heroine_report,
+            purity_done,
+        ) = _reviewer_judge_heroines(
+            executor,
+            heroine_status,
+            male_lead,
+            female_leads,
+            char_file_path,
+            raw_data_path,
+            purity_done,
+            cached_heroine_report,
+            verified_issues,
+            rejected_count,
+            rejected_issues,
+            processed_issue_indices,
+            checkpoint_file,
+            cached_pushed_map,
+            cached_finished,
+            cached_finished_reason,
+            finish_done,
+        )
+
+    # --- 2.5 漏女判定 ---
+    (
+        finished,
+        finished_reason,
+        pushed_map,
+        leak_status_map,
+        verified_issues,
+        finish_done,
+    ) = _reviewer_detect_leaks_and_finished(
+        raw_data_path,
+        finish_done,
+        cached_finished,
+        cached_finished_reason,
+        cached_pushed_map,
+        female_leads,
+        char_file_path,
+        novel_path,
+        male_lead,
+        verified_issues,
+        rejected_count,
+        rejected_issues,
+        processed_issue_indices,
+        checkpoint_file,
+        final_heroine_report,
+        purity_done,
+    )
+
+    # --- 3. 生成报告 ---
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    output_dir = os.path.dirname(raw_data_path)
+    report_file = os.path.join(output_dir, f"VERIFIED_REPORT_{timestamp}.txt")
+    summary_file = os.path.join(output_dir, f"VERIFIED_SUMMARY_{timestamp}.json")
+
+    lei_points, yumen_points, pending_issues = _reviewer_write_text_report(
+        report_file,
+        timestamp,
+        male_lead,
+        final_heroine_report,
+        female_leads,
+        pushed_map,
+        leak_status_map,
+        verified_issues,
+        rejected_count,
+        pending_by_idx,
+    )
+
+    # 生成 JSON 摘要：女主最终初/处 + 雷点/郁闷点
+    summary_json = _reviewer_build_summary_json(
+        timestamp,
+        male_lead,
+        female_leads,
+        final_heroine_report,
+        pushed_map,
+        leak_status_map,
+        lei_points,
+        yumen_points,
+        pending_issues,
+        rejected_issues,
+    )
+
     with open(summary_file, "w", encoding="utf-8") as f:
         json.dump(summary_json, f, ensure_ascii=False, indent=2)
 
@@ -9239,6 +9471,7 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None, raw_dat
         print(f"🔢 Token 统计: 输入 {snap.get('input', 0)} ，输出 {snap.get('output', 0)} ，总计 {snap.get('total', 0)}")
         tracker.flush(status="finished")
     print("="*60)
+
 
 if __name__ == "__main__":
     main()
