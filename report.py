@@ -883,40 +883,28 @@ def build_features_map(detailed_data) -> dict:
     return features_map
 
 
-def build_report_sections(detailed_data, reviewer, features_map=None):
-    """
-    整合 detailed_data (*_detailed_*.json) 与 reviewer (VERIFIED_SUMMARY_*.json)
-    新格式：女主名字 | 肉体洁 | 精神洁 | 是否被推倒 | 女主特点（身份、外貌、与男主关系）
-    """
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    header = [f"精简报告 生成时间：{ts}", "=" * 60]
-
-    # 从 reviewer 构建：肉体/精神状态 + 推倒判定（支持五维洁度判定 + 验证信息）
-    purity_map = {}  # name -> {is_virgin, virgin_status, has_other_contact, contact_status, no_partner, partner_status, verification, ...}
+def _build_purity_map(reviewer: dict) -> dict:
+    """从 reviewer 构建女主五维洁度映射。"""
+    purity_map = {}
     if reviewer:
         for item in reviewer.get("heroines_purity", []):
             name = item.get("name")
             if name:
                 verification = item.get("verification", {})
                 purity_map[name] = {
-                    # 五维洁度判定
                     "is_virgin": item.get("is_virgin", True),
                     "virgin_status": item.get("virgin_status", item.get("body_status", "❓ 未知")),
                     "has_other_contact": item.get("has_other_contact", False),
                     "contact_status": item.get("contact_status", "❓ 未知"),
                     "no_partner": item.get("no_partner", True),
                     "partner_status": item.get("partner_status", "❓ 未知"),
-                    # 精神洁度
                     "is_spirit_clean": item.get("is_spirit_clean", True),
                     "spirit_status": item.get("spirit_status", "❓ 未知"),
-                    # 综合
                     "is_clean": item.get("is_clean", True),
                     "pushed": item.get("pushed_by_male_lead"),
                     "pushed_reason": item.get("pushed_reason", "未判定"),
                     "summary": item.get("summary", ""),
-                    # 兼容旧字段
                     "body_status": item.get("body_status", "❓ 未知"),
-                    # 验证信息
                     "verification": {
                         "method": verification.get("method", "unknown"),
                         "llm_agreed": verification.get("llm_agreed", True),
@@ -927,16 +915,18 @@ def build_report_sections(detailed_data, reviewer, features_map=None):
                         "llm_first_result": verification.get("llm_first_result", {}),
                     },
                 }
+    return purity_map
 
-    # 男主信息
-    male_lines = []
-    male_lines.append("\n【男主信息】")
+
+def _build_male_info_lines(detailed_data) -> list:
+    """构建男主信息文本块。"""
+    male_lines = ["\n【男主信息】"]
     mp = detailed_data.get("male_protagonist") if detailed_data else None
     if mp:
         male_lines.append(f"- 男主：{mp.get('name') or '未识别'}")
         other_names = mp.get("other_names", [])
         if other_names:
-            male_lines.append(f"  别名：{', '.join(other_names[:10])}")  # 限制别名数量
+            male_lines.append(f"  别名：{', '.join(other_names[:10])}")
         if mp.get("identity"):
             male_lines.append(f"  身份：{mp.get('identity')}")
         summaries = mp.get("summaries", [])
@@ -944,184 +934,151 @@ def build_report_sections(detailed_data, reviewer, features_map=None):
             male_lines.append("  主要剧情：")
             for s in summaries[:3]:
                 male_lines.append(f"    · {s}")
+    return male_lines
 
-    # 女主信息：整合 detailed + reviewer
+
+def _format_verification_lines(verification: dict) -> list:
+    """格式化验证信息文本行。"""
+    lines = []
+    method = verification.get("method", "")
+    if method == "program_with_llm_agree":
+        lines.append("  验证：✅ LLM确认程序判定")
+    elif method == "program_confirmed_after_second_round":
+        lines.append("  验证：⚠️ 二次校验后确认")
+        if verification.get("first_disagreement"):
+            lines.append(f"    初次分歧：{verification.get('first_disagreement', '')[:60]}")
+    elif method == "llm_override_after_disagreement":
+        lines.append("  验证：⚠️ 程序与LLM存在分歧")
+        prog = verification.get("program_result", {})
+        if prog:
+            lines.append("  ┌─ 程序判定（被LLM修正）：")
+            lines.append(f"  │  处女：{prog.get('virgin_status', '?')}")
+            lines.append(f"  │  接触：{prog.get('contact_status', '?')}")
+            lines.append(f"  │  男伴：{prog.get('partner_status', '?')}")
+            lines.append(f"  │  精神：{prog.get('spirit_status', '?')}")
+            lines.append("  └─────────────────")
+        if verification.get("first_disagreement"):
+            lines.append(f"    分歧原因：{verification.get('first_disagreement', '')[:80]}")
+        if verification.get("second_reason"):
+            lines.append(f"    最终理由：{verification.get('second_reason', '')[:80]}")
+    elif method == "no_facts_default_clean":
+        lines.append("  验证：ℹ️ 无事实记录，默认全初")
+    return lines
+
+
+def _build_heroine_blocks(heroines, purity_map, features_map) -> list:
+    """构建女主信息文本块列表（含验证信息）。"""
     heroine_blocks = []
-    heroines = []
-    if detailed_data:
-        heroines = detailed_data.get("heroine_result", {}).get("heroines", [])
-    
-    # 构建外貌特征映射（如果未提供）
-    if features_map is None:
-        features_map = build_features_map(detailed_data)
-    
-    if heroines:
-        for h in heroines:
-            lines = []
-            name = h.get('name') or '未知'
-            rank = h.get('importance_rank', '?')
-            aliases_list = h.get('aliases', [])
-            aliases = ', '.join(aliases_list[:5]) if aliases_list else '无'
-            rel = h.get('relationship_type') or '未知'
-            traits = h.get('character_traits') or ''
-            summary = h.get('summary') or ''
-            
-            # 从 features_map 获取外貌描写（支持别名匹配）
-            features = features_map.get(name, [])
-            if not features:
-                for alias in aliases_list:
-                    if alias in features_map:
-                        features = features_map[alias]
-                        break
-            
-            # 从 summary 中提取身份（通常是第一句）
-            identity = ''
-            if summary:
-                first_sentence = summary.split('。')[0].split('，')[0].strip()
-                if first_sentence and len(first_sentence) < 50:
-                    identity = first_sentence
-            
-            # 性格直接使用 traits
-            personality = traits or '未描述'
-            
-            # 从 purity_map 获取初/处和推倒信息（支持模糊匹配）
-            purity_info = purity_map.get(name)
-            if not purity_info:
-                # 尝试模糊匹配
-                for pname, pinfo in purity_map.items():
-                    if name in pname or pname in name:
-                        purity_info = pinfo
-                        break
-            
-            if purity_info:
-                # 五维洁度判定
-                virgin_status = purity_info.get("virgin_status", purity_info.get("body_status", "❓ 未知"))
-                contact_status = purity_info.get("contact_status", "❓ 未知")
-                partner_status = purity_info.get("partner_status", "❓ 未知")
-                spirit_status = purity_info.get("spirit_status", "❓ 未知")
-                pushed = purity_info.get("pushed")
-                pushed_reason = purity_info.get("pushed_reason", "未判定")
-                verification = purity_info.get("verification", {})
-            else:
-                virgin_status = "❓ 未知"
-                contact_status = "❓ 未知"
-                partner_status = "❓ 未知"
-                spirit_status = "❓ 未知"
-                pushed = None
-                pushed_reason = "未判定"
-                verification = {}
-            
-            # 推倒状态显示
-            if pushed is True:
-                pushed_flag = "✅ 是"
-            elif pushed is False:
-                pushed_flag = "❌ 否"
-            else:
-                pushed_flag = "❓ 未知"
+    for h in heroines:
+        lines = []
+        name = h.get('name') or '未知'
+        rank = h.get('importance_rank', '?')
+        aliases_list = h.get('aliases', [])
+        aliases = ', '.join(aliases_list[:5]) if aliases_list else '无'
+        rel = h.get('relationship_type') or '未知'
+        traits = h.get('character_traits') or ''
+        summary = h.get('summary') or ''
 
-            # 新格式输出（五维洁度判定）
-            lines.append(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            lines.append(f"【{rank}】{name}")
-            lines.append(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            lines.append(f"  别名：{aliases}")
-            lines.append(f"  是否处女：{virgin_status}")
-            lines.append(f"  非男主接触：{contact_status}")
-            lines.append(f"  有无男伴：{partner_status}")
-            lines.append(f"  精神洁：{spirit_status}")
-            lines.append(f"  被推倒：{pushed_flag}")
-            
-            # 显示验证信息
-            method = verification.get("method", "")
-            if method == "program_with_llm_agree":
-                lines.append(f"  验证：✅ LLM确认程序判定")
-            elif method == "program_confirmed_after_second_round":
-                lines.append(f"  验证：⚠️ 二次校验后确认")
-                if verification.get("first_disagreement"):
-                    lines.append(f"    初次分歧：{verification.get('first_disagreement', '')[:60]}")
-            elif method == "llm_override_after_disagreement":
-                lines.append(f"  验证：⚠️ 程序与LLM存在分歧")
-                # 显示程序原判定
-                prog = verification.get("program_result", {})
-                if prog:
-                    lines.append(f"  ┌─ 程序判定（被LLM修正）：")
-                    lines.append(f"  │  处女：{prog.get('virgin_status', '?')}")
-                    lines.append(f"  │  接触：{prog.get('contact_status', '?')}")
-                    lines.append(f"  │  男伴：{prog.get('partner_status', '?')}")
-                    lines.append(f"  │  精神：{prog.get('spirit_status', '?')}")
-                    lines.append(f"  └─────────────────")
-                if verification.get("first_disagreement"):
-                    lines.append(f"    分歧原因：{verification.get('first_disagreement', '')[:80]}")
-                if verification.get("second_reason"):
-                    lines.append(f"    最终理由：{verification.get('second_reason', '')[:80]}")
-            elif method == "no_facts_default_clean":
-                lines.append(f"  验证：ℹ️ 无事实记录，默认全初")
-            
-            lines.append(f"  ────────────────")
-            if identity:
-                lines.append(f"  身份：{identity}")
-            # 外貌：使用 features 并标记待总结
-            lines.append(f"  外貌：__APPEARANCE__{name}__")
-            lines.append(f"  性格：{personality}")
-            lines.append(f"  与男主关系：{rel}")
-            if summary:
-                lines.append(f"  概要：{summary}")
-            if pushed_reason and pushed_reason != "未判定":
-                lines.append(f"  推倒说明：{pushed_reason}")
-            
-            heroine_blocks.append("\n".join(lines))
-    
+        # 从 features_map 获取外貌描写（支持别名匹配）
+        features = features_map.get(name, [])
+        if not features:
+            for alias in aliases_list:
+                if alias in features_map:
+                    features = features_map[alias]
+                    break
+
+        # 从 summary 中提取身份（通常是第一句）
+        identity = ''
+        if summary:
+            first_sentence = summary.split('。')[0].split('，')[0].strip()
+            if first_sentence and len(first_sentence) < 50:
+                identity = first_sentence
+
+        personality = traits or '未描述'
+
+        # 从 purity_map 获取初/处和推倒信息（支持模糊匹配）
+        purity_info = purity_map.get(name)
+        if not purity_info:
+            for pname, pinfo in purity_map.items():
+                if name in pname or pname in name:
+                    purity_info = pinfo
+                    break
+
+        if purity_info:
+            virgin_status = purity_info.get("virgin_status", purity_info.get("body_status", "❓ 未知"))
+            contact_status = purity_info.get("contact_status", "❓ 未知")
+            partner_status = purity_info.get("partner_status", "❓ 未知")
+            spirit_status = purity_info.get("spirit_status", "❓ 未知")
+            pushed = purity_info.get("pushed")
+            pushed_reason = purity_info.get("pushed_reason", "未判定")
+            verification = purity_info.get("verification", {})
+        else:
+            virgin_status = "❓ 未知"
+            contact_status = "❓ 未知"
+            partner_status = "❓ 未知"
+            spirit_status = "❓ 未知"
+            pushed = None
+            pushed_reason = "未判定"
+            verification = {}
+
+        pushed_flag = "✅ 是" if pushed is True else ("❌ 否" if pushed is False else "❓ 未知")
+
+        lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        lines.append(f"【{rank}】{name}")
+        lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        lines.append(f"  别名：{aliases}")
+        lines.append(f"  是否处女：{virgin_status}")
+        lines.append(f"  非男主接触：{contact_status}")
+        lines.append(f"  有无男伴：{partner_status}")
+        lines.append(f"  精神洁：{spirit_status}")
+        lines.append(f"  被推倒：{pushed_flag}")
+
+        lines.extend(_format_verification_lines(verification))
+
+        lines.append("  ────────────────")
+        if identity:
+            lines.append(f"  身份：{identity}")
+        lines.append(f"  外貌：__APPEARANCE__{name}__")
+        lines.append(f"  性格：{personality}")
+        lines.append(f"  与男主关系：{rel}")
+        if summary:
+            lines.append(f"  概要：{summary}")
+        if pushed_reason and pushed_reason != "未判定":
+            lines.append(f"  推倒说明：{pushed_reason}")
+
+        heroine_blocks.append("\n".join(lines))
+
     # 补充：reviewer 中有但 detailed 中没有的女主
     detailed_names = {h.get('name') for h in heroines if h.get('name')}
     for pname, pinfo in purity_map.items():
         if pname not in detailed_names:
-            # 检查是否已通过模糊匹配处理
             already_matched = any(pname in dn or dn in pname for dn in detailed_names)
-            if not already_matched:
-                lines = []
-                lines.append(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-                lines.append(f"【?】{pname}")
-                lines.append(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-                # 五维洁度判定
-                lines.append(f"  是否处女：{pinfo.get('virgin_status', pinfo.get('body_status', '❓ 未知'))}")
-                lines.append(f"  非男主接触：{pinfo.get('contact_status', '❓ 未知')}")
-                lines.append(f"  有无男伴：{pinfo.get('partner_status', '❓ 未知')}")
-                lines.append(f"  精神洁：{pinfo.get('spirit_status', '❓ 未知')}")
-                pushed = pinfo.get("pushed")
-                if pushed is True:
-                    pushed_flag = "✅ 是"
-                elif pushed is False:
-                    pushed_flag = "❌ 否"
-                else:
-                    pushed_flag = "❓ 未知"
-                lines.append(f"  被推倒：{pushed_flag}")
-                
-                # 显示验证信息
-                verification = pinfo.get("verification", {})
-                method = verification.get("method", "")
-                if method == "program_with_llm_agree":
-                    lines.append(f"  验证：✅ LLM确认程序判定")
-                elif method == "program_confirmed_after_second_round":
-                    lines.append(f"  验证：⚠️ 二次校验后确认")
-                elif method == "llm_override_after_disagreement":
-                    lines.append(f"  验证：⚠️ 程序与LLM存在分歧")
-                    prog = verification.get("program_result", {})
-                    if prog:
-                        lines.append(f"  ┌─ 程序判定（被LLM修正）：")
-                        lines.append(f"  │  处女：{prog.get('virgin_status', '?')}")
-                        lines.append(f"  │  接触：{prog.get('contact_status', '?')}")
-                        lines.append(f"  │  男伴：{prog.get('partner_status', '?')}")
-                        lines.append(f"  │  精神：{prog.get('spirit_status', '?')}")
-                        lines.append(f"  └─────────────────")
-                    if verification.get("first_disagreement"):
-                        lines.append(f"    分歧原因：{verification.get('first_disagreement', '')[:80]}")
-                elif method == "no_facts_default_clean":
-                    lines.append(f"  验证：ℹ️ 无事实记录，默认全初")
-                
-                lines.append(f"  ────────────────")
-                lines.append(f"  （详细信息未找到）")
-                heroine_blocks.append("\n".join(lines))
+            if already_matched:
+                continue
+            lines = []
+            lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            lines.append(f"【?】{pname}")
+            lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            lines.append(f"  是否处女：{pinfo.get('virgin_status', pinfo.get('body_status', '❓ 未知'))}")
+            lines.append(f"  非男主接触：{pinfo.get('contact_status', '❓ 未知')}")
+            lines.append(f"  有无男伴：{pinfo.get('partner_status', '❓ 未知')}")
+            lines.append(f"  精神洁：{pinfo.get('spirit_status', '❓ 未知')}")
+            pushed = pinfo.get("pushed")
+            pushed_flag = "✅ 是" if pushed is True else ("❌ 否" if pushed is False else "❓ 未知")
+            lines.append(f"  被推倒：{pushed_flag}")
 
-    # 雷/郁闷原文，保持未经润色
+            verification = pinfo.get("verification", {})
+            lines.extend(_format_verification_lines(verification))
+
+            lines.append("  ────────────────")
+            lines.append("  （详细信息未找到）")
+            heroine_blocks.append("\n".join(lines))
+
+    return heroine_blocks
+
+
+def _build_risk_lines(reviewer) -> str:
+    """构建雷/郁闷点文本。"""
     risk = []
     if reviewer:
         lei_points = reviewer.get("lei_points", [])
@@ -1141,8 +1098,31 @@ def build_report_sections(detailed_data, reviewer, features_map=None):
                 risk.append(f"   原文：{p.get('content','')}")
                 if p.get("review_comment"):
                     risk.append(f"   裁决：{p.get('review_comment')}")
+    return "\n".join(risk) if risk else ""
 
-    return header, male_lines, heroine_blocks, ("\n".join(risk) if risk else "")
+
+def build_report_sections(detailed_data, reviewer, features_map=None):
+    """
+    整合 detailed_data (*_detailed_*.json) 与 reviewer (VERIFIED_SUMMARY_*.json)
+    新格式：女主名字 | 肉体洁 | 精神洁 | 是否被推倒 | 女主特点（身份、外貌、与男主关系）
+    """
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    header = [f"精简报告 生成时间：{ts}", "=" * 60]
+
+    purity_map = _build_purity_map(reviewer)
+    male_lines = _build_male_info_lines(detailed_data)
+
+    heroines = []
+    if detailed_data:
+        heroines = detailed_data.get("heroine_result", {}).get("heroines", [])
+
+    if features_map is None:
+        features_map = build_features_map(detailed_data)
+
+    heroine_blocks = _build_heroine_blocks(heroines, purity_map, features_map)
+    risk_text = _build_risk_lines(reviewer)
+
+    return header, male_lines, heroine_blocks, risk_text
 
 
 # =========================== 新版报告（男主→女主→毒/雷点） ===========================
