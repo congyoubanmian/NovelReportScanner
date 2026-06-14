@@ -1,739 +1,248 @@
+# 📚 NovelReportScanner
 
-# NovelReportScanner
-
-一个用于扫描男性向小说的程序
-============================
-
-# 小说扫书分析工具
+> **Fork 自** [linglingpp2/NovelReportScanner](https://github.com/linglingpp2/NovelReportScanner) — 原项目是一个男性向长篇小说扫书程序，支持扫描女主、输出毒点雷点、女主四维纯洁度。
+>
+> 本 Fork 在原项目基础上进行了大量重构和功能增强：新增 Web 管理端（Vue3 前端 + Python HTTP 后端）、24 种小说类型专项分析、大纲预扫描、伏笔追踪、矛盾检测、事实验证器、Token 追踪、Docker/CI 自动化部署等。代码从原始单文件逐步重构为 27 个模块、42,000+ 行结构化代码。
 
 一个面向长篇小说 `.txt` 文本的多阶段分析流水线。项目会按配置的分析模式完成角色识别、正文扫描、结果复核和最终报告生成，并把中间产物与可读报告统一输出到 `results/` 目录。
 
-默认模式仍然保留原有“男性向/后宫扫书、排雷、女主事实提取、最终汇总”能力；同时新增 `general` 通用小说分析入口，用于后续扩展剧情、主题、设定、历史、硬科幻等专项分析。
+**项目地址**：<https://github.com/congyoubanmian/NovelReportScanner>
 
-项目地址：<https://github.com/congyoubanmian/NovelReportScanner>
+---
 
-## 近期更新
+## ✨ 核心能力
 
-- 新增本地 Web 管理端：支持上传小说、管理书籍列表、调整每本书分析分类、查看书籍详情、任务历史、任务日志和输出文件。
-- Web 端采用单 worker 串行扫描：后台一次只扫一本书，未轮到的任务显示排队中和队列位置。
-- 新增 profile 化分析模式：`harem` 保留后宫/男性向专长分析，`general`、`history`、`hard_sci_fi` 走通用小说/类型专长分析。
-- 自动分类会给出多个候选建议：例如一本书同时有历史背景和后宫结构时，可以在 Web 页面手动选择更合适的 profile。
-- 新增 `.env` 本地配置支持：真实 API Key、模型地址、限流参数可写入本地 `.env`，仓库只保留 `.env.sample` 模板。
+- **多阶段流水线**：角色识别 → 分块扫描 → 二次复核 → 报告生成，支持断点续跑和多轮补扫
+- **后宫排雷模式**：男主/女主识别、别称合并、女主四维纯洁度判定、毒点/雷点检测
+- **24 种专项分析**：后宫、游戏/系统、仙侠、硬科幻、历史、悬疑、克苏鲁、末世、西幻等类型专长分析
+- **自动分类**：基于关键词匹配 + 置信度评分，自动推荐小说类型，支持多分类联合扫描
+- **Web 管理端**：上传、分类、排队、实时进度、日志查看、报告下载，SSE 实时推送
+- **准确率保障**：大纲预扫描、滚动上下文、伏笔工程、矛盾检测、事实验证器、名称归一化
+- **超长文本支持**：完整支持 200万-800万字长篇，断点续跑 + 降载切半 + 智能补扫
+- **Docker 一键部署**：CI/CD 自动构建，GHCR 镜像拉取即用
 
-## Web 端
-
-启动：
-
-```powershell
-python web_manager.py
-```
-
-默认访问：
-
-```text
-http://127.0.0.1:8765
-```
-
-Web 端适合管理多本书：先上传 `.txt`，根据自动建议调整分类，再加入队列扫描。服务重启后，尚未开始的 queued 任务会恢复排队；已经 running 的任务会标记为 `interrupted`，需要手动重新加入队列。
-
-## 核心能力
-
-- 批量扫描 `novels/` 目录下的所有小说 `.txt` 文件。
-- 自动识别核心角色、后宫模式下的男主/女主候选及其别名，并输出角色中间结果。
-- `harem` 模式按分块方式扫描全书正文，提取雷点、郁闷点和女主相关事实。
-- `harem` 模式在 reviewer 阶段对扫描结果做二次复核，生成更稳定的洁度和毒点结论。
-- `general` 模式跳过后宫毒点二审，基于角色识别产物生成通用小说报告。
-- 自动生成最终可读的报告文本。
-- 记录阶段性中间文件、断点信息、日志和 token 使用情况。
-- Windows 下可直接通过 `win一键运行脚本.bat` 启动，并在首次运行时自动创建 `.venv`。
-- 支持 Docker 镜像部署，容器默认启动 Web 管理端，后续可以直接拉镜像运行并通过浏览器管理。
-
-## 项目结构
-
-```text
-.
-├─ win一键运行脚本.bat     # Windows 启动入口，负责调用 bootstrap_venv.py
-├─ Dockerfile              # Docker 镜像构建文件，默认启动 Web 管理端
-├─ docker-compose.yml      # 拉镜像部署用 Compose 文件
-├─ docker-compose.build.yml # 本地源码构建用 Compose 覆盖文件
-├─ requirements.txt        # 容器和手动安装依赖清单
-├─ bootstrap_venv.py       # 创建 .venv、安装基础依赖、启动 main.py
-├─ main.py                 # 主流程入口，批量扫描 novels/ 并串联四个阶段
-├─ protagonist.py          # 角色识别与女主候选提取
-├─ novel_scan.py           # 分块扫描正文，提取问题点和结构化事实
-├─ novel_reviewer.py       # 二次复核与汇总结论生成
-├─ general_scan.py         # 通用小说剧情、冲突、主题、设定扫描
-├─ web_manager.py          # 本地 Web 管理端：上传、分类、排队、单本扫描
-├─ report.py               # 生成最终面向阅读的报告
-├─ shared_utils.py         # 共享配置、API 调用封装、通用工具
-├─ text_anchor.py          # chunk manifest 与证据定位相关逻辑
-├─ token_tracker.py        # token 统计
-├─ analysis_profiles.py    # 分析 profile 加载与流程能力描述
-├─ profiles/               # 不同小说类型/分析模式的规则和模板入口
-├─ rules2.json             # 规则库，定义雷点/郁闷点及其说明
-├─ .env.sample             # .env 本地配置模板
-├─ setting.txt.sample      # setting.txt 本地配置模板
-├─ setting.txt             # 本地运行配置，已被 .gitignore 忽略
-├─ api.txt                 # 本地 API Key 列表，已被 .gitignore 忽略
-├─ novels/                 # 输入小说文本目录
-├─ results/                # 输出目录
-   └─ learned_keywords/    # 扫描阶段生成的增量关键词快照
+## 📦 项目结构
 
 ```
+NovelReportScanner/
+├── 🔧 核心引擎
+│   ├── novel_reviewer.py    9,477行  核心审查（女主四维/排雷/矛盾）
+│   ├── protagonist.py       5,273行  主角识别（男主+女主+别称合并）
+│   ├── novel_scan.py        5,176行  深度扫描（分块/断点/补扫）
+│   └── general_scan.py      3,744行  专项分析（按类型扫描）
+│
+├── 📊 报告与前端
+│   ├── report.py            5,546行  报告渲染（raw_data → 文字报告/JSON）
+│   ├── web_manager.py       2,992行  Web后台（HTTP API + 管理界面）
+│   └── frontend/                     Vue3 前端（App.vue / api.js / components/）
+│
+├── ⚙️ 基础设施
+│   ├── text_anchor.py       2,000行  文本锚点（章节定位/证据引用）
+│   ├── Timerror.py          1,007行  LLM调用引擎（限流/Key轮换/重试/降级）
+│   ├── shared_utils.py        938行  公共工具库
+│   └── main.py                883行  CLI入口/任务分发
+│
+├── 📈 分析指标（17个模块）
+│   ├── analysis_profiles.py    867行  类型识别 + 自动分类
+│   ├── literary_metrics.py     522行  文学性指标
+│   ├── foreshadowing_registry  442行  伏笔追踪
+│   ├── outline_prescan.py      408行  大纲预扫描
+│   ├── reading_metrics.py      358行  可读性指标
+│   ├── toxic_reviewer.py       330行  排雷审查
+│   ├── sentiment_arcs.py       316行  情感弧线
+│   ├── token_tracker.py        301行  Token追踪
+│   ├── scan_memory.py          299行  跨chunk扫描记忆
+│   ├── contradiction_detector  281行  矛盾检测
+│   ├── fact_validator.py       249行  事实验证器
+│   ├── readability_scorer.py   227行  可读性评分
+│   ├── name_authority.py       210行  名称权威表
+│   ├── name_normalizer.py      157行  名称归一化
+│   ├── rv_llm_payload.py       112行  LLM负载控制
+│   ├── bootstrap_venv.py        99行  环境引导
+│   └── prompt_templates.py      42行  Prompt模板
+│
+├── 📁 profiles/          24种类型规则（每种 rules.json + profile.json）
+│   ├── harem/            后宫/男性向排雷
+│   ├── game_system/      游戏/系统/无限流
+│   ├── xianxia_fantasy/  仙侠/玄幻
+│   ├── hard_sci_fi/      硬科幻
+│   ├── history/          历史
+│   ├── mystery_detective/ 悬疑/推理
+│   ├── cosmic_horror/    克苏鲁/诡秘
+│   ├── apocalypse_survival/ 末世/生存
+│   ├── steampunk_fantasy/   西幻/蒸汽朋克
+│   └── ... (共24个分类)
+│
+├── 🧪 tests/             448个测试 / 18,103行
+├── 📦 results/           扫描结果 + 任务日志 + 运行状态
+├── 🚀 Dockerfile + docker-compose.yml + .github/workflows/ (CI/CD)
+├── novels/               上传的小说文件
+└── requirements.txt
+```
 
-## 快速开始
+**统计**：27个 Python 模块，42,256行业务代码 + 18,103行测试，448个测试方法全绿 ✅
 
-### 方式一：Windows 下直接运行
+## 🚀 快速开始
 
-这是当前仓库最直接的启动方式。
+### Docker 部署（推荐）
 
-1. 安装 Python 3.10 或更高版本。
-2. 把待分析的小说 `.txt` 放进 `novels/` 目录，或在 `.env` / `setting.txt` 里设置 `NOVELS_DIR` 指向外部小说目录。
-3. 复制 `.env.sample` 为 `.env`，填写 `API_KEY` 或 `API_KEY_POOL`。
-4. 如仍沿用旧方式，也可以在项目根目录创建 `api.txt`，每行写一个可用的 API Key；`api.txt` 只作为 `.env` 未配置时的回退。
-5. 如需旧式配置文件，复制 `setting.txt.sample` 为 `setting.txt` 后修改。
-6. 双击运行 `win一键运行脚本.bat`。
+```bash
+# 1. 准备目录
+mkdir -p novels results
 
-`win一键运行脚本.bat` 会优先使用本地 `.venv\Scripts\python.exe`。如果 `.venv` 还不存在，它会调用 `bootstrap_venv.py` 自动完成以下动作：
+# 2. 拉取镜像
+docker pull ghcr.io/congyoubanmian/novelreportscanner:latest
 
-- 检查 Python 版本是否至少为 3.10
-- 创建本地 `.venv`
-- 安装基础依赖：`openai`、`tqdm`、`httpx`
-- 使用该环境运行 `main.py`
+# 3. 启动
+docker run -d \
+  --name novel-report-scanner \
+  --restart unless-stopped \
+  -p 8765:8765 \
+  --env-file .env \
+  -v "$PWD/novels:/app/novels" \
+  -v "$PWD/results:/app/results" \
+  ghcr.io/congyoubanmian/novelreportscanner:latest
+```
 
-### 方式二：手动运行 Python
+访问 `http://服务器IP:8765`
 
-如果你不想走批处理入口，也可以手动创建虚拟环境并运行：
+### 本地运行
 
-```powershell
+```bash
 python -m venv .venv
-.\.venv\Scripts\activate
+source .venv/bin/activate    # Windows: .\.venv\Scripts\activate
 pip install openai tqdm httpx
+
+# Web 管理端
+python web_manager.py
+
+# 或 CLI 批量扫描
 python main.py
 ```
 
-### 方式三：Docker Web 管理端
-
-Docker 镜像默认启动 Web 管理端，监听容器内 `8765` 端口。小说文本、扫描结果和 Web 状态都建议挂载到宿主机目录，避免容器重建后丢失。
-
-容器入口会默认检查 `API_KEY` 或 `API_KEY_POOL`，至少需要配置其中一个，否则容器会直接退出，避免 Web 页面能打开但扫描任务启动后才失败。如果你只是临时启动 Web UI、不准备扫描，可以设置 `NOVEL_REPORT_SCANNER_REQUIRE_API_KEY=0` 跳过这个启动校验。
-
-Docker 部署默认还要求设置 `WEB_ACCESS_TOKEN`。这是为了避免把 Web 管理端暴露到公网后，读接口、报告文件和 SSE 状态流处于无鉴权状态。只有在确认服务只绑定本机或内网可信环境时，才建议设置 `WEB_ALLOW_NO_AUTH=1` 跳过该启动校验。
-
-容器默认不再以 root 身份运行，默认使用 `1000:1000`。首次部署前建议先创建宿主机挂载目录，并让运行容器的 UID / GID 拥有读写权限：
-
-```bash
-export PUID="${PUID:-1000}"
-export PGID="${PGID:-1000}"
-mkdir -p novels results
-chown -R "$PUID:$PGID" novels results
-```
-
-容器启动时会对 `/app/novels` 和 `/app/results` 做写入自检。如果宿主机挂载目录权限不匹配，容器会直接退出并提示类似上面的 `chown` 命令，避免上传或入队时才遇到 `PermissionError`。
-
-本地源码构建镜像：
-
-```bash
-docker build -t novel-report-scanner:latest .
-```
-
-如果构建机器访问 PyPI 较慢，可以临时指定镜像源：
-
-```bash
-docker build \
-  --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
-  -t novel-report-scanner:latest .
-```
-
-直接运行镜像：
-
-```bash
-docker run -d \
-  --name novel-report-scanner \
-  --restart unless-stopped \
-  --user "${PUID:-1000}:${PGID:-1000}" \
-  -p 8765:8765 \
-  --env-file .env \
-  -v "$PWD/novels:/app/novels" \
-  -v "$PWD/results:/app/results" \
-  novel-report-scanner:latest
-```
-
-访问：
-
-```text
-http://服务器IP:8765
-```
-
-如果不走镜像仓库，也可以在本机导出镜像包，上传到服务器后部署：
-
-```bash
-docker save -o novel-report-scanner_latest.tar novel-report-scanner:latest
-```
-
-服务器导入镜像：
-
-```bash
-docker load -i novel-report-scanner_latest.tar
-mkdir -p novels results
-```
-
-然后直接启动：
-
-```bash
-docker run -d \
-  --name novel-report-scanner \
-  --restart unless-stopped \
-  --user "${PUID:-1000}:${PGID:-1000}" \
-  -p 8765:8765 \
-  --env-file .env \
-  -v "$PWD/novels:/app/novels" \
-  -v "$PWD/results:/app/results" \
-  novel-report-scanner:latest
-```
-
-如果使用 Compose，本地源码构建并启动：
-
-```bash
-export PUID="${PUID:-1000}"
-export PGID="${PGID:-1000}"
-docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
-```
-
-Compose 构建同样可以先设置 `PIP_INDEX_URL` 来切换 pip 源。`PUID` / `PGID` 也可以写入 `.env`，用于让容器内进程用宿主机用户身份写入 `novels/` 和 `results/`。推送到 `main` 后可以在 Actions 页面查看自动镜像构建结果。
-
-Compose 默认限制容器内存为 `2G`，预留 `512M`。如果一次扫描的小说很长、并发或上下文窗口较大，可以在 `.env` 中调整：
-
-```ini
-CONTAINER_MEMORY_LIMIT=4g
-CONTAINER_MEMORY_RESERVATION=1g
-```
-
-推送到 GitHub `main` 分支后，CI 会先运行后端单测、前端 audit/lint/format/build；Docker 发布工作流会自动构建并推送镜像到 GHCR 和 Docker Hub。推送 `v*` 版本 tag 或手动触发 Docker 发布工作流时，也会发布对应镜像标签。服务器只需要准备 `.env`、`novels/`、`results/` 和 `docker-compose.yml`。例如：
-
-```bash
-export NOVEL_REPORT_SCANNER_IMAGE=ghcr.io/congyoubanmian/novel-report-scanner:main
-export PUID="${PUID:-1000}"
-export PGID="${PGID:-1000}"
-docker compose pull
-docker compose up -d
-```
-
-Compose 会把 `.env` 中的模型、限流、后宫增强、上传限制、扫描卡死保护、SSE 间隔、输出缓存等运行参数显式传入容器。改动 `.env` 后需要重新执行 `docker compose up -d` 让容器重建并读取新环境变量。生产环境建议固定使用 release tag 或 `sha-xxxx` 镜像标签，排障时可以通过 `/healthz` 或 `/api/diagnostics` 返回的 `app.commit` 确认线上容器实际运行的提交。
-
-`.env.sample` 已包含 Compose 支持的常用部署变量和扫描调优变量，可以复制为 `.env` 后按需修改；不要把真实 `.env` 提交到仓库。
-
-没有 Compose 的环境也可以直接拉镜像运行：
-
-```bash
-docker pull ghcr.io/congyoubanmian/novel-report-scanner:main
-docker run -d \
-  --name novel-report-scanner \
-  --restart unless-stopped \
-  --user "${PUID:-1000}:${PGID:-1000}" \
-  -p 8765:8765 \
-  --env-file .env \
-  -v "$PWD/novels:/app/novels" \
-  -v "$PWD/results:/app/results" \
-  ghcr.io/congyoubanmian/novel-report-scanner:main
-```
-
-生产部署注意事项：
-
-- `.env` 保存真实 API Key 和模型配置，不要打进镜像，也不要提交到仓库。
-- Docker/Compose 默认要求 `.env` 中存在 `API_KEY` 或 `API_KEY_POOL`；多 Key 时优先使用 `API_KEY_POOL=sk-key-1,sk-key-2`。
-- `novels/` 用于放上传或预置的 `.txt` 小说，`results/` 用于保存报告、任务日志和 Web 管理状态。
-- 如果容器无法上传小说或写报告，优先检查宿主机 `novels/`、`results/` 的属主是否匹配 `PUID` / `PGID`。
-- 容器内 Web 服务默认绑定 `0.0.0.0:8765`，宿主机端口可通过 `-p 宿主机端口:8765` 或 Compose 里的 `WEB_PORT` 调整。
-- 容器内存限制可通过 `CONTAINER_MEMORY_LIMIT` 和 `CONTAINER_MEMORY_RESERVATION` 调整；超长小说或多分类扫描建议适当调高。
-- 镜像健康检查使用 `/healthz`，只证明 Web 管理端进程可访问；是否能真正扫描取决于 `.env` / API Key 是否配置正确。`/healthz.ready=false` 会提示配置或存储自检异常，但不会让 Docker 因历史任务失败反复重启容器。
-- 默认启用 `SCAN_STALL_TIMEOUT_SECONDS=1200`，运行中的扫描子进程如果 20 分钟没有任何日志输出会被终止并标记失败，避免单个任务长期占住队列。可在 `.env` 或 Web 顶部“运行配置”里调整，设为 `0` 表示关闭。
-
-线上排障常用命令：
-
-```bash
-# 不需要令牌，只看 Web 进程、版本和卡死保护是否启用
-curl -sS http://服务器IP:8765/healthz
-
-# 需要令牌，查看队列、running 任务、最后日志、距离最后日志秒数和存储状态
-curl -sS -H "Authorization: Bearer $WEB_ACCESS_TOKEN" \
-  http://服务器IP:8765/api/diagnostics
-```
-
-如果 `/api/diagnostics` 里 `health_issues` 包含 `storage`，优先检查宿主机 `novels/`、`results/` 权限和 Compose 的 `PUID` / `PGID`；包含 `config` 则先检查 `.env` / API Key。若 `stale_running_count > 0`，说明存在超过卡死保护阈值仍未产生日志的运行任务；优先确认线上镜像 `app.commit` 是否已经包含最新代码，且 `scan_stall_watchdog_enabled` 是否为 `true`。`generated_at` 可以用来确认页面或反向代理看到的是不是最新诊断结果。
-
-公网反向代理 / TLS 建议：
-
-如果 Web 管理端暴露到公网，建议不要直接开放裸 `8765` 端口。更稳妥的做法是让容器只监听本机回环地址，再用 Caddy 或 Nginx 负责 HTTPS、域名和访问入口：
-
-```yaml
-# docker-compose.yml 可把端口改成只绑定本机
-ports:
-  - "127.0.0.1:${WEB_PORT:-8765}:8765"
-```
-
-同时在 `.env` 中设置访问令牌，并把 CORS 收窄到你的域名：
-
-```ini
-WEB_ACCESS_TOKEN=换成一段长随机字符串
-WEB_CORS_ALLOW_ORIGIN=https://scanner.example.com
-```
-
-Caddy 示例：
-
-```caddyfile
-scanner.example.com {
-  reverse_proxy 127.0.0.1:8765
-}
-```
-
-Nginx 示例：
-
-```nginx
-server {
-    listen 80;
-    server_name scanner.example.com;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name scanner.example.com;
-
-    ssl_certificate /etc/letsencrypt/live/scanner.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/scanner.example.com/privkey.pem;
-
-    client_max_body_size 100m;
-
-    location / {
-        proxy_pass http://127.0.0.1:8765;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location /api/events {
-        proxy_pass http://127.0.0.1:8765;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_buffering off;
-        proxy_read_timeout 3600s;
-    }
-}
-```
-
-反向代理配置完成后，浏览器访问 `https://scanner.example.com/?token=你的令牌` 可首次保存令牌；后续页面会把令牌放入 `Authorization: Bearer ...` 头中请求 API。`/healthz` 不需要令牌，只能证明 Web 进程可达，不应当作为 API Key 或扫描能力是否正常的判断。
-
-### 方式四：本地 Web 管理端
-
-如果你需要管理多本书、上传后手动调整分类，可以启动本地 Web 管理端：
-
-```powershell
-python web_manager.py
-```
-
-默认访问：
-
-```text
-http://127.0.0.1:8765
-```
-
-Web 管理端能力：
-
-- 上传 `.txt` 小说到 `novels/`；同名文件默认拒绝覆盖，需要显式勾选“覆盖同名文件”。
-- 为每本书选择 `auto`、`harem`、`general`、`history`、`hard_sci_fi` 等分析模式；下拉选项会从 `profiles/` 自动发现。
-- 上传或同步书籍后显示自动分类建议。一本书如果同时像历史小说和后宫小说，会同时展示候选 profile、分数和命中关键词，用户可以在开始扫描前手动调整。
-- 支持单本或批量加入扫描队列，尚未开始的排队任务可以置顶、上移、下移或取消；空闲或已完成书籍可以单本或批量删除上传的小说文件，历史报告会保留。
-- 列表状态通过 SSE 实时推送更新，连接异常时会回退到定时刷新。
-- 顶部展示非敏感运行配置摘要，例如模型、并发、限流、上传上限、API Key 配置数量和容器 Key 启动校验状态；不会展示 Key 明文。
-- 查看每本书详情、分类建议、Token 用量、任务历史、任务日志、最近输出报告和 summary 文件。
-- 状态持久化到 `results/web_manager_state.json`。
-- Web 管理端重启后，尚未开始的 queued 任务会恢复排队；已经 running 的任务会标记为 `interrupted`，需要用户重新加入队列。
-
-也可以通过环境变量改监听地址：
-
-```powershell
-set WEB_HOST=0.0.0.0
-set WEB_PORT=8765
-python web_manager.py
-```
-
-## 配置说明
-
-### `.env` / `api.txt`
-
-推荐把本机运行配置写在 `.env` 中。仓库只保留 `.env.sample` 模板，真实 `.env` 已在 `.gitignore` 中忽略，不会被提交。
+**最简配置 `.env`**：
 
 ```ini
 BASE_URL=https://your-openai-compatible-endpoint/v1
 MODEL_NAME=your-model-name
-NOVELS_DIR=
+API_KEY=sk-your-key
 MAX_WORKERS=2
 RPM_LIMIT=100
 TPM_LIMIT=10000000
-RATE_LIMIT_SCOPE=auto
-API_KEY=sk-your-key
-# API_KEY_POOL=sk-key-1,sk-key-2
-
-WEB_HOST=0.0.0.0
-WEB_PORT=8765
-WEB_CORS_ALLOW_ORIGIN=*
-WEB_ACCESS_TOKEN=换成一段长随机字符串
-WEB_ALLOW_NO_AUTH=0
-WEB_REQUEST_TIMEOUT=60
-SCAN_CANCEL_TIMEOUT_SECONDS=5
-SCAN_HEARTBEAT_INTERVAL_SECONDS=10
-SCAN_STALL_TIMEOUT_SECONDS=1200
-SCAN_FUTURE_STALL_TIMEOUT_SECONDS=0
-MAX_UPLOAD_SIZE=104857600
-MAX_JSON_BODY_SIZE=65536
-FILE_RESPONSE_CHUNK_SIZE=1048576
-SYNC_BOOKS_TTL_SECONDS=5
-OUTPUTS_CACHE_TTL_SECONDS=5
-SSE_STATE_INTERVAL_SECONDS=3
-SSE_SYNC_INTERVAL_SECONDS=5
-SSE_MAX_CONNECTION_SECONDS=300
-STORAGE_HEALTH_TTL_SECONDS=10
 ```
 
-配置加载优先级是：进程环境变量 / `.env` > `setting.txt` > 默认值。API Key 优先读取 `API_KEY_POOL` 或 `API_KEY`；如果没有设置，才会回退读取根目录 `api.txt`。
+配置优先级：进程环境变量 / `.env` > `setting.txt` > 默认值。仓库中只有 `.env.sample` 模板，真实 `.env` 已在 `.gitignore` 中忽略。
 
-`NOVELS_DIR` 可指向外部本地小说目录；留空时使用项目内 `novels/`。例如本机样本目录可写成 `NOVELS_DIR=/home/ctyun/workspace/novel`。
+## 🔄 分析流程
 
-请只在本地保存真实 key，不要把 `.env` 或真实 `api.txt` 提交到公开仓库。
+主流程由 `main.py` 串联四个阶段，对 `novels/` 下的每本 `.txt` 依次执行：
 
-### `setting.txt`
+1. **`protagonist.py`** — 角色识别：并行扫描全书，识别男主、女主候选及别称
+2. **`novel_scan.py`** — 深度扫描：分块扫描正文，提取角色/事件/关系，支持断点续跑+多轮补扫
+3. **`novel_reviewer.py`** — 二次复核：女主四维纯洁度判定、毒点/雷点检测、矛盾检测
+4. **`report.py`** — 报告生成：渲染最终可读的文字报告和 JSON 摘要
 
-`main.py` 会从本地 `setting.txt` 中读取常用配置，并写入环境变量。仓库只保留 `setting.txt.sample`，真实 `setting.txt` 已在 `.gitignore` 中忽略。需要使用旧式配置文件时，可以复制 `setting.txt.sample` 为 `setting.txt` 后再修改。
+通用/专项分析（`general`、`history`、`hard_sci_fi` 等）则跳过排雷二审，执行 `general_scan.py` 抽取剧情主线、核心冲突、世界观设定、伏笔工程、写作质量等维度。
 
-最常用的几个配置是：
+## 📖 分析模式
 
-- `BASE_URL`：OpenAI 兼容接口地址。
-- `MODEL_NAME`：调用的模型名称。
-- `MAX_WORKERS`：并发规模基线。
-- `ANALYSIS_PROFILE`：分析模式。`harem` 为默认后宫/男性向排雷模式；`auto` 可按每本书自动识别；`general`、`history`、`hard_sci_fi` 为通用和类型专长入口。
-- `HAREM_PLUS_GENERAL_SCAN`：后宫增强模式开关。设为 `1` 时，`harem` 流程会在后宫排雷后额外运行一次通用剧情扫描，并在后宫报告末尾追加“作品整体评价”；默认 `0`，不增加额外调用。
-- `GENERAL_SCAN_MAX_CHUNKS`：通用/专项剧情扫描的基础片段预算，默认 `80`。程序会按小说长度自动提高有效上限：100 万字内 80、100-300 万字 120、300-500 万字 160、500-1000 万字含 1000 万字 300、超过 1000 万字 400；手动配置更高值时会尊重配置，设为 `0` 表示不限制。超出预算时默认按全书时间线覆盖并优先纳入高信号片段，而不是只扫描开头。
-- `GENERAL_SCAN_SMART_DENSITY`：通用/专项剧情扫描的片段密度分级开关，默认 `1`。开启后低密度过渡/日常片段会走轻量抽取 prompt，只保留真实新增信息；不会跳过片段，结果会记录 `density_profile` 和汇总 `density_counts`。设为 `0` 可恢复所有片段完整抽取。
-- `GENERAL_SCAN_CONTENT_AWARE_SAMPLING`：通用/专项剧情扫描的内容感知抽样开关，默认 `1`。长篇超出片段预算时，会保留首尾和时间线覆盖，并额外优先选择战斗、反转、线索、突破、感情推进等高信号片段；设为 `0` 可恢复旧的均匀时间线抽样。
-- `GENERAL_SCAN_INCREMENTAL_REUSE`：通用/专项剧情扫描的 chunk hash 增量复用开关，默认 `1`。当同一本书已有旧 summary 且 prompt/配置兼容时，未变化片段会复用旧 `chunk_results`，只扫描新增或修改片段，最后重新生成整书 summary；设为 `0` 可强制全量重扫。
-- `GENERAL_SCAN_WRITING_QUALITY`：通用/专项剧情扫描的写作质量、节奏曲线和信息密度分析开关，默认 `1`。开启后每个片段会额外抽取文笔、人物、叙事、对话、场景、情感、信息密度和世界观融入等写作质量证据，整书报告会增加“写作质量分析”“节奏曲线分析”“信息密度审计”等章节；设为 `0` 可降低 prompt 长度和 token 成本。
-- `GENERAL_SCAN_NARRATIVE_ARCHITECTURE`：通用/专项剧情扫描的叙事结构和大纲架构分析开关，默认 `1`。开启后每个片段会额外标注结构功能、叙事弧位置、结构转折点、因果链、成长曲线、设定展开和架构稳定性，整书报告会增加“叙事结构分析”“大纲架构分析”等章节；设为 `0` 可降低 prompt 长度和 token 成本。
-- `GENERAL_SCAN_FORESHADOWING_ENGINEERING`：通用/专项剧情扫描的伏笔工程追踪开关，默认 `1`。开启后每个片段会额外抽取新伏笔、明确回收、假伏笔/烟雾弹和片段回收率线索，整书报告会增加“伏笔工程分析”；设为 `0` 可降低 prompt 长度和 token 成本。
-- `GENERAL_SCAN_SEMANTIC_LAYERS`：通用/专项剧情扫描的中文深层语义分析开关，默认 `1`。开启后每个片段会额外抽取事实层、作者意图、读者效果、技法层、潜台词和反讽线索，整书报告会增加“深层语义分析”；设为 `0` 可降低 prompt 长度和 token 成本。
-- `GENERAL_SCAN_READER_EXPERIENCE`：通用/专项剧情扫描的读者体验分析开关，默认 `1`。开启后每个片段会额外抽取即时情绪、代入锚点、期待钩子、爽点/燃点/甜点、挫败点和投入度，整书报告会增加“读者体验分析”；设为 `0` 可降低 prompt 长度和 token 成本。
-- `GENERAL_SCAN_CONTINUITY_AUDIT`：通用/专项剧情扫描的整书连续性与一致性审计开关，默认 `1`。开启后总评会结合滚动上下文、伏笔工程和大纲架构材料检查人物关系、设定规则、伏笔回收、因果链和战力/规则跳变，报告会增加“连续性与一致性审计”；设为 `0` 可降低总评 prompt 长度。
-- `GENERAL_SCAN_ROLLING_CONTEXT`：通用/专项剧情扫描的跨片段滚动上下文开关，默认 `1`。开启后每个片段会收到前序片段压缩状态，并输出 `context_state_update`，用于减少人物指代、关系阶段、未解问题和设定连续性的误判。由于后续片段结果依赖前序上下文，开启时 chunk 级增量复用会自动禁用；整份 summary 完全新鲜时仍会直接复用。
-- `GENERAL_SCAN_ENTITY_PRESCAN`：通用/专项剧情扫描的全书实体候选预扫描开关，默认 `1`。开启后会先用命名句式、对话说话人、章节标题、后缀类型和高频 n-gram 提取人物/地点/组织候选，再作为 chunk 抽取提示注入 prompt；候选只用于提高召回，不会被当成已确认事实或别名。
-- `GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE`：通用/专项剧情扫描知识库的大模型语义合并开关，默认 `0`。开启后会在整书总评前额外调用一次模型，合并同一人物、同一设定、同一伏笔/线索的重复表达；如果合并失败会自动回退到程序汇总的知识库，不中断扫描。
-- `GENERAL_SCAN_CONTEXT_MAX_CHARS`：滚动上下文注入 prompt 的最大字符数，默认 `1600`。调高可保留更多前序状态，但会增加 token 成本和超长风险；设为 `0` 时不注入上下文快照。
-- 通用/专项剧情扫描会基于分块结果生成 `knowledge_base` 知识库摘要，汇总重要实体、关系变化、设定事实、伏笔线程、事件时间线和未解/已回收线索；总评 prompt 会优先参考该知识库，最终 TXT 报告也会展示紧凑版“知识库摘要”。
-- `LOG_MAX_BYTES` / `LOG_BACKUP_COUNT`：扫描日志轮转配置，默认单个 `analysis.log` / `reviewer.log` 最大 `10485760` 字节并保留 `5` 份历史；`LOG_MAX_BYTES=0` 表示不按大小轮转。
-- `RPM_LIMIT` / `TPM_LIMIT`：程序本地预限流配置，用来在请求发出前控制最近 60 秒内的请求数和预估 token 数。
-- `RATE_LIMIT_SCOPE`：本地限流作用域。`auto` 表示多个 API Key 时每个 key 单独计数、单个 key 时使用全局桶；`global` 表示当前进程内所有线程和 key 共用一个限流桶；`per_key` 表示每个 key 单独计数。默认推荐 `auto`，能减少多 key 场景下的无谓串行等待，同时避免单 key 场景误放大并发。
-- `API_SERVER_ERROR_MAX_RETRIES`：同一请求遇到模型网关 `500/502/503/504` 时的最大重试次数，默认 `2`。线上持续 504 时，较小值能让单块快速失败并交给断点补扫，避免一个大请求反复占住队列。
-- `API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS`：大请求 5xx 快速失败阈值，默认 `20000` 字符。输入超过该值的请求遇到 `500/502/503/504` 时只发起 1 次真实请求，然后把错误交给上层的切半降载、断点或补扫流程，避免同一个超大 prompt 连续撞网关；设为 `0` 表示关闭。
-- `HAREM_SCAN_CHUNK_SIZE`：后宫/男性向角色首扫分块大小，默认 `7000`。调小会增加块数，但能降低单请求 token、网关 504 和 JSON 截断风险。
-- `HAREM_SCAN_MAX_TOKENS`：后宫/男性向角色首扫单块最大输出 tokens，默认 `3000`。如果模型经常 504 或输出 JSON 截断，可继续下调。
-- `HAREM_SCAN_RETRY_WORKERS`：后宫补漏扫描并发，默认 `1`。单 Key 或网关不稳定时保持低并发更稳，多 Key 且服务稳定时可适当调高。
-- `HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH`：后宫单块遇到 `504` / timeout / context overflow 后自动切半降载的最大深度，默认 `1`；设为 `0` 可关闭。默认只把失败块拆成两半，避免额外请求失控。
-- `HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS`：小于该字符数的后宫片段不再切半，默认 `1200`，避免把低信息片段拆得过碎。
-- `REVIEW_LLM_SECTION_MAX_CHARS`：后宫洁度二审、孩子/伴侣归一化等汇总判断的单段输入预算，默认 `12000` 字符。它限制进入模型的证据串总长度，避免已扫描的大量证据在二审阶段堆成 5万+ 字符请求。
-- `REVIEW_LLM_FIELD_MAX_CHARS`：后宫二审每条 `evidence/detail` 的字段截断长度，默认 `220` 字符。调小会更稳，调大可保留更多原文。
-- `REVIEW_LLM_LIST_MAX_ITEMS`：后宫二审每个证据列表最多保留条数，默认 `80`。超出后保留首尾样本并写入省略提示。
-- `REPORT_LLM_SECTION_MAX_CHARS`：报告生成阶段大模型补写的单段输入预算，默认 `12000` 字符。主要影响男主/女主简介、后宫感情概览等报告尾段总结，避免已完成扫描后又因 1-2 万字符提示导致空 JSON 或 504。
-- `REPORT_LLM_FIELD_MAX_CHARS`：报告生成阶段每条概要、互动、情绪线索的字段截断长度，默认 `180` 字符。调小会更稳，调大可保留更多原文细节。
-- `REPORT_LLM_LIST_MAX_ITEMS`：报告生成阶段每个列表最多保留条数，默认 `40`。程序会优先保留首尾样本和表白、暧昧、存在感、前妻/前女友等高风险线索。
-- `HEROINE_FINAL_MERGE_MAX_CANDIDATES`：女主最终合并阶段最多进入大模型二次判断的候选组数，默认 `24`；设为 `0` 表示不限制。候选会先经过强别名证据过滤，避免模型输出空结果或弱候选时放大成大量无效 API 调用。
-- `HEROINE_FINAL_MERGE_MAX_GROUP_SIZE`：女主最终合并单个候选组最多保留的名字数，默认 `3`。较小值可降低最终合并 prompt 体积，减少 504 和 JSON 空响应。
-- `GENERAL_CHARACTER_MAX_TOKENS`：通用/专项角色识别首轮单块最大输出 tokens，默认 `2400`。它独立于后宫 `HAREM_SCAN_MAX_TOKENS`，避免通用角色列表过长造成 JSON 截断。
-- `GENERAL_CHARACTER_RETRY_MAX_TOKENS`：通用/专项角色识别 JSON 修复重试最大输出 tokens，默认 `1400`。重试会附带短 JSON 约束，用于处理漏逗号、代码块或截断输出。
-- `GENERAL_CHARACTER_MAX_PER_CHUNK`：通用/专项角色识别每个片段最多输出的核心角色数，默认 `8`。如果日志频繁出现 `Chunk N JSON解析失败`，优先下调该值和 `GENERAL_CHARACTER_MAX_TOKENS`。
-- `GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH`：通用/专项角色识别遇到 `504` / timeout 后自动切半降载的最大深度，默认 `1`；设为 `0` 可关闭。它只影响 `protagonist.py` 的角色识别阶段，不影响通用剧情扫描。
-- `GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS`：小于该字符数的通用/专项角色识别片段不再切半，默认 `4000`，避免短片段过度碎片化。
-- `GENERAL_CHARACTER_PARSE_DOWNSHIFT_RETRY`：通用/专项角色识别遇到普通 JSON 解析失败时，第几次重试后切半降载，默认 `1`。明确截断、括号不平衡、`truncated_json_response` 等错误会立即切分，不再反复用同一大块请求。
-- `SCAN_FUTURE_STALL_TIMEOUT_SECONDS`：扫描进程内部并发阶段如果超过该秒数没有任何线程任务完成，会取消待处理任务并把当前阶段标记为失败，默认 `0` 关闭。它和 Web 层 `SCAN_STALL_TIMEOUT_SECONDS` 不同，后者只看子进程是否持续产生日志；线上排查 SDK/API 调用长期不返回时可临时设为 `600-1800`。
+通过 `ANALYSIS_PROFILE` 环境变量或在 Web 页面选择：
 
-Web 管理端常用配置：
+- `harem`：后宫/男性向排雷（男主/女主/初处/漏女/毒点）
+- `auto`：自动识别，按内容推荐分类，最多同时执行3个profile
+- `general`：通用小说分析（剧情/主题/设定/伏笔）
+- `history`、`hard_sci_fi`、`game_system`、`xianxia_fantasy`、`mystery_detective`、`cosmic_horror`、`apocalypse_survival`、`steampunk_fantasy` 等24种专项分析
 
-- `WEB_HOST` / `WEB_PORT`：Web 管理端监听地址和端口。
-- `WEB_CORS_ALLOW_ORIGIN`：CORS 允许来源，默认 `*`。
-- `WEB_ACCESS_TOKEN`：Web 管理端访问令牌。Docker 入口默认要求设置该值，设置后 `/api/*`、`/files`、`/upload` 和 SSE 状态流都需要携带 token。浏览器可在页面输入令牌保存，也可首次访问时使用 `http://host:port/?token=你的令牌` 自动保存。
-- `WEB_ALLOW_NO_AUTH`：是否允许 Docker 容器在没有 `WEB_ACCESS_TOKEN` 时启动，默认 `0`。只建议在服务绑定本机回环地址或可信内网、且没有公网入口时临时设为 `1`。源码本地直接运行仍保留无 token 模式：读接口开放，写操作需要 `X-Web-Unsafe-Action: confirm`。
-- `WEB_REQUEST_TIMEOUT`：单个 HTTP 连接的 socket 超时时间，默认 `60` 秒；设为 `0` 可关闭。
-- `SCAN_CANCEL_TIMEOUT_SECONDS`：取消运行中扫描时，等待子进程正常退出的秒数，超时后会强制结束，默认 `5`。
-- `SCAN_HEARTBEAT_INTERVAL_SECONDS`：扫描子进程有日志输出时，Web 状态写入 `updated_at/last_log_at` 的节流间隔，默认 `10` 秒；设为 `0` 表示每条日志都更新。
-- `SCAN_STALL_TIMEOUT_SECONDS`：运行中的扫描子进程如果超过该秒数没有任何日志输出，会被自动终止并标记失败，默认 `1200`。设为 `0` 可关闭；如果模型单次请求经常超过 20 分钟，可以适当调高。若日志仍持续输出但扫描阶段内某个线程一直不返回，可再开启 `SCAN_FUTURE_STALL_TIMEOUT_SECONDS`。
-- Web 访问日志写入 `results/web_logs/web_access.log`，使用 `LOG_MAX_BYTES` / `LOG_BACKUP_COUNT` 控制轮转，并会脱敏 URL 中的访问令牌。
-- `MAX_UPLOAD_SIZE`：单个上传 `.txt` 文件大小上限，默认 `104857600` 字节。
-- `MAX_JSON_BODY_SIZE`：JSON API 请求体大小上限，默认 `65536` 字节；写操作接口会校验必填字段和基础类型。
-- `FILE_RESPONSE_CHUNK_SIZE`：`/files` 下载或预览文件时的流式输出块大小，默认 `1048576` 字节。
-- `SYNC_BOOKS_TTL_SECONDS`：同步 `novels/` 目录的最短间隔，默认 `5` 秒。
-- `OUTPUTS_CACHE_TTL_SECONDS`：书籍输出文件列表缓存时间，默认 `5` 秒。
-- `SSE_STATE_INTERVAL_SECONDS`：SSE 状态推送间隔，默认 `3` 秒。
-- `SSE_SYNC_INTERVAL_SECONDS`：SSE 状态流触发 `novels/` 目录同步的最短间隔，默认 `5` 秒；多个 SSE 连接会共用这个节流。
-- `SSE_MAX_CONNECTION_SECONDS`：单个 SSE 连接最大生命周期，默认 `300` 秒；到期后浏览器 `EventSource` 会自动重连，避免服务端线程长期占用。
-- `STORAGE_HEALTH_TTL_SECONDS`：`/healthz`、`/api/state` 和 `/api/diagnostics` 的存储写入自检缓存时间，默认 `10` 秒；设为 `0` 表示每次都重新探测。
+每种 profile 位于 `profiles/<name>/`，包含 `profile.json`（元数据）和 `rules.json`（扫描规则）。
 
-Web 页面顶部可直接调整部分非敏感运行配置，包括 `MAX_WORKERS`、`RPM_LIMIT`、`TPM_LIMIT`、`RATE_LIMIT_SCOPE`、`API_SERVER_ERROR_MAX_RETRIES`、`API_SERVER_ERROR_FAST_FAIL_INPUT_CHARS`、`HAREM_SCAN_CHUNK_SIZE`、`HAREM_SCAN_MAX_TOKENS`、`HAREM_SCAN_RETRY_WORKERS`、`HAREM_SCAN_API_DOWNSHIFT_MAX_DEPTH`、`HAREM_SCAN_API_DOWNSHIFT_MIN_CHARS`、`REVIEW_LLM_SECTION_MAX_CHARS`、`REVIEW_LLM_FIELD_MAX_CHARS`、`REVIEW_LLM_LIST_MAX_ITEMS`、`REPORT_LLM_SECTION_MAX_CHARS`、`REPORT_LLM_FIELD_MAX_CHARS`、`REPORT_LLM_LIST_MAX_ITEMS`、`GENERAL_SCAN_MAX_CHUNKS`、`GENERAL_CHARACTER_MAX_TOKENS`、`GENERAL_CHARACTER_RETRY_MAX_TOKENS`、`GENERAL_CHARACTER_MAX_PER_CHUNK`、`GENERAL_CHARACTER_API_DOWNSHIFT_MAX_DEPTH`、`GENERAL_CHARACTER_API_DOWNSHIFT_MIN_CHARS`、`GENERAL_CHARACTER_PARSE_DOWNSHIFT_RETRY`、`GENERAL_SCAN_SMART_DENSITY`、`GENERAL_SCAN_CONTENT_AWARE_SAMPLING`、`GENERAL_SCAN_INCREMENTAL_REUSE`、`GENERAL_SCAN_WRITING_QUALITY`、`GENERAL_SCAN_NARRATIVE_ARCHITECTURE`、`GENERAL_SCAN_FORESHADOWING_ENGINEERING`、`GENERAL_SCAN_SEMANTIC_LAYERS`、`GENERAL_SCAN_READER_EXPERIENCE`、`GENERAL_SCAN_CONTINUITY_AUDIT`、`GENERAL_SCAN_ROLLING_CONTEXT`、`GENERAL_SCAN_ENTITY_PRESCAN`、`GENERAL_SCAN_KNOWLEDGE_BASE_LLM_MERGE`、`GENERAL_SCAN_CONTEXT_MAX_CHARS` 和 `HAREM_PLUS_GENERAL_SCAN`。这些修改会立即影响当前 Web 服务进程及其后续扫描子进程，并会安全写回 `.env` 文件以便重启后继续生效；写回时只更新白名单内的非敏感字段，保留注释、空行和 API Key 等敏感信息，不会展示或修改 API Key。`setting.txt` 仍作为样例/兼容配置来源，不会被 Web 配置页写回。
-
-前端开发检查：
+## 🌐 Web 管理端
 
 ```bash
-cd frontend
-npm run check
+python web_manager.py    # 默认 http://127.0.0.1:8765
 ```
 
-`npm run check` 会依次执行 ESLint、Prettier 格式校验和生产构建；需要单独定位时也可以分别运行 `npm run lint`、`npm run format:check`、`npm run build`。
+- 上传 `.txt` 小说，自动推荐分类
+- 单本或批量加入扫描队列，支持优先级调整
+- 实时进度（SSE 推送）、任务日志、Token 用量
+- 查看和下载输出报告
+- 状态持久化到 `results/web_manager_state.json`
+- 服务重启后，queued 任务恢复排队；running 任务标记为 interrupted，需手动重新入队
 
-仓库 CI 也会执行：
+## ⚙️ 关键配置项
 
-- `python -m unittest discover -s tests -v`
-- `npm audit --audit-level=moderate`
-- `npm run check`
+### 扫描调优
 
-### 分析模式
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `MAX_WORKERS` | 2 | 并发线程数 |
+| `HAREM_SCAN_CHUNK_SIZE` | 7000 | 后宫分块字符数 |
+| `HAREM_SCAN_MAX_TOKENS` | 3000 | 后宫单块最大输出tokens |
+| `RESCAN_ROUNDS` | 3 | 补扫轮数 |
+| `DIM_BOOST_MAX_PER_CHUNK` | 3 | 每片段维度补抽次数 |
+| `GENERAL_SCAN_MAX_CHUNKS` | 80 | 通用扫描片段预算（按字数自动提高） |
+| `API_SERVER_ERROR_MAX_RETRIES` | 2 | 5xx最大重试 |
 
-项目现在通过 `ANALYSIS_PROFILE` 区分不同分析模式：
+### 限流
 
-- `harem`：默认模式，保留原有男主、女主、初处、漏女、毒点/雷点分析流程。
-- `harem` 可选增强：设置 `HAREM_PLUS_GENERAL_SCAN=1` 后，会额外补充通用剧情/设定/节奏评价，适合后宫和历史、科幻、仙侠等元素交叉的小说。
-- `auto`：自动识别模式，会根据书名和正文前段启发式选择 `harem`、`history`、`hard_sci_fi` 或 `general`。
-- `general`：通用小说分析入口，会运行角色识别、剧情/冲突/主题/设定扫描并生成通用小说报告，不执行初处、漏女、后宫毒点二审。
-- `history`：历史小说专长分析，在通用流程上额外关注时代制度、战争权谋、派系逻辑、人物立场和历史氛围。
-- `hard_sci_fi`：硬科幻专长分析，在通用流程上额外关注科学假设、技术链、工程约束、因果推演和设定自洽。
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `RPM_LIMIT` | 100 | 每分钟最大请求数 |
+| `TPM_LIMIT` | 10000000 | 每分钟最大token数 |
+| `RATE_LIMIT_SCOPE` | auto | 限流域：auto/global/per_key |
 
-当前所有 `report_mode=general` 的 profile 都会运行通用角色识别，并继续执行 `general_scan.py` 抽取剧情主线、核心冲突、世界观设定、主题表达、伏笔回收与伏笔工程追踪、优点和问题。通用/专项剧情扫描还会基于分块结果构建整书 `knowledge_base`，汇总重要实体、关系变化、世界观事实、伏笔线程、事件时间线、未解线索和已回收线索；整书总评会优先参考该知识库形成全局判断，最终通用报告会在作品概览后展示紧凑版“知识库摘要”。角色明细 JSON 中会输出通用 `characters` 列表；后宫类 `harem` 才继续使用男主/女主、初处、漏女和毒点/雷点专长流程。
+### Web 管理
 
-`auto` 不是强制唯一分类。代码会先给出候选建议，Web 管理端会展示多个候选；例如“开头是历史背景，同时又是后宫结构”的书，可以在 Web 页面里从建议中手动选择 `history`、`harem` 等一个或多个分类后再加入队列。命令行批量模式也会按得分阈值自动执行最多 3 个 profile；如果没有候选达到阈值，则回退到 `general`。
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `WEB_HOST` | 0.0.0.0 | 监听地址 |
+| `WEB_PORT` | 8765 | 监听端口 |
+| `WEB_ACCESS_TOKEN` | - | 访问令牌（Docker默认必填） |
+| `SCAN_STALL_TIMEOUT_SECONDS` | 1200 | 扫描卡死保护超时（秒） |
 
-新增 profile 时通常只需要在 `profiles/<name>/profile.json` 中声明 `display_name`、`enabled_stages`、`report_mode`、`scan_focus`、`summary_fields`。如果想让 `auto` 识别这个新类型，可以额外添加 `inference_keywords`：
+完整配置项参见 `.env.sample`。
 
-```json
-[
-  {"word": "关键词", "weight": 3},
-  ["另一个关键词", 2],
-  "普通关键词"
-]
+## 🐳 Docker Compose 部署
+
+```bash
+# 使用预构建镜像
+export NOVEL_REPORT_SCANNER_IMAGE=ghcr.io/congyoubanmian/novelreportscanner:latest
+docker compose pull
+docker compose up -d
+
+# 或本地源码构建
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
-对应资源位于：
+Compose 会把 `.env` 中的运行参数传入容器，支持 `PUID`/`PGID` 权限映射、内存限制、端口映射等。
 
-```text
-profiles/
-├─ harem/
-│  ├─ profile.json
-│  └─ rules.json
-├─ general/
-│  ├─ profile.json
-│  └─ rules.json
-├─ history/
-│  ├─ profile.json
-│  └─ rules.json
-└─ hard_sci_fi/
-   ├─ profile.json
-   └─ rules.json
+生产部署建议通过反向代理（Caddy/Nginx）暴露 HTTPS 入口，容器只绑定 `127.0.0.1:8765`。
+
+## 📁 输出文件
+
+最重要的结果文件：
+
+- `results/<书名>扫书报告_<timestamp>.txt` — 最终可读报告
+- `results/<书名>_<profile>_<timestamp>/GENERAL_SUMMARY.json` — 通用/专项扫描摘要
+- `results/<书名>_scan_<timestamp>/VERIFIED_SUMMARY_<timestamp>.json` — reviewer 总结
+- `results/<书名>_scan_<timestamp>/raw_data.json` — 扫描原始数据
+- `results/token_usage.json` — token 消耗汇总
+
+## 🧪 测试
+
+```bash
+python -m pytest tests/ -v
+# 或
+python -m unittest discover -s tests -v
 ```
 
-旧的 `rules2.json` 仍然保留，用于兼容历史路径；新的后宫规则主路径是 `profiles/harem/rules.json`。
+448 个测试覆盖核心扫描逻辑、配置加载、名称归一化、文本锚点等。
 
-其余几个 `RESCAN_*`、`DIM_BOOST_*`、`MAX_MIDDLE_SUMMARY_CALLS`、`INITIAL_SCAN_*` 主要用于扫描阶段的补扫、增强策略和首扫并发调度，属于进阶调优项。
+## 📜 使用声明
 
-### 扫描阶段调优参数说明
-
-下面这几项主要由 `novel_scan.py` 在扫描阶段使用，不是主流程里所有脚本都会依赖的参数。
-
-它们的共同特点是：通常能提升召回率、补漏能力和复杂表达的识别效果，但也往往意味着更多额外调用、更长 prompt 和更高 token 消耗。
-
-请特别注意：
-
-- 如果把这些增强项开得更激进，扫描效果通常会上升，但 token 使用量也会显著增加。
-- 作者建议：如果你使用的不是廉价 token，尽量不要盲目调高这些参数，优先保持默认值或保守值。
-- 其中最容易明显拉高 token 消耗的，通常是 `DIM_BOOST_MAX_PER_CHUNK`、`MAX_MIDDLE_SUMMARY_CALLS`、`RESCAN_MAX_HITS`、`RESCAN_MAX_WINDOW` 和 `RESCAN_MAX_PROMPT_HEROINES`。
-
-运行日志里的 `限流等待：... reason=rpm, scope=global/per_key` 是本程序的本地预限流日志，不是 API 服务端返回的报错。`reason=rpm` 代表最近 60 秒请求数达到 `RPM_LIMIT`；`scope=global` 代表所有线程和所有 key 共用这个计数桶，`scope=per_key` 代表每个 key 单独计数。默认 `RATE_LIMIT_SCOPE=auto` 会在多 key 时自动使用 `per_key`，单 key 时使用 `global`；如果供应商按账号或出口 IP 共享限速，可手动改回 `global`。
-
-各参数作用如下：
-
-- `DIM_BOOST_MAX_PER_CHUNK`：每个正文片段最多做多少次“按维度补抽”。数值越大，越容易把某个维度里漏掉的事实再补出来，但每个片段可能触发更多额外调用。
-- `RESCAN_ROUNDS`：扫描完成后，针对遗漏片段或失败片段最多再补扫几轮。数值越大，整体更稳，但耗时和 token 成本都会继续增加。
-- `MAX_MIDDLE_SUMMARY_CALLS`：扫描过程中最多生成多少次“中间上下文摘要”。它主要用来改善长文本跨片段承接，适合上下文依赖强的小说，但会直接增加额外模型调用。
-- `INITIAL_SCAN_BLOCK_MULTIPLIER`：首扫时把正文切成约 `MAX_WORKERS` 多少倍的连续小段，线程池会动态领取小段，减少某个大段特别慢导致其他线程空等的问题。
-- `INITIAL_SCAN_MIN_BLOCK_SIZE`：首扫动态小段的目标最小 chunk 数。值越小负载越均衡，但段边界补扫和上下文摘要开销会略增。
-- `RESCAN_MAX_HITS`：全局补扫时，每个“女主 + 维度”最多保留多少个候选命中片段。越大越容易补到遗漏，但也意味着后续要处理更多候选片段；设为 `0` 可视为关闭这部分增强。
-- `RESCAN_PRE_FILTER_THRESHOLD`：全局补扫前，对候选命中的最低预过滤分数。值越高越严格，进入后续补扫的片段越少；值越低则更激进，召回更高，但 token 消耗通常也会更高。
-- `RESCAN_MAX_WINDOW`：全局补扫时，允许截取的最大上下文窗口长度。值越大，单次 prompt 的上下文更完整，但 prompt 本身也会更长、更费 token。
-- `RESCAN_MAX_PROMPT_HEROINES`：单次全局补扫 prompt 最多携带多少名女主。值越大，单次覆盖的人物更多，但 prompt 更拥挤，token 成本也更高。
-- `RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER`：同一片段连续多次因模型输出 JSON 截断、代码块未闭合或括号不平衡失败后，后续补扫轮跳过该片段并保留 failed_chunks 诊断。默认 `2`，可设为 `0` 关闭跳过。
-- `SCAN_FUTURE_STALL_TIMEOUT_SECONDS`：首扫线程块和补扫线程池的“无完成任务”保护。默认 `0` 不启用；启用后如果一个并发阶段超过该秒数没有任何 future 完成，会取消剩余任务、保存已有断点并返回明确的 timeout 错误，避免扫描进程内部无限等待。Python 线程无法强杀已经卡在 SDK/网络栈里的调用，极端情况下仍需要配合 Web 层 `SCAN_STALL_TIMEOUT_SECONDS` 终止整个扫描子进程。
-
-如果你的目标是“先稳定跑通、控制成本”，更推荐先用较保守的配置；只有在你明确发现漏扫比较严重、并且能接受成本上涨时，再逐步调高这些参数。
-
-### `rules2.json`
-
-如果你说的是 `rule.json`，代码里当前实际读取的文件名是 `rules2.json`。
-
-这个文件不是普通备注文件，而是扫描和复核阶段都会用到的规则库，主要作用有三点：
-
-- 定义项目到底要扫描哪些“雷点/郁闷点”类别与具体条目。
-- 给每个条目提供文字说明，作为模型判断时的规则依据。
-- 保持 `novel_scan.py` 与 `novel_reviewer.py` 使用同一套标准，避免初扫和二审口径不一致。
-
-你可以把它理解成“项目的判定标准配置文件”。
-
-在当前实现里：
-
-- `novel_scan.py` 会读取 `rules2.json`，据此决定要按哪些类别和条目去扫正文。
-- `toxic_reviewer.py` / `novel_reviewer.py` 会再次读取它，把条目说明作为二审时的规则描述。
-
-如果你想调整项目对某类情节的敏感度、命名方式或说明口径，优先改的就是这个文件。
-
-### `results/learned_keywords/`
-
-这个目录是扫描阶段自动维护的“学习到的关键词快照目录”，主要服务于 `novel_scan.py` 的关键词增强和补扫逻辑。
-
-它的作用不是保存最终结果，而是把扫描过程中逐步学到的新表达方式沉淀下来，供后续片段继续复用。这样做的好处是：当小说里用了比较特殊、比较隐晦的说法时，后续扫描更容易把同类表达补抓出来。
-
-目录里通常会看到两类文件：
-
-- `seed.json`：内置种子关键词，属于初始词表。
-- `learned_<timestamp>_dim_boost.json` 或 `learned_<timestamp>_global_rescan_opt.json`：扫描过程中新增的关键词快照。
-
-这些文件里的关键词按事实维度分类，常见维度包括：
-
-- `sexual_relations`
-- `children_info`
-- `physical_contacts`
-- `romantic_feelings`
-- `partner_relations`
-
-可以把它理解成“扫描器的增量经验库”。代码会把 `seed.json` 和最新的 learned 快照合并，形成当前生效的关键词集合，再用于后续扫描与补扫。
-
-## 流程说明
-
-主流程由 [main.py](./main.py) 串联四个阶段，对 `novels/` 下的每本 `.txt` 依次执行：
-
-### 1. `protagonist.py`
-
-负责识别男主、女主候选及其别名，并生成角色相关中间文件。
-
-常见输出位于：
-
-```text
-results/<书名>_heroine_<timestamp>/
-```
-
-典型文件包括：
-
-- `*_detailed_*.json`
-- `*_detail_snapshot_*.json`
-- `*_protagonists_*.json`
-- `*_report_*.txt`
-- `latest_checkpoint.json`
-
-### 2. `novel_scan.py`
-
-负责对正文进行分块扫描，提取问题点和结构化角色事实。该阶段会读取 `rules2.json` 作为扫描规则来源，还会生成 chunk manifest，并把部分事实回写到角色明细文件中。
-
-常见输出位于：
-
-```text
-results/<书名>_scan_<timestamp>/
-```
-
-典型文件包括：
-
-- `raw_data.json`
-- `FULL_REPORT.txt`
-- `chunk_manifest.json`
-- `latest_checkpoint.json`
-- `scan.log`
-
-另外，扫描过程中如果模型提取到了新的稳定表达方式，还会把它们写入 `results/learned_keywords/`，用于增强后续扫描的命中率。
-
-### 3. `novel_reviewer.py`
-
-负责对扫描结果做二次复核，并输出更稳定的汇总结论。二审时会结合 `rules2.json` 中对应条目的说明，避免 reviewer 脱离项目既定规则单独发挥。
-
-典型文件包括：
-
-- `VERIFIED_SUMMARY_<timestamp>.json`
-- `VERIFIED_REPORT_<timestamp>.txt`
-- `reviewer.log`
-- `reviewer3_checkpoint.json`
-
-### 4. `report.py`
-
-负责读取最新的 verified summary 与角色明细，生成最终给人阅读的扫书报告。
-
-最终报告通常输出到：
-
-```text
-results/<书名>扫书报告_<timestamp>.txt
-```
-
-另外，`report.py` 也会在 `results/` 根目录维护如 `report_generation.log`、`report_checkpoint.json` 之类的报告生成状态文件。
-
-通用/专项报告读取 `GENERAL_SUMMARY.json` 时，会展示“知识库摘要”。TXT 报告只展示摘要条目，完整结构化知识库保留在 JSON 中。
-
-## 输出结果概览
-
-如果你只想快速找到最重要的结果文件，可以先看这些：
-
-- `results/<书名>扫书报告_<timestamp>.txt`
-- `results/<书名>_<profile>_<timestamp>/GENERAL_SUMMARY.json`
-- `results/<书名>_scan_<timestamp>/VERIFIED_SUMMARY_<timestamp>.json`
-- `results/<书名>_scan_<timestamp>/raw_data.json`
-- `results/<书名>_heroine_<timestamp>/*_detailed_*.json`
-- `results/learned_keywords/seed.json`
-- `results/learned_keywords/learned_*.json`
-- `results/token_usage.json`
-
-它们分别对应：
-
-- 最终可读报告
-- 通用/专项剧情扫描 summary，包含 `knowledge_base`、`knowledge_base_counts`、`knowledge_base_enabled`、`knowledge_base_schema_version`、`knowledge_base_llm_merge_enabled` 和 `knowledge_base_llm_merge_applied`
-- reviewer 阶段总结
-- 扫描阶段原始结构化结果
-- 角色与事实的详细中间产物
-- 初始关键词种子库
-- 扫描阶段学习到的增量关键词快照
-- 当前运行批次的 token 使用汇总
-
-## 单独运行某个阶段
-
-如果你不想跑完整流程，也可以直接执行单个脚本：
-
-```powershell
-python protagonist.py
-python novel_scan.py
-python novel_reviewer.py --raw-data .\results\<某次扫描>\raw_data.json
-python report.py --no-polish
-```
-
-其中：
-
-- `novel_reviewer.py` 支持 `--raw-data` 和 `--results-dir`
-- `report.py` 支持 `--polish`、`--no-polish`、`--skip-existing`、`--force-regenerate`
-
-如果你是从 `main.py` 跑全流程，这些上下文参数会由主入口自动在各阶段之间传递。
-
-## 适合什么场景
-
-- 对整本中文小说或网文 `.txt` 做批量扫书
-- 希望把“角色识别 + 正文扫描 + 复核 + 最终报告”串成一条流水线
-- 需要保留中间 JSON、日志和断点产物，方便复盘或二次处理
-
-## 使用前建议
-
-- 先清理或归档 `results/`，避免历史样本和新结果混在一起。
-- 如果 `results/learned_keywords/` 已经积累了很多旧快照，发布或复盘前可以先决定是否保留；它们更像过程资产，而不是必须公开的最终成果。
-
-## 使用声明
-
-- 禁止将本程序生成、汇总或润色后的报告，在未明确标注“AI 生成”或“AI 辅助生成”的情况下对外售卖。
+- 禁止将本程序生成、汇总或润色后的报告，在未明确标注"AI 生成"或"AI 辅助生成"的情况下对外售卖。
 - 如果基于本程序输出的内容进行商业发布、分发或售卖，必须进行清晰、显著、不可误解的 AI 生成标注。
 - 不建议将本程序产出的报告包装成人工原创评测、人工精读结论或纯人工整理成果进行传播。
+
+## 📄 License
+
+GPL-3.0
