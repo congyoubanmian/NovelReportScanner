@@ -4807,6 +4807,144 @@ def _rescan_worker_task(idx, chunks, system_prompt, heroines, male_protagonist=N
     )
     return idx, issues, heroine_facts, extra_rel, next_summary, ok, fatal, err_msg
 
+def _scan_load_rules_and_prompt(detail_path=None):
+    """加载扫描规则、查找女主、构建 Prompt。返回 (system_prompt, heroines, male_protagonist, fact_boost_prompt) 或 None。"""
+    categories, glossary = load_rules()
+    if not categories:
+        print("❌ 无法加载规则，终止运行。")
+        return None
+    heroines, male_protagonist = find_heroines(detail_path=detail_path)
+    system_prompt = build_prompt(categories, glossary, heroines, male_protagonist)
+    return (system_prompt, heroines, male_protagonist, None)
+
+
+def _scan_prepare_outline(text, output_dir, chunk_manifest):
+    """大纲预扫描并为每个 chunk 计算大纲上下文。返回 CHUNK_OUTLINE_BLOCKS dict。"""
+    outline_data = None
+    if OUTLINE_INJECT_ENABLED:
+        outline_path = os.path.join(output_dir, "outline.json")
+        text_sig = outline_signature(text)
+        outline_data = load_outline(outline_path)
+        if outline_data and outline_data.get("text_signature") == text_sig:
+            _ch = outline_data.get("chapter_count", 0)
+            print(f"📖 大纲已存在，复用（{_ch} 章）")
+        else:
+            outline_data = generate_outline(text)
+            outline_data["text_signature"] = text_sig
+            save_outline(outline_data, outline_path)
+            _ch = outline_data.get("chapter_count", 0)
+            _total_ch = outline_data.get("total_chapters_in_novel", 0)
+            print(f"📖 大纲预扫描完成（{_ch} 章，{_total_ch} 章总计）")
+
+    chunk_outline_blocks = {}
+    if outline_data and outline_data.get("chapters"):
+        chunk_entries = chunk_manifest.get("chunks", [])
+        for entry in chunk_entries:
+            ci = entry.get("chunk_index", 0)
+            core_start = entry.get("core_start", 0)
+            chunk_outline_blocks[ci] = _outline_context_for_chunk(outline_data, core_start)
+    return chunk_outline_blocks
+
+
+def _scan_run_rescan_rounds(chunks, system_prompt, heroines, male_protagonist,
+                            fact_boost_prompt, all_issues, all_heroine_facts,
+                            extra_relations_all, processed_chunks, failed_chunks,
+                            checkpoint_file, logger):
+    """多轮补扫遗漏/失败片段。返回 None（正常）或错误字符串（终止）。"""
+    all_indices = set(range(len(chunks)))
+    missing = all_indices - set(processed_chunks)
+    if missing:
+        logger.warning(f"📌 发现遗漏片段：{len(missing)} 个（将进入补扫流程）")
+    if failed_chunks:
+        logger.warning(f"📌 发现失败片段：{len(failed_chunks)} 个（将进入补扫流程）")
+
+    if RESCAN_ROUNDS > 0 and (missing or failed_chunks):
+        for round_no in range(1, RESCAN_ROUNDS + 1):
+            pending = sorted(list(all_indices - set(processed_chunks)))
+            if not pending:
+                break
+            pending, skipped_chronic = _filter_chronic_parse_failures(pending, CHUNK_FAILURE_DIAGNOSTICS)
+            if skipped_chronic:
+                logger.warning(
+                    "补扫跳过 %s 个慢性 JSON/截断失败片段（达到阈值 %s）：%s",
+                    len(skipped_chronic),
+                    RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER,
+                    skipped_chronic[:50],
+                )
+            if not pending:
+                logger.warning("补扫待处理片段均为慢性 JSON/截断失败，保留 failed_chunks 并继续后续阶段。")
+                break
+            print(f"🧩 补扫轮次 {round_no}/{RESCAN_ROUNDS}：待补扫 {len(pending)} 个片段（含失败/遗漏）")
+            fatal = _run_scan_for_indices(
+                chunks=chunks, indices=pending,
+                system_prompt=system_prompt, heroines=heroines,
+                male_protagonist=male_protagonist, fact_boost_prompt=fact_boost_prompt,
+                all_issues=all_issues, all_heroine_facts=all_heroine_facts,
+                extra_relations_all=extra_relations_all,
+                processed_chunks=processed_chunks, failed_chunks=failed_chunks,
+                phase_name=f"补扫(第{round_no}轮)", checkpoint_file=checkpoint_file,
+            )
+            if fatal:
+                return fatal
+
+    final_missing = all_indices - set(processed_chunks)
+    if final_missing:
+        logger.warning(f"⚠️ 补扫后仍有遗漏/失败片段：{len(final_missing)} 个（已写入断点 failed_chunks）")
+        print(f"⚠️ 补扫完成但仍有 {len(final_missing)} 个片段未成功（详见 {checkpoint_file} 的 failed_chunks）")
+    else:
+        print("✅ 补扫完成：所有片段均已成功扫描。")
+    return None
+
+
+def _scan_save_and_report(output_dir, all_issues, all_heroine_facts, extra_relations_all,
+                          heroine_profiles, male_protagonist, heroines, processed_chunks,
+                          failed_chunks, chunks, current_book_name, novel_file_path,
+                          chunk_manifest_path, chunk_plan_metadata, active_detail_path):
+    """保存 raw_data.json 和 FULL_REPORT.txt。返回 raw_data_path。"""
+    all_indices = set(range(len(chunks)))
+    final_failed_chunks = (all_indices - set(processed_chunks)) | set(failed_chunks or [])
+    partial_scan = bool(final_failed_chunks)
+    raw_data = {
+        "schema_version": 1,
+        "book_name": current_book_name,
+        "novel_path": novel_file_path,
+        "novel_signature": _novel_file_signature(novel_file_path),
+        "partial_scan": partial_scan,
+        "failed_chunk_count": len(final_failed_chunks),
+        "failed_chunks": sorted(final_failed_chunks),
+        "processed_chunk_count": len(processed_chunks),
+        "attempted_chunk_count": len(chunks),
+        "issues": all_issues,
+        "heroine_facts": all_heroine_facts,
+        "extra_relations": extra_relations_all,
+        "heroine_profiles": heroine_profiles,
+        "detail_path": active_detail_path,
+        "chunk_manifest_file": chunk_manifest_path,
+        "chunk_plan": chunk_plan_metadata,
+        "prompt_templates": prompt_templates_metadata("harem_scan_chunk"),
+    }
+    raw_data_path = os.path.join(output_dir, "raw_data.json")
+    with open(raw_data_path, 'w', encoding='utf-8') as f:
+        json.dump(raw_data, f, ensure_ascii=False, indent=2)
+
+    report = generate_report(all_issues, all_heroine_facts, heroines, book_name=current_book_name)
+    report_file = os.path.join(output_dir, "FULL_REPORT.txt")
+    with open(report_file, 'w', encoding='utf-8') as f:
+        f.write(report)
+
+    print("\n" + "="*60)
+    print("✅ 分析完成！")
+    print(f"📄 报告: {report_file}")
+    _tracker = get_token_tracker()
+    if _tracker is not None:
+        snap = _tracker.snapshot()
+        print(f"🔢 Token 统计: 输入 {snap.get('input', 0)} ，输出 {snap.get('output', 0)} ，总计 {snap.get('total', 0)}")
+        _tracker.flush(status="finished")
+    print("="*60)
+    print(report[:2000])
+    return raw_data_path
+
+
 def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     global NOVEL_FILE_PATH, clean_filename, OUTPUT_DIR, CHECKPOINT_FILE, logger, CURRENT_CHUNK_PLAN_METADATA, CHUNK_SUMMARIES, CHUNK_FAILURE_DIAGNOSTICS, _middle_summary_calls, _ACTIVE_DETAIL_PATH
 
@@ -4854,20 +4992,13 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     )
 
     print(f"🚀 开始深度扫描《{current_book_name}》...")
-    
-    # 1. 加载规则
-    categories, glossary = load_rules()
-    if not categories:
-        print("❌ 无法加载规则，终止运行。")
-        return
 
-    # 2. 寻找女主名单和男主姓名
-    heroines, male_protagonist = find_heroines(detail_path=_ACTIVE_DETAIL_PATH)
-    
-    # 3. 构建 Prompt
-    system_prompt = build_prompt(categories, glossary, heroines, male_protagonist)
-    fact_boost_prompt = None
-    
+    # 1-3. 加载规则、寻找女主、构建 Prompt
+    rp = _scan_load_rules_and_prompt(detail_path=_ACTIVE_DETAIL_PATH)
+    if rp is None:
+        return
+    system_prompt, heroines, male_protagonist, fact_boost_prompt = rp
+
     # 4. 读取与切分
     if not os.path.exists(NOVEL_FILE_PATH):
         print(f"❌ 文件不存在: {NOVEL_FILE_PATH}")
@@ -4896,31 +5027,8 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     )
     print(f"📚 文本已切分为 {len(chunks)} 个片段")
 
-    # 大纲预扫描（零 LLM 成本，规则提取章节结构和标签）
-    outline_data = None
-    if OUTLINE_INJECT_ENABLED:
-        outline_path = os.path.join(output_dir, "outline.json")
-        text_sig = outline_signature(text)
-        outline_data = load_outline(outline_path)
-        if outline_data and outline_data.get("text_signature") == text_sig:
-            _ch = outline_data.get("chapter_count", 0)
-            print(f"📖 大纲已存在，复用（{_ch} 章）")
-        else:
-            outline_data = generate_outline(text)
-            outline_data["text_signature"] = text_sig
-            save_outline(outline_data, outline_path)
-            _ch = outline_data.get("chapter_count", 0)
-            _total_ch = outline_data.get("total_chapters_in_novel", 0)
-            print(f"📖 大纲预扫描完成（{_ch} 章，{_total_ch} 章总计）")
-
-    # 为每个 chunk 计算大纲上下文（基于 chunk 在原文中的位置）
-    CHUNK_OUTLINE_BLOCKS = {}
-    if outline_data and outline_data.get("chapters"):
-        chunk_entries = chunk_manifest.get("chunks", [])
-        for entry in chunk_entries:
-            ci = entry.get("chunk_index", 0)
-            core_start = entry.get("core_start", 0)
-            CHUNK_OUTLINE_BLOCKS[ci] = _outline_context_for_chunk(outline_data, core_start)
+    # 大纲预扫描并为每个 chunk 计算大纲上下文
+    CHUNK_OUTLINE_BLOCKS = _scan_prepare_outline(text, output_dir, chunk_manifest)
     
     # 断点续传：加载历史进度
     (
@@ -4974,57 +5082,16 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
             return
 
     # 5.5 扫描完后复查：对遗漏/失败片段进行补扫（多轮）
-    # 说明：processed_chunks 存 0-based index；issues 等内部 chunk_index 仍用 1-based 展示
-    all_indices = set(range(len(chunks)))
-    missing = all_indices - set(processed_chunks)
-    if missing:
-        logger.warning(f"📌 发现遗漏片段：{len(missing)} 个（将进入补扫流程）")
-    if failed_chunks:
-        logger.warning(f"📌 发现失败片段：{len(failed_chunks)} 个（将进入补扫流程）")
-
-    if RESCAN_ROUNDS > 0 and (missing or failed_chunks):
-        for round_no in range(1, RESCAN_ROUNDS + 1):
-            pending = sorted(list(all_indices - set(processed_chunks)))
-            if not pending:
-                break
-            pending, skipped_chronic = _filter_chronic_parse_failures(pending, CHUNK_FAILURE_DIAGNOSTICS)
-            if skipped_chronic:
-                logger.warning(
-                    "补扫跳过 %s 个慢性 JSON/截断失败片段（达到阈值 %s）：%s",
-                    len(skipped_chronic),
-                    RESCAN_SKIP_CHRONIC_PARSE_FAILURE_AFTER,
-                    skipped_chronic[:50],
-                )
-            if not pending:
-                logger.warning("补扫待处理片段均为慢性 JSON/截断失败，保留 failed_chunks 并继续后续阶段。")
-                break
-            print(f"🧩 补扫轮次 {round_no}/{RESCAN_ROUNDS}：待补扫 {len(pending)} 个片段（含失败/遗漏）")
-            fatal = _run_scan_for_indices(
-                chunks=chunks,
-                indices=pending,
-                system_prompt=system_prompt,
-                heroines=heroines,
-                male_protagonist=male_protagonist,
-                fact_boost_prompt=fact_boost_prompt,
-                all_issues=all_issues,
-                all_heroine_facts=all_heroine_facts,
-                extra_relations_all=extra_relations_all,
-                processed_chunks=processed_chunks,
-                failed_chunks=failed_chunks,
-                phase_name=f"补扫(第{round_no}轮)",
-                checkpoint_file=checkpoint_file,
-            )
-            if fatal:
-                print(f"❌ 补扫终止：{fatal}")
-                return
-
-        # 补扫后最终复查
-        final_missing = all_indices - set(processed_chunks)
-        if final_missing:
-            logger.warning(f"⚠️ 补扫后仍有遗漏/失败片段：{len(final_missing)} 个（已写入断点 failed_chunks）")
-            print(f"⚠️ 补扫完成但仍有 {len(final_missing)} 个片段未成功（详见 {checkpoint_file} 的 failed_chunks）")
-        else:
-            print("✅ 补扫完成：所有片段均已成功扫描。")
+    fatal = _scan_run_rescan_rounds(
+        chunks=chunks, system_prompt=system_prompt, heroines=heroines,
+        male_protagonist=male_protagonist, fact_boost_prompt=fact_boost_prompt,
+        all_issues=all_issues, all_heroine_facts=all_heroine_facts,
+        extra_relations_all=extra_relations_all, processed_chunks=processed_chunks,
+        failed_chunks=failed_chunks, checkpoint_file=checkpoint_file, logger=logger,
+    )
+    if fatal:
+        print(f"❌ 补扫终止：{fatal}")
+        return
 
     if heroine_profiles is None:
         heroine_profiles = generate_heroine_profiles(
@@ -5098,47 +5165,12 @@ def main(novel_path=None, book_name=None, run_id=None, detail_path=None):
     _append_to_detail_file(all_heroine_facts, extra_relations_all, male_protagonist, detail_path=active_detail_path)
 
     # 7. 保存与报告
-    final_failed_chunks = (all_indices - set(processed_chunks)) | set(failed_chunks or [])
-    partial_scan = bool(final_failed_chunks)
-    raw_data = {
-        "schema_version": 1,
-        "book_name": current_book_name,
-        "novel_path": NOVEL_FILE_PATH,
-        "novel_signature": _novel_file_signature(NOVEL_FILE_PATH),
-        "partial_scan": partial_scan,
-        "failed_chunk_count": len(final_failed_chunks),
-        "failed_chunks": sorted(final_failed_chunks),
-        "processed_chunk_count": len(processed_chunks),
-        "attempted_chunk_count": len(chunks),
-        "issues": all_issues,
-        "heroine_facts": all_heroine_facts,
-        "extra_relations": extra_relations_all,
-        "heroine_profiles": heroine_profiles,
-        "detail_path": active_detail_path,
-        "chunk_manifest_file": chunk_manifest_path,
-        "chunk_plan": chunk_plan_metadata,
-        "prompt_templates": prompt_templates_metadata("harem_scan_chunk"),
-    }
-    raw_data_path = os.path.join(output_dir, "raw_data.json")
-    with open(raw_data_path, 'w', encoding='utf-8') as f:
-        json.dump(raw_data, f, ensure_ascii=False, indent=2)
-        
-    report = generate_report(all_issues, all_heroine_facts, heroines, book_name=current_book_name)
-    report_file = os.path.join(output_dir, "FULL_REPORT.txt")
-    with open(report_file, 'w', encoding='utf-8') as f:
-        f.write(report)
-        
-    print("\n" + "="*60)
-    print("✅ 分析完成！")
-    print(f"📄 报告: {report_file}")
-    _tracker = get_token_tracker()
-    if _tracker is not None:
-        snap = _tracker.snapshot()
-        print(f"🔢 Token 统计: 输入 {snap.get('input', 0)} ，输出 {snap.get('output', 0)} ，总计 {snap.get('total', 0)}")
-        _tracker.flush(status="finished")
-    print("="*60)
-    print(report[:2000]) # 打印前2000字预览
-    return raw_data_path
+    return _scan_save_and_report(
+        output_dir, all_issues, all_heroine_facts, extra_relations_all,
+        heroine_profiles, male_protagonist, heroines, processed_chunks,
+        failed_chunks, chunks, current_book_name, NOVEL_FILE_PATH,
+        chunk_manifest_path, chunk_plan_metadata, active_detail_path,
+    )
 
 if __name__ == "__main__":
     main()
