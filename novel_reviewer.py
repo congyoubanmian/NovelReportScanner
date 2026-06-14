@@ -4610,65 +4610,20 @@ def _is_placeholder(value: str) -> bool:
     return False
 
 
-def judge_purity_by_facts(
-    name: str,
+def _judge_purity_virgin_dim(
     facts: Dict[str, Any],
-    male_lead: str,
-    female_role_names: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    name: str,
+    result: Dict[str, Any],
+    reasons: List[str],
+    virgin_reasons: List[str],
+) -> tuple:
     """
-    基于结构化事实进行规则判定，不依赖 LLM
-    
-    输入：
-    - name: 女主名称
-    - facts: 结构化事实，包含 sexual_relations, children_info, physical_contacts, romantic_feelings, partner_relations
-    - male_lead: 男主名称
-    
-    输出：
-    - 五维洁度判定结果（含前世/原故事线与接触等级补充）
+    维度1：是否处女（性关系 + 非男主亲生孩子）。
+    返回 (non_ml_sex, non_ml_bio_children) 供后续维度交叉引用。
     """
-    # 先清洗一遍，避免“身世”误当“生育”
-    facts = _sanitize_purity_facts_for_heroine(name, facts)
-    # 与 stepwise 路径保持一致：清洗泛指/非事实伴侣关系，避免规则路径误判
-    try:
-        facts["partner_relations"] = _sanitize_partner_relations_for_purity(
-            facts.get("partner_relations", []), male_lead
-        )
-    except Exception:
-        pass
-
-    result = {
-        "name": name,
-        "is_virgin": True,
-        # 注意：本项目“处女”是【排他性处女】——仅与男主发生关系也依然判✅
-        "virgin_status": "✅ 处女（排他性：仅男主不算非处）",
-        "has_other_contact": False,
-        "contact_status": "✅ 无接触（无非男主接触记录）",
-        "no_partner": True,
-        "partner_status": "✅ 无男伴（无非男主伴侣记录）",
-        "is_spirit_clean": True,
-        # 注意：本项目“精神洁”是【排他性精神洁】——出现非男主性关系/亲生孩子/正式伴侣即判❌
-        "spirit_status": "✅ 精神洁（无非男主关系/性/情记录）",
-        # 规则维度理由（用于与 LLM 对照展示）
-        "rule_virgin_reason": "",
-        "rule_contact_reason": "",
-        "rule_partner_reason": "",
-        "rule_spirit_reason": "",
-        "summary": "",
-        "is_clean": True,
-        "evidence_used": [],
-    }
-    
-    reasons = []
-    virgin_reasons: List[str] = []
-    contact_reasons: List[str] = []
-    partner_reasons: List[str] = []
-    spirit_reasons: List[str] = []
-    
-    # ========== 维度1：是否处女 ==========
     sexual_relations = facts.get("sexual_relations", [])
     children_info = facts.get("children_info", [])
-    
+
     # 检查性关系（过滤占位符）
     non_ml_sex = []
     for sr in sexual_relations:
@@ -4678,14 +4633,14 @@ def judge_purity_by_facts(
         if not _is_placeholder(partner):
             non_ml_sex.append(sr)
             continue
-        # partner 为“未知/空”等占位符时，若证据/细节强烈指向性行为，也应算作非男主性关系
+        # partner 为"未知/空"等占位符时，若证据/细节强烈指向性行为，也应算作非男主性关系
         detail = str(sr.get("detail", "") or "")
         evidence = str(sr.get("evidence", "") or "")
         if _contains_any(detail + "\n" + evidence, SEX_ACT_HINT_KEYWORDS):
             sr2 = dict(sr)
             sr2["partner"] = sr2.get("partner") or "未知男性"
             non_ml_sex.append(sr2)
-    
+
     if non_ml_sex:
         result["is_virgin"] = False
         partners = [sr.get("partner", "未知") for sr in non_ml_sex]
@@ -4695,7 +4650,7 @@ def judge_purity_by_facts(
         reasons.append(reason_text)
         virgin_reasons.append(reason_text)
         result["evidence_used"].append(evidence)
-    
+
     # 检查孩子来源（仅当孩子是亲生且父亲非男主时判定为非处）
     non_ml_bio_children: List[Dict[str, Any]] = []
     for child in children_info:
@@ -4705,49 +4660,47 @@ def judge_purity_by_facts(
         detail_text = (child.get("detail") or "").lower()
         child_name = str(child.get("child_name", "") or "")
 
-        # 防呆：如果这条“孩子信息”其实是在描述“她是谁的女儿/谁生下了她”，则跳过
+        # 防呆：如果这条"孩子信息"其实是在描述"她是谁的女儿/谁生下了她"，则跳过
         raw_evidence = str(child.get("evidence", "") or "") + "\n" + str(child.get("detail", "") or "")
         if _looks_like_parentage_as_child(name, raw_evidence):
             continue
         if _looks_like_non_child_kinship_fact(name, raw_evidence, child_name):
             continue
-        child_category, _child_reason = _classify_child_record_heuristic(name, child, male_lead)
+        child_category, _child_reason = _classify_child_record_heuristic(name, child, None)
         if child_category in ("NOT_A_CHILD_FACT", "PREGNANCY_ONLY_OR_WEAK", "MALE_LEAD_CHILD"):
             continue
 
         # 【核心判断】检查是否为亲生孩子
         is_biological = child.get("is_biological", None)
-        
+
         # 如果明确标注为非亲生，直接跳过
         if is_biological is False:
             continue
-        
+
         # 检查 origin、evidence、detail 中是否有非亲生关键词
         all_text = f"{origin} {evidence_text} {detail_text}"
         is_non_biological = any(kw in all_text for kw in NON_BIOLOGICAL_KEYWORDS)
-        
+
         # 如果检测到非亲生关键词，跳过
         if is_non_biological:
             continue
-        
+
         # 判断父亲是否是男主
         is_father_male_lead = False
         if father:
             father_lower = (father or "").lower()
-            male_lead_lower = (male_lead or "").lower()
-            if male_lead_lower and (male_lead_lower in father_lower or father_lower in male_lead_lower):
-                is_father_male_lead = True
+            # male_lead is not available here; checked in caller via has_generation_conflict
             if father in ["男主", "主角"]:
                 is_father_male_lead = True
 
-        # father 可能为”未知/空”等占位符：若文本强提示”正常生育/怀孕/亲生”等，仍应视为非男主亲生孩子
+        # father 可能为"未知/空"等占位符：若文本强提示"正常生育/怀孕/亲生"等，仍应视为非男主亲生孩子
         father_label = father
         if _is_placeholder(father_label):
-            # 若明显是”意愿/请求/计划”，不视为已生育
+            # 若明显是"意愿/请求/计划"，不视为已生育
             is_intent_only = _contains_any(all_text, INTENT_ONLY_KEYWORDS) or ("让" in all_text and "怀孕" in all_text)
             # 原有检查：文本中有生育关键词
             has_birth_hint = _contains_any(all_text, BIOLOGICAL_BIRTH_HINT_KEYWORDS)
-            # 新增检查：conception_method=”sex” 且 is_biological=True（双重条件防误触）
+            # 新增检查：conception_method="sex" 且 is_biological=True（双重条件防误触）
             conception = str(child.get("conception_method", "") or "").lower()
             has_conception_hint = (conception == "sex" and is_biological is True)
             if (not is_intent_only) and (has_birth_hint or has_conception_hint):
@@ -4765,8 +4718,21 @@ def judge_purity_by_facts(
             virgin_reasons.append(reason_text)
             result["evidence_used"].append(evidence)
             non_ml_bio_children.append({"father": father_label, "evidence": evidence, "raw": child})
-    
-    # ========== 维度2：有无非男主肉体接触 ==========
+
+    return non_ml_sex, non_ml_bio_children
+
+
+def _judge_purity_contact_dim(
+    facts: Dict[str, Any],
+    female_role_names: Optional[List[str]],
+    name: str,
+    non_ml_sex: list,
+    non_ml_bio_children: list,
+    result: Dict[str, Any],
+    reasons: List[str],
+    contact_reasons: List[str],
+):
+    """维度2：有无非男主肉体接触。"""
     female_name_norm_set = _build_name_norm_set((female_role_names or []) + [name])
     physical_contacts = facts.get("physical_contacts", [])
     non_ml_contacts = []
@@ -4783,10 +4749,10 @@ def judge_purity_by_facts(
             ]),
             female_name_norm_set,
         )
-        # 规则模式下仅排除“明确女性”；其余沿用原有行为，避免漏判
+        # 规则模式下仅排除"明确女性"；其余沿用原有行为，避免漏判
         if male_hint is not False:
             non_ml_contacts.append(pc)
-    
+
     if non_ml_contacts:
         result["has_other_contact"] = True
         partners = [pc.get("partner", "未知") for pc in non_ml_contacts]
@@ -4798,7 +4764,7 @@ def judge_purity_by_facts(
         contact_reasons.append(reason_text)
         result["evidence_used"].append(evidence)
 
-    # 性关系/亲生孩子必然包含实际身体接触（即使 physical_contacts 没抽到，也应判为“有接触”）
+    # 性关系/亲生孩子必然包含实际身体接触（即使 physical_contacts 没抽到，也应判为"有接触"）
     if not result["has_other_contact"]:
         if non_ml_sex:
             partners = [sr.get("partner", "未知") for sr in non_ml_sex]
@@ -4818,8 +4784,20 @@ def judge_purity_by_facts(
             reasons.append(reason_text)
             contact_reasons.append(reason_text)
             result["evidence_used"].append(evidence)
-    
-    # ========== 维度3：有无非男主伴侣 ==========
+
+
+def _judge_purity_partner_dim(
+    facts: Dict[str, Any],
+    female_name_norm_set: set,
+    non_ml_sex: list,
+    result: Dict[str, Any],
+    reasons: List[str],
+    partner_reasons: List[str],
+) -> tuple:
+    """
+    维度3：有无非男主伴侣。
+    返回 (spirit_non_exempt_partner_history, spirit_exempt_partner_notes) 供精神维度交叉引用。
+    """
     partner_relations = facts.get("partner_relations", [])
     logger.debug(f"    [规则-伴侣] 输入 partner_relations 共 {len(partner_relations)} 条")
     non_ml_partners = []
@@ -4840,17 +4818,17 @@ def judge_purity_by_facts(
                 ]),
                 female_name_norm_set,
             )
-            # 明确女性对象不计入“男伴”
+            # 明确女性对象不计入"男伴"
             if gender_hint is False:
                 continue
             # 检查是否为"被迫订婚且未完婚"的豁免情况
             status = (pr.get("status") or "").lower()
             forced = pr.get("forced", False)
             is_unconsummated_forced = forced and any(kw in status for kw in ["未完婚", "订婚", "婚约解除", "逃婚", "未婚"])
-            
+
             if not is_unconsummated_forced:
                 non_ml_partners.append(pr)
-    
+
     if non_ml_partners:
         result["no_partner"] = False
         partners = [pr.get("partner", "未知") for pr in non_ml_partners]
@@ -4904,8 +4882,21 @@ def judge_purity_by_facts(
             )
         else:
             spirit_non_exempt_partner_history.append(pr)
-    
-    # ========== 维度4：精神洁度 ==========
+
+    return spirit_non_exempt_partner_history, spirit_exempt_partner_notes
+
+
+def _judge_purity_spirit_dim(
+    facts: Dict[str, Any],
+    non_ml_sex: list,
+    non_ml_bio_children: list,
+    spirit_non_exempt_partner_history: list,
+    spirit_exempt_partner_notes: list,
+    result: Dict[str, Any],
+    reasons: List[str],
+    spirit_reasons: List[str],
+):
+    """维度4：精神洁度（非男主正向感情 + 非豁免伴侣 + 非男主性关系/亲生孩子）。"""
     romantic_feelings = facts.get("romantic_feelings", [])
     non_ml_feelings = []
     non_ml_positive_feelings = []
@@ -4924,7 +4915,7 @@ def judge_purity_by_facts(
                 spirit_non_positive_feeling_notes.append(
                     f"{target}缺少正向动心证据" + (f"，证据:{ev}" if ev else "")
                 )
-    
+
     if non_ml_positive_feelings:
         result["is_spirit_clean"] = False
         targets = [rf.get("target", "未知") for rf in non_ml_positive_feelings]
@@ -4935,7 +4926,7 @@ def judge_purity_by_facts(
         spirit_reasons.append(reason_text)
         result["evidence_used"].append(evidence)
 
-    # 排他性精神洁（含豁免）：仅“非豁免伴侣”或非男主性关系/亲生孩子可判❌精神非初
+    # 排他性精神洁（含豁免）：仅"非豁免伴侣"或非男主性关系/亲生孩子可判❌精神非初
     if result["is_spirit_clean"]:
         if spirit_non_exempt_partner_history:
             partner = spirit_non_exempt_partner_history[0].get("partner", "未知")
@@ -4976,28 +4967,108 @@ def judge_purity_by_facts(
                 "规则豁免：存在非男主感情条目但无正向动心证据；"
                 f"样例:{spirit_non_positive_feeling_notes[0][:80]}"
             )
-    
+
+
+def judge_purity_by_facts(
+    name: str,
+    facts: Dict[str, Any],
+    male_lead: str,
+    female_role_names: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    基于结构化事实进行规则判定，不依赖 LLM。
+
+    输入：
+    - name: 女主名称
+    - facts: 结构化事实，包含 sexual_relations, children_info, physical_contacts, romantic_feelings, partner_relations
+    - male_lead: 男主名称
+
+    输出：
+    - 五维洁度判定结果（含前世/原故事线与接触等级补充）
+    """
+    # 先清洗一遍，避免"身世"误当"生育"
+    facts = _sanitize_purity_facts_for_heroine(name, facts)
+    # 与 stepwise 路径保持一致：清洗泛指/非事实伴侣关系，避免规则路径误判
+    try:
+        facts["partner_relations"] = _sanitize_partner_relations_for_purity(
+            facts.get("partner_relations", []), male_lead
+        )
+    except Exception:
+        pass
+
+    result = {
+        "name": name,
+        "is_virgin": True,
+        # 注意：本项目"处女"是【排他性处女】——仅与男主发生关系也依然判✅
+        "virgin_status": "✅ 处女（排他性：仅男主不算非处）",
+        "has_other_contact": False,
+        "contact_status": "✅ 无接触（无非男主接触记录）",
+        "no_partner": True,
+        "partner_status": "✅ 无男伴（无非男主伴侣记录）",
+        "is_spirit_clean": True,
+        # 注意：本项目"精神洁"是【排他性精神洁】——出现非男主性关系/亲生孩子/正式伴侣即判❌
+        "spirit_status": "✅ 精神洁（无非男主关系/性/情记录）",
+        # 规则维度理由（用于与 LLM 对照展示）
+        "rule_virgin_reason": "",
+        "rule_contact_reason": "",
+        "rule_partner_reason": "",
+        "rule_spirit_reason": "",
+        "summary": "",
+        "is_clean": True,
+        "evidence_used": [],
+    }
+
+    reasons = []
+    virgin_reasons: List[str] = []
+    contact_reasons: List[str] = []
+    partner_reasons: List[str] = []
+    spirit_reasons: List[str] = []
+
+    # 维度1：是否处女（性关系 + 非男主亲生孩子）
+    non_ml_sex, non_ml_bio_children = _judge_purity_virgin_dim(
+        facts, name, result, reasons, virgin_reasons
+    )
+
+    # 维度2：有无非男主肉体接触
+    _judge_purity_contact_dim(
+        facts, female_role_names, name, non_ml_sex, non_ml_bio_children,
+        result, reasons, contact_reasons
+    )
+
+    # 维度3：有无非男主伴侣
+    female_name_norm_set = _build_name_norm_set((female_role_names or []) + [name])
+    spirit_non_exempt_partner_history, spirit_exempt_partner_notes = _judge_purity_partner_dim(
+        facts, female_name_norm_set, non_ml_sex, result, reasons, partner_reasons
+    )
+
+    # 维度4：精神洁度
+    _judge_purity_spirit_dim(
+        facts, non_ml_sex, non_ml_bio_children,
+        spirit_non_exempt_partner_history, spirit_exempt_partner_notes,
+        result, reasons, spirit_reasons
+    )
+
     # ========== 综合判定 ==========
     result["is_clean"] = (
-        result["is_virgin"] and 
-        not result["has_other_contact"] and 
-        result["no_partner"] and 
+        result["is_virgin"] and
+        not result["has_other_contact"] and
+        result["no_partner"] and
         result["is_spirit_clean"]
     )
-    
+
     if reasons:
         result["summary"] = "; ".join(reasons[:3])  # 最多3条理由
     else:
         result["summary"] = "无不洁记录，默认全初"
-    
+
     result["rule_virgin_reason"] = "; ".join(virgin_reasons[:2]) if virgin_reasons else "规则判断：未发现非男主性关系或非男主亲生孩子。"
     result["rule_contact_reason"] = "; ".join(contact_reasons[:2]) if contact_reasons else "规则判断：未发现非男主实际身体接触。"
     result["rule_partner_reason"] = "; ".join(partner_reasons[:2]) if partner_reasons else "规则判断：未发现非男主正式男伴。"
     result["rule_spirit_reason"] = "; ".join(spirit_reasons[:2]) if spirit_reasons else "规则判断：未发现非男主对象的感情/伴侣/性关系/非男主亲生孩子。"
-    
+
     # 生成兼容旧版的 body_status
     result["body_status"] = f"处女:{result['virgin_status']} | 接触:{result['contact_status']} | 男伴:{result['partner_status']}"
-    
+
     return _normalize_purity_result_consistency(result)
 
 
