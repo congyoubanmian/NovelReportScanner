@@ -2444,41 +2444,30 @@ def _detect_mutual_other_names(global_stats, conflict_pairs=None):
     return mutual_pairs
 
 
-def merge_aliases(global_stats):
-    """
-    使用 AI 进行别称合并
-    这是一个关键步骤，专门用于识别和合并同一角色的不同称呼
-    名字包含关系完全交给大模型判断，避免简单规则导致的误合并
-    支持分批处理：当角色数量超过阈值时，分批调用 AI
-    """
-    if len(global_stats) < 2:
-        return global_stats
+def _merge_alias_into_main(merged_stats, main_name, alias, source_stats=None):
+    """将单个别名的数据合并到主名下，返回 True 表示成功执行。"""
+    stats = source_stats if source_stats is not None else merged_stats
+    if alias not in stats or alias == main_name:
+        return False
+    alias_data = stats[alias]
+    main = merged_stats[main_name]
+    main["total_score"] += alias_data.get("total_score", 0)
+    main["count"] += alias_data.get("count", 0)
+    main.setdefault("chunk_scores", []).extend(alias_data.get("chunk_scores", []))
+    main["summaries"].extend(alias_data.get("summaries", []))
+    main["types"].update(alias_data.get("types", set()))
+    main["other_names"].add(alias)
+    main["other_names"].update(alias_data.get("other_names", set()))
+    main["appearances"].extend(alias_data.get("appearances", []))
+    main["features"].extend(alias_data.get("features", []))
+    main["relationships"].extend(alias_data.get("relationships", []))
+    main["interactions"].extend(alias_data.get("interactions", []))
+    main["emotion_signals"].extend(alias_data.get("emotion_signals", []))
+    return True
 
-    conservative_records = []
-    for name, data in global_stats.items():
-        conservative_records.append({
-            "name": name,
-            "aliases": list(data.get("other_names", set()) or []),
-            "count": data.get("count", 0),
-        })
-    conservative_alias_map = build_conservative_alias_map(conservative_records)
-    if conservative_alias_map:
-        logger.info(f"保守别名图预合并候选 {len(conservative_alias_map)} 个")
-    
-    # 第一步：检测辈分冲突对（用于后续二次验证）
-    conflict_pairs = _get_generation_conflict_pairs(global_stats)
-    if conflict_pairs:
-        logger.info(f"检测到辈分冲突对（不应合并）: {conflict_pairs}")
 
-    # 第一步（新增）：检测同前缀可疑对
-    same_name_prefix_pairs = _detect_same_name_prefix_pairs(global_stats)
-
-    # 第一步（新增）：预清理被污染的 other_names
-    cleaned_count = _clean_contaminated_other_names(global_stats, same_name_prefix_pairs, conflict_pairs)
-    if cleaned_count:
-        logger.info(f"预清理完成: 共移除 {cleaned_count} 个疑似污染的别名条目")
-    
-    # 准备角色信息供 AI 分析（第一、二轮不使用互引提示，留到第三轮单独处理）
+def _prepare_characters_info(global_stats):
+    """从 global_stats 准备 AI 分析用的角色信息列表，按出现次数降序排列。"""
     characters_info = []
     for name, data in global_stats.items():
         avg_score = data['total_score'] / data['count'] if data['count'] > 0 else 0
@@ -2508,51 +2497,37 @@ def merge_aliases(global_stats):
             ]
         }
         characters_info.append(char_info)
-    
-    # 按出现次数排序，便于 AI 判断
     characters_info.sort(key=lambda x: x['count'], reverse=True)
-    
-    # 分批处理阈值
+    return characters_info
+
+
+def _run_batch_alias_merge(characters_info, conflict_pairs, global_stats):
+    """
+    第一+第二轮：分批 AI 合并 + 跨批次检查。
+    返回 all_merge_groups 列表。
+    """
     BATCH_SIZE = 30
     all_merge_groups = []
-    conservative_groups = {}
-    for alias, canonical in conservative_alias_map.items():
-        if alias in global_stats and canonical in global_stats and alias != canonical:
-            conservative_groups.setdefault(canonical, []).append(alias)
-    for canonical, aliases in conservative_groups.items():
-        all_merge_groups.append({
-            "main_name": canonical,
-            "aliases": aliases,
-            "reason": "保守别名图：安全别名同组",
-        })
-    if conservative_groups:
-        logger.info(f"保守别名图注入 {len(conservative_groups)} 个合并组")
-    
+
     try:
         if len(characters_info) <= BATCH_SIZE:
-            # 角色数量不多，单次调用
             logger.info(f"正在进行别称识别与合并（{len(characters_info)} 个角色）...")
             merge_groups, rejected_merges = _call_merge_ai(characters_info, conflict_pairs, mutual_pairs=None)
             all_merge_groups.extend(merge_groups)
-            
-            # 记录被拒绝的合并
             if rejected_merges:
                 for rej in rejected_merges:
                     logger.info(f"拒绝合并: {rej.get('names')} - {rej.get('reason')}")
         else:
-            # 分批处理（多线程并行）
             total_batches = (len(characters_info) + BATCH_SIZE - 1) // BATCH_SIZE
             logger.info(f"角色数量较多（{len(characters_info)}），将分 {total_batches} 批并行处理...")
-            
-            # 准备所有批次
+
             batches = []
             for i in range(0, len(characters_info), BATCH_SIZE):
                 batch = characters_info[i:i + BATCH_SIZE]
                 batch_num = i // BATCH_SIZE + 1
                 batch_info = f"（第 {batch_num}/{total_batches} 批）"
                 batches.append((batch, batch_num, batch_info))
-            
-            # 定义单批次处理函数
+
             def process_batch(batch_data):
                 batch, batch_num, batch_info = batch_data
                 try:
@@ -2560,8 +2535,7 @@ def merge_aliases(global_stats):
                     return batch_num, merge_groups, rejected_merges, None
                 except Exception as e:
                     return batch_num, [], [], str(e)
-            
-            # 第一轮：多线程并行分批内部合并
+
             merge_results_lock = threading.Lock()
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS)
             executor_cancelled = False
@@ -2570,7 +2544,6 @@ def merge_aliases(global_stats):
                     executor.submit(process_batch, batch_data): batch_data[1]
                     for batch_data in batches
                 }
-
                 for future in tqdm(iter_completed_futures(future_to_batch, phase_name="别称合并分批", executor=executor),
                                    total=len(batches), desc="别称合并分批", unit="批"):
                     batch_num = future_to_batch[future]
@@ -2596,66 +2569,11 @@ def merge_aliases(global_stats):
                     executor.shutdown(wait=True)
 
             logger.info(f"第一轮分批处理完成，共收集到 {len(all_merge_groups)} 个合并组")
-            
+
             # 第二轮：跨批次合并检查
-            # 将第一轮合并后的主名字汇总，检查是否有跨批次的遗漏合并
             logger.info("开始第二轮跨批次合并检查...")
-            
-            # 构建主名字到合并组的映射
-            main_names_info = []
-            for group in all_merge_groups:
-                main_name = group.get('main_name', '')
-                if not main_name or main_name not in global_stats:
-                    continue
-                # 获取该角色的特征信息
-                data = global_stats[main_name]
-                avg_score = data['total_score'] / data['count'] if data['count'] > 0 else 0
-                # 合并别名的特征
-                all_features = list(data.get('features', []))[:3]
-                all_appearances = list(data.get('appearances', []))[:3]
-                all_other_names = list(data.get('other_names', set()))
-                for alias in group.get('aliases', []):
-                    if alias in global_stats:
-                        alias_data = global_stats[alias]
-                        all_features.extend(alias_data.get('features', [])[:2])
-                        all_appearances.extend(alias_data.get('appearances', [])[:2])
-                        all_other_names.extend(list(alias_data.get('other_names', set())))
-                
-                main_names_info.append({
-                    "name": main_name,
-                    "aliases": group.get('aliases', []),
-                    "avg_score": round(avg_score, 1),
-                    "count": data['count'],
-                    "other_names": [
-                        _truncate_alias_merge_value(item)
-                        for item in list(set(all_other_names))[:10]
-                    ],
-                    "features": [
-                        _truncate_alias_merge_value(item)
-                        for item in all_features[:5]
-                    ],
-                    "appearances": [
-                        _truncate_alias_merge_value(item)
-                        for item in all_appearances[:5]
-                    ],
-                    "relationships": [
-                        _truncate_alias_merge_value(item)
-                        for item in data.get('relationships', [])[:3]
-                    ],
-                })
-            
-            # 添加未被合并的高频角色
-            merged_in_round1 = set()
-            for group in all_merge_groups:
-                merged_in_round1.add(group.get('main_name', ''))
-                for alias in group.get('aliases', []):
-                    merged_in_round1.add(alias)
-            
-            for char_info in characters_info:
-                char_name = char_info['name']
-                if char_name not in merged_in_round1 and char_info['count'] >= 5:
-                    main_names_info.append(char_info)
-            
+            main_names_info = _prepare_cross_batch_info(all_merge_groups, characters_info, global_stats)
+
             if len(main_names_info) > 1:
                 cross_batches = _split_alias_cross_merge_batches(main_names_info)
                 if not cross_batches:
@@ -2681,339 +2599,369 @@ def merge_aliases(global_stats):
                         )
                         if cross_merge_groups:
                             logger.info(f"跨批次检查第 {batch_index} 批发现 {len(cross_merge_groups)} 个额外合并组")
-                            # 合并跨批次结果
                             for cross_group in cross_merge_groups:
                                 cross_main = cross_group.get('main_name', '')
                                 cross_aliases = cross_group.get('aliases', [])
-
-                                # 查找是否已有包含这个主名的合并组
                                 found = False
                                 for existing_group in all_merge_groups:
                                     if existing_group.get('main_name') == cross_main:
-                                        # 添加新别名
                                         for alias in cross_aliases:
                                             if alias not in existing_group.get('aliases', []):
                                                 existing_group['aliases'].append(alias)
                                         found = True
                                         break
                                     elif cross_main in existing_group.get('aliases', []):
-                                        # cross_main 是某个组的别名，需要合并
                                         for alias in cross_aliases:
                                             if alias not in existing_group.get('aliases', []) and alias != existing_group.get('main_name'):
                                                 existing_group['aliases'].append(alias)
                                         found = True
                                         break
-
                                 if not found:
                                     all_merge_groups.append(cross_group)
                     except Exception as e:
                         logger.warning(f"跨批次检查第 {batch_index}/{len(cross_batches)} 批失败: {e}")
-            
+
             logger.info(f"两轮合并完成，最终收集到 {len(all_merge_groups)} 个合并组")
-        
-        if not all_merge_groups:
-            logger.info("没有发现需要合并的别称")
-            return global_stats
-        
-        # 辈分关键词（用于二次验证）
-        ELDER_KEYWORDS = {'太太', '夫人', '妈妈', '母亲', '婆婆', '奶奶', '外婆', '阿姨', '姑姑', '姨妈'}
-        YOUNGER_KEYWORDS = {'小姐', '姐姐', '妹妹', '姐', '妹', '女儿', '孙女', '外孙女', '学妹'}
-        
-        def has_generation_conflict(name1, name2):
-            """检查两个名字是否有辈分冲突"""
-            for p in conflict_pairs:
-                if (name1 in p and name2 in p):
-                    return True
-            has_elder1 = any(kw in name1 for kw in ELDER_KEYWORDS)
-            has_younger1 = any(kw in name1 for kw in YOUNGER_KEYWORDS)
-            has_elder2 = any(kw in name2 for kw in ELDER_KEYWORDS)
-            has_younger2 = any(kw in name2 for kw in YOUNGER_KEYWORDS)
-            return (has_elder1 and has_younger2) or (has_elder2 and has_younger1)
-        
-        # 执行合并
-        merged_stats = {}
-        merged_names = set()
-        
-        for group in all_merge_groups:
-            main_name = group.get('main_name', '')
-            aliases = group.get('aliases', [])
-            
-            if not main_name:
-                continue
-            
-            # 二次验证：过滤掉有辈分冲突的别名
-            valid_aliases = []
-            for alias in aliases:
-                if is_unsafe_alias(alias):
-                    logger.warning(f"安全检查拒绝合并: {main_name} <- {alias}（不安全称谓/泛称）")
-                    continue
-                if has_generation_conflict(main_name, alias):
-                    logger.warning(f"安全检查拒绝合并: {main_name} 和 {alias}（辈分冲突）")
-                else:
-                    valid_aliases.append(alias)
-            aliases = valid_aliases
+    except Exception as e:
+        logger.error(f"批量别称AI合并失败: {e}")
 
-            # 三次验证：缺少证据的合并直接拒绝（降低“明明两个人却被合并”）
-            evidence_ok_aliases = []
-            for alias in aliases:
-                if alias not in global_stats or main_name not in global_stats:
-                    continue
-                ok, reason = _should_accept_merge_pair(global_stats, main_name, alias, conflict_pairs=conflict_pairs, same_name_prefix_pairs=same_name_prefix_pairs)
-                if ok:
-                    evidence_ok_aliases.append(alias)
-                else:
-                    logger.warning(f"证据校验拒绝合并: {main_name} <- {alias}（{reason}）")
-            aliases = evidence_ok_aliases
-            
-            if not aliases:
+    return all_merge_groups
+
+
+def _prepare_cross_batch_info(all_merge_groups, characters_info, global_stats):
+    """为跨批次检查准备主名字信息列表。"""
+    main_names_info = []
+    for group in all_merge_groups:
+        main_name = group.get('main_name', '')
+        if not main_name or main_name not in global_stats:
+            continue
+        data = global_stats[main_name]
+        avg_score = data['total_score'] / data['count'] if data['count'] > 0 else 0
+        all_features = list(data.get('features', []))[:3]
+        all_appearances = list(data.get('appearances', []))[:3]
+        all_other_names = list(data.get('other_names', set()))
+        for alias in group.get('aliases', []):
+            if alias in global_stats:
+                alias_data = global_stats[alias]
+                all_features.extend(alias_data.get('features', [])[:2])
+                all_appearances.extend(alias_data.get('appearances', [])[:2])
+                all_other_names.extend(list(alias_data.get('other_names', set())))
+        main_names_info.append({
+            "name": main_name,
+            "aliases": group.get('aliases', []),
+            "avg_score": round(avg_score, 1),
+            "count": data['count'],
+            "other_names": [
+                _truncate_alias_merge_value(item)
+                for item in list(set(all_other_names))[:10]
+            ],
+            "features": [
+                _truncate_alias_merge_value(item)
+                for item in all_features[:5]
+            ],
+            "appearances": [
+                _truncate_alias_merge_value(item)
+                for item in all_appearances[:5]
+            ],
+            "relationships": [
+                _truncate_alias_merge_value(item)
+                for item in data.get('relationships', [])[:3]
+            ],
+        })
+    merged_in_round1 = set()
+    for group in all_merge_groups:
+        merged_in_round1.add(group.get('main_name', ''))
+        for alias in group.get('aliases', []):
+            merged_in_round1.add(alias)
+    for char_info in characters_info:
+        char_name = char_info['name']
+        if char_name not in merged_in_round1 and char_info['count'] >= 5:
+            main_names_info.append(char_info)
+    return main_names_info
+
+
+def _apply_alias_merges(all_merge_groups, global_stats, conflict_pairs, same_name_prefix_pairs):
+    """
+    第二阶段：对 all_merge_groups 执行安全检查并合并到 merged_stats。
+    返回 (merged_stats, merged_names)。
+    """
+    ELDER_KEYWORDS = {'太太', '夫人', '妈妈', '母亲', '婆婆', '奶奶', '外婆', '阿姨', '姑姑', '姨妈'}
+    YOUNGER_KEYWORDS = {'小姐', '姐姐', '妹妹', '姐', '妹', '女儿', '孙女', '外孙女', '学妹'}
+
+    def has_generation_conflict(name1, name2):
+        for p in conflict_pairs:
+            if name1 in p and name2 in p:
+                return True
+        has_elder1 = any(kw in name1 for kw in ELDER_KEYWORDS)
+        has_younger1 = any(kw in name1 for kw in YOUNGER_KEYWORDS)
+        has_elder2 = any(kw in name2 for kw in ELDER_KEYWORDS)
+        has_younger2 = any(kw in name2 for kw in YOUNGER_KEYWORDS)
+        return (has_elder1 and has_younger2) or (has_elder2 and has_younger1)
+
+    merged_stats = {}
+    merged_names = set()
+
+    for group in all_merge_groups:
+        main_name = group.get('main_name', '')
+        aliases = group.get('aliases', [])
+        if not main_name:
+            continue
+
+        # 二次验证：过滤掉有辈分冲突的别名
+        valid_aliases = []
+        for alias in aliases:
+            if is_unsafe_alias(alias):
+                logger.warning(f"安全检查拒绝合并: {main_name} <- {alias}（不安全称谓/泛称）")
                 continue
-            
-            logger.info(f"合并角色: {main_name} <- {aliases}")
-            
-            # 初始化主名字的数据
-            if main_name in global_stats:
-                merged_stats[main_name] = {
-                    "total_score": global_stats[main_name]["total_score"],
-                    "count": global_stats[main_name]["count"],
-                    "chunk_scores": list(global_stats[main_name].get("chunk_scores", [])),
-                    "summaries": list(global_stats[main_name].get("summaries", [])),
-                    "types": set(global_stats[main_name].get("types", [])),
-                    "other_names": set(global_stats[main_name].get("other_names", set())),
-                    "appearances": list(global_stats[main_name].get("appearances", [])),
-                    "features": list(global_stats[main_name].get("features", [])),
-                    "relationships": list(global_stats[main_name].get("relationships", [])),
-                    "interactions": list(global_stats[main_name].get("interactions", [])),
-                    "emotion_signals": list(global_stats[main_name].get("emotion_signals", []))
-                }
+            if has_generation_conflict(main_name, alias):
+                logger.warning(f"安全检查拒绝合并: {main_name} 和 {alias}（辈分冲突）")
             else:
-                merged_stats[main_name] = {
-                    "total_score": 0,
-                    "count": 0,
-                    "chunk_scores": [],
-                    "summaries": [],
-                    "types": set(),
-                    "other_names": set(),
-                    "appearances": [],
-                    "features": [],
-                    "relationships": [],
-                    "interactions": [],
-                    "emotion_signals": []
-                }
-            
-            merged_names.add(main_name)
-            
-            # 合并别名数据
-            for alias in aliases:
-                if alias in global_stats and alias != main_name:
-                    alias_data = global_stats[alias]
-                    merged_stats[main_name]["total_score"] += alias_data.get("total_score", 0)
-                    merged_stats[main_name]["count"] += alias_data.get("count", 0)
-                    merged_stats[main_name]["chunk_scores"].extend(alias_data.get("chunk_scores", []))
-                    merged_stats[main_name]["summaries"].extend(alias_data.get("summaries", []))
-                    merged_stats[main_name]["types"].update(alias_data.get("types", []))
-                    merged_stats[main_name]["other_names"].add(alias)
-                    merged_stats[main_name]["other_names"].update(alias_data.get("other_names", set()))
-                    merged_stats[main_name]["appearances"].extend(alias_data.get("appearances", []))
-                    merged_stats[main_name]["features"].extend(alias_data.get("features", []))
-                    merged_stats[main_name]["relationships"].extend(alias_data.get("relationships", []))
-                    merged_stats[main_name]["interactions"].extend(alias_data.get("interactions", []))
-                    merged_stats[main_name]["emotion_signals"].extend(alias_data.get("emotion_signals", []))
-                    merged_names.add(alias)
-        
-        # 添加未被合并的角色
-        for name, data in global_stats.items():
-            if name not in merged_names:
-                merged_stats[name] = data
-        
-        logger.info(f"前两轮合并完成: {len(global_stats)} 个名字 -> {len(merged_stats)} 个角色")
-        
-        # ========== 第三阶段：单独判断互引对 ==========
-        logger.info("开始第三阶段：单独判断仍未合并的互引角色对...")
-        
-        # 从合并后的 merged_stats 重新检测互引对
-        final_mutual_pairs = _detect_mutual_other_names(merged_stats, conflict_pairs)
-        
-        if final_mutual_pairs:
-            logger.info(f"检测到 {len(final_mutual_pairs)} 对仍未合并的互引角色，将逐对判断")
-            
-            # 准备详细信息函数
-            def prepare_char_info(name, stats):
-                """从 merged_stats 准备角色的完整信息"""
-                avg_score = stats['total_score'] / stats['count'] if stats['count'] > 0 else 0
-                
-                # 提取 summaries 文本（处理 tuple 格式）
-                summaries = stats.get('summaries', [])
-                if summaries and isinstance(summaries[0], (tuple, list)) and len(summaries[0]) == 2:
-                    summaries = [s[1] for s in summaries[:10]]
-                else:
-                    summaries = summaries[:10]
-                
-                # 提取 interactions 文本
-                interactions = stats.get('interactions', [])
-                if interactions and isinstance(interactions[0], (tuple, list)) and len(interactions[0]) == 2:
-                    interactions = [s[1] for s in interactions[:10]]
-                else:
-                    interactions = interactions[:10]
-                
-                return {
-                    "name": name,
-                    "avg_score": round(avg_score, 1),
-                    "count": stats['count'],
-                    "other_names": list(stats.get('other_names', set()))[:10],
-                    "summaries": summaries,
-                    "features": stats.get('features', [])[:10],
-                    "relationships": stats.get('relationships', [])[:10],
-                    "interactions": interactions,
-                }
-            
-            # 逐对判断（并行处理）
-            additional_merges = []
-            
-            def judge_pair(pair_data):
-                name_a, name_b, reason = pair_data
-                if name_a not in merged_stats or name_b not in merged_stats:
-                    return None  # 已被合并
-                
-                char_a_info = prepare_char_info(name_a, merged_stats[name_a])
-                char_b_info = prepare_char_info(name_b, merged_stats[name_b])
-                
-                should_merge, main_name, judge_reason = _judge_single_pair_merge(
-                    char_a_info, char_b_info, conflict_pairs
-                )
-                
-                if should_merge and main_name:
-                    return (main_name, [n for n in [name_a, name_b] if n != main_name], judge_reason)
-                else:
-                    logger.info(f"拒绝合并: {name_a} 和 {name_b} - {judge_reason}")
-                    return None
-            
-            executor = concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS)
-            executor_cancelled = False
-            try:
-                futures = {
-                    executor.submit(judge_pair, pair): pair 
-                    for pair in final_mutual_pairs
-                }
+                valid_aliases.append(alias)
+        aliases = valid_aliases
 
-                for future in tqdm(iter_completed_futures(futures, phase_name="单对判断", executor=executor),
-                                   total=len(futures), desc="单对判断", unit="对"):
-                    try:
-                        result = future.result()
-                        if result:
-                            additional_merges.append(result)
-                    except Exception as e:
-                        pair = futures[future]
-                        logger.warning(f"判断失败 ({pair[0]} vs {pair[1]}): {e}")
-            except TimeoutError as exc:
-                logger.error(f"单对判断等待超时: {exc}")
-                cancel_pending_futures(futures, executor=executor)
-                executor_cancelled = True
-                raise
-            finally:
-                if not executor_cancelled:
-                    executor.shutdown(wait=True)
+        # 三次验证：缺少证据的合并直接拒绝
+        evidence_ok_aliases = []
+        for alias in aliases:
+            if alias not in global_stats or main_name not in global_stats:
+                continue
+            ok, reason = _should_accept_merge_pair(global_stats, main_name, alias, conflict_pairs=conflict_pairs, same_name_prefix_pairs=same_name_prefix_pairs)
+            if ok:
+                evidence_ok_aliases.append(alias)
+            else:
+                logger.warning(f"证据校验拒绝合并: {main_name} <- {alias}（{reason}）")
+        aliases = evidence_ok_aliases
 
-            # 应用额外的合并
-            if additional_merges:
-                logger.info(f"第三阶段发现 {len(additional_merges)} 对需要合并的角色")
-                for main_name, aliases_to_merge, reason in additional_merges:
-                    logger.info(f"合并角色: {main_name} <- {aliases_to_merge} ({reason[:50]})")
-                    
-                    # 确保 main_name 在 merged_stats 中
-                    if main_name not in merged_stats:
-                        # 使用第一个别名的数据作为主数据
-                        if aliases_to_merge and aliases_to_merge[0] in merged_stats:
-                            merged_stats[main_name] = merged_stats[aliases_to_merge[0]]
-                        else:
-                            continue
-                    
-                    # 合并别名数据
-                    for alias in aliases_to_merge:
-                        if alias in merged_stats and alias != main_name:
-                            alias_data = merged_stats[alias]
-                            merged_stats[main_name]["total_score"] += alias_data.get("total_score", 0)
-                            merged_stats[main_name]["count"] += alias_data.get("count", 0)
-                            merged_stats[main_name].setdefault("chunk_scores", []).extend(alias_data.get("chunk_scores", []))
-                            merged_stats[main_name]["summaries"].extend(alias_data.get("summaries", []))
-                            merged_stats[main_name]["types"].update(alias_data.get("types", set()))
-                            merged_stats[main_name]["other_names"].add(alias)
-                            merged_stats[main_name]["other_names"].update(alias_data.get("other_names", set()))
-                            merged_stats[main_name]["appearances"].extend(alias_data.get("appearances", []))
-                            merged_stats[main_name]["features"].extend(alias_data.get("features", []))
-                            merged_stats[main_name]["relationships"].extend(alias_data.get("relationships", []))
-                            merged_stats[main_name]["interactions"].extend(alias_data.get("interactions", []))
-                            merged_stats[main_name]["emotion_signals"].extend(alias_data.get("emotion_signals", []))
-                            # 删除已合并的别名
-                            del merged_stats[alias]
-                
-                logger.info(f"第三阶段合并完成: {len(merged_stats)} 个角色（-{len(additional_merges)}）")
+        if not aliases:
+            continue
+
+        logger.info(f"合并角色: {main_name} <- {aliases}")
+
+        if main_name in global_stats:
+            src = global_stats[main_name]
+            merged_stats[main_name] = {
+                "total_score": src["total_score"],
+                "count": src["count"],
+                "chunk_scores": list(src.get("chunk_scores", [])),
+                "summaries": list(src.get("summaries", [])),
+                "types": set(src.get("types", [])),
+                "other_names": set(src.get("other_names", set())),
+                "appearances": list(src.get("appearances", [])),
+                "features": list(src.get("features", [])),
+                "relationships": list(src.get("relationships", [])),
+                "interactions": list(src.get("interactions", [])),
+                "emotion_signals": list(src.get("emotion_signals", []))
+            }
         else:
-            logger.info("第三阶段：未发现需要额外处理的互引对")
+            merged_stats[main_name] = {
+                "total_score": 0, "count": 0, "chunk_scores": [], "summaries": [],
+                "types": set(), "other_names": set(), "appearances": [],
+                "features": [], "relationships": [], "interactions": [], "emotion_signals": []
+            }
+        merged_names.add(main_name)
 
-        # ========== 第四阶段：错别字/近似名的确定性合并（避免同一女主被拆成两人） ==========
-        # 仅在“编辑距离很近 + 摘要/互动高度相似”时才合并，避免误合并。
-        logger.info("开始第四阶段：错别字/近似名的确定性合并检查...")
-        try:
-            names = list(merged_stats.keys())
-            # 只对较短名字做近似检测（中文/日文常见 2~8 字），外文长名交给证据/AI
-            candidates = [n for n in names if 2 <= len(n) <= 8]
-            # 按出场频次优先（减少两两比较成本）
-            candidates.sort(key=lambda n: merged_stats.get(n, {}).get("count", 0), reverse=True)
+        for alias in aliases:
+            if _merge_alias_into_main(merged_stats, main_name, alias, source_stats=global_stats):
+                merged_names.add(alias)
 
-            merged_any = 0
-            seen = set()
-            for i, a in enumerate(candidates):
-                if a not in merged_stats or a in seen:
+    for name, data in global_stats.items():
+        if name not in merged_names:
+            merged_stats[name] = data
+
+    logger.info(f"前两轮合并完成: {len(global_stats)} 个名字 -> {len(merged_stats)} 个角色")
+    return merged_stats, merged_names
+
+
+def _merge_mutual_reference_pairs(merged_stats, conflict_pairs):
+    """第三阶段：逐对判断仍未合并的互引角色对，合并到 merged_stats。"""
+    logger.info("开始第三阶段：单独判断仍未合并的互引角色对...")
+    final_mutual_pairs = _detect_mutual_other_names(merged_stats, conflict_pairs)
+
+    if not final_mutual_pairs:
+        logger.info("第三阶段：未发现需要额外处理的互引对")
+        return
+
+    logger.info(f"检测到 {len(final_mutual_pairs)} 对仍未合并的互引角色，将逐对判断")
+
+    def prepare_char_info(name, stats):
+        avg_score = stats['total_score'] / stats['count'] if stats['count'] > 0 else 0
+        summaries = stats.get('summaries', [])
+        if summaries and isinstance(summaries[0], (tuple, list)) and len(summaries[0]) == 2:
+            summaries = [s[1] for s in summaries[:10]]
+        else:
+            summaries = summaries[:10]
+        interactions = stats.get('interactions', [])
+        if interactions and isinstance(interactions[0], (tuple, list)) and len(interactions[0]) == 2:
+            interactions = [s[1] for s in interactions[:10]]
+        else:
+            interactions = interactions[:10]
+        return {
+            "name": name,
+            "avg_score": round(avg_score, 1),
+            "count": stats['count'],
+            "other_names": list(stats.get('other_names', set()))[:10],
+            "summaries": summaries,
+            "features": stats.get('features', [])[:10],
+            "relationships": stats.get('relationships', [])[:10],
+            "interactions": interactions,
+        }
+
+    def judge_pair(pair_data):
+        name_a, name_b, reason = pair_data
+        if name_a not in merged_stats or name_b not in merged_stats:
+            return None
+        char_a_info = prepare_char_info(name_a, merged_stats[name_a])
+        char_b_info = prepare_char_info(name_b, merged_stats[name_b])
+        should_merge, main_name, judge_reason = _judge_single_pair_merge(
+            char_a_info, char_b_info, conflict_pairs
+        )
+        if should_merge and main_name:
+            return (main_name, [n for n in [name_a, name_b] if n != main_name], judge_reason)
+        else:
+            logger.info(f"拒绝合并: {name_a} 和 {name_b} - {judge_reason}")
+            return None
+
+    additional_merges = []
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS)
+    executor_cancelled = False
+    try:
+        futures = {
+            executor.submit(judge_pair, pair): pair
+            for pair in final_mutual_pairs
+        }
+        for future in tqdm(iter_completed_futures(futures, phase_name="单对判断", executor=executor),
+                           total=len(futures), desc="单对判断", unit="对"):
+            try:
+                result = future.result()
+                if result:
+                    additional_merges.append(result)
+            except Exception as e:
+                pair = futures[future]
+                logger.warning(f"判断失败 ({pair[0]} vs {pair[1]}): {e}")
+    except TimeoutError as exc:
+        logger.error(f"单对判断等待超时: {exc}")
+        cancel_pending_futures(futures, executor=executor)
+        executor_cancelled = True
+        raise
+    finally:
+        if not executor_cancelled:
+            executor.shutdown(wait=True)
+
+    if additional_merges:
+        logger.info(f"第三阶段发现 {len(additional_merges)} 对需要合并的角色")
+        for main_name, aliases_to_merge, reason in additional_merges:
+            logger.info(f"合并角色: {main_name} <- {aliases_to_merge} ({reason[:50]})")
+            if main_name not in merged_stats:
+                if aliases_to_merge and aliases_to_merge[0] in merged_stats:
+                    merged_stats[main_name] = merged_stats[aliases_to_merge[0]]
+                else:
                     continue
-                for b in candidates[i + 1 :]:
-                    if b not in merged_stats or b in seen:
-                        continue
-                    # 快速过滤：长度差过大跳过
-                    if abs(len(a) - len(b)) > 1:
-                        continue
-                    dist = _levenshtein_distance(a, b, max_dist=2)
-                    if dist > 1:
-                        continue
-                    # 证据校验：必须过阈值
-                    # 选择 count 更高的为主名
-                    main = a if merged_stats[a].get("count", 0) >= merged_stats[b].get("count", 0) else b
-                    alias = b if main == a else a
-                    ok, reason = _should_accept_merge_pair(merged_stats, main, alias, conflict_pairs=conflict_pairs, same_name_prefix_pairs=same_name_prefix_pairs)
-                    if not ok:
-                        continue
+            for alias in aliases_to_merge:
+                if _merge_alias_into_main(merged_stats, main_name, alias):
+                    del merged_stats[alias]
+        logger.info(f"第三阶段合并完成: {len(merged_stats)} 个角色（-{len(additional_merges)}）")
 
-                    logger.info(f"近似名合并: {main} <- {alias}（{reason}）")
-                    # 执行合并（字段结构同前面第三阶段）
-                    alias_data = merged_stats[alias]
-                    merged_stats[main]["total_score"] += alias_data.get("total_score", 0)
-                    merged_stats[main]["count"] += alias_data.get("count", 0)
-                    merged_stats[main].setdefault("chunk_scores", []).extend(alias_data.get("chunk_scores", []))
-                    merged_stats[main]["summaries"].extend(alias_data.get("summaries", []))
-                    merged_stats[main]["types"].update(alias_data.get("types", set()))
-                    merged_stats[main]["other_names"].add(alias)
-                    merged_stats[main]["other_names"].update(alias_data.get("other_names", set()))
-                    merged_stats[main]["appearances"].extend(alias_data.get("appearances", []))
-                    merged_stats[main]["features"].extend(alias_data.get("features", []))
-                    merged_stats[main]["relationships"].extend(alias_data.get("relationships", []))
-                    merged_stats[main]["interactions"].extend(alias_data.get("interactions", []))
-                    merged_stats[main]["emotion_signals"].extend(alias_data.get("emotion_signals", []))
+
+def _merge_typo_names(merged_stats, conflict_pairs, same_name_prefix_pairs):
+    """第四阶段：错别字/近似名的确定性合并（编辑距离≤1 + 证据校验通过）。"""
+    logger.info("开始第四阶段：错别字/近似名的确定性合并检查...")
+    try:
+        names = list(merged_stats.keys())
+        candidates = [n for n in names if 2 <= len(n) <= 8]
+        candidates.sort(key=lambda n: merged_stats.get(n, {}).get("count", 0), reverse=True)
+
+        merged_any = 0
+        seen = set()
+        for i, a in enumerate(candidates):
+            if a not in merged_stats or a in seen:
+                continue
+            for b in candidates[i + 1:]:
+                if b not in merged_stats or b in seen:
+                    continue
+                if abs(len(a) - len(b)) > 1:
+                    continue
+                dist = _levenshtein_distance(a, b, max_dist=2)
+                if dist > 1:
+                    continue
+                main = a if merged_stats[a].get("count", 0) >= merged_stats[b].get("count", 0) else b
+                alias = b if main == a else a
+                ok, reason = _should_accept_merge_pair(merged_stats, main, alias, conflict_pairs=conflict_pairs, same_name_prefix_pairs=same_name_prefix_pairs)
+                if not ok:
+                    continue
+                logger.info(f"近似名合并: {main} <- {alias}（{reason}）")
+                if _merge_alias_into_main(merged_stats, main, alias):
                     del merged_stats[alias]
                     seen.add(alias)
                     merged_any += 1
 
-            if merged_any:
-                logger.info(f"第四阶段完成：近似名额外合并 {merged_any} 次")
-            else:
-                logger.info("第四阶段完成：未发现满足阈值的近似名合并")
-        except Exception as e:
-            logger.warning(f"第四阶段近似名合并检查失败: {e}")
-        
-        logger.info(f"全部合并完成: {len(global_stats)} 个名字 -> {len(merged_stats)} 个角色")
-        return merged_stats
-        
+        if merged_any:
+            logger.info(f"第四阶段完成：近似名额外合并 {merged_any} 次")
+        else:
+            logger.info("第四阶段完成：未发现满足阈值的近似名合并")
     except Exception as e:
-        logger.error(f"别称合并失败: {e}")
+        logger.warning(f"第四阶段近似名合并检查失败: {e}")
+
+
+def merge_aliases(global_stats):
+    """
+    使用 AI 进行别称合并 — 四阶段流水线。
+    阶段1: 保守别名图 + 分批 AI 合并 + 跨批次检查
+    阶段2: 安全验证（辈分/证据）后执行合并
+    阶段3: 逐对判断互引角色对
+    阶段4: 错别字/近似名确定性合并
+    """
+    if len(global_stats) < 2:
         return global_stats
+
+    # 保守别名图预合并
+    conservative_records = [
+        {"name": name, "aliases": list(data.get("other_names", set()) or []), "count": data.get("count", 0)}
+        for name, data in global_stats.items()
+    ]
+    conservative_alias_map = build_conservative_alias_map(conservative_records)
+    if conservative_alias_map:
+        logger.info(f"保守别名图预合并候选 {len(conservative_alias_map)} 个")
+
+    # 检测冲突对 + 预清理
+    conflict_pairs = _get_generation_conflict_pairs(global_stats)
+    if conflict_pairs:
+        logger.info(f"检测到辈分冲突对（不应合并）: {conflict_pairs}")
+    same_name_prefix_pairs = _detect_same_name_prefix_pairs(global_stats)
+    cleaned_count = _clean_contaminated_other_names(global_stats, same_name_prefix_pairs, conflict_pairs)
+    if cleaned_count:
+        logger.info(f"预清理完成: 共移除 {cleaned_count} 个疑似污染的别名条目")
+
+    # 准备角色信息
+    characters_info = _prepare_characters_info(global_stats)
+
+    # 保守别名图注入
+    all_merge_groups = []
+    conservative_groups = {}
+    for alias, canonical in conservative_alias_map.items():
+        if alias in global_stats and canonical in global_stats and alias != canonical:
+            conservative_groups.setdefault(canonical, []).append(alias)
+    for canonical, aliases in conservative_groups.items():
+        all_merge_groups.append({"main_name": canonical, "aliases": aliases, "reason": "保守别名图：安全别名同组"})
+    if conservative_groups:
+        logger.info(f"保守别名图注入 {len(conservative_groups)} 个合并组")
+
+    # 阶段1+2：分批 AI 合并 + 跨批次检查
+    all_merge_groups.extend(_run_batch_alias_merge(characters_info, conflict_pairs, global_stats))
+
+    if not all_merge_groups:
+        logger.info("没有发现需要合并的别称")
+        return global_stats
+
+    # 阶段2：安全验证后执行合并
+    merged_stats, merged_names = _apply_alias_merges(all_merge_groups, global_stats, conflict_pairs, same_name_prefix_pairs)
+
+    # 阶段3：互引角色对
+    _merge_mutual_reference_pairs(merged_stats, conflict_pairs)
+
+    # 阶段4：错别字/近似名
+    _merge_typo_names(merged_stats, conflict_pairs, same_name_prefix_pairs)
+
+    logger.info(f"全部合并完成: {len(global_stats)} 个名字 -> {len(merged_stats)} 个角色")
+    return merged_stats
 
 
 def _primary_value(values, default=""):
