@@ -4908,6 +4908,94 @@ def _run_character_gap_fill_scan(chunks, target_chunk_indices, completed_chunks,
     return remaining_missing
 
 
+def _protagonist_run_scan(chunks, target_chunk_indices, source_total_chunks,
+                          target_chunk_set, total_chunks,
+                          global_stats, male_protagonist_stats,
+                          completed_chunks, progress_flags, chunk_plan_metadata,
+                          logger):
+    """阶段一：并行扫描全书角色，返回 failed_chunks。"""
+    chunks_to_process = [(chunks[i], i) for i in target_chunk_indices if i not in completed_chunks]
+    failed_chunks = []
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS)
+    executor_cancelled = False
+    try:
+        future_to_chunk = {
+            executor.submit(analyze_chunk_for_heroines, chunk_data[0], chunk_data[1], source_total_chunks): chunk_data[1]
+            for chunk_data in chunks_to_process
+        }
+        for future in tqdm(iter_completed_futures(future_to_chunk, phase_name="角色扫描", executor=executor),
+                           total=len(chunks_to_process), desc="扫描中", unit="块"):
+            chunk_idx = future_to_chunk[future]
+            try:
+                result = future.result()
+                ok = _apply_character_scan_result(
+                    result, chunk_idx, global_stats, male_protagonist_stats,
+                    completed_chunks, target_chunk_set, total_chunks,
+                    chunk_plan_metadata, progress_flags,
+                )
+                if not ok:
+                    failed_chunks.append(chunk_idx)
+            except Exception as exc:
+                logger.error(f"块 {chunk_idx} 处理异常: {exc}")
+                failed_chunks.append(chunk_idx)
+    except TimeoutError as exc:
+        logger.error(f"角色扫描等待超时: {exc}")
+        cancel_pending_futures(future_to_chunk, executor=executor)
+        executor_cancelled = True
+        save_checkpoint(
+            global_stats, male_protagonist_stats,
+            max(completed_chunks) if completed_chunks else -1,
+            progress_flags, completed_chunks=completed_chunks,
+            chunk_plan_metadata=chunk_plan_metadata,
+        )
+        raise
+    finally:
+        if not executor_cancelled:
+            executor.shutdown(wait=True)
+
+    # ========== 补漏：扫描结束后立即检查遗漏块并补扫 ==========
+    remaining_missing = _run_character_gap_fill_scan(
+        chunks, target_chunk_indices, completed_chunks,
+        global_stats, male_protagonist_stats,
+        progress_flags, chunk_plan_metadata,
+        target_chunk_set, total_chunks, source_total_chunks,
+    )
+
+    if failed_chunks:
+        logger.warning(f"本次扫描有 {len(failed_chunks)} 个块失败: {sorted(failed_chunks)}")
+        if remaining_missing:
+            print(f"\n⚠ 仍有 {len(remaining_missing)} 个块分析失败，将在下次运行时继续重试：{remaining_missing[:20]}{'...' if len(remaining_missing) > 20 else ''}")
+
+    if len(completed_chunks & target_chunk_set) >= total_chunks:
+        progress_flags["scanned"] = True
+        logger.info("所有块扫描完成，标记阶段一完成")
+    else:
+        logger.info(f"扫描进度: {len(completed_chunks & target_chunk_set)}/{total_chunks} 块完成")
+
+    save_checkpoint(global_stats, male_protagonist_stats, max(completed_chunks) if completed_chunks else -1, progress_flags, completed_chunks=completed_chunks, chunk_plan_metadata=chunk_plan_metadata)
+    return failed_chunks
+
+
+def _protagonist_print_summary(male_protagonist, heroine_result):
+    """打印分析结果摘要。"""
+    print("\n【主角识别结果】")
+    print("-" * 40)
+    if male_protagonist:
+        aliases_str = f"（{', '.join(male_protagonist.get('other_names', []))}）" if male_protagonist.get('other_names') else ""
+        print(f"  ★ 男主: {male_protagonist.get('name', '未知')}{aliases_str}")
+        print(f"     身份: {male_protagonist.get('identity', '未知')}")
+    heroines = heroine_result.get('heroines', [])
+    if heroines:
+        print()
+        for h in heroines:
+            aliases_str = f"（{', '.join(h.get('aliases', []))}）" if h.get('aliases') else ""
+            print(f"  {h.get('importance_rank', '?')}. {h.get('name', '未知')}{aliases_str}")
+            print(f"     关系: {h.get('relationship_type', '未知')}")
+    print("-" * 40)
+    print(f"\n【分析】{heroine_result.get('analysis', '')[:200]}...")
+
+
 def main(novel_path=None, book_name=None, run_id=None):
     global NOVEL_FILE_PATH, clean_filename, OUTPUT_DIR, logger, DISCARDED_FACTS
 
@@ -5046,71 +5134,14 @@ def main(novel_path=None, book_name=None, run_id=None):
         print(f"\n【阶段一】扫描全书，执行{_role_stage_label()}...")
         print("=" * 70)
 
-        if not progress_flags.get("scanned") and chunks_to_process:
-            failed_chunks = []  # 记录失败的块
-
-            executor = concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS)
-            executor_cancelled = False
-            try:
-                future_to_chunk = {
-                    executor.submit(analyze_chunk_for_heroines, chunk_data[0], chunk_data[1], source_total_chunks): chunk_data[1]
-                    for chunk_data in chunks_to_process
-                }
-
-                for future in tqdm(iter_completed_futures(future_to_chunk, phase_name="角色扫描", executor=executor),
-                                 total=len(chunks_to_process), desc="扫描中", unit="块"):
-                    chunk_idx = future_to_chunk[future]
-                    try:
-                        result = future.result()
-                        ok = _apply_character_scan_result(
-                            result, chunk_idx, global_stats, male_protagonist_stats,
-                            completed_chunks, target_chunk_set, total_chunks,
-                            chunk_plan_metadata, progress_flags,
-                        )
-                        if not ok:
-                            failed_chunks.append(chunk_idx)
-                    except Exception as exc:
-                        logger.error(f"块 {chunk_idx} 处理异常: {exc}")
-                        failed_chunks.append(chunk_idx)
-            except TimeoutError as exc:
-                logger.error(f"角色扫描等待超时: {exc}")
-                cancel_pending_futures(future_to_chunk, executor=executor)
-                executor_cancelled = True
-                save_checkpoint(
-                    global_stats,
-                    male_protagonist_stats,
-                    max(completed_chunks) if completed_chunks else -1,
-                    progress_flags,
-                    completed_chunks=completed_chunks,
-                    chunk_plan_metadata=chunk_plan_metadata,
-                )
-                raise
-            finally:
-                if not executor_cancelled:
-                    executor.shutdown(wait=True)
-
-            # ========== 补漏：扫描结束后立即检查遗漏块并补扫 ==========
-            remaining_missing = _run_character_gap_fill_scan(
-                chunks, target_chunk_indices, completed_chunks,
+        if not progress_flags.get("scanned"):
+            _protagonist_run_scan(
+                chunks, target_chunk_indices, source_total_chunks,
+                target_chunk_set, total_chunks,
                 global_stats, male_protagonist_stats,
-                progress_flags, chunk_plan_metadata,
-                target_chunk_set, total_chunks, source_total_chunks,
+                completed_chunks, progress_flags, chunk_plan_metadata,
+                logger,
             )
-
-            # 输出失败块信息
-            if failed_chunks:
-                logger.warning(f"本次扫描有 {len(failed_chunks)} 个块失败: {sorted(failed_chunks)}")
-                if remaining_missing:
-                    print(f"\n⚠ 仍有 {len(remaining_missing)} 个块分析失败，将在下次运行时继续重试：{remaining_missing[:20]}{'...' if len(remaining_missing) > 20 else ''}")
-
-            # 只有所有块都成功完成时才标记阶段一完成
-            if len(completed_chunks & target_chunk_set) >= total_chunks:
-                progress_flags["scanned"] = True
-                logger.info("所有块扫描完成，标记阶段一完成")
-            else:
-                logger.info(f"扫描进度: {len(completed_chunks & target_chunk_set)}/{total_chunks} 块完成")
-
-            save_checkpoint(global_stats, male_protagonist_stats, max(completed_chunks) if completed_chunks else -1, progress_flags, completed_chunks=completed_chunks, chunk_plan_metadata=chunk_plan_metadata)
 
 
         # 识别男主（简单逻辑：出现次数最多的）
@@ -5221,25 +5252,7 @@ def main(novel_path=None, book_name=None, run_id=None):
         print("=" * 70)
         
         # 打印识别结果摘要
-        print("\n【主角识别结果】")
-        print("-" * 40)
-        
-        # 显示男主
-        if male_protagonist:
-            aliases_str = f"（{', '.join(male_protagonist.get('other_names', []))}）" if male_protagonist.get('other_names') else ""
-            print(f"  ★ 男主: {male_protagonist.get('name', '未知')}{aliases_str}")
-            print(f"     身份: {male_protagonist.get('identity', '未知')}")
-        
-        # 显示女主
-        heroines = heroine_result.get('heroines', [])
-        if heroines:
-            print()
-            for h in heroines:
-                aliases_str = f"（{', '.join(h.get('aliases', []))}）" if h.get('aliases') else ""
-                print(f"  {h.get('importance_rank', '?')}. {h.get('name', '未知')}{aliases_str}")
-                print(f"     关系: {h.get('relationship_type', '未知')}")
-        print("-" * 40)
-        print(f"\n【分析】{heroine_result.get('analysis', '')[:200]}...")
+        _protagonist_print_summary(male_protagonist, heroine_result)
         
     except Exception as e:
         logger.error(f"程序执行失败: {e}", exc_info=True)
