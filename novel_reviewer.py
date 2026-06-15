@@ -58,6 +58,25 @@ from shared_utils import (
 )
 from toxic_reviewer import batch_review_toxic_points, load_rules_dict
 
+try:
+    from contradiction_detector import (
+        CONTRADICTION_DETECTION_ENABLED,
+        annotate_confidence,
+        detect_all_contradictions,
+        generate_contradiction_report,
+    )
+except ImportError:
+    CONTRADICTION_DETECTION_ENABLED = False
+
+    def detect_all_contradictions(_facts):
+        return []
+
+    def generate_contradiction_report(_contradictions):
+        return ""
+
+    def annotate_confidence(_facts):
+        pass
+
 # ================= 指代消解 & 编码相关常量 =================
 # 指代消解置信度门槛：低于此值不写回 partner
 CONFIDENCE_THRESHOLD = 0.75
